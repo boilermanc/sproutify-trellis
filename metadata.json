@@ -1,0 +1,7 @@
+{
+  "name": "Sproutify Trellis",
+  "description": "Enterprise-grade marketing orchestrator for multi-spoke ecosystems. Features Atomic Identity Resolution, Sage Strategic Intelligence, and cross-site behavioral analytics.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
