@@ -1,0 +1,86 @@
+name: Build and Deploy Sproutify Trellis
+
+on:
+  workflow_dispatch: {}       # manual trigger only
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-trellis
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          echo "commit=${GITHUB_SHA}" > dist/build-info.txt
+          date -u +"built_utc=%Y-%m-%dT%H:%M:%SZ" >> dist/build-info.txt
+          printf '%s\n' \
+            '# Never cache the SPA entry so new bundles get picked up immediately' \
+            '<IfModule mod_headers.c>' \
+            '  <Files "index.html">' \
+            '    Header set Cache-Control "no-cache, no-store, must-revalidate"' \
+            '    Header set Pragma "no-cache"' \
+            '    Header set Expires 0' \
+            '  </Files>' \
+            '</IfModule>' \
+            '' \
+            '# SPA routing that still serves real files directly' \
+            '<IfModule mod_rewrite.c>' \
+            '  RewriteEngine On' \
+            '  RewriteBase /' \
+            '  RewriteCond %{REQUEST_FILENAME} -f [OR]' \
+            '  RewriteCond %{REQUEST_FILENAME} -d' \
+            '  RewriteRule ^ - [L]' \
+            '  RewriteRule . /index.html [L]' \
+            '</IfModule>' \
+            > dist/.htaccess
+
+      - name: Clean IONOS directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.IONOS_HOST }}
+          username: ${{ secrets.IONOS_USERNAME }}
+          password: ${{ secrets.IONOS_PASSWORD }}
+          port: ${{ secrets.IONOS_PORT }}
+          script: |
+            rm -rf ${{ secrets.IONOS_TRELLIS_PATH }}/*
+
+      - name: Upload built site via SFTP
+        uses: Dylan700/sftp-upload-action@v1.2.3
+        with:
+          server: ${{ secrets.IONOS_HOST }}
+          username: ${{ secrets.IONOS_USERNAME }}
+          password: ${{ secrets.IONOS_PASSWORD }}
+          port: ${{ secrets.IONOS_PORT }}
+          uploads: |
+            ./dist/ => ${{ secrets.IONOS_TRELLIS_PATH }}/
+          ignore: |
+            **/.git/**
+            **/.github/**
+            **/.gitignore
+            **/README.md
+            **/LICENSE
