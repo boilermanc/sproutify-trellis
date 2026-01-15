@@ -60,13 +60,31 @@ jobs:
             > dist/.htaccess
 
       - name: Debug SFTP connection
+        env:
+          IONOS_HOST: ${{ secrets.IONOS_HOST }}
+          IONOS_PORT: ${{ secrets.IONOS_PORT }}
+          IONOS_USERNAME: ${{ secrets.IONOS_USERNAME }}
+          IONOS_PASSWORD: ${{ secrets.IONOS_PASSWORD }}
         run: |
-          echo "Testing secrets configuration..."
+          echo "=== Secrets Check ==="
           echo "IONOS_HOST defined: ${{ secrets.IONOS_HOST != '' }}"
           echo "IONOS_PORT defined: ${{ secrets.IONOS_PORT != '' }}"
           echo "IONOS_USERNAME defined: ${{ secrets.IONOS_USERNAME != '' }}"
           echo "IONOS_PASSWORD defined: ${{ secrets.IONOS_PASSWORD != '' }}"
           echo "IONOS_TRELLIS_PATH defined: ${{ secrets.IONOS_TRELLIS_PATH != '' }}"
+
+          echo ""
+          echo "=== DNS Resolution ==="
+          nslookup "$IONOS_HOST" || echo "DNS lookup failed"
+
+          echo ""
+          echo "=== Port Connectivity Test ==="
+          timeout 10 bash -c "echo >/dev/tcp/$IONOS_HOST/$IONOS_PORT" 2>&1 && echo "Port $IONOS_PORT is OPEN" || echo "Port $IONOS_PORT is CLOSED or timed out"
+
+          echo ""
+          echo "=== Verbose SSH Connection Test ==="
+          sudo apt-get update && sudo apt-get install -y sshpass
+          sshpass -p "$IONOS_PASSWORD" ssh -v -o StrictHostKeyChecking=no -o ConnectTimeout=30 -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" "echo 'Connection successful'" 2>&1 || echo "SSH connection failed"
 
       - name: Upload built site via SFTP
         uses: Dylan700/sftp-upload-action@v1.2.3
