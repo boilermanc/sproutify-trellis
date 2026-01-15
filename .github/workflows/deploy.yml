@@ -59,16 +59,14 @@ jobs:
             '</IfModule>' \
             > dist/.htaccess
 
-      # Temporarily commented out - troubleshooting SSH connection issues
-      # - name: Clean IONOS directory
-      #   uses: appleboy/ssh-action@v1.2.0
-      #   with:
-      #     host: ${{ secrets.IONOS_HOST }}
-      #     username: ${{ secrets.IONOS_USERNAME }}
-      #     password: ${{ secrets.IONOS_PASSWORD }}
-      #     port: ${{ secrets.IONOS_PORT }}
-      #     script: |
-      #       rm -rf ${{ secrets.IONOS_TRELLIS_PATH }}/*
+      - name: Debug SFTP connection
+        run: |
+          echo "Testing secrets configuration..."
+          echo "IONOS_HOST defined: ${{ secrets.IONOS_HOST != '' }}"
+          echo "IONOS_PORT defined: ${{ secrets.IONOS_PORT != '' }}"
+          echo "IONOS_USERNAME defined: ${{ secrets.IONOS_USERNAME != '' }}"
+          echo "IONOS_PASSWORD defined: ${{ secrets.IONOS_PASSWORD != '' }}"
+          echo "IONOS_TRELLIS_PATH defined: ${{ secrets.IONOS_TRELLIS_PATH != '' }}"
 
       - name: Upload built site via SFTP
         uses: Dylan700/sftp-upload-action@v1.2.3
