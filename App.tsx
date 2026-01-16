@@ -14,13 +14,20 @@ import KnowledgeBase from './pages/KnowledgeBase';
 import HelpCenter from './pages/HelpCenter';
 import Settings from './pages/Settings';
 import Reports from './pages/Reports';
-import { ViewState, Profile, MarketingEvent, MarketingTask, User, ApiKeyConfig, Brand, Ticket, Toast } from './types';
+import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast } from './types';
 import { MOCK_PROFILES, MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
-import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
 const PERSISTENCE_KEY = 'trellis_v1_store';
 
-const App: React.FC = () => {
+type AuthView = 'login' | 'reset-password';
+
+const AppContent: React.FC = () => {
+  const { user, loading, signOut } = useAuth();
+  const [authView, setAuthView] = useState<AuthView>('login');
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [testEmail, setTestEmail] = useState<string | null>(null);
   const [currentBrand, setCurrentBrand] = useState<Brand>(DEFAULT_BRAND);
@@ -84,7 +91,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (activeView) {
       case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} />;
-      case 'profiles': return <Profiles onTestFlow={setTestEmail} profiles={profiles} setProfiles={setProfiles} events={events} />;
+      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} />;
       case 'knowledge-base': return <KnowledgeBase />;
@@ -114,15 +121,30 @@ const App: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    if (authView === 'reset-password') {
+      return <ResetPassword onBackToLogin={() => setAuthView('login')} />;
+    }
+    return <Login onForgotPassword={() => setAuthView('reset-password')} />;
+  }
+
   return (
-    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand}>
+    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} onLogout={signOut}>
       {renderView()}
 
       {/* Global Toast Notification Engine */}
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] space-y-3 w-full max-w-md pointer-events-none">
         {toasts.map(toast => (
-          <div 
-            key={toast.id} 
+          <div
+            key={toast.id}
             className="pointer-events-auto bg-white/80 backdrop-blur-xl border border-slate-200/50 shadow-2xl p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-bottom-4 duration-300"
           >
             <div className="flex items-center space-x-3">
@@ -130,14 +152,14 @@ const App: React.FC = () => {
                 toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
                 toast.type === 'error' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600'
               }`}>
-                {toast.type === 'success' ? <CheckCircle2 size={18} /> : 
+                {toast.type === 'success' ? <CheckCircle2 size={18} /> :
                  toast.type === 'error' ? <AlertCircle size={18} /> : <Info size={18} />}
               </div>
               <p className="text-xs font-black uppercase text-slate-800 tracking-tight leading-tight max-w-[280px]">
                 {toast.message}
               </p>
             </div>
-            <button 
+            <button
               onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
               className="p-1.5 text-slate-400 hover:text-slate-900 transition-colors"
             >
@@ -147,6 +169,14 @@ const App: React.FC = () => {
         ))}
       </div>
     </Layout>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 

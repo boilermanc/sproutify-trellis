@@ -1,19 +1,18 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Profile, MarketingEvent } from '../types';
 import CustomerSitesTag from '../components/CustomerSitesTag';
-import { 
-  Search, Tag, MoreHorizontal, X, Edit3, 
+import { getProfiles } from '../lib/supabaseService';
+import {
+  Search, Tag, MoreHorizontal, X, Edit3,
   History, Globe, GraduationCap, Sprout, Heart, Building2,
-  FilterX, Users, MousePointer2, Sparkles, Zap, 
+  FilterX, Users, MousePointer2, Sparkles, Zap,
   Clock, ArrowUpRight, DatabaseZap, ShieldCheck, Activity,
-  Fingerprint
+  Fingerprint, Loader2
 } from 'lucide-react';
 
 interface ProfilesProps {
   onTestFlow?: (email: string) => void;
-  profiles: Profile[];
-  setProfiles: React.Dispatch<React.SetStateAction<Profile[]>>;
   events: MarketingEvent[];
 }
 
@@ -25,14 +24,34 @@ const SITE_ICONS: Record<string, any> = {
   'letsrejoice.app': Heart,
 };
 
-const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, profiles, events }) => {
+const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  
+
   const [selectedSites, setSelectedSites] = useState<string[]>([]);
   const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [subscriptionFilter, setSubscriptionFilter] = useState<'all' | 'subscribed' | 'unsubscribed'>('all');
+
+  useEffect(() => {
+    async function fetchProfiles() {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getProfiles();
+        setProfiles(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch profiles');
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProfiles();
+  }, []);
 
   const selectedProfile = useMemo(() => 
     profiles.find(p => p.id === selectedProfileId) || null
@@ -68,6 +87,24 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, profiles, events }) => 
       return matchesSearch && matchesSite && matchesSegment && matchesTag && matchesSub;
     });
   }, [profiles, searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+        <span className="ml-3 text-slate-600 font-medium">Loading profiles...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+        <p className="text-red-700 font-bold mb-2">Failed to load profiles</p>
+        <p className="text-red-600 text-sm">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 relative h-full pb-20">

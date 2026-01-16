@@ -11,6 +11,19 @@ export interface User {
   timezone: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+}
+
+export interface AuthContextType {
+  user: AuthUser | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
+}
+
 export interface Brand {
   id: string;
   name: string;

@@ -15,9 +15,10 @@ interface LayoutProps {
   onViewChange: (view: ViewState) => void;
   user: User;
   brand: Brand;
+  onLogout?: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, onLogout }) => {
   const navItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
@@ -86,7 +87,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
               <p className="text-xs font-black text-white truncate uppercase tracking-tighter">{user.name}</p>
               <p className="text-[10px] text-slate-500 truncate capitalize">{user.role}</p>
             </div>
-            <button className="text-slate-500 hover:text-rose-400 transition-colors">
+            <button
+              onClick={onLogout}
+              className="text-slate-500 hover:text-rose-400 transition-colors"
+              title="Sign out"
+            >
               <LogOut size={16} />
             </button>
           </div>
