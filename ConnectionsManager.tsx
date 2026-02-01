@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SpokeConnection } from './types';
-import { testSpokeConnection } from './spokeConnector';
+import { testSpokeConnection, autoMapFields, AutoMapFieldsResult } from './spokeConnector';
 import {
   Database,
   Plus,
@@ -43,11 +43,11 @@ const initialFormState: NewConnectionForm = {
   table_name: 'profiles',
   field_mapping: {
     email: 'email',
-    first_name: '',
-    last_name: '',
-    phone: '',
-    subscribed: '',
-    created_at: '',
+    first_name: 'first_name',
+    last_name: 'last_name',
+    phone: 'phone',
+    subscribed: 'subscribed',
+    created_at: 'created_at',
   },
 };
 
@@ -63,10 +63,44 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   const [showFieldMapping, setShowFieldMapping] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null);
+  const [discoveredColumns, setDiscoveredColumns] = useState<string[]>([]);
+  const [autoMapResult, setAutoMapResult] = useState<AutoMapFieldsResult | null>(null);
+  const [showDiscoveredColumns, setShowDiscoveredColumns] = useState(false);
+
+  // Validation warnings for field mapping
+  const getFieldMappingWarnings = (): string[] => {
+    const warnings: string[] = [];
+    const fm = newConnection.field_mapping;
+
+    if (!fm.email.trim()) {
+      warnings.push('Email field is required');
+    }
+    // Check for empty optional fields that have common column names
+    const optionalFields = [
+      { key: 'first_name', label: 'First Name' },
+      { key: 'last_name', label: 'Last Name' },
+      { key: 'phone', label: 'Phone' },
+      { key: 'subscribed', label: 'Subscribed' },
+      { key: 'created_at', label: 'Created At' },
+    ];
+
+    optionalFields.forEach(({ key, label }) => {
+      const value = (fm as any)[key];
+      if (value && !value.trim()) {
+        warnings.push(`${label} field is set but empty - clear it or provide a column name`);
+      }
+    });
+
+    return warnings;
+  };
+
+  const fieldMappingWarnings = getFieldMappingWarnings();
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
+    setAutoMapResult(null);
+    setDiscoveredColumns([]);
 
     const result = await testSpokeConnection({
       supabase_url: newConnection.supabase_url,
@@ -75,7 +109,33 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     });
 
     if (result.success) {
-      setTestResult({ success: true, message: `Connected! Found ${result.rowCount} records.` });
+      setDiscoveredColumns(result.columns);
+
+      // Auto-map fields from discovered columns
+      const mapResult = autoMapFields(result.columns);
+      setAutoMapResult(mapResult);
+
+      // Update field mapping with auto-detected values
+      setNewConnection((prev) => ({
+        ...prev,
+        field_mapping: {
+          email: mapResult.mapping.email || prev.field_mapping.email,
+          first_name: mapResult.mapping.first_name || prev.field_mapping.first_name,
+          last_name: mapResult.mapping.last_name || prev.field_mapping.last_name,
+          phone: mapResult.mapping.phone || prev.field_mapping.phone,
+          subscribed: mapResult.mapping.subscribed || prev.field_mapping.subscribed,
+          created_at: mapResult.mapping.created_at || prev.field_mapping.created_at,
+        },
+      }));
+
+      const matchCount = mapResult.matched.length;
+      setTestResult({
+        success: true,
+        message: `Connected! Found ${result.rowCount} records and ${result.columns.length} columns. Auto-mapped ${matchCount} field${matchCount !== 1 ? 's' : ''}.`
+      });
+
+      // Auto-expand field mapping to show results
+      setShowFieldMapping(true);
     } else {
       setTestResult({ success: false, message: result.error });
     }
@@ -133,6 +193,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     setIsAddingNew(false);
     setTestResult(null);
     setShowFieldMapping(false);
+    setDiscoveredColumns([]);
+    setAutoMapResult(null);
+    setShowDiscoveredColumns(false);
   };
 
   const handleDeleteConnection = (id: string) => {
@@ -145,6 +208,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     setNewConnection(initialFormState);
     setTestResult(null);
     setShowFieldMapping(false);
+    setDiscoveredColumns([]);
+    setAutoMapResult(null);
+    setShowDiscoveredColumns(false);
   };
 
   const toggleKeyVisibility = (id: string) => {
@@ -167,7 +233,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     return new Date(timestamp).toLocaleString();
   };
 
-  const canSave = testResult?.success && newConnection.name && newConnection.field_mapping.email;
+  const canSave = testResult?.success && newConnection.name && newConnection.field_mapping.email && fieldMappingWarnings.length === 0;
 
   return (
     <div className="space-y-6">
@@ -273,9 +339,16 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               onClick={() => setShowFieldMapping(!showFieldMapping)}
               className="w-full px-4 py-3 bg-slate-50 flex items-center justify-between text-left hover:bg-slate-100 transition"
             >
-              <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                Field Mapping
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                  Field Mapping
+                </span>
+                {autoMapResult && autoMapResult.matched.length > 0 && (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600">
+                    {autoMapResult.matched.length} auto-mapped
+                  </span>
+                )}
+              </div>
               {showFieldMapping ? (
                 <ChevronUp size={16} className="text-slate-400" />
               ) : (
@@ -285,12 +358,22 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             {showFieldMapping && (
               <div className="p-4 space-y-4 bg-white">
                 <div>
-                  <label className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">
-                    Email Column <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase">
+                      Email Column <span className="text-rose-500">*</span>
+                    </label>
+                    {autoMapResult?.matched.includes('email') && (
+                      <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-600">
+                        <CheckCircle2 size={12} />
+                        <span>Auto-detected</span>
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500"
+                    className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 ${
+                      autoMapResult?.matched.includes('email') ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
+                    }`}
                     placeholder="email"
                     value={newConnection.field_mapping.email}
                     onChange={(e) =>
@@ -308,26 +391,87 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     { key: 'phone', label: 'Phone Column' },
                     { key: 'subscribed', label: 'Subscribed Column' },
                     { key: 'created_at', label: 'Created At Column' },
-                  ].map((field) => (
-                    <div key={field.key}>
-                      <label className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">
-                        {field.label}
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500"
-                        placeholder={field.key}
-                        value={(newConnection.field_mapping as any)[field.key]}
-                        onChange={(e) =>
-                          setNewConnection((prev) => ({
-                            ...prev,
-                            field_mapping: { ...prev.field_mapping, [field.key]: e.target.value },
-                          }))
-                        }
-                      />
-                    </div>
-                  ))}
+                  ].map((field) => {
+                    const isAutoMapped = autoMapResult?.matched.includes(field.key);
+                    return (
+                      <div key={field.key}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[9px] font-black text-slate-400 uppercase">
+                            {field.label}
+                          </label>
+                          {isAutoMapped && (
+                            <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-600">
+                              <CheckCircle2 size={10} />
+                              <span>Auto</span>
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 ${
+                            isAutoMapped ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
+                          }`}
+                          placeholder={field.key}
+                          value={(newConnection.field_mapping as any)[field.key]}
+                          onChange={(e) =>
+                            setNewConnection((prev) => ({
+                              ...prev,
+                              field_mapping: { ...prev.field_mapping, [field.key]: e.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
+
+                {/* Discovered Columns (collapsible) */}
+                {discoveredColumns.length > 0 && (
+                  <div className="border border-slate-100 rounded-lg overflow-hidden mt-4">
+                    <button
+                      onClick={() => setShowDiscoveredColumns(!showDiscoveredColumns)}
+                      className="w-full px-3 py-2 bg-slate-50 flex items-center justify-between text-left hover:bg-slate-100 transition"
+                    >
+                      <span className="text-[9px] font-black text-slate-500 uppercase">
+                        Available Columns ({discoveredColumns.length})
+                      </span>
+                      {showDiscoveredColumns ? (
+                        <ChevronUp size={14} className="text-slate-400" />
+                      ) : (
+                        <ChevronDown size={14} className="text-slate-400" />
+                      )}
+                    </button>
+                    {showDiscoveredColumns && (
+                      <div className="p-3 bg-white">
+                        <div className="flex flex-wrap gap-1.5">
+                          {discoveredColumns.map((col) => {
+                            const isMapped = autoMapResult?.matched.some(
+                              (field) => autoMapResult.mapping[field as keyof typeof autoMapResult.mapping] === col
+                            );
+                            return (
+                              <span
+                                key={col}
+                                className={`text-[10px] font-mono px-2 py-1 rounded ${
+                                  isMapped
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {col}
+                                {isMapped && <CheckCircle2 size={10} className="inline ml-1" />}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {autoMapResult && autoMapResult.unmatched.length > 0 && (
+                          <p className="text-[9px] text-slate-400 mt-2">
+                            Unmapped columns can be used for custom field mapping above.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -341,6 +485,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             >
               {testResult.success ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
               <span className="text-sm font-bold">{testResult.message}</span>
+            </div>
+          )}
+
+          {/* Field Mapping Warnings */}
+          {fieldMappingWarnings.length > 0 && (
+            <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+              <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                {fieldMappingWarnings.map((warning, index) => (
+                  <p key={index} className="text-sm font-bold text-amber-700">{warning}</p>
+                ))}
+              </div>
             </div>
           )}
 

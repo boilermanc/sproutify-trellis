@@ -145,8 +145,8 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} />;
-      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} />;
+      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} />;
+      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} />;
       case 'branches': return <Branches />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} />;
@@ -180,7 +180,7 @@ const AppContent: React.FC = () => {
           onSpokeConnectionsChange={setSpokeConnections}
         />
       );
-      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} />;
+      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} />;
     }
   };
 

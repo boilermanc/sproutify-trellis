@@ -1,17 +1,12 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, MarketingEvent, MarketingTask, ViewState, Brand } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, SpokeConnection } from '../types';
 import { MOCK_BRIEFING } from '../constants';
+import { fetchRecentEvents } from '../lib/supabaseService';
+import { createClient } from '@supabase/supabase-js';
 import {
-  fetchProfileCount,
-  fetchBranchDistribution,
-  fetchRecentEvents
-} from '../lib/supabaseService';
-import {
-  Globe, CheckSquare, ShoppingBag, Instagram, Sparkles, ChevronDown,
-  ChevronRight, X, UserPlus, Target, Heart, LifeBuoy, Clock,
-  ShieldAlert, Activity, Megaphone, BarChart3, PieChart, Zap,
-  AlertCircle, ArrowRight
+  Globe, CheckSquare, Sparkles, ChevronDown, ChevronRight, X, Target,
+  LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -20,30 +15,27 @@ interface DashboardProps {
   tasks: MarketingTask[];
   profiles: Profile[];
   brand: Brand;
+  spokeConnections: SpokeConnection[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections }) => {
   const [isBriefingOpen, setIsBriefingOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Dashboard Phase 2: Real-time data from Supabase
+  // Dashboard data loading
   const [isLoading, setIsLoading] = useState(true);
-  const [profileCount, setProfileCount] = useState(0);
-  const [branchDistribution, setBranchDistribution] = useState<Record<string, number>>({});
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
+
+  // Spoke connections live data
+  const [spokeCounts, setSpokeCounts] = useState<Record<string, number>>({});
+  const [isLoadingCounts, setIsLoadingCounts] = useState(false);
+  const [totalFederatedProfiles, setTotalFederatedProfiles] = useState(0);
 
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const [count, distribution, events] = await Promise.all([
-          fetchProfileCount(),
-          fetchBranchDistribution(),
-          fetchRecentEvents(5)
-        ]);
-
-        setProfileCount(count);
-        setBranchDistribution(distribution);
-        setRecentEvents(events);
+        const recentEventsData = await fetchRecentEvents(5);
+        setRecentEvents(recentEventsData);
       } catch (err) {
         console.error('Error loading dashboard data:', err);
       } finally {
@@ -54,20 +46,88 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     loadDashboardData();
   }, []);
 
+  // Fetch profile counts from all active spokes
+  const fetchSpokeCounts = async () => {
+    setIsLoadingCounts(true);
+    const counts: Record<string, number> = {};
+    let total = 0;
+
+    const activeConnections = spokeConnections.filter(c => c.status === 'active');
+
+    for (const connection of activeConnections) {
+      try {
+        const client = createClient(connection.supabase_url, connection.supabase_key);
+        const { count, error } = await client
+          .from(connection.table_name)
+          .select('*', { count: 'exact', head: true });
+
+        if (!error && count !== null) {
+          counts[connection.id] = count;
+          total += count;
+        }
+      } catch (err) {
+        counts[connection.id] = -1; // Error indicator
+      }
+    }
+
+    setSpokeCounts(counts);
+    setTotalFederatedProfiles(total);
+    setIsLoadingCounts(false);
+  };
+
+  useEffect(() => {
+    if (spokeConnections.some(c => c.status === 'active')) {
+      fetchSpokeCounts();
+    }
+  }, [spokeConnections]);
+
   // Simulation: Checking for items that need human action
   const pendingApprovalsCount = 2;
 
-  const stats = [
-    { label: 'Total Global Profiles', value: profileCount, icon: Globe, color: 'text-white', bg: 'bg-cornflower-ocean/20', cardBg: 'bg-blue-slate-2', textColor: 'text-white', labelColor: 'text-white/80' },
-    { label: 'Social Buzz Signals', value: events.filter(e => e.event_type === 'social_intent').length, icon: Instagram, color: 'text-white', bg: 'bg-cornflower-ocean/20', cardBg: 'bg-blue-slate-2', textColor: 'text-white', labelColor: 'text-white/80' },
-    { label: 'Unified Support Load', value: MOCK_BRIEFING.detailed_analysis.support_load.open_tickets, icon: LifeBuoy, color: 'text-amber-600', bg: 'bg-amber-50', cardBg: 'bg-white', textColor: 'text-yale-blue', labelColor: 'text-slate-500' },
-    { label: 'Marketing Actions', value: tasks.filter(t => t.status !== 'completed').length, icon: CheckSquare, color: 'text-blue-slate', bg: 'bg-cerulean/20', cardBg: 'bg-white', textColor: 'text-yale-blue', labelColor: 'text-slate-500' },
-  ];
+  const activeConnections = spokeConnections.filter(c => c.status === 'active');
 
-  // Derive site distribution from branchDistribution state (sorted by count descending)
-  const siteDistribution = useMemo(() => {
-    return Object.entries(branchDistribution).sort((a, b) => b[1] - a[1]);
-  }, [branchDistribution]);
+  const stats = [
+    {
+      label: 'Federated Profiles',
+      value: isLoadingCounts ? '...' : totalFederatedProfiles.toLocaleString(),
+      icon: Globe,
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-50',
+      cardBg: 'bg-white',
+      textColor: 'text-yale-blue',
+      labelColor: 'text-slate-500'
+    },
+    {
+      label: 'Connected Spokes',
+      value: activeConnections.length,
+      icon: Database,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50',
+      cardBg: 'bg-white',
+      textColor: 'text-yale-blue',
+      labelColor: 'text-slate-500'
+    },
+    {
+      label: 'Support Queue',
+      value: MOCK_BRIEFING.detailed_analysis.support_load.open_tickets,
+      icon: LifeBuoy,
+      color: 'text-amber-600',
+      bg: 'bg-amber-50',
+      cardBg: 'bg-white',
+      textColor: 'text-yale-blue',
+      labelColor: 'text-slate-500'
+    },
+    {
+      label: 'Marketing Actions',
+      value: tasks.filter(t => t.status !== 'completed').length,
+      icon: CheckSquare,
+      color: 'text-purple-600',
+      bg: 'bg-purple-50',
+      cardBg: 'bg-white',
+      textColor: 'text-yale-blue',
+      labelColor: 'text-slate-500'
+    },
+  ];
 
   return (
     <div className="space-y-8 pb-10">
@@ -185,48 +245,109 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           
-          {/* Site Distribution & Growth (New Multi-Site Viz) */}
+          {/* Connected Data Sources */}
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative">
             <div className="flex justify-between items-center mb-8">
               <div>
                 <h3 className="text-lg font-black text-yale-blue flex items-center">
-                  <PieChart size={20} className="mr-2 text-blue-slate" />
-                  Site Activity Distribution
+                  <Database size={20} className="mr-2 text-emerald-600" />
+                  Connected Data Sources
                 </h3>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Real-time engagement across {siteDistribution.length} sites</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  {activeConnections.length > 0
+                    ? `Live data from ${activeConnections.length} spoke${activeConnections.length > 1 ? 's' : ''}`
+                    : 'No data sources connected'}
+                </p>
               </div>
+              {activeConnections.length > 0 && (
+                <button
+                  onClick={fetchSpokeCounts}
+                  disabled={isLoadingCounts}
+                  className="p-2 text-slate-400 hover:text-emerald-600 transition disabled:opacity-50 rounded-xl hover:bg-emerald-50"
+                >
+                  <RefreshCw size={18} className={isLoadingCounts ? 'animate-spin' : ''} />
+                </button>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-               <div className="space-y-4">
-                  {siteDistribution.map(([site, count], idx) => {
-                    const percentage = profileCount > 0 ? Math.round((Number(count) / profileCount) * 100) : 0;
-                    const colors = ['bg-blue-slate-2', 'bg-cerulean', 'bg-blue-slate', 'bg-cornflower-ocean', 'bg-yale-blue'];
+            {activeConnections.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Database size={32} className="text-slate-400" />
+                </div>
+                <p className="text-lg font-bold text-slate-600 mb-2">No data sources connected</p>
+                <p className="text-sm text-slate-400 mb-6 max-w-md mx-auto">
+                  Connect external Supabase databases to see federated profile counts and unified analytics.
+                </p>
+                <button
+                  onClick={() => onViewChange?.('settings')}
+                  className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition"
+                >
+                  Connect Your First Spoke
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                <div className="space-y-3">
+                  {activeConnections.map((connection, idx) => {
+                    const count = spokeCounts[connection.id];
+                    const hasError = count === -1;
+                    const percentage = totalFederatedProfiles > 0 && count > 0
+                      ? Math.round((count / totalFederatedProfiles) * 100)
+                      : 0;
+                    const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500'];
                     return (
-                      <div key={site} className="space-y-1.5">
+                      <div key={connection.id} className="space-y-1.5">
                         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tighter">
-                           <span className="text-yale-blue">{site}</span>
-                           <span className="text-slate-400">{count} profiles</span>
+                          <div className="flex items-center space-x-2">
+                            <div
+                              className={`w-2 h-2 rounded-full ${
+                                hasError ? 'bg-red-500' : 'bg-emerald-500'
+                              }`}
+                            />
+                            <span className="text-yale-blue">{connection.name}</span>
+                          </div>
+                          <span className="text-slate-400">
+                            {isLoadingCounts ? (
+                              '...'
+                            ) : hasError ? (
+                              <span className="text-red-500">Error</span>
+                            ) : (
+                              `${count?.toLocaleString() ?? 0} profiles`
+                            )}
+                          </span>
                         </div>
                         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                           <div
-                             className={`h-full ${colors[idx % colors.length]}`}
-                             style={{ width: `${percentage}%` }}
-                           />
+                          <div
+                            className={`h-full ${colors[idx % colors.length]} transition-all duration-500`}
+                            style={{ width: isLoadingCounts ? '0%' : `${percentage}%` }}
+                          />
                         </div>
                       </div>
                     );
                   })}
-               </div>
-               <div className="bg-cerulean/10 p-6 rounded-3xl border border-blue-slate-2/20">
+                </div>
+                <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
                   <div className="flex items-center space-x-3 mb-4">
-                     <Activity size={18} className="text-cornflower-ocean" />
-                     <h4 className="text-xs font-black text-yale-blue uppercase tracking-widest">Ecosystem Sync Health</h4>
+                    <Activity size={18} className="text-emerald-600" />
+                    <h4 className="text-xs font-black text-emerald-700 uppercase tracking-widest">Ecosystem Sync Health</h4>
                   </div>
-                  <div className="text-4xl font-black text-yale-blue mb-2">99.8%</div>
-                  <p className="text-[10px] text-slate-500 font-medium">High-speed delivery active. Sage matched 14 customer profiles across 3 spokes in the last 24h.</p>
-               </div>
-            </div>
+                  <div className="text-4xl font-black text-emerald-700 mb-2">
+                    {activeConnections.length}
+                  </div>
+                  <p className="text-[10px] text-emerald-600 font-medium">
+                    {activeConnections.length === 1
+                      ? '1 data source connected and syncing'
+                      : `${activeConnections.length} data sources connected and syncing`}
+                  </p>
+                  {totalFederatedProfiles > 0 && (
+                    <p className="text-[10px] text-slate-500 font-medium mt-2">
+                      {totalFederatedProfiles.toLocaleString()} total profiles across all spokes
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Activity Feed */}
@@ -255,6 +376,96 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
         {/* Sidebar Widgets */}
         <div className="space-y-8">
+          {/* Connected Spokes Card */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center">
+                <Database size={16} className="mr-2" />
+                Connected Spokes
+              </h3>
+              {spokeConnections.some(c => c.status === 'active') && (
+                <button
+                  onClick={fetchSpokeCounts}
+                  disabled={isLoadingCounts}
+                  className="p-1.5 text-slate-400 hover:text-emerald-600 transition disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={isLoadingCounts ? 'animate-spin' : ''} />
+                </button>
+              )}
+            </div>
+
+            {spokeConnections.filter(c => c.status === 'active').length === 0 ? (
+              // Empty state
+              <div className="text-center py-6">
+                <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <Database size={20} className="text-slate-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-600 mb-1">No data sources connected</p>
+                <p className="text-[10px] text-slate-400 mb-4">Connect external databases to see federated profile counts</p>
+                <button
+                  onClick={() => onViewChange?.('settings')}
+                  className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:underline"
+                >
+                  Go to Settings → Connections
+                </button>
+              </div>
+            ) : (
+              // Active connections display
+              <div className="space-y-4">
+                {/* Total federated profiles */}
+                <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                  <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">
+                    Total Federated Profiles
+                  </p>
+                  {isLoadingCounts ? (
+                    <div className="flex items-center space-x-2">
+                      <Loader2 size={18} className="animate-spin text-emerald-600" />
+                      <span className="text-sm text-emerald-600">Loading...</span>
+                    </div>
+                  ) : (
+                    <p className="text-3xl font-black text-emerald-700">{totalFederatedProfiles.toLocaleString()}</p>
+                  )}
+                </div>
+
+                {/* Individual spoke rows */}
+                <div className="space-y-2">
+                  {spokeConnections
+                    .filter(c => c.status === 'active')
+                    .map(connection => {
+                      const count = spokeCounts[connection.id];
+                      const hasError = count === -1;
+                      return (
+                        <div
+                          key={connection.id}
+                          className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <div
+                              className={`w-2 h-2 rounded-full ${
+                                hasError ? 'bg-red-500' : 'bg-emerald-500'
+                              }`}
+                            />
+                            <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">
+                              {connection.name}
+                            </span>
+                          </div>
+                          <span className="text-xs font-black text-slate-500">
+                            {isLoadingCounts ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : hasError ? (
+                              <span className="text-red-500">Error</span>
+                            ) : (
+                              count?.toLocaleString() ?? '—'
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100 shadow-sm">
             <h3 className="text-sm font-black text-rose-800 mb-6 uppercase tracking-widest flex items-center">
               <ShieldAlert size={16} className="mr-2" />

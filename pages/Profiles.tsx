@@ -1,18 +1,21 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, MarketingEvent, Branch } from '../types';
+import { Profile, MarketingEvent, Branch, SpokeConnection } from '../types';
 import { getProfiles, fetchBranches } from '../lib/supabaseService';
+import { fetchAllSpokesProfiles, NormalizedSpokeProfile } from '../spokeConnector';
 import {
   Search, Tag, MoreHorizontal, X, Edit3,
   History, Globe, GraduationCap, Sprout, Heart, Building2,
   FilterX, Users, MousePointer2, Sparkles, Zap,
   Clock, ArrowUpRight, DatabaseZap, ShieldCheck, Activity,
-  Fingerprint, Loader2, GitBranch, ChevronLeft, ChevronRight
+  Fingerprint, Loader2, GitBranch, ChevronLeft, ChevronRight,
+  Radio, RefreshCw, AlertCircle, Link
 } from 'lucide-react';
 
 interface ProfilesProps {
   onTestFlow?: (email: string) => void;
   events: MarketingEvent[];
+  spokeConnections: SpokeConnection[];
 }
 
 const SITE_ICONS: Record<string, any> = {
@@ -47,11 +50,18 @@ const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }>
   );
 };
 
-const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
+const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Federated data state
+  const [federatedProfiles, setFederatedProfiles] = useState<NormalizedSpokeProfile[]>([]);
+  const [isFederating, setIsFederating] = useState(false);
+  const [federationError, setFederationError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<'local' | 'federated'>('local');
+  const [selectedSpokeIds, setSelectedSpokeIds] = useState<Set<string>>(new Set());
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -85,6 +95,51 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
     }
     fetchData();
   }, []);
+
+  const handleFetchFederated = async () => {
+    setIsFederating(true);
+    setFederationError(null);
+    try {
+      const selectedConnections = spokeConnections.filter(
+        c => c.status === 'active' && selectedSpokeIds.has(c.id)
+      );
+      const { profiles: fetchedProfiles, errors } = await fetchAllSpokesProfiles(selectedConnections);
+      setFederatedProfiles(fetchedProfiles);
+      setDataSource('federated');
+
+      // Show any errors that occurred during fetching
+      if (errors.length > 0) {
+        setFederationError(errors.join('; '));
+      }
+    } catch (err) {
+      setFederationError(err instanceof Error ? err.message : 'Failed to fetch');
+    } finally {
+      setIsFederating(false);
+    }
+  };
+
+  const toggleSpokeSelection = (id: string) => {
+    setSelectedSpokeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectAllSpokes = () => {
+    const activeIds = spokeConnections.filter(c => c.status === 'active').map(c => c.id);
+    setSelectedSpokeIds(new Set(activeIds));
+  };
+
+  const clearSpokeSelection = () => {
+    setSelectedSpokeIds(new Set());
+  };
+
+  const activeConnectionCount = spokeConnections.filter(c => c.status === 'active').length;
 
   // Build branchMap for fast lookup by slug
   const branchMap = useMemo(() => {
@@ -176,6 +231,142 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
           </div>
         </div>
 
+        {/* Data Source Toggle */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
+          <div className="flex items-center space-x-4">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Source</label>
+            <div className="flex bg-slate-100 p-1 rounded-xl">
+              <button
+                onClick={() => setDataSource('local')}
+                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                  dataSource === 'local'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Local
+              </button>
+              <button
+                onClick={() => setDataSource('federated')}
+                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                  dataSource === 'federated'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Live Spokes
+              </button>
+            </div>
+          </div>
+
+          {activeConnectionCount > 0 && (
+            <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center space-x-2">
+              <Link size={12} className="text-emerald-600" />
+              <span className="text-[10px] font-bold text-emerald-700">
+                {activeConnectionCount} active connection{activeConnectionCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Spoke Picker - only show in federated mode with active connections */}
+        {dataSource === 'federated' && activeConnectionCount > 0 && (
+          <div className="pt-4 border-t border-slate-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Data Sources</label>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={selectAllSpokes}
+                  className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 transition"
+                >
+                  Select All
+                </button>
+                <span className="text-slate-300">|</span>
+                <button
+                  onClick={clearSpokeSelection}
+                  className="text-[10px] font-bold text-slate-500 hover:text-slate-700 transition"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {spokeConnections.filter(c => c.status === 'active').map((connection) => {
+                const isSelected = selectedSpokeIds.has(connection.id);
+                return (
+                  <button
+                    key={connection.id}
+                    onClick={() => toggleSpokeSelection(connection.id)}
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg border-2 transition-all ${
+                      isSelected
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded flex items-center justify-center ${
+                        isSelected ? 'bg-emerald-600' : 'bg-slate-100 border border-slate-300'
+                      }`}
+                    >
+                      {isSelected && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className="text-xs font-bold">{connection.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center space-x-3 pt-2">
+              <button
+                onClick={handleFetchFederated}
+                disabled={isFederating || selectedSpokeIds.size === 0}
+                className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isFederating ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <Radio size={14} />
+                )}
+                <span>
+                  {isFederating
+                    ? 'Fetching...'
+                    : selectedSpokeIds.size === 0
+                    ? 'Select Spokes to Fetch'
+                    : `Fetch from ${selectedSpokeIds.size} Spoke${selectedSpokeIds.size !== 1 ? 's' : ''}`
+                  }
+                </span>
+              </button>
+
+              {selectedSpokeIds.size > 0 && (
+                <span className="text-[10px] font-bold text-slate-400">
+                  {selectedSpokeIds.size} of {activeConnectionCount} selected
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {dataSource === 'federated' && activeConnectionCount === 0 && (
+          <div className="pt-4 border-t border-slate-100">
+            <div className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center space-x-2">
+              <AlertCircle size={16} className="text-amber-600" />
+              <span className="text-sm font-bold text-amber-700">No active connections. Add connections in Settings → Connections.</span>
+            </div>
+          </div>
+        )}
+
+        {federationError && (
+          <div className="flex items-center space-x-2 p-3 bg-rose-50 border border-rose-100 rounded-xl">
+            <AlertCircle size={16} className="text-rose-500" />
+            <span className="text-sm font-bold text-rose-700">{federationError}</span>
+          </div>
+        )}
+
         {/* Branch Filter Row */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
           <div className="flex items-center space-x-4">
@@ -203,7 +394,10 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
             )}
           </div>
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            Showing {filtered.length} of {profiles.filter(p => p.status === 'active').length} profiles
+            {dataSource === 'local'
+              ? `Showing ${filtered.length} of ${profiles.filter(p => p.status === 'active').length} profiles`
+              : `Showing ${federatedProfiles.length} federated profiles`
+            }
           </div>
         </div>
       </div>
@@ -213,39 +407,90 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
           <thead>
             <tr className="border-b border-slate-100">
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Identity</th>
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Spoke UUID</th>
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Presence</th>
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Last Sync</th>
+              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
+                {dataSource === 'local' ? 'Spoke UUID' : 'Source'}
+              </th>
+              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                {dataSource === 'local' ? 'Presence' : 'Contact'}
+              </th>
+              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">
+                {dataSource === 'local' ? 'Last Sync' : 'Status'}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {paginatedProfiles.map((profile) => (
-              <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-all cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
-                <td className="px-10 py-6">
-                  <div className="flex items-center space-x-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
-                    <div>
-                      <p className="font-black text-slate-800 text-sm">{profile.first_name}</p>
-                      <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
+            {dataSource === 'local' ? (
+              paginatedProfiles.map((profile) => (
+                <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-all cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
+                  <td className="px-10 py-6">
+                    <div className="flex items-center space-x-4">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
+                      <div>
+                        <p className="font-black text-slate-800 text-sm">{profile.first_name}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td className="px-10 py-6 text-center">
-                   <div className="inline-flex items-center space-x-2 bg-slate-50 px-3 py-1 rounded-lg border border-slate-100">
-                      <Fingerprint size={10} className="text-indigo-400" />
-                      <span className="text-[10px] font-mono text-slate-600 font-bold">{profile.spoke_uuid || 'UNSET'}</span>
-                   </div>
-                </td>
-                <td className="px-10 py-6">
-                  <div className="flex flex-wrap gap-1">
-                    {profile.branches.map((slug) => (
-                      <BranchBadge key={slug} slug={slug} branchMap={branchMap} />
-                    ))}
-                  </div>
-                </td>
-                <td className="px-10 py-6 text-right font-black text-[10px] text-slate-800">{new Date(profile.last_event_timestamp || profile.last_active || '').toLocaleDateString()}</td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-10 py-6 text-center">
+                     <div className="inline-flex items-center space-x-2 bg-slate-50 px-3 py-1 rounded-lg border border-slate-100">
+                        <Fingerprint size={10} className="text-indigo-400" />
+                        <span className="text-[10px] font-mono text-slate-600 font-bold">{profile.spoke_uuid || 'UNSET'}</span>
+                     </div>
+                  </td>
+                  <td className="px-10 py-6">
+                    <div className="flex flex-wrap gap-1">
+                      {profile.branches.map((slug) => (
+                        <BranchBadge key={slug} slug={slug} branchMap={branchMap} />
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-10 py-6 text-right font-black text-[10px] text-slate-800">{new Date(profile.last_event_timestamp || profile.last_active || '').toLocaleDateString()}</td>
+                </tr>
+              ))
+            ) : (
+              federatedProfiles.map((profile, index) => (
+                <tr key={`${profile._spoke_id}-${profile.email}-${index}`} className="hover:bg-slate-50/80 transition-all">
+                  <td className="px-10 py-6">
+                    <div className="flex items-center space-x-4">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {(profile.first_name || profile.email || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-black text-slate-800 text-sm">
+                          {profile.first_name || profile.email.split('@')[0]}
+                          {profile.last_name && ` ${profile.last_name}`}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-10 py-6 text-center">
+                    <div className="inline-flex items-center space-x-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">
+                      <Link size={10} className="text-indigo-500" />
+                      <span className="text-[10px] font-bold text-indigo-700">{profile._spoke_name}</span>
+                    </div>
+                  </td>
+                  <td className="px-10 py-6">
+                    <div className="flex flex-wrap gap-2">
+                      {profile.phone && (
+                        <span className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                          {profile.phone}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-10 py-6 text-right">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                      profile.subscribed
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        : 'bg-slate-50 text-slate-500 border border-slate-100'
+                    }`}>
+                      {profile.subscribed ? 'Subscribed' : 'Unsubscribed'}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
 
