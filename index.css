@@ -1,0 +1,9 @@
+/* Base styles for Sproutify Trellis */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Additional custom styles can be added here as needed */

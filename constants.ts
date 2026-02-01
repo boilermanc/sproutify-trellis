@@ -1,5 +1,5 @@
 
-import { Profile, MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, SpokeConfig, FailedSync } from './types';
+import { Profile, MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync } from './types';
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -17,13 +17,58 @@ export const SITES_LIST = [
   'atlurbanfarms.com'
 ];
 
-export const MOCK_SPOKE_CONFIGS: SpokeConfig[] = [
-  { id: 'sc_1', site_name: 'farm.sproutify.app', api_key: 'tr_live_f4rm_9921', status: 'active', last_used_at: '2023-12-14T10:00:00Z' },
-  { id: 'sc_2', site_name: 'school.sproutify.app', api_key: 'tr_live_sch00l_3382', status: 'active', last_used_at: '2023-12-14T11:30:00Z' },
-  { id: 'sc_3', site_name: 'letsrejoice.app', api_key: 'tr_live_rej0ice_7712', status: 'active', last_used_at: '2023-12-13T09:15:00Z' },
-  { id: 'sc_4', site_name: 'micro.sproutify.app', api_key: 'tr_live_micr0_1102', status: 'active' },
-  { id: 'sc_5', site_name: 'atlurbanfarms.com', api_key: 'tr_live_atl_5561', status: 'revoked' },
+export const MOCK_INTEGRATIONS: Integration[] = [
+  {
+    id: 'int_1',
+    name: 'Shopify Store',
+    type: 'webhook',
+    description: 'Main e-commerce store webhook',
+    credentials: { webhook_url: 'https://store.example.com/webhooks/orders', secret: 'whsec_abc123' },
+    status: 'active',
+    created_at: '2023-11-01T00:00:00Z',
+    last_used_at: '2023-12-14T10:00:00Z'
+  },
+  {
+    id: 'int_2',
+    name: 'Stripe Payments',
+    type: 'api',
+    description: 'Payment processing',
+    credentials: { api_key: 'sk_live_xxxxx' },
+    status: 'active',
+    created_at: '2023-11-01T00:00:00Z',
+    last_used_at: '2023-12-14T11:30:00Z'
+  },
+  {
+    id: 'int_3',
+    name: 'Mailchimp',
+    type: 'api',
+    description: 'Email list sync',
+    credentials: { api_key: 'mc_api_xxxxx' },
+    status: 'active',
+    created_at: '2023-11-15T00:00:00Z',
+    last_used_at: '2023-12-13T09:15:00Z'
+  },
+  {
+    id: 'int_4',
+    name: 'Custom CRM',
+    type: 'custom',
+    credentials: { api_key: 'crm_key_xxxxx', webhook_url: 'https://crm.internal/sync' },
+    status: 'active',
+    created_at: '2023-12-01T00:00:00Z'
+  },
+  {
+    id: 'int_5',
+    name: 'Legacy System',
+    type: 'webhook',
+    description: 'Old system - to be deprecated',
+    credentials: { webhook_url: 'https://old.system.com/hook' },
+    status: 'inactive',
+    created_at: '2023-06-01T00:00:00Z'
+  },
 ];
+
+// Legacy alias
+export const MOCK_SPOKE_CONFIGS = MOCK_INTEGRATIONS;
 
 export const MOCK_FAILED_SYNCS: FailedSync[] = [
   {
@@ -57,7 +102,7 @@ export const MOCK_PROFILES: Profile[] = [
     marketing_pause: true,
     tags: ['gardening', 'organic'],
     segments: ['woo_customer'],
-    source_sites: ['farm.sproutify.app', 'micro.sproutify.app'],
+    branches: ['farm.sproutify.app', 'micro.sproutify.app'],
     status: 'active',
     ltv: 1240.00,
     churn_risk: 'minimal',
@@ -134,7 +179,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   email TEXT UNIQUE NOT NULL,
   first_name TEXT,
   phone TEXT,
-  source_sites JSONB DEFAULT '[]'::jsonb, 
+  branches JSONB DEFAULT '[]'::jsonb, 
   tags JSONB DEFAULT '[]'::jsonb,         
   segments JSONB DEFAULT '[]'::jsonb,     
   is_subscribed BOOLEAN DEFAULT true,
@@ -212,7 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_task_queue_status_priority ON marketing_task_queu
 -- 7. PERFORMANCE INDEXING
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_spoke_uuid ON profiles (spoke_uuid);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email_unique ON profiles (email);
-CREATE INDEX IF NOT EXISTS idx_profiles_sites_gin ON profiles USING GIN (source_sites jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS idx_profiles_sites_gin ON profiles USING GIN (branches jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS idx_profiles_tags_gin ON profiles USING GIN (tags jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS idx_profiles_segments_gin ON profiles USING GIN (segments jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles (status);
@@ -286,7 +331,7 @@ export const N8N_BLUEPRINTS = {
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO profiles (email, first_name, source_sites) VALUES (:email, :name, :site) ON CONFLICT (email) DO UPDATE SET source_sites = profiles.source_sites || excluded.source_sites;"
+        "query": "INSERT INTO profiles (email, first_name, branches) VALUES (:email, :name, :site) ON CONFLICT (email) DO UPDATE SET branches = profiles.branches || excluded.branches;"
       },
       "name": "Supabase Upsert",
       "type": "n8n-nodes-base.supabase",

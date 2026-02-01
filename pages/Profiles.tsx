@@ -1,14 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, MarketingEvent } from '../types';
-import CustomerSitesTag from '../components/CustomerSitesTag';
-import { getProfiles } from '../lib/supabaseService';
+import { Profile, MarketingEvent, Branch } from '../types';
+import { getProfiles, fetchBranches } from '../lib/supabaseService';
 import {
   Search, Tag, MoreHorizontal, X, Edit3,
   History, Globe, GraduationCap, Sprout, Heart, Building2,
   FilterX, Users, MousePointer2, Sparkles, Zap,
   Clock, ArrowUpRight, DatabaseZap, ShieldCheck, Activity,
-  Fingerprint, Loader2
+  Fingerprint, Loader2, GitBranch, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 interface ProfilesProps {
@@ -24,8 +23,33 @@ const SITE_ICONS: Record<string, any> = {
   'letsrejoice.app': Heart,
 };
 
+// BranchBadge component for displaying branch pills
+const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }> = ({ slug, branchMap }) => {
+  const branch = branchMap[slug];
+
+  if (branch) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase text-white"
+        style={{ backgroundColor: branch.primary_color }}
+      >
+        <GitBranch size={10} />
+        {branch.name}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase bg-slate-200 text-slate-600">
+      <GitBranch size={10} />
+      {slug}
+    </span>
+  );
+};
+
 const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,22 +60,39 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
   const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [subscriptionFilter, setSubscriptionFilter] = useState<'all' | 'subscribed' | 'unsubscribed'>('all');
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string | null>(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
-    async function fetchProfiles() {
+    async function fetchData() {
       try {
         setLoading(true);
         setError(null);
-        const data = await getProfiles();
-        setProfiles(data);
+        const [profilesData, branchesData] = await Promise.all([
+          getProfiles(),
+          fetchBranches()
+        ]);
+        setProfiles(profilesData);
+        setBranches(branchesData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch profiles');
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
       } finally {
         setLoading(false);
       }
     }
-    fetchProfiles();
+    fetchData();
   }, []);
+
+  // Build branchMap for fast lookup by slug
+  const branchMap = useMemo(() => {
+    return branches.reduce((acc, branch) => {
+      acc[branch.slug] = branch;
+      return acc;
+    }, {} as Record<string, Branch>);
+  }, [branches]);
 
   const selectedProfile = useMemo(() => 
     profiles.find(p => p.id === selectedProfileId) || null
@@ -66,7 +107,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
       unsubscribed: 0
     };
     profiles.forEach(p => {
-      p.source_sites.forEach(s => stats.sites[s] = (stats.sites[s] || 0) + 1);
+      p.branches.forEach(s => stats.sites[s] = (stats.sites[s] || 0) + 1);
       p.segments.forEach(seg => stats.segments[seg] = (stats.segments[seg] || 0) + 1);
       p.tags.forEach(t => stats.tags[t] = (stats.tags[t] || 0) + 1);
       if (p.is_subscribed) stats.subscribed++; else stats.unsubscribed++;
@@ -77,16 +118,29 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
   const filtered = useMemo(() => {
     return profiles.filter(p => {
       if (p.status !== 'active') return false;
-      const matchesSearch = p.email.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      const matchesSearch = p.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            p.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (p.spoke_uuid && p.spoke_uuid.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchesSite = selectedSites.length === 0 || p.source_sites.some(s => selectedSites.includes(s));
+      const matchesSite = selectedSites.length === 0 || p.branches.some(s => selectedSites.includes(s));
       const matchesSegment = selectedSegments.length === 0 || p.segments.some(s => selectedSegments.includes(s));
       const matchesTag = selectedTags.length === 0 || p.tags.some(t => selectedTags.includes(t));
       const matchesSub = subscriptionFilter === 'all' || (subscriptionFilter === 'subscribed' ? p.is_subscribed : !p.is_subscribed);
-      return matchesSearch && matchesSite && matchesSegment && matchesTag && matchesSub;
+      const matchesBranch = selectedBranchFilter === null || p.branches.includes(selectedBranchFilter);
+      return matchesSearch && matchesSite && matchesSegment && matchesTag && matchesSub && matchesBranch;
     });
-  }, [profiles, searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter]);
+  }, [profiles, searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginatedProfiles = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filtered.slice(startIndex, startIndex + pageSize);
+  }, [filtered, currentPage, pageSize]);
 
   if (loading) {
     return (
@@ -121,6 +175,37 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
              </div>
           </div>
         </div>
+
+        {/* Branch Filter Row */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
+          <div className="flex items-center space-x-4">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by Branch</label>
+            <div className="relative">
+              <select
+                value={selectedBranchFilter || ''}
+                onChange={(e) => setSelectedBranchFilter(e.target.value || null)}
+                className="appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 pr-10 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                <option value="">All Branches</option>
+                {branches.map((branch) => (
+                  <option key={branch.slug} value={branch.slug}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+              <GitBranch size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+            {selectedBranchFilter && branchMap[selectedBranchFilter] && (
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: branchMap[selectedBranchFilter].primary_color }}
+              />
+            )}
+          </div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            Showing {filtered.length} of {profiles.filter(p => p.status === 'active').length} profiles
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
@@ -134,7 +219,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {filtered.map((profile) => (
+            {paginatedProfiles.map((profile) => (
               <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-all cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
                 <td className="px-10 py-6">
                   <div className="flex items-center space-x-4">
@@ -151,12 +236,88 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
                       <span className="text-[10px] font-mono text-slate-600 font-bold">{profile.spoke_uuid || 'UNSET'}</span>
                    </div>
                 </td>
-                <td className="px-10 py-6"><CustomerSitesTag sites={profile.source_sites} /></td>
+                <td className="px-10 py-6">
+                  <div className="flex flex-wrap gap-1">
+                    {profile.branches.map((slug) => (
+                      <BranchBadge key={slug} slug={slug} branchMap={branchMap} />
+                    ))}
+                  </div>
+                </td>
                 <td className="px-10 py-6 text-right font-black text-[10px] text-slate-800">{new Date(profile.last_event_timestamp || profile.last_active || '').toLocaleDateString()}</td>
               </tr>
             ))}
           </tbody>
         </table>
+
+        {/* Pagination Controls */}
+        <div className="px-10 py-6 border-t border-slate-100 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Per page</label>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="appearance-none bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronLeft size={18} className="text-slate-600" />
+            </button>
+
+            <div className="flex items-center space-x-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-10 h-10 rounded-xl text-sm font-bold transition ${
+                      currentPage === pageNum
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronRight size={18} className="text-slate-600" />
+            </button>
+          </div>
+
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            Page {currentPage} of {totalPages || 1}
+          </div>
+        </div>
       </div>
 
       {selectedProfile && (
@@ -196,7 +357,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events }) => {
                <div className="bg-indigo-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden shadow-xl">
                   <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles size={80} /></div>
                   <h5 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-4">Sage Orchestration Advice</h5>
-                  <p className="text-sm font-medium italic mb-6">"Identify user behavior across {selectedProfile.source_sites.length} spokes. UUID tracking ensures identity pivots are captured during email migration."</p>
+                  <p className="text-sm font-medium italic mb-6">"Identify user behavior across {selectedProfile.branches.length} spokes. UUID tracking ensures identity pivots are captured during email migration."</p>
                   <button onClick={() => onTestFlow?.(selectedProfile.email)} className="w-full py-4 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-xs font-black uppercase tracking-widest transition">Preview Sync Strategy</button>
                </div>
             </div>

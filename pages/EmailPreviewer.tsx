@@ -61,7 +61,7 @@ const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles 
           >
             {/* Map over dynamic profiles instead of MOCK_PROFILES */}
             {profiles.map(p => (
-              <option key={p.email} value={p.email}>{p.first_name} (Source: {p.source_sites[0]})</option>
+              <option key={p.email} value={p.email}>{p.first_name} (Source: {p.branches[0]})</option>
             ))}
           </select>
         </div>
@@ -120,7 +120,7 @@ const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles 
 
           <div className="flex items-center space-x-4">
             <div className="text-[10px] font-bold text-slate-400 flex items-center">
-              <Globe size={12} className="mr-2" /> {selectedProfile.source_sites.join(', ')}
+              <Globe size={12} className="mr-2" /> {selectedProfile.branches.join(', ')}
             </div>
           </div>
         </div>

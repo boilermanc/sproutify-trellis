@@ -1,10 +1,15 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Profile, MarketingEvent, MarketingTask, ViewState, Brand } from '../types';
 import { MOCK_BRIEFING } from '../constants';
-import { 
-  Globe, CheckSquare, ShoppingBag, Instagram, Sparkles, ChevronDown, 
-  ChevronRight, X, UserPlus, Target, Heart, LifeBuoy, Clock, 
+import {
+  fetchProfileCount,
+  fetchBranchDistribution,
+  fetchRecentEvents
+} from '../lib/supabaseService';
+import {
+  Globe, CheckSquare, ShoppingBag, Instagram, Sparkles, ChevronDown,
+  ChevronRight, X, UserPlus, Target, Heart, LifeBuoy, Clock,
   ShieldAlert, Activity, Megaphone, BarChart3, PieChart, Zap,
   AlertCircle, ArrowRight
 } from 'lucide-react';
@@ -21,45 +26,67 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
   const [isBriefingOpen, setIsBriefingOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Dashboard Phase 2: Real-time data from Supabase
+  const [isLoading, setIsLoading] = useState(true);
+  const [profileCount, setProfileCount] = useState(0);
+  const [branchDistribution, setBranchDistribution] = useState<Record<string, number>>({});
+  const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        const [count, distribution, events] = await Promise.all([
+          fetchProfileCount(),
+          fetchBranchDistribution(),
+          fetchRecentEvents(5)
+        ]);
+
+        setProfileCount(count);
+        setBranchDistribution(distribution);
+        setRecentEvents(events);
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadDashboardData();
+  }, []);
+
   // Simulation: Checking for items that need human action
-  const pendingApprovalsCount = 2; 
+  const pendingApprovalsCount = 2;
 
   const stats = [
-    { label: 'Total Global Profiles', value: profiles.length, icon: Globe, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Social Buzz Signals', value: events.filter(e => e.event_type === 'social_intent').length, icon: Instagram, color: 'text-pink-600', bg: 'bg-pink-50' },
-    { label: 'Unified Support Load', value: MOCK_BRIEFING.detailed_analysis.support_load.open_tickets, icon: LifeBuoy, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { label: 'Marketing Actions', value: tasks.filter(t => t.status !== 'completed').length, icon: CheckSquare, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Total Global Profiles', value: profileCount, icon: Globe, color: 'text-white', bg: 'bg-cornflower-ocean/20', cardBg: 'bg-blue-slate-2', textColor: 'text-white', labelColor: 'text-white/80' },
+    { label: 'Social Buzz Signals', value: events.filter(e => e.event_type === 'social_intent').length, icon: Instagram, color: 'text-white', bg: 'bg-cornflower-ocean/20', cardBg: 'bg-blue-slate-2', textColor: 'text-white', labelColor: 'text-white/80' },
+    { label: 'Unified Support Load', value: MOCK_BRIEFING.detailed_analysis.support_load.open_tickets, icon: LifeBuoy, color: 'text-amber-600', bg: 'bg-amber-50', cardBg: 'bg-white', textColor: 'text-yale-blue', labelColor: 'text-slate-500' },
+    { label: 'Marketing Actions', value: tasks.filter(t => t.status !== 'completed').length, icon: CheckSquare, color: 'text-blue-slate', bg: 'bg-cerulean/20', cardBg: 'bg-white', textColor: 'text-yale-blue', labelColor: 'text-slate-500' },
   ];
 
-  // Calculate Site Distribution (Logic mirror of the 'site_load_stats' materialized view)
+  // Derive site distribution from branchDistribution state (sorted by count descending)
   const siteDistribution = useMemo(() => {
-    const dist = profiles.reduce((acc, p) => {
-      p.source_sites.forEach(site => {
-        acc[site] = (acc[site] || 0) + 1;
-      });
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.entries(dist).sort((a, b) => Number(b[1]) - Number(a[1]));
-  }, [profiles]);
+    return Object.entries(branchDistribution).sort((a, b) => b[1] - a[1]);
+  }, [branchDistribution]);
 
   return (
     <div className="space-y-8 pb-10">
       
       {/* High-Action Alert Strip */}
       {pendingApprovalsCount > 0 && (
-        <div className="bg-emerald-600 text-white px-8 py-5 rounded-[2rem] shadow-xl flex items-center justify-between animate-in slide-in-from-top duration-500 border-4 border-emerald-500/50">
+        <div className="bg-blue-slate-2 text-white px-8 py-5 rounded-[2rem] shadow-xl flex items-center justify-between animate-in slide-in-from-top duration-500 border-4 border-blue-slate/50">
           <div className="flex items-center space-x-6">
             <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center animate-pulse">
               <Sparkles size={24} />
             </div>
             <div>
               <h4 className="text-lg font-black uppercase tracking-tight">Strategic Action Required</h4>
-              <p className="text-emerald-100 text-xs font-bold">You have {pendingApprovalsCount} AI-generated drafts waiting for approval in the Social Hub.</p>
+              <p className="text-white/70 text-xs font-bold">You have {pendingApprovalsCount} AI-generated drafts waiting for approval in the Social Hub.</p>
             </div>
           </div>
-          <button 
+          <button
             onClick={() => onViewChange?.('social-hub')}
-            className="px-8 py-3 bg-white text-emerald-700 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-emerald-50 transition-all flex items-center space-x-3 shadow-lg"
+            className="px-8 py-3 bg-white text-yale-blue rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-cornflower-ocean hover:text-yale-blue transition-all flex items-center space-x-3 shadow-lg"
           >
             <span>Go to Review Queue</span>
             <ArrowRight size={16} />
@@ -68,52 +95,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       )}
 
       {/* Sage Strategic Pulse - DARK THEME */}
-      <div className="bg-slate-900 rounded-[2.5rem] border border-slate-800 shadow-2xl overflow-hidden transition-all duration-500 relative">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[100px] -mr-32 -mt-32"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500/10 rounded-full blur-[100px] -ml-32 -mb-32"></div>
+      <div className="bg-yale-blue rounded-[2.5rem] border border-blue-slate-2 shadow-2xl overflow-hidden transition-all duration-500 relative">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-cornflower-ocean/10 rounded-full blur-[100px] -mr-32 -mt-32"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-slate/10 rounded-full blur-[100px] -ml-32 -mb-32"></div>
 
-        <button 
+        <button
           onClick={() => setIsBriefingOpen(!isBriefingOpen)}
           className="w-full px-10 py-7 flex items-center justify-between hover:bg-white/5 transition relative z-10"
         >
           <div className="flex items-center space-x-5">
-            <div 
-              className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105"
-              style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)' }}
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-105 bg-cornflower-ocean"
             >
-              <Sparkles size={22} className="text-white fill-white/20" />
+              <Sparkles size={22} className="text-yale-blue fill-yale-blue/20" />
             </div>
             <div className="text-left">
               <h3 className="text-lg font-black text-white uppercase tracking-widest">Sage Strategic Pulse</h3>
               <div className="flex items-center space-x-3 mt-0.5">
-                <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest flex items-center">
+                <span className="text-[10px] text-sky-300 font-bold uppercase tracking-widest flex items-center">
                   <Zap size={10} className="mr-1" /> Ecosystem Harmony: Active
                 </span>
-                <span className="text-slate-600 text-[10px]">•</span>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Brand Insights Engine</p>
+                <span className="text-blue-slate-2 text-[10px]">•</span>
+                <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest">Brand Insights Engine</p>
               </div>
             </div>
           </div>
-          <div className={`p-2 rounded-xl bg-white/5 text-slate-400 transition-all duration-500 ${isBriefingOpen ? 'rotate-180 bg-emerald-500/20 text-emerald-400' : ''}`}>
+          <div className={`p-2 rounded-xl bg-white/5 text-white/50 transition-all duration-500 ${isBriefingOpen ? 'rotate-180 bg-sky-400/20 text-sky-300' : ''}`}>
             <ChevronDown size={20} />
           </div>
         </button>
 
         {isBriefingOpen && (
           <div className="px-10 pb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative z-10">
-            <div className="p-8 bg-slate-800/50 rounded-3xl border border-slate-700/50 flex flex-col md:flex-row items-center justify-between gap-8 backdrop-blur-sm">
+            <div className="p-8 bg-blue-slate-2/50 rounded-3xl border border-blue-slate/50 flex flex-col md:flex-row items-center justify-between gap-8 backdrop-blur-sm">
               <div className="space-y-2">
-                <div className="flex items-center space-x-2 text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">
+                <div className="flex items-center space-x-2 text-[10px] font-black text-sky-300 uppercase tracking-widest mb-1">
                   <Activity size={12} />
                   <span>Your Morning Briefing</span>
                 </div>
-                <p className="text-base font-medium text-slate-200 leading-relaxed max-w-2xl italic">
+                <p className="text-base font-medium text-white/90 leading-relaxed max-w-2xl italic">
                   "{MOCK_BRIEFING.short_summary}"
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => setIsModalOpen(true)}
-                className="px-8 py-3.5 bg-white text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-emerald-400 hover:text-white transition-all flex items-center space-x-3 shrink-0 shadow-xl"
+                className="px-8 py-3.5 bg-white text-yale-blue rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-cornflower-ocean hover:text-yale-blue transition-all flex items-center space-x-3 shrink-0 shadow-xl"
               >
                 <span>Full Ecosystem Health</span>
                 <ChevronRight size={16} />
@@ -124,21 +150,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       </div>
 
       {/* Stats Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => (
-          <div key={stat.label} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 group hover:border-emerald-200 transition-all">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`${stat.bg} ${stat.color} p-3 rounded-xl group-hover:scale-110 transition-transform`}>
-                <stat.icon size={24} />
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 animate-pulse">
+              <div className="flex justify-between items-start mb-4">
+                <div className="w-12 h-12 bg-slate-200 rounded-xl" />
+              </div>
+              <div>
+                <div className="h-4 w-32 bg-slate-200 rounded mb-2" />
+                <div className="h-8 w-16 bg-slate-200 rounded" />
               </div>
             </div>
-            <div>
-              <p className="text-slate-500 text-sm font-medium">{stat.label}</p>
-              <h3 className="text-2xl font-bold text-slate-800 mt-1">{stat.value}</h3>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {stats.map((stat) => (
+            <div key={stat.label} className={`${stat.cardBg} p-6 rounded-2xl shadow-sm border border-blue-slate-2/20 group hover:border-cornflower-ocean/50 transition-all`}>
+              <div className="flex justify-between items-start mb-4">
+                <div className={`${stat.bg} ${stat.color} p-3 rounded-xl group-hover:scale-110 transition-transform`}>
+                  <stat.icon size={24} />
+                </div>
+              </div>
+              <div>
+                <p className={`${stat.labelColor} text-sm font-medium`}>{stat.label}</p>
+                <h3 className={`text-2xl font-bold ${stat.textColor} mt-1`}>{stat.value}</h3>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
@@ -147,8 +189,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative">
             <div className="flex justify-between items-center mb-8">
               <div>
-                <h3 className="text-lg font-black text-slate-800 flex items-center">
-                  <PieChart size={20} className="mr-2 text-emerald-600" />
+                <h3 className="text-lg font-black text-yale-blue flex items-center">
+                  <PieChart size={20} className="mr-2 text-blue-slate" />
                   Site Activity Distribution
                 </h3>
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Real-time engagement across {siteDistribution.length} sites</p>
@@ -158,18 +200,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                <div className="space-y-4">
                   {siteDistribution.map(([site, count], idx) => {
-                    const totalProfiles = profiles.length;
-                    const percentage = totalProfiles > 0 ? Math.round((Number(count) / totalProfiles) * 100) : 0;
-                    const colors = ['bg-emerald-500', 'bg-indigo-500', 'bg-amber-500', 'bg-rose-500', 'bg-blue-500'];
+                    const percentage = profileCount > 0 ? Math.round((Number(count) / profileCount) * 100) : 0;
+                    const colors = ['bg-blue-slate-2', 'bg-cerulean', 'bg-blue-slate', 'bg-cornflower-ocean', 'bg-yale-blue'];
                     return (
                       <div key={site} className="space-y-1.5">
                         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tighter">
-                           <span className="text-slate-700">{site}</span>
+                           <span className="text-yale-blue">{site}</span>
                            <span className="text-slate-400">{count} profiles</span>
                         </div>
                         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                           <div 
-                             className={`h-full ${colors[idx % colors.length]}`} 
+                           <div
+                             className={`h-full ${colors[idx % colors.length]}`}
                              style={{ width: `${percentage}%` }}
                            />
                         </div>
@@ -177,12 +218,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                     );
                   })}
                </div>
-               <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+               <div className="bg-cerulean/10 p-6 rounded-3xl border border-blue-slate-2/20">
                   <div className="flex items-center space-x-3 mb-4">
-                     <Activity size={18} className="text-emerald-500" />
-                     <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">Ecosystem Sync Health</h4>
+                     <Activity size={18} className="text-cornflower-ocean" />
+                     <h4 className="text-xs font-black text-yale-blue uppercase tracking-widest">Ecosystem Sync Health</h4>
                   </div>
-                  <div className="text-4xl font-black text-slate-900 mb-2">99.8%</div>
+                  <div className="text-4xl font-black text-yale-blue mb-2">99.8%</div>
                   <p className="text-[10px] text-slate-500 font-medium">High-speed delivery active. Sage matched 14 customer profiles across 3 spokes in the last 24h.</p>
                </div>
             </div>
@@ -190,9 +231,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
           {/* Activity Feed */}
           <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 font-black uppercase tracking-tight">Recent Brand Interactions</h3>
+            <h3 className="text-lg font-bold text-yale-blue mb-6 font-black uppercase tracking-tight">Recent Brand Interactions</h3>
             <div className="space-y-6">
-              {events.slice(0, 5).map((event) => (
+              {recentEvents.map((event) => (
                 <div key={event.id} className="flex items-start space-x-4">
                   <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 shrink-0">
                     {event.source.includes('app') ? <Globe size={18} /> : <Activity size={18} />}
@@ -233,31 +274,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
             </div>
           </div>
 
-          <div className="bg-slate-900 p-8 rounded-3xl text-white relative overflow-hidden shadow-xl">
+          <div className="bg-yale-blue p-8 rounded-3xl text-white relative overflow-hidden shadow-xl">
              <div className="absolute top-0 right-0 p-4 opacity-20">
-                <Sparkles size={80} style={{ color: brand.primaryColor }} />
+                <Sparkles size={80} className="text-cornflower-ocean" />
              </div>
              <h4 className="text-lg font-black mb-2">Strategic Dialogue</h4>
-             <p className="text-slate-400 text-xs leading-relaxed mb-6">Ask Sage about audience trends, cross-site purchase behaviors, or campaign optimization ideas.</p>
-             <button onClick={() => window.scrollTo(0, 1000)} className="text-[10px] font-black uppercase tracking-widest text-emerald-400 hover:text-emerald-300 transition underline">Start Strategic Discussion</button>
+             <p className="text-white/70 text-xs leading-relaxed mb-6">Ask Sage about audience trends, cross-site purchase behaviors, or campaign optimization ideas.</p>
+             <button onClick={() => window.scrollTo(0, 1000)} className="text-[10px] font-black uppercase tracking-widest text-sky-300 hover:text-sky-200 transition underline">Start Strategic Discussion</button>
           </div>
         </div>
       </div>
 
       {/* Strategic Deep-Dive Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-yale-blue/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                 <div 
-                   className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg"
-                   style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)' }}
-                 >
-                    <Sparkles size={24} className="text-white fill-white/20" />
+                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg bg-cornflower-ocean">
+                    <Sparkles size={24} className="text-yale-blue fill-yale-blue/20" />
                  </div>
                  <div>
-                    <h3 className="text-2xl font-black text-slate-800">{brand.name} Ecosystem Health</h3>
+                    <h3 className="text-2xl font-black text-yale-blue">{brand.name} Ecosystem Health</h3>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Brand Performance Insights</p>
                  </div>
               </div>
@@ -268,25 +306,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
             <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar bg-slate-50/50">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-                    <Target size={32} className="text-emerald-500 mb-6" />
+                 <div className="bg-white p-8 rounded-3xl border border-blue-slate-2/20 shadow-sm">
+                    <Target size={32} className="text-cornflower-ocean mb-6" />
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Campaign Momentum</h4>
-                    <p className="text-4xl font-black text-slate-800 mb-2">{MOCK_BRIEFING.detailed_analysis.campaign_velocity.avg_ctr}</p>
+                    <p className="text-4xl font-black text-yale-blue mb-2">{MOCK_BRIEFING.detailed_analysis.campaign_velocity.avg_ctr}</p>
                     <p className="text-slate-600 text-xs leading-relaxed italic">Customers on farm.sproutify.app are highly engaged right now.</p>
                  </div>
-                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                 <div className="bg-white p-8 rounded-3xl border border-blue-slate-2/20 shadow-sm">
                     <LifeBuoy size={32} className="text-amber-500 mb-6" />
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Team Responsiveness</h4>
-                    <p className="text-4xl font-black text-slate-800 mb-2">{MOCK_BRIEFING.detailed_analysis.support_load.avg_response_time}</p>
+                    <p className="text-4xl font-black text-yale-blue mb-2">{MOCK_BRIEFING.detailed_analysis.support_load.avg_response_time}</p>
                     <p className="text-slate-600 text-xs leading-relaxed italic">Response times are synchronized and fast across the ecosystem.</p>
                  </div>
               </div>
             </div>
 
             <div className="p-8 border-t border-slate-100 bg-white flex justify-end items-center space-x-4">
-              <button 
+              <button
                 onClick={() => setIsModalOpen(false)}
-                className="px-10 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-emerald-600 transition shadow-xl"
+                className="px-10 py-3 bg-blue-slate-2 text-white rounded-2xl font-black text-sm hover:bg-yale-blue transition shadow-xl"
               >
                 Close Insights
               </button>

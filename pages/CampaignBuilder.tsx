@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Profile } from '../types';
+import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
 import { 
   Users, Mail, Calendar, Rocket, ChevronRight, 
   ChevronLeft, CheckCircle2, Search, Target, 
@@ -51,6 +52,18 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
   const [testEmailAddress, setTestEmailAddress] = useState('marketing@sproutify.me');
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSentStatus, setTestSentStatus] = useState<null | 'success'>(null);
+  const [savedCampaigns, setSavedCampaigns] = useState<Campaign[]>([]);
+  const [scheduledDate, setScheduledDate] = useState<string>('');
+  const [scheduledTime, setScheduledTime] = useState<string>('09:00');
+
+  // Load existing campaigns on mount
+  useEffect(() => {
+    const loadCampaigns = async () => {
+      const campaigns = await fetchCampaigns();
+      setSavedCampaigns(campaigns);
+    };
+    loadCampaigns();
+  }, []);
 
   const availableSegments: string[] = Array.from(new Set(profiles.flatMap(p => p.segments)));
   const availableTags: string[] = Array.from(new Set(profiles.flatMap(p => p.tags)));
@@ -62,9 +75,6 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
       (campaignData.tags.length === 0 || p.tags.some(t => campaignData.tags.includes(t)))
     ).length;
   }, [campaignData.segments, campaignData.tags, profiles]);
-
-  const toggleItem = (list: string[], item: string) => 
-    list.includes(item) ? list.filter(i => i !== item) : [...list, item];
 
   const injectVariable = (variable: string) => {
     setCampaignData(prev => ({ ...prev, subject: prev.subject + ` {{${variable}}}` }));
@@ -80,15 +90,44 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
     }, 1500);
   };
 
-  const handleLaunch = () => {
+  const handleLaunch = async () => {
     setIsLaunching(true);
+
+    // Save campaign to Supabase
+    const launchedAt = new Date().toISOString();
+    const scheduledAt = campaignData.trigger === 'scheduled' && scheduledDate
+      ? new Date(scheduledDate + 'T' + scheduledTime).toISOString()
+      : null;
+
+    const newCampaign = await createCampaign({
+      name: campaignData.name,
+      status: campaignData.trigger === 'scheduled' ? 'scheduled' : 'active',
+      template: campaignData.template,
+      subject: campaignData.subject,
+      trigger_type: campaignData.trigger === 'immediate' ? 'immediate' : campaignData.trigger === 'scheduled' ? 'scheduled' : 'event_based',
+      scheduled_at: scheduledAt,
+      segments: campaignData.segments,
+      tags: campaignData.tags,
+      branches: [],
+      audience_size: audienceSize,
+      metadata: null,
+      created_by: 'system',
+      launched_at: campaignData.trigger === 'immediate' ? launchedAt : null,
+    });
+
+    if (newCampaign) {
+      setSavedCampaigns(prev => [newCampaign, ...prev]);
+    } else {
+      console.error('Failed to save campaign to Supabase');
+    }
+
     let progress = 0;
     const interval = setInterval(() => {
       progress += 2;
       setLaunchProgress(progress);
       if (progress >= 100) {
         clearInterval(interval);
-        
+
         onCampaignLaunch({
           name: campaignData.name,
           audienceSize: audienceSize,
@@ -114,6 +153,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
             template: 'UnifiedSproutifyUpdate',
             trigger: 'immediate',
           });
+          setScheduledDate('');
+          setScheduledTime('09:00');
         }, 500);
       }
     }, 50);
@@ -147,12 +188,18 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {availableSegments.map(seg => (
-                    <button 
+                    <button
+                      type="button"
                       key={seg}
-                      onClick={() => setCampaignData(prev => ({...prev, segments: toggleItem(prev.segments, seg)}))}
+                      onClick={() => setCampaignData(prev => ({
+                        ...prev,
+                        segments: prev.segments.includes(seg)
+                          ? prev.segments.filter(s => s !== seg)
+                          : [...prev.segments, seg]
+                      }))}
                       className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                        campaignData.segments.includes(seg) 
-                        ? 'bg-slate-900 border-slate-900 text-white shadow-lg scale-105' 
+                        campaignData.segments.includes(seg)
+                        ? 'bg-slate-900 border-slate-900 text-white shadow-lg scale-105'
                         : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
                       }`}
                     >
@@ -169,12 +216,18 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {availableTags.map(tag => (
-                    <button 
+                    <button
+                      type="button"
                       key={tag}
-                      onClick={() => setCampaignData(prev => ({...prev, tags: toggleItem(prev.tags, tag)}))}
+                      onClick={() => setCampaignData(prev => ({
+                        ...prev,
+                        tags: prev.tags.includes(tag)
+                          ? prev.tags.filter(t => t !== tag)
+                          : [...prev.tags, tag]
+                      }))}
                       className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                        campaignData.tags.includes(tag) 
-                        ? 'bg-amber-500 border-amber-500 text-white shadow-lg scale-105' 
+                        campaignData.tags.includes(tag)
+                        ? 'bg-amber-500 border-amber-500 text-white shadow-lg scale-105'
                         : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-300'
                       }`}
                     >
@@ -269,28 +322,84 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
       case 2:
         return (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {[
-                { id: 'immediate', title: 'Tactical Instant', desc: 'Deploy within 60 seconds of orchestration commit', icon: Send, color: 'emerald' },
-                { id: 'daily', title: 'Strategic Routine', desc: 'Synchronized morning pulse across all timezones', icon: Clock, color: 'blue' },
+                { id: 'immediate', title: 'Send Now', desc: 'Deploy immediately after launch', icon: Send },
+                { id: 'scheduled', title: 'Schedule', desc: 'Choose a specific date and time', icon: Calendar },
               ].map(opt => (
-                <button 
+                <button
+                  type="button"
                   key={opt.id}
                   onClick={() => setCampaignData(prev => ({...prev, trigger: opt.id}))}
-                  className={`p-10 rounded-[3rem] border-4 text-left transition-all ${
+                  className={`p-8 rounded-[2.5rem] border-4 text-left transition-all ${
                     campaignData.trigger === opt.id ? 'border-emerald-500 bg-emerald-50 shadow-xl scale-[1.02]' : 'border-slate-100 hover:bg-slate-50'
                   }`}
                 >
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-8 ${
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 ${
                     campaignData.trigger === opt.id ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'bg-slate-100 text-slate-400'
                   }`}>
-                    <opt.icon size={28} />
+                    <opt.icon size={24} />
                   </div>
-                  <h5 className="font-black text-slate-800 uppercase tracking-tight text-lg">{opt.title}</h5>
-                  <p className="text-xs text-slate-500 mt-2 font-medium italic">{opt.desc}</p>
+                  <h5 className="font-black text-slate-800 uppercase tracking-tight text-base">{opt.title}</h5>
+                  <p className="text-[11px] text-slate-500 mt-2 font-medium italic">{opt.desc}</p>
                 </button>
               ))}
             </div>
+
+            {/* Date/Time Picker for Scheduled Delivery */}
+            {campaignData.trigger === 'scheduled' && (
+              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
+                <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-6 flex items-center">
+                  <Calendar size={18} className="mr-3 text-amber-500" />
+                  Schedule Deployment
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Date</label>
+                    <input
+                      type="date"
+                      value={scheduledDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setScheduledDate(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-5 py-4 text-base font-bold focus:bg-white focus:border-emerald-500 outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Time</label>
+                    <input
+                      type="time"
+                      value={scheduledTime}
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-5 py-4 text-base font-bold focus:bg-white focus:border-emerald-500 outline-none transition"
+                    />
+                  </div>
+                </div>
+                {scheduledDate && (
+                  <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-sm font-bold text-amber-800">
+                      <Clock size={14} className="inline mr-2" />
+                      Campaign will deploy on{' '}
+                      <span className="font-black">
+                        {new Date(scheduledDate + 'T' + scheduledTime).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </span>
+                      {' '}at{' '}
+                      <span className="font-black">
+                        {new Date(scheduledDate + 'T' + scheduledTime).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       case 3:
@@ -308,7 +417,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
                 </div>
               </div>
               
-              <div className="p-10 grid grid-cols-2 gap-x-12 gap-y-10 bg-white">
+              <div className="p-10 grid grid-cols-2 gap-x-12 gap-y-8 bg-white">
                 <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Master Dispatch ID</p>
                   <p className="font-black text-slate-800 text-lg uppercase tracking-tight">{campaignData.name || 'UNTITLED_FLOW'}</p>
@@ -317,9 +426,69 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Audience Resolution</p>
                   <p className="font-black text-emerald-600 text-lg uppercase tracking-tight">{audienceSize} Verified Profiles</p>
                 </div>
-                <div className="col-span-2 pt-8 border-t border-slate-50">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Payload Strategy</p>
-                  <p className="font-black text-slate-800 text-2xl italic leading-tight">"{campaignData.subject || 'No subject set'}"</p>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Template</p>
+                  <p className="font-black text-slate-800 text-base">
+                    {TEMPLATES.find(t => t.id === campaignData.template)?.name || campaignData.template}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Delivery Method</p>
+                  <p className="font-black text-slate-800 text-base flex items-center">
+                    {campaignData.trigger === 'immediate' && <><Send size={16} className="mr-2 text-emerald-600" />Send Now</>}
+                    {campaignData.trigger === 'scheduled' && <><Calendar size={16} className="mr-2 text-amber-600" />Scheduled</>}
+                  </p>
+                </div>
+                {campaignData.trigger === 'scheduled' && scheduledDate && (
+                  <div className="col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Scheduled For</p>
+                    <p className="font-black text-amber-800 text-lg">
+                      {new Date(scheduledDate + 'T' + scheduledTime).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })} at {new Date(scheduledDate + 'T' + scheduledTime).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      })}
+                    </p>
+                  </div>
+                )}
+                {(campaignData.segments.length > 0 || campaignData.tags.length > 0) && (
+                  <div className="col-span-2 pt-6 border-t border-slate-100">
+                    <div className="grid grid-cols-2 gap-6">
+                      {campaignData.segments.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Target Segments</p>
+                          <div className="flex flex-wrap gap-2">
+                            {campaignData.segments.map(seg => (
+                              <span key={seg} className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase">
+                                {seg.replace('_', ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {campaignData.tags.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Interest Tags</p>
+                          <div className="flex flex-wrap gap-2">
+                            {campaignData.tags.map(tag => (
+                              <span key={tag} className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black uppercase">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="col-span-2 pt-6 border-t border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Subject Line</p>
+                  <p className="font-black text-slate-800 text-xl italic leading-tight">"{campaignData.subject || 'No subject set'}"</p>
                 </div>
 
                 <div className="col-span-2 pt-10 mt-6 border-t border-slate-100 bg-slate-50/50 -mx-10 p-10">
@@ -359,6 +528,48 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
                 </div>
               </div>
             </div>
+
+            {/* Recent Campaigns Section */}
+            {savedCampaigns.length > 0 && (
+              <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                <div className="bg-slate-50 px-8 py-6 border-b border-slate-100 flex items-center space-x-3">
+                  <History size={20} className="text-slate-500" />
+                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">Recent Campaigns</h4>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {savedCampaigns.slice(0, 5).map((campaign) => (
+                    <div key={campaign.id} className="px-8 py-5 flex items-center justify-between hover:bg-slate-50 transition">
+                      <div className="flex-1">
+                        <p className="font-black text-slate-800 text-sm uppercase tracking-tight">{campaign.name}</p>
+                        <p className="text-[10px] text-slate-400 font-medium mt-1">
+                          {campaign.launched_at ? new Date(campaign.launched_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : 'Not launched'}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <p className="text-xs font-black text-emerald-600">{campaign.audience_size}</p>
+                          <p className="text-[9px] text-slate-400 uppercase tracking-widest">Reach</p>
+                        </div>
+                        <span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                          campaign.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                          campaign.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                          campaign.status === 'paused' ? 'bg-amber-100 text-amber-700' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {campaign.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       default: return null;
@@ -375,8 +586,14 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
           {STEPS.map((step, idx) => {
             const isActive = idx === currentStep;
             const isCompleted = idx < currentStep;
+            const canNavigate = !isLaunching && (
+              idx <= currentStep || // Can always go back
+              (idx === 1 && campaignData.name) || // Can go to step 1 if name filled
+              (idx === 2 && campaignData.name && campaignData.subject) || // Can go to step 2 if name and subject filled
+              (idx === 3 && campaignData.name && campaignData.subject && (campaignData.trigger !== 'scheduled' || scheduledDate)) // Can go to step 3 if all required fields
+            );
             return (
-              <div key={step.id} className="flex flex-col items-center group cursor-pointer" onClick={() => !isLaunching && setCurrentStep(idx)}>
+              <div key={step.id} className={`flex flex-col items-center group ${canNavigate ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`} onClick={() => canNavigate && setCurrentStep(idx)}>
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 border-4 shadow-xl ${
                   isActive ? 'bg-slate-900 text-white border-emerald-500 scale-110' : 
                   isCompleted ? 'bg-emerald-600 text-white border-white' : 
@@ -412,7 +629,14 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
               <span>Launch Global Sync</span>
             </button>
           ) : (
-            <button onClick={() => setCurrentStep(Math.min(STEPS.length - 1, currentStep + 1))} disabled={currentStep === 0 && !campaignData.name} className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group">
+            <button
+              onClick={() => setCurrentStep(Math.min(STEPS.length - 1, currentStep + 1))}
+              disabled={
+                (currentStep === 0 && !campaignData.name) ||
+                (currentStep === 1 && !campaignData.subject) ||
+                (currentStep === 2 && campaignData.trigger === 'scheduled' && !scheduledDate)
+              }
+              className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group">
               <span>Continue Strategy</span>
               <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
             </button>

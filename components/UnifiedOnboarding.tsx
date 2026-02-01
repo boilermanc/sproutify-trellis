@@ -13,7 +13,7 @@ const UnifiedOnboarding: React.FC<UnifiedOnboardingProps> = ({
   themeColor = '#059669'
 }) => {
   // Logic: Check if user comes from School site
-  const isSchoolUser = profile.source_sites.includes('school.sproutify.app');
+  const isSchoolUser = profile.branches.includes('school.sproutify.app');
   // Logic: Check if user is NOT an app user
   const needsAppCTA = !profile.segments.includes('app_user');
 
@@ -55,7 +55,7 @@ const UnifiedOnboarding: React.FC<UnifiedOnboardingProps> = ({
            <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
               <Sprout size={18} className="text-emerald-600 mb-2" />
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Site</p>
-              <p className="text-xs font-bold text-slate-700">{profile.source_sites[0] || 'Trellis Hub'}</p>
+              <p className="text-xs font-bold text-slate-700">{profile.branches[0] || 'Trellis Hub'}</p>
            </div>
            <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
               <ShoppingBag size={18} className="text-emerald-600 mb-2" />

@@ -3,10 +3,10 @@ import React from 'react';
 import { ViewState, User, Brand } from '../types';
 import SageChat from './SageChat';
 import ContextAwareHelp from './ContextAwareHelp';
-import { 
-  LayoutDashboard, Users, Workflow, Mail, Code2, Sprout, 
-  CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle, 
-  LifeBuoy, BarChart3, BookOpen, GraduationCap 
+import {
+  LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
+  CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
+  LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -24,19 +24,21 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'knowledge-base', label: 'Knowledge Base', icon: BookOpen },
     { id: 'profiles', label: 'Profiles', icon: Users },
+    { id: 'branches', label: 'Branches', icon: GitBranch },
     { id: 'social-hub', label: 'Social Hub', icon: Share2 },
     { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },
     { id: 'automations', label: 'n8n Flows', icon: Workflow },
     { id: 'tasks', label: 'Campaign Tasks', icon: CheckSquare },
     { id: 'email-preview', label: 'Email Previews', icon: Mail },
     { id: 'dev-tools', label: 'Dev Resources', icon: Code2 },
+    { id: 'team', label: 'Team', icon: UserCog },
   ];
 
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 flex flex-col shrink-0">
-        <div className="p-6 flex items-center space-x-3 text-emerald-400 border-b border-slate-800/50">
+      <aside className="w-64 bg-yale-blue flex flex-col shrink-0">
+        <div className="p-6 flex items-center space-x-3 text-sky-300 border-b border-blue-slate-2/30">
           <Sprout size={28} />
           <span className="font-bold text-xl text-white tracking-tight">Trellis</span>
         </div>
@@ -47,9 +49,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
               key={item.id}
               onClick={() => onViewChange(item.id as ViewState)}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
-                activeView === item.id 
-                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                activeView === item.id
+                ? 'bg-sky-400/20 text-sky-300 shadow-lg shadow-yale-blue/20'
+                : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
               }`}
             >
               <item.icon size={20} />
@@ -58,38 +60,50 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
           ))}
         </nav>
 
-        <div className="p-4 border-t border-slate-800 space-y-2 bg-slate-900/50">
-          <button 
+        <div className="p-4 border-t border-blue-slate-2/30 space-y-2 bg-yale-blue/50">
+          <button
             onClick={() => onViewChange('help-center')}
             className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-colors ${
-              activeView === 'help-center' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              activeView === 'help-center' ? 'bg-blue-slate-2 text-white' : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
             }`}
           >
-            <HelpCircle size={18} className="text-emerald-400" />
+            <HelpCircle size={18} className="text-sky-300" />
             <span className="text-[10px] font-black uppercase tracking-widest">Help Center</span>
           </button>
-          
-          <button 
+
+          <button
             onClick={() => onViewChange('settings')}
             className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-colors ${
-              activeView === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              activeView === 'settings' ? 'bg-blue-slate-2 text-white' : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
             }`}
           >
             <Settings size={18} />
             <span className="text-[10px] font-black uppercase tracking-widest">App Settings</span>
           </button>
-          
-          <div className="flex items-center space-x-3 p-3 bg-slate-800/30 rounded-xl mt-2 group border border-slate-800/50">
-            <div className="w-10 h-10 rounded-full bg-indigo-50 text-white flex items-center justify-center font-bold text-sm shadow-inner shrink-0">
-              {user.name.charAt(0)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-black text-white truncate uppercase tracking-tighter">{user.name}</p>
-              <p className="text-[10px] text-slate-500 truncate capitalize">{user.role}</p>
-            </div>
+
+          <div className="flex items-center space-x-3 p-3 bg-blue-slate-2/30 rounded-xl mt-2 group border border-blue-slate-2/30 hover:border-cornflower-ocean/30 transition-colors">
+            <button
+              onClick={() => onViewChange('user-profile')}
+              className="flex items-center space-x-3 flex-1 min-w-0 hover:opacity-90 transition-opacity"
+              title="Edit Profile"
+            >
+              <div className="relative">
+                <div className="w-10 h-10 rounded-full bg-cerulean/20 text-cornflower-ocean flex items-center justify-center font-bold text-sm shadow-inner shrink-0">
+                  {user.name.charAt(0)}
+                </div>
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-cornflower-ocean rounded-full border-2 border-yale-blue" />
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-xs font-black text-white truncate uppercase tracking-tighter">{user.name}</p>
+                <p className="text-[10px] text-sky-300 truncate flex items-center group-hover:text-sky-200 transition-colors">
+                  <Pencil size={8} className="mr-1" />
+                  Edit Profile
+                </p>
+              </div>
+            </button>
             <button
               onClick={onLogout}
-              className="text-slate-500 hover:text-rose-400 transition-colors"
+              className="text-white/60 hover:text-rose-400 transition-colors"
               title="Sign out"
             >
               <LogOut size={16} />

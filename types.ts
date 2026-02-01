@@ -33,13 +33,43 @@ export interface Brand {
   logoUrl?: string;
 }
 
-export interface SpokeConfig {
+export interface Integration {
   id: string;
-  site_name: string;
-  api_key: string;
-  webhook_secret?: string;
-  status: 'active' | 'revoked';
+  name: string;
+  type: 'webhook' | 'api' | 'oauth' | 'custom';
+  description?: string;
+  credentials: {
+    api_key?: string;
+    webhook_url?: string;
+    secret?: string;
+    [key: string]: string | undefined;
+  };
+  status: 'active' | 'inactive';
+  created_at: string;
   last_used_at?: string;
+}
+
+// Legacy alias for backwards compatibility
+export type SpokeConfig = Integration;
+
+export interface SpokeConnection {
+  id: string;
+  name: string;                    // Display name: "ATL Urban Farms"
+  supabase_url: string;            // https://xxxxx.supabase.co
+  supabase_key: string;            // anon key
+  table_name: string;              // "profiles"
+  field_mapping: {
+    email: string;                 // which column = email
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    subscribed?: string;
+    created_at?: string;
+  };
+  status: 'active' | 'disconnected' | 'error';
+  last_tested_at?: string;
+  last_error?: string;
+  created_at: string;
 }
 
 export interface QueuedTask {
@@ -67,12 +97,17 @@ export interface ProcessedEvent {
   processed_at: string;
 }
 
+export interface N8nWebhooks {
+  chat: string;      // AI chat/Sage conversations
+  workflow: string;  // General workflow automation
+}
+
 export interface ApiKeyConfig {
   active_llm: LlmProvider;
   gemini_api_key: string;
   openai_api_key: string;
   anthropic_api_key: string;
-  n8n_webhook: string;
+  n8n_webhooks: N8nWebhooks;
   slack_webhook?: string;
   woo_consumer_key: string;
   woo_consumer_secret: string;
@@ -126,16 +161,19 @@ export interface ChatMessage {
 }
 
 export interface Profile {
-  id: string; 
+  id: string;
   spoke_uuid?: string; // The specific external ID from a source site
-  email: string; 
+  email: string;
   first_name: string;
+  last_name?: string;
   phone?: string;
+  avatar_url?: string;
+  bio?: string;
   is_subscribed: boolean;
   marketing_pause: boolean;
   tags: string[];
   segments: string[];
-  source_sites: string[]; 
+  branches: string[];
   status: 'active' | 'archived' | 'banned' | 'deleted';
   ltv: number;
   churn_risk: 'minimal' | 'moderate' | 'high' | 'critical';
@@ -143,6 +181,7 @@ export interface Profile {
   last_event_timestamp?: string; // For Version-Based Upserts
   engagement_score?: number;
   metadata?: Record<string, any>;
+  role?: Role; // For team members: admin, marketer, developer, viewer
 }
 
 export interface MarketingEvent {
@@ -173,7 +212,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center';
+export type ViewState = 'dashboard' | 'profiles' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile';
 
 export interface TrellisReport {
   id: string;
@@ -234,4 +273,27 @@ export interface FAQ {
   sites: string[];
   last_updated: string;
   status: 'indexed' | 'stale';
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  slug: string;
+  type: 'internal' | 'external';
+  logo_url?: string;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  font_family: string;
+  tagline?: string;
+  tone: string;
+  brand_keywords?: string[];
+  website_url?: string;
+  contact_email?: string;
+  description?: string;
+  is_active: boolean;
+  default_from_name?: string;
+  default_reply_to?: string;
+  created_at: string;
+  updated_at: string;
 }

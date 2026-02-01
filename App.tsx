@@ -14,14 +14,22 @@ import KnowledgeBase from './pages/KnowledgeBase';
 import HelpCenter from './pages/HelpCenter';
 import Settings from './pages/Settings';
 import Reports from './pages/Reports';
+import TeamMembers from './pages/TeamMembers';
+import UserProfile from './pages/UserProfile';
+import Branches from './src/pages/Branches';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast } from './types';
+import { getProfileByEmail } from './lib/supabaseService';
+import { fetchProfiles } from './supabaseService';
+import { fetchSecrets, saveSecrets } from './services/secretsService';
+import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection } from './types';
 import { MOCK_PROFILES, MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
 const PERSISTENCE_KEY = 'trellis_v1_store';
+// UUID for the main Sproutify organization - must match the organization_id in tenant_secrets table
+const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 
 type AuthView = 'login' | 'reset-password';
 
@@ -34,10 +42,8 @@ const AppContent: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
   
   // Initialize Global State from LocalStorage or Mocks
-  const [profiles, setProfiles] = useState<Profile[]>(() => {
-    const saved = localStorage.getItem(`${PERSISTENCE_KEY}_profiles`);
-    return saved ? JSON.parse(saved) : MOCK_PROFILES;
-  });
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(true);
   const [events, setEvents] = useState<MarketingEvent[]>(() => {
     const saved = localStorage.getItem(`${PERSISTENCE_KEY}_events`);
     return saved ? JSON.parse(saved) : MOCK_EVENTS;
@@ -50,22 +56,71 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem(`${PERSISTENCE_KEY}_tickets`);
     return saved ? JSON.parse(saved) : MOCK_TICKETS;
   });
-
-  const [currentUser, setCurrentUser] = useState<User>({
-    id: 'u_1',
-    name: 'Trellis Admin',
-    email: 'admin@trellis.app',
-    role: 'admin',
-    timezone: 'America/New_York'
+  const [apiKeys, setApiKeys] = useState<ApiKeyConfig>({
+    active_llm: 'gemini',
+    gemini_api_key: '',
+    openai_api_key: '',
+    anthropic_api_key: '',
+    n8n_webhooks: { chat: '', workflow: '' },
+    slack_webhook: '',
+    resend_token: '',
+    twilio_sid: '',
+    twilio_token: '',
+    woo_consumer_key: '',
+    woo_consumer_secret: '',
   });
 
-  // Persistence Sync
+  const [spokeConnections, setSpokeConnections] = useState<SpokeConnection[]>(() => {
+    const saved = localStorage.getItem('trellis_spoke_connections');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Fetch user's profile from Supabase to get first_name
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+
   useEffect(() => {
-    localStorage.setItem(`${PERSISTENCE_KEY}_profiles`, JSON.stringify(profiles));
+    if (user?.email) {
+      getProfileByEmail(user.email).then(setUserProfile);
+    } else {
+      setUserProfile(null);
+    }
+  }, [user?.email]);
+
+  // Fetch secrets from Supabase on mount
+  useEffect(() => {
+    fetchSecrets(SPROUTIFY_ORG_ID).then(setApiKeys);
+  }, []);
+
+  // Fetch profiles from Supabase on mount
+  useEffect(() => {
+    const loadProfiles = async () => {
+      setIsLoadingProfiles(true);
+      const data = await fetchProfiles();
+      setProfiles(data.length > 0 ? data : MOCK_PROFILES); // Fallback to mock if empty
+      setIsLoadingProfiles(false);
+    };
+    loadProfiles();
+  }, []);
+
+  // Derive currentUser from Supabase auth user + profile
+  const currentUser: User = {
+    id: user?.id || 'u_1',
+    name: userProfile?.first_name || user?.email?.split('@')[0] || 'User',
+    email: user?.email || '',
+    role: 'admin',
+    timezone: 'America/New_York'
+  };
+
+  // Persistence Sync (localStorage for non-sensitive data)
+  useEffect(() => {
     localStorage.setItem(`${PERSISTENCE_KEY}_events`, JSON.stringify(events));
     localStorage.setItem(`${PERSISTENCE_KEY}_tasks`, JSON.stringify(tasks));
     localStorage.setItem(`${PERSISTENCE_KEY}_tickets`, JSON.stringify(tickets));
-  }, [profiles, events, tasks, tickets]);
+  }, [events, tasks, tickets]);
+
+  useEffect(() => {
+    localStorage.setItem('trellis_spoke_connections', JSON.stringify(spokeConnections));
+  }, [spokeConnections]);
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -92,6 +147,7 @@ const AppContent: React.FC = () => {
     switch (activeView) {
       case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} />;
+      case 'branches': return <Branches />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} />;
       case 'knowledge-base': return <KnowledgeBase />;
@@ -102,19 +158,26 @@ const AppContent: React.FC = () => {
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} />;
       case 'dev-tools': return <DevTools profiles={profiles} />;
       case 'reports': return <Reports />;
+      case 'team': return <TeamMembers />;
+      case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'settings': return (
-        <Settings 
-          user={currentUser} 
-          onUpdateUser={setCurrentUser} 
-          apiKeys={{active_llm: 'gemini', gemini_api_key: '', openai_api_key: '', anthropic_api_key: '', n8n_webhook: '', woo_consumer_key: '', woo_consumer_secret: '', resend_token: '', twilio_sid: '', twilio_token: ''}} 
-          onUpdateApiKeys={() => addToast('System configuration committed to vault.')}
-          brand={currentBrand}
-          onUpdateBrand={setCurrentBrand}
+        <Settings
+          apiKeys={apiKeys}
+          onUpdateApiKeys={async (keys) => {
+            setApiKeys(keys);
+            const success = await saveSecrets(SPROUTIFY_ORG_ID, keys);
+            addToast(
+              success ? 'Secrets committed to vault.' : 'Failed to save secrets.',
+              success ? 'success' : 'error'
+            );
+          }}
           profiles={profiles}
           onImportComplete={(newProfiles) => {
             setProfiles(prev => [...prev, ...newProfiles]);
             addToast(`Identity ingest complete: ${newProfiles.length} new gardeners synced.`);
           }}
+          spokeConnections={spokeConnections}
+          onSpokeConnectionsChange={setSpokeConnections}
         />
       );
       default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} />;

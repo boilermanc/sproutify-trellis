@@ -89,7 +89,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles }
           <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1">
             {filteredTickets.length > 0 ? filteredTickets.map(ticket => {
                const p = profiles.find(x => x.id === ticket.profile_id);
-               const SiteIcon = SITE_ICONS[p?.source_sites[0] || ''] || Globe;
+               const SiteIcon = SITE_ICONS[p?.branches[0] || ''] || Globe;
                const needsReview = ticket.ai_confidence && ticket.ai_confidence < 80;
                
                return (
@@ -98,7 +98,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles }
                   <div className="flex justify-between items-start mb-2">
                      <div className="flex items-center space-x-2">
                         <div className={`p-1.5 rounded-lg ${selectedTicketId === ticket.id ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}><SiteIcon size={12} /></div>
-                        <span className="text-[9px] font-black text-slate-400 uppercase truncate max-w-[100px]">{p?.source_sites[0]}</span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase truncate max-w-[100px]">{p?.branches[0]}</span>
                      </div>
                      <div className="flex items-center space-x-1.5">
                        {needsReview && <AlertCircle size={14} className="text-amber-500 animate-pulse" />}

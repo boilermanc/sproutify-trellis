@@ -69,14 +69,14 @@ const ARTICLES: Article[] = [
       Trellis implements a **Harden Delete Lifecycle** that preserves identity while respecting privacy.
 
       ### 1. Spoke-Specific Cleanup
-      When a DELETE webhook arrives, the Hub removes only that specific site from the user's \`source_sites\` array. 
+      When a DELETE webhook arrives, the Hub removes only that specific site from the user's \`branches\` array. 
 
       ### 2. The Global Check
       The orchestration engine immediately performs a check: "Does this user still exist on any other Sproutify sites?"
 
       ### 3. Zombie Prevention
-      - **IF** \`source_sites.length > 0\`: The Hub keeps the profile active but marks that specific spoke as inactive.
-      - **IF** \`source_sites.length == 0\`: The Hub automatically sets \`is_subscribed = false\` and \`status = 'deleted'\`. 
+      - **IF** \`branches.length > 0\`: The Hub keeps the profile active but marks that specific spoke as inactive.
+      - **IF** \`branches.length == 0\`: The Hub automatically sets \`is_subscribed = false\` and \`status = 'deleted'\`. 
 
       This ensures that once a user has completely left the Sproutify ecosystem, no further marketing dispatches (Resend) or AI social intents (Gemini) are processed for that identity.
     `

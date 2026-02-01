@@ -112,12 +112,12 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
     setIsSimulating(true);
     await new Promise(r => setTimeout(r, 1200));
 
-    const updatedSites = simProfile.source_sites.filter(s => s !== site);
+    const updatedSites = simProfile.branches.filter(s => s !== site);
     const isNowEmpty = updatedSites.length === 0;
 
     setSimProfile({
         ...simProfile,
-        source_sites: updatedSites,
+        branches: updatedSites,
         is_subscribed: isNowEmpty ? false : simProfile.is_subscribed,
         status: isNowEmpty ? 'deleted' : simProfile.status
     });
@@ -192,10 +192,10 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
                             </button>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                           {simProfile.source_sites.map(s => (
+                           {simProfile.branches.map(s => (
                                <span key={s} className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[9px] font-black rounded-lg border border-emerald-500/20">{s}</span>
                            ))}
-                           {simProfile.source_sites.length === 0 && (
+                           {simProfile.branches.length === 0 && (
                                <span className="px-3 py-1 bg-rose-500/20 text-rose-400 text-[9px] font-black rounded-lg border border-rose-500/30 flex items-center">
                                    <Ban size={10} className="mr-1" /> ALL SPOKES REMOVED
                                </span>
@@ -232,7 +232,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
                         <div className="space-y-3">
                             <label className="block text-[10px] font-black text-rose-400 uppercase tracking-widest ml-1">Simulate Delete</label>
                             <div className="grid grid-cols-1 gap-2">
-                                {simProfile.source_sites.map(site => (
+                                {simProfile.branches.map(site => (
                                     <button 
                                         key={site} 
                                         onClick={() => simulateDelete(site)}
@@ -242,7 +242,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
                                         <UserMinus size={12} />
                                     </button>
                                 ))}
-                                {simProfile.source_sites.length === 0 && (
+                                {simProfile.branches.length === 0 && (
                                     <div className="p-4 bg-slate-800 rounded-2xl text-[9px] text-slate-500 italic text-center">No spokes to delete</div>
                                 )}
                             </div>
@@ -284,7 +284,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
                        <div className="w-8 h-8 rounded-lg bg-rose-500 flex items-center justify-center shrink-0"><ZombieIcon size={16} /></div>
                        <div>
                           <p className="text-[11px] font-black uppercase tracking-tight">Auto-Unsubscribe (Harden)</p>
-                          <p className="text-[10px] text-indigo-200 opacity-60">If 'source_sites' becomes empty, Trellis automatically sets 'is_subscribed = false' to prevent phantom marketing sends.</p>
+                          <p className="text-[10px] text-indigo-200 opacity-60">If 'branches' becomes empty, Trellis automatically sets 'is_subscribed = false' to prevent phantom marketing sends.</p>
                        </div>
                     </div>
                  </div>
