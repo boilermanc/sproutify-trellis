@@ -52,24 +52,102 @@ export interface Integration {
 // Legacy alias for backwards compatibility
 export type SpokeConfig = Integration;
 
+// Field mapping interfaces for each table type
+export interface CustomerFieldMapping {
+  id?: string;           // Needed to link to orders
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  subscribed?: string;
+  created_at?: string;
+}
+
+export interface OrderFieldMapping {
+  id: string;
+  order_number?: string;
+  customer_id?: string;
+  guest_email?: string;
+  status?: string;
+  total?: string;
+  subtotal?: string;
+  tax?: string;
+  paid_at?: string;
+  created_at?: string;
+  shipped_at?: string;
+  delivered_at?: string;
+}
+
+export interface OrderItemFieldMapping {
+  id: string;
+  order_id: string;
+  product_name?: string;
+  product_price?: string;
+  quantity?: string;
+  line_total?: string;
+}
+
+export interface SubscriptionFieldMapping {
+  id: string;
+  customer_id?: string;
+  email?: string;
+  status?: string;
+  plan?: string;
+  started_at?: string;
+  expires_at?: string;
+  created_at?: string;
+}
+
+export interface SpokeTableConfig {
+  id: string;
+  table_type: 'customers' | 'orders' | 'order_items' | 'subscriptions';
+  table_name: string;           // actual table name in the database
+  field_mapping: Record<string, string>;  // our_field -> their_column
+  enabled: boolean;
+}
+
 export interface SpokeConnection {
   id: string;
   name: string;                    // Display name: "ATL Urban Farms"
   supabase_url: string;            // https://xxxxx.supabase.co
   supabase_key: string;            // anon key
-  table_name: string;              // "profiles"
-  field_mapping: {
-    email: string;                 // which column = email
-    first_name?: string;
-    last_name?: string;
-    phone?: string;
-    subscribed?: string;
-    created_at?: string;
-  };
+  tables: SpokeTableConfig[];      // Multiple tables per connection
   status: 'active' | 'disconnected' | 'error';
   last_tested_at?: string;
   last_error?: string;
   created_at: string;
+}
+
+export interface NormalizedSpokeProfile {
+  id?: string;           // Customer ID for linking to orders
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  subscribed?: boolean;
+  created_at?: string;
+  _spoke_id: string;
+  _spoke_name: string;
+}
+
+export interface ProductPurchase {
+  product_name: string;
+  total_quantity: number;
+  total_spent: number;
+  last_purchased_at?: string;
+}
+
+export interface ProfileOrderStats {
+  ltv: number;              // Lifetime value (sum of order totals)
+  order_count: number;      // Number of orders
+  last_purchase_at?: string; // Most recent order date
+  first_purchase_at?: string; // First order date
+  avg_order_value: number;  // LTV / order_count
+  products_purchased?: ProductPurchase[];  // Products this customer has bought
+}
+
+export interface EnrichedProfile extends NormalizedSpokeProfile {
+  order_stats?: ProfileOrderStats;
 }
 
 export interface QueuedTask {

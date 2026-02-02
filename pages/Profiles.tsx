@@ -1,16 +1,17 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, MarketingEvent, Branch, SpokeConnection } from '../types';
+import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile } from '../types';
 import { getProfiles, fetchBranches } from '../lib/supabaseService';
-import { fetchAllSpokesProfiles, NormalizedSpokeProfile } from '../spokeConnector';
+import { fetchEnrichedProfiles } from '../spokeConnector';
 import {
   Search, Tag, MoreHorizontal, X, Edit3,
   History, Globe, GraduationCap, Sprout, Heart, Building2,
   FilterX, Users, MousePointer2, Sparkles, Zap,
   Clock, ArrowUpRight, DatabaseZap, ShieldCheck, Activity,
   Fingerprint, Loader2, GitBranch, ChevronLeft, ChevronRight,
-  Radio, RefreshCw, AlertCircle, Link
+  Radio, RefreshCw, AlertCircle, Link, ShoppingBag, DollarSign, Calendar
 } from 'lucide-react';
+import { ProfileDetailDrawer } from './ProfileDetailDrawer';
 
 interface ProfilesProps {
   onTestFlow?: (email: string) => void;
@@ -57,11 +58,32 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [error, setError] = useState<string | null>(null);
 
   // Federated data state
-  const [federatedProfiles, setFederatedProfiles] = useState<NormalizedSpokeProfile[]>([]);
+  const [federatedProfiles, setFederatedProfiles] = useState<EnrichedProfile[]>([]);
   const [isFederating, setIsFederating] = useState(false);
   const [federationError, setFederationError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<'local' | 'federated'>('local');
   const [selectedSpokeIds, setSelectedSpokeIds] = useState<Set<string>>(new Set());
+  const [selectedFederatedProfile, setSelectedFederatedProfile] = useState<EnrichedProfile | null>(null);
+
+  const profileStats = useMemo(() => {
+    if (federatedProfiles.length === 0) return null;
+
+    const withOrders = federatedProfiles.filter(p => p.order_stats && p.order_stats.order_count > 0);
+    const totalLTV = withOrders.reduce((sum, p) => sum + (p.order_stats?.ltv || 0), 0);
+    const totalOrders = withOrders.reduce((sum, p) => sum + (p.order_stats?.order_count || 0), 0);
+    const vipCount = withOrders.filter(p => (p.order_stats?.ltv || 0) >= 50).length;
+    const avgOrderValue = totalOrders > 0 ? totalLTV / totalOrders : 0;
+
+    return {
+      totalProfiles: federatedProfiles.length,
+      withOrders: withOrders.length,
+      withoutOrders: federatedProfiles.length - withOrders.length,
+      totalLTV,
+      totalOrders,
+      vipCount,
+      avgOrderValue,
+    };
+  }, [federatedProfiles]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -100,11 +122,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     setIsFederating(true);
     setFederationError(null);
     try {
-      const selectedConnections = spokeConnections.filter(
-        c => c.status === 'active' && selectedSpokeIds.has(c.id)
-      );
-      const { profiles: fetchedProfiles, errors } = await fetchAllSpokesProfiles(selectedConnections);
-      setFederatedProfiles(fetchedProfiles);
+      const selectedConnections = spokeConnections.filter(c => selectedSpokeIds.has(c.id));
+      const { profiles, errors } = await fetchEnrichedProfiles(selectedConnections);
+      setFederatedProfiles(profiles);
       setDataSource('federated');
 
       // Show any errors that occurred during fetching
@@ -367,6 +387,57 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           </div>
         )}
 
+        {/* KPI Summary Bar */}
+        {dataSource === 'federated' && profileStats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+            {/* Total Profiles */}
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Profiles</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{profileStats.totalProfiles}</p>
+              <p className="text-xs text-gray-400 mt-1">{profileStats.withOrders} with orders</p>
+            </div>
+
+            {/* Total Orders */}
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Orders</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{profileStats.totalOrders.toLocaleString()}</p>
+              <p className="text-xs text-gray-400 mt-1">across all profiles</p>
+            </div>
+
+            {/* Total LTV */}
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Total Revenue</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">
+                ${profileStats.totalLTV.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">lifetime value</p>
+            </div>
+
+            {/* Avg Order Value */}
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Avg Order</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                ${profileStats.avgOrderValue.toFixed(2)}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">per order</p>
+            </div>
+
+            {/* VIP Count */}
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">VIP Customers</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{profileStats.vipCount}</p>
+              <p className="text-xs text-gray-400 mt-1">LTV ≥ $50</p>
+            </div>
+
+            {/* No Orders */}
+            <div className="bg-white rounded-xl p-4 border border-gray-100">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">No Orders</p>
+              <p className="text-2xl font-bold text-gray-400 mt-1">{profileStats.withoutOrders}</p>
+              <p className="text-xs text-gray-400 mt-1">never purchased</p>
+            </div>
+          </div>
+        )}
+
         {/* Branch Filter Row */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
           <div className="flex items-center space-x-4">
@@ -413,6 +484,13 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 {dataSource === 'local' ? 'Presence' : 'Contact'}
               </th>
+              {dataSource === 'federated' && (
+                <>
+                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">LTV</th>
+                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Orders</th>
+                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Purchase</th>
+                </>
+              )}
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">
                 {dataSource === 'local' ? 'Last Sync' : 'Status'}
               </th>
@@ -449,7 +527,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               ))
             ) : (
               federatedProfiles.map((profile, index) => (
-                <tr key={`${profile._spoke_id}-${profile.email}-${index}`} className="hover:bg-slate-50/80 transition-all">
+                <tr
+                  key={`${profile._spoke_id}-${profile.email}-${index}`}
+                  className="hover:bg-slate-50/80 transition-all cursor-pointer"
+                  onClick={() => setSelectedFederatedProfile(profile)}
+                >
                   <td className="px-10 py-6">
                     <div className="flex items-center space-x-4">
                       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -459,6 +541,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                         <p className="font-black text-slate-800 text-sm">
                           {profile.first_name || profile.email.split('@')[0]}
                           {profile.last_name && ` ${profile.last_name}`}
+                          {profile.order_stats && profile.order_stats.ltv >= 50 && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                              VIP
+                            </span>
+                          )}
                         </p>
                         <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
                       </div>
@@ -478,6 +565,38 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                         </span>
                       )}
                     </div>
+                  </td>
+                  {/* LTV Cell */}
+                  <td className="px-4 py-6 whitespace-nowrap">
+                    {profile.order_stats ? (
+                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600">
+                        <DollarSign className="w-3 h-3" />
+                        {profile.order_stats.ltv.toFixed(2)}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 text-sm">—</span>
+                    )}
+                  </td>
+                  {/* Orders Cell */}
+                  <td className="px-4 py-6 whitespace-nowrap">
+                    {profile.order_stats ? (
+                      <span className="inline-flex items-center gap-1 text-sm text-gray-700">
+                        <ShoppingBag className="w-3 h-3 text-blue-500" />
+                        {profile.order_stats.order_count}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 text-sm">—</span>
+                    )}
+                  </td>
+                  {/* Last Purchase Cell */}
+                  <td className="px-4 py-6 whitespace-nowrap">
+                    {profile.order_stats?.last_purchase_at ? (
+                      <span className="text-sm text-gray-600">
+                        {new Date(profile.order_stats.last_purchase_at).toLocaleDateString()}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 text-sm">—</span>
+                    )}
                   </td>
                   <td className="px-10 py-6 text-right">
                     <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
@@ -609,6 +728,12 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           </div>
         </>
       )}
+
+      {/* Federated Profile Detail Drawer */}
+      <ProfileDetailDrawer
+        profile={selectedFederatedProfile}
+        onClose={() => setSelectedFederatedProfile(null)}
+      />
     </div>
   );
 };

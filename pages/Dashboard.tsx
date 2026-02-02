@@ -4,9 +4,11 @@ import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, SpokeConnecti
 import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
 import { createClient } from '@supabase/supabase-js';
+import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
 import {
   Globe, CheckSquare, Sparkles, ChevronDown, ChevronRight, X, Target,
-  LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2
+  LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2,
+  Package, DollarSign
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -31,6 +33,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
   const [isLoadingCounts, setIsLoadingCounts] = useState(false);
   const [totalFederatedProfiles, setTotalFederatedProfiles] = useState(0);
 
+  // Orders data
+  const [federatedOrders, setFederatedOrders] = useState<NormalizedOrder[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+
   useEffect(() => {
     async function loadDashboardData() {
       try {
@@ -52,13 +58,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     const counts: Record<string, number> = {};
     let total = 0;
 
-    const activeConnections = spokeConnections.filter(c => c.status === 'active');
+    const activeConns = spokeConnections.filter(c => c.status === 'active');
 
-    for (const connection of activeConnections) {
+    for (const connection of activeConns) {
+      // Find the customers table config
+      const customersTable = connection.tables?.find(t => t.table_type === 'customers' && t.enabled);
+      if (!customersTable) {
+        counts[connection.id] = 0;
+        continue;
+      }
+
       try {
         const client = createClient(connection.supabase_url, connection.supabase_key);
         const { count, error } = await client
-          .from(connection.table_name)
+          .from(customersTable.table_name)
           .select('*', { count: 'exact', head: true });
 
         if (!error && count !== null) {
@@ -81,10 +94,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     }
   }, [spokeConnections]);
 
+  // Fetch orders from all spokes
+  const fetchOrdersData = async () => {
+    if (spokeConnections.length === 0) return;
+    setIsLoadingOrders(true);
+    try {
+      const { orders, errors } = await fetchAllSpokesOrders(spokeConnections);
+      setFederatedOrders(orders);
+      if (errors.length > 0) {
+        console.warn('Order fetch errors:', errors);
+      }
+    } catch (err) {
+      console.error('Failed to fetch orders:', err);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  };
+
+  useEffect(() => {
+    if (spokeConnections.some(c => c.status === 'active')) {
+      fetchOrdersData();
+    }
+  }, [spokeConnections]);
+
   // Simulation: Checking for items that need human action
   const pendingApprovalsCount = 2;
 
   const activeConnections = spokeConnections.filter(c => c.status === 'active');
+
+  // Order stats calculations
+  const totalOrders = federatedOrders.length;
+  const totalRevenue = federatedOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+  const paidOrders = federatedOrders.filter(o => o.paid_at).length;
+  const recentOrders = [...federatedOrders]
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, 5);
+  const spokesWithOrders = spokeConnections.filter(c => c.tables?.some(t => t.table_type === 'orders' && t.enabled)).length;
 
   const stats = [
     {
@@ -95,27 +140,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       bg: 'bg-emerald-50',
       cardBg: 'bg-white',
       textColor: 'text-yale-blue',
-      labelColor: 'text-slate-500'
+      labelColor: 'text-slate-500',
+      subtext: `${activeConnections.length} spoke${activeConnections.length !== 1 ? 's' : ''}`
     },
     {
-      label: 'Connected Spokes',
-      value: activeConnections.length,
-      icon: Database,
+      label: 'Total Orders',
+      value: isLoadingOrders ? '...' : totalOrders.toLocaleString(),
+      icon: Package,
       color: 'text-blue-600',
       bg: 'bg-blue-50',
       cardBg: 'bg-white',
       textColor: 'text-yale-blue',
-      labelColor: 'text-slate-500'
+      labelColor: 'text-slate-500',
+      subtext: `${paidOrders} paid`
     },
     {
-      label: 'Support Queue',
-      value: MOCK_BRIEFING.detailed_analysis.support_load.open_tickets,
-      icon: LifeBuoy,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50',
+      label: 'Total Revenue',
+      value: isLoadingOrders ? '...' : `$${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: DollarSign,
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-50',
       cardBg: 'bg-white',
       textColor: 'text-yale-blue',
-      labelColor: 'text-slate-500'
+      labelColor: 'text-slate-500',
+      subtext: `From ${spokesWithOrders} spoke${spokesWithOrders !== 1 ? 's' : ''}`
     },
     {
       label: 'Marketing Actions',
@@ -125,7 +173,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       bg: 'bg-purple-50',
       cardBg: 'bg-white',
       textColor: 'text-yale-blue',
-      labelColor: 'text-slate-500'
+      labelColor: 'text-slate-500',
+      subtext: 'pending tasks'
     },
   ];
 
@@ -236,6 +285,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
               <div>
                 <p className={`${stat.labelColor} text-sm font-medium`}>{stat.label}</p>
                 <h3 className={`text-2xl font-bold ${stat.textColor} mt-1`}>{stat.value}</h3>
+                {stat.subtext && (
+                  <p className="text-xs text-slate-400 mt-1">{stat.subtext}</p>
+                )}
               </div>
             </div>
           ))}
@@ -349,6 +401,43 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
               </div>
             )}
           </div>
+
+          {/* Recent Orders */}
+          {recentOrders.length > 0 && (
+            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+              <h3 className="text-lg font-black text-yale-blue mb-6 uppercase tracking-tight flex items-center">
+                <Package size={20} className="mr-2 text-blue-600" />
+                Recent Orders
+              </h3>
+              <div className="space-y-3">
+                {recentOrders.map((order, i) => (
+                  <div key={order.id || i} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                        <Package size={18} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">
+                          {order.order_number || `Order #${order.id?.slice(0, 8)}`}
+                        </p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          {order._spoke_name} • {order.status || 'pending'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-yale-blue">
+                        ${(order.total || 0).toFixed(2)}
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        {order.created_at ? new Date(order.created_at).toLocaleDateString() : 'No date'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Activity Feed */}
           <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">

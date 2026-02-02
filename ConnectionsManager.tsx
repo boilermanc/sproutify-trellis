@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { SpokeConnection } from './types';
-import { testSpokeConnection, autoMapFields, AutoMapFieldsResult } from './spokeConnector';
+import { SpokeConnection, SpokeTableConfig } from './types';
+import { testSpokeConnection, discoverTables, autoMapFields } from './spokeConnector';
 import {
   Database,
   Plus,
@@ -12,8 +12,14 @@ import {
   EyeOff,
   Plug,
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
+  Layers,
+  Package,
+  CreditCard,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  X,
 } from 'lucide-react';
 
 interface ConnectionsManagerProps {
@@ -21,135 +27,276 @@ interface ConnectionsManagerProps {
   onConnectionsChange: (connections: SpokeConnection[]) => void;
 }
 
-interface NewConnectionForm {
-  name: string;
-  supabase_url: string;
-  supabase_key: string;
-  table_name: string;
-  field_mapping: {
-    email: string;
-    first_name: string;
-    last_name: string;
-    phone: string;
-    subscribed: string;
-    created_at: string;
-  };
-}
+type WizardStep = 'idle' | 'connect' | 'discover' | 'customers' | 'data-types' | 'orders' | 'order-items' | 'subscriptions' | 'review';
 
-const initialFormState: NewConnectionForm = {
-  name: '',
-  supabase_url: '',
-  supabase_key: '',
-  table_name: 'profiles',
-  field_mapping: {
-    email: 'email',
-    first_name: 'first_name',
-    last_name: 'last_name',
-    phone: 'phone',
-    subscribed: 'subscribed',
-    created_at: 'created_at',
-  },
-};
+interface TableConfig {
+  table_name: string;
+  field_mapping: Record<string, string>;
+  columns: string[];
+}
 
 const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   connections,
   onConnectionsChange,
 }) => {
-  const [isAddingNew, setIsAddingNew] = useState(false);
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState<WizardStep>('idle');
+  const [discoveredTables, setDiscoveredTables] = useState<string[]>([]);
+  const [selectedDataTypes, setSelectedDataTypes] = useState<{ orders: boolean; orderItems: boolean; subscriptions: boolean }>({ orders: false, orderItems: false, subscriptions: false });
+
+  // Connection form state
+  const [newConnection, setNewConnection] = useState({
+    name: '',
+    supabase_url: '',
+    supabase_key: '',
+  });
+
+  // Table configuration states
+  const [customerTableConfig, setCustomerTableConfig] = useState<TableConfig>({ table_name: '', field_mapping: {}, columns: [] });
+  const [orderTableConfigs, setOrderTableConfigs] = useState<TableConfig[]>([]);
+  const [orderItemTableConfigs, setOrderItemTableConfigs] = useState<TableConfig[]>([]);
+  const [subscriptionTableConfig, setSubscriptionTableConfig] = useState<TableConfig>({ table_name: '', field_mapping: {}, columns: [] });
+
+  // UI state
   const [isTesting, setIsTesting] = useState(false);
+  const [isDiscovering, setIsDiscovering] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
-  const [newConnection, setNewConnection] = useState<NewConnectionForm>(initialFormState);
-  const [showFieldMapping, setShowFieldMapping] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [testingConnectionId, setTestingConnectionId] = useState<string | null>(null);
-  const [discoveredColumns, setDiscoveredColumns] = useState<string[]>([]);
-  const [autoMapResult, setAutoMapResult] = useState<AutoMapFieldsResult | null>(null);
-  const [showDiscoveredColumns, setShowDiscoveredColumns] = useState(false);
+  const [successSummary, setSuccessSummary] = useState<{
+    name: string;
+    tables: { type: string; fields: number }[];
+  } | null>(null);
 
-  // Validation warnings for field mapping
-  const getFieldMappingWarnings = (): string[] => {
-    const warnings: string[] = [];
-    const fm = newConnection.field_mapping;
-
-    if (!fm.email.trim()) {
-      warnings.push('Email field is required');
-    }
-    // Check for empty optional fields that have common column names
-    const optionalFields = [
-      { key: 'first_name', label: 'First Name' },
-      { key: 'last_name', label: 'Last Name' },
-      { key: 'phone', label: 'Phone' },
-      { key: 'subscribed', label: 'Subscribed' },
-      { key: 'created_at', label: 'Created At' },
-    ];
-
-    optionalFields.forEach(({ key, label }) => {
-      const value = (fm as any)[key];
-      if (value && !value.trim()) {
-        warnings.push(`${label} field is set but empty - clear it or provide a column name`);
-      }
-    });
-
-    return warnings;
+  const resetWizard = () => {
+    setWizardStep('idle');
+    setDiscoveredTables([]);
+    setSelectedDataTypes({ orders: false, orderItems: false, subscriptions: false });
+    setNewConnection({ name: '', supabase_url: '', supabase_key: '' });
+    setCustomerTableConfig({ table_name: '', field_mapping: {}, columns: [] });
+    setOrderTableConfigs([]);
+    setOrderItemTableConfigs([]);
+    setSubscriptionTableConfig({ table_name: '', field_mapping: {}, columns: [] });
+    setTestResult(null);
   };
 
-  const fieldMappingWarnings = getFieldMappingWarnings();
+  const buildTablesConfig = (): SpokeTableConfig[] => {
+    const tables: SpokeTableConfig[] = [];
+
+    // Always add customers table
+    if (customerTableConfig.table_name) {
+      tables.push({
+        id: crypto.randomUUID(),
+        table_type: 'customers',
+        table_name: customerTableConfig.table_name,
+        field_mapping: customerTableConfig.field_mapping,
+        enabled: true,
+      });
+    }
+
+    // Add all selected order tables
+    if (selectedDataTypes.orders) {
+      for (const orderConfig of orderTableConfigs) {
+        if (orderConfig.table_name) {
+          tables.push({
+            id: crypto.randomUUID(),
+            table_type: 'orders',
+            table_name: orderConfig.table_name,
+            field_mapping: orderConfig.field_mapping,
+            enabled: true,
+          });
+        }
+      }
+    }
+
+    // Add all selected order item tables
+    if (selectedDataTypes.orderItems) {
+      for (const itemConfig of orderItemTableConfigs) {
+        if (itemConfig.table_name) {
+          tables.push({
+            id: crypto.randomUUID(),
+            table_type: 'order_items',
+            table_name: itemConfig.table_name,
+            field_mapping: itemConfig.field_mapping,
+            enabled: true,
+          });
+        }
+      }
+    }
+
+    // Add subscriptions if selected
+    if (selectedDataTypes.subscriptions && subscriptionTableConfig.table_name) {
+      tables.push({
+        id: crypto.randomUUID(),
+        table_type: 'subscriptions',
+        table_name: subscriptionTableConfig.table_name,
+        field_mapping: subscriptionTableConfig.field_mapping,
+        enabled: true,
+      });
+    }
+
+    return tables;
+  };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
-    setAutoMapResult(null);
-    setDiscoveredColumns([]);
 
+    // First test that we can connect to the database
     const result = await testSpokeConnection({
       supabase_url: newConnection.supabase_url,
       supabase_key: newConnection.supabase_key,
-      table_name: newConnection.table_name,
+      table_name: 'profiles', // Test with a common table name
     });
 
     if (result.success) {
-      setDiscoveredColumns(result.columns);
-
-      // Auto-map fields from discovered columns
-      const mapResult = autoMapFields(result.columns);
-      setAutoMapResult(mapResult);
-
-      // Update field mapping with auto-detected values
-      setNewConnection((prev) => ({
-        ...prev,
-        field_mapping: {
-          email: mapResult.mapping.email || prev.field_mapping.email,
-          first_name: mapResult.mapping.first_name || prev.field_mapping.first_name,
-          last_name: mapResult.mapping.last_name || prev.field_mapping.last_name,
-          phone: mapResult.mapping.phone || prev.field_mapping.phone,
-          subscribed: mapResult.mapping.subscribed || prev.field_mapping.subscribed,
-          created_at: mapResult.mapping.created_at || prev.field_mapping.created_at,
-        },
-      }));
-
-      const matchCount = mapResult.matched.length;
-      setTestResult({
-        success: true,
-        message: `Connected! Found ${result.rowCount} records and ${result.columns.length} columns. Auto-mapped ${matchCount} field${matchCount !== 1 ? 's' : ''}.`
-      });
-
-      // Auto-expand field mapping to show results
-      setShowFieldMapping(true);
+      setTestResult({ success: true, message: 'Connection successful!' });
+      // Now discover tables
+      setIsDiscovering(true);
+      const discovery = await discoverTables(newConnection.supabase_url, newConnection.supabase_key);
+      setDiscoveredTables(discovery.tables);
+      setIsDiscovering(false);
+      setWizardStep('discover');
     } else {
-      setTestResult({ success: false, message: result.error });
+      // Try discovering tables anyway - the test table might not exist
+      setIsDiscovering(true);
+      const discovery = await discoverTables(newConnection.supabase_url, newConnection.supabase_key);
+      if (discovery.tables.length > 0) {
+        setDiscoveredTables(discovery.tables);
+        setTestResult({ success: true, message: `Found ${discovery.tables.length} tables!` });
+        setWizardStep('discover');
+      } else {
+        setTestResult({ success: false, message: discovery.error || result.error });
+      }
+      setIsDiscovering(false);
     }
 
     setIsTesting(false);
   };
 
+  const handleSelectCustomerTable = async (tableName: string) => {
+    // Test this specific table to get columns
+    const result = await testSpokeConnection({
+      supabase_url: newConnection.supabase_url,
+      supabase_key: newConnection.supabase_key,
+      table_name: tableName,
+    });
+
+    if (result.success) {
+      const mapping = autoMapFields(result.columns, 'customers');
+      setCustomerTableConfig({
+        table_name: tableName,
+        field_mapping: mapping,
+        columns: result.columns,
+      });
+    }
+  };
+
+  const handleAddOrderTable = async (tableName: string) => {
+    try {
+      const result = await testSpokeConnection({
+        supabase_url: newConnection.supabase_url,
+        supabase_key: newConnection.supabase_key,
+        table_name: tableName,
+      });
+
+      if (result.success && result.columns) {
+        const autoMapping = autoMapFields(result.columns, 'orders');
+        setOrderTableConfigs(prev => [
+          ...prev,
+          {
+            table_name: tableName,
+            field_mapping: autoMapping,
+            columns: result.columns,
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch columns for', tableName, err);
+    }
+  };
+
+  const handleRemoveOrderTable = (tableName: string) => {
+    setOrderTableConfigs(prev => prev.filter(c => c.table_name !== tableName));
+  };
+
+  const updateOrderTableMapping = (tableName: string, field: string, value: string) => {
+    setOrderTableConfigs(prev => prev.map(c =>
+      c.table_name === tableName
+        ? { ...c, field_mapping: { ...c.field_mapping, [field]: value } }
+        : c
+    ));
+  };
+
+  const handleAddOrderItemTable = async (tableName: string) => {
+    try {
+      const result = await testSpokeConnection({
+        supabase_url: newConnection.supabase_url,
+        supabase_key: newConnection.supabase_key,
+        table_name: tableName,
+      });
+
+      if (result.success && result.columns) {
+        const autoMapping = autoMapFields(result.columns, 'order_items');
+        setOrderItemTableConfigs(prev => [
+          ...prev,
+          {
+            table_name: tableName,
+            field_mapping: autoMapping,
+            columns: result.columns,
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch columns for', tableName, err);
+    }
+  };
+
+  const handleRemoveOrderItemTable = (tableName: string) => {
+    setOrderItemTableConfigs(prev => prev.filter(c => c.table_name !== tableName));
+  };
+
+  const updateOrderItemTableMapping = (tableName: string, field: string, value: string) => {
+    setOrderItemTableConfigs(prev => prev.map(c =>
+      c.table_name === tableName
+        ? { ...c, field_mapping: { ...c.field_mapping, [field]: value } }
+        : c
+    ));
+  };
+
+  const handleSelectSubscriptionTable = async (tableName: string) => {
+    const result = await testSpokeConnection({
+      supabase_url: newConnection.supabase_url,
+      supabase_key: newConnection.supabase_key,
+      table_name: tableName,
+    });
+
+    if (result.success) {
+      const mapping = autoMapFields(result.columns, 'subscriptions');
+      setSubscriptionTableConfig({
+        table_name: tableName,
+        field_mapping: mapping,
+        columns: result.columns,
+      });
+    }
+  };
+
   const handleTestExisting = async (connection: SpokeConnection) => {
     setTestingConnectionId(connection.id);
+
+    // Test the first enabled table (handle legacy connections without tables array)
+    const tables = connection.tables || [];
+    const firstTable = tables.find(t => t.enabled);
+    if (!firstTable) {
+      setTestingConnectionId(null);
+      return;
+    }
 
     const result = await testSpokeConnection({
       supabase_url: connection.supabase_url,
       supabase_key: connection.supabase_key,
-      table_name: connection.table_name,
+      table_name: firstTable.table_name,
     });
 
     const updatedConnections = connections.map((c) => {
@@ -169,48 +316,37 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   };
 
   const handleSaveConnection = () => {
+    const tables = buildTablesConfig();
     const connection: SpokeConnection = {
       id: crypto.randomUUID(),
       name: newConnection.name,
       supabase_url: newConnection.supabase_url,
       supabase_key: newConnection.supabase_key,
-      table_name: newConnection.table_name,
-      field_mapping: {
-        email: newConnection.field_mapping.email,
-        ...(newConnection.field_mapping.first_name && { first_name: newConnection.field_mapping.first_name }),
-        ...(newConnection.field_mapping.last_name && { last_name: newConnection.field_mapping.last_name }),
-        ...(newConnection.field_mapping.phone && { phone: newConnection.field_mapping.phone }),
-        ...(newConnection.field_mapping.subscribed && { subscribed: newConnection.field_mapping.subscribed }),
-        ...(newConnection.field_mapping.created_at && { created_at: newConnection.field_mapping.created_at }),
-      },
+      tables,
       status: 'active',
-      last_tested_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
+      last_tested_at: new Date().toISOString(),
     };
-
     onConnectionsChange([...connections, connection]);
-    setNewConnection(initialFormState);
-    setIsAddingNew(false);
-    setTestResult(null);
-    setShowFieldMapping(false);
-    setDiscoveredColumns([]);
-    setAutoMapResult(null);
-    setShowDiscoveredColumns(false);
+
+    // Show success summary
+    setSuccessSummary({
+      name: connection.name,
+      tables: connection.tables.map(t => ({
+        type: t.table_type,
+        fields: Object.keys(t.field_mapping).filter(k => t.field_mapping[k]).length
+      }))
+    });
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => setSuccessSummary(null), 5000);
+
+    resetWizard();
   };
 
   const handleDeleteConnection = (id: string) => {
     onConnectionsChange(connections.filter((c) => c.id !== id));
     setDeleteConfirm(null);
-  };
-
-  const handleCancel = () => {
-    setIsAddingNew(false);
-    setNewConnection(initialFormState);
-    setTestResult(null);
-    setShowFieldMapping(false);
-    setDiscoveredColumns([]);
-    setAutoMapResult(null);
-    setShowDiscoveredColumns(false);
   };
 
   const toggleKeyVisibility = (id: string) => {
@@ -233,7 +369,273 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     return new Date(timestamp).toLocaleString();
   };
 
-  const canSave = testResult?.success && newConnection.name && newConnection.field_mapping.email && fieldMappingWarnings.length === 0;
+  const getTableIcon = (tableName: string) => {
+    const lower = tableName.toLowerCase();
+    if (lower.includes('customer') || lower.includes('profile') || lower.includes('user')) {
+      return <Users size={16} className="text-emerald-500" />;
+    }
+    if (lower.includes('order') && !lower.includes('item')) {
+      return <Package size={16} className="text-blue-500" />;
+    }
+    if (lower.includes('item') || lower.includes('line')) {
+      return <Layers size={16} className="text-purple-500" />;
+    }
+    if (lower.includes('subscription') || lower.includes('payment')) {
+      return <CreditCard size={16} className="text-amber-500" />;
+    }
+    return <Database size={16} className="text-slate-400" />;
+  };
+
+  const getWizardStepNumber = (): number => {
+    const steps: WizardStep[] = ['connect', 'discover', 'customers', 'data-types', 'orders', 'subscriptions', 'review'];
+    return steps.indexOf(wizardStep) + 1;
+  };
+
+  const getTotalSteps = (): number => {
+    let total = 5; // connect, discover, customers, data-types, review
+    if (selectedDataTypes.orders) total++;
+    if (selectedDataTypes.orderItems) total++;
+    if (selectedDataTypes.subscriptions) total++;
+    return total;
+  };
+
+  const navigateNext = () => {
+    switch (wizardStep) {
+      case 'customers':
+        setWizardStep('data-types');
+        break;
+      case 'data-types':
+        if (selectedDataTypes.orders) {
+          setWizardStep('orders');
+        } else if (selectedDataTypes.orderItems) {
+          setWizardStep('order-items');
+        } else if (selectedDataTypes.subscriptions) {
+          setWizardStep('subscriptions');
+        } else {
+          setWizardStep('review');
+        }
+        break;
+      case 'orders':
+        if (selectedDataTypes.orderItems) {
+          setWizardStep('order-items');
+        } else if (selectedDataTypes.subscriptions) {
+          setWizardStep('subscriptions');
+        } else {
+          setWizardStep('review');
+        }
+        break;
+      case 'order-items':
+        if (selectedDataTypes.subscriptions) {
+          setWizardStep('subscriptions');
+        } else {
+          setWizardStep('review');
+        }
+        break;
+      case 'subscriptions':
+        setWizardStep('review');
+        break;
+    }
+  };
+
+  const navigateBack = () => {
+    switch (wizardStep) {
+      case 'discover':
+        setWizardStep('connect');
+        break;
+      case 'customers':
+        setWizardStep('discover');
+        break;
+      case 'data-types':
+        setWizardStep('customers');
+        break;
+      case 'orders':
+        setWizardStep('data-types');
+        break;
+      case 'order-items':
+        if (selectedDataTypes.orders) {
+          setWizardStep('orders');
+        } else {
+          setWizardStep('data-types');
+        }
+        break;
+      case 'subscriptions':
+        if (selectedDataTypes.orderItems) {
+          setWizardStep('order-items');
+        } else if (selectedDataTypes.orders) {
+          setWizardStep('orders');
+        } else {
+          setWizardStep('data-types');
+        }
+        break;
+      case 'review':
+        if (selectedDataTypes.subscriptions) {
+          setWizardStep('subscriptions');
+        } else if (selectedDataTypes.orderItems) {
+          setWizardStep('order-items');
+        } else if (selectedDataTypes.orders) {
+          setWizardStep('orders');
+        } else {
+          setWizardStep('data-types');
+        }
+        break;
+    }
+  };
+
+  const canProceedFromCustomers = customerTableConfig.table_name && customerTableConfig.field_mapping.email;
+
+  // Render wizard progress indicator
+  const renderProgressIndicator = () => {
+    const steps = ['Connect', 'Discover', 'Customers', 'Data Types'];
+    if (selectedDataTypes.orders) steps.push('Orders');
+    if (selectedDataTypes.orderItems) steps.push('Items');
+    if (selectedDataTypes.subscriptions) steps.push('Subscriptions');
+    steps.push('Review');
+
+    const currentIndex = getWizardStepNumber() - 1;
+
+    return (
+      <div className="flex items-center justify-center space-x-2 mb-6">
+        {steps.map((step, index) => (
+          <React.Fragment key={step}>
+            <div className="flex items-center space-x-1">
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  index < currentIndex
+                    ? 'bg-emerald-500 text-white'
+                    : index === currentIndex
+                    ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500'
+                    : 'bg-slate-100 text-slate-400'
+                }`}
+              >
+                {index < currentIndex ? <Check size={12} /> : index + 1}
+              </div>
+              <span className={`text-[9px] font-bold uppercase hidden sm:inline ${
+                index === currentIndex ? 'text-emerald-700' : 'text-slate-400'
+              }`}>
+                {step}
+              </span>
+            </div>
+            {index < steps.length - 1 && (
+              <div className={`w-8 h-0.5 ${index < currentIndex ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  };
+
+  // Render field mapping inputs for a table type
+  const renderFieldMappingInputs = (
+    tableType: 'customers' | 'orders' | 'subscriptions',
+    config: TableConfig,
+    setConfig: React.Dispatch<React.SetStateAction<TableConfig>>
+  ) => {
+    const fieldDefinitions: Record<string, { label: string; required: boolean }[]> = {
+      customers: [
+        { label: 'Email', required: true },
+        { label: 'First Name', required: false },
+        { label: 'Last Name', required: false },
+        { label: 'Phone', required: false },
+        { label: 'Subscribed', required: false },
+        { label: 'Created At', required: false },
+      ],
+      orders: [
+        { label: 'ID', required: true },
+        { label: 'Order Number', required: false },
+        { label: 'Customer ID', required: false },
+        { label: 'Guest Email', required: false },
+        { label: 'Status', required: false },
+        { label: 'Total', required: false },
+        { label: 'Subtotal', required: false },
+        { label: 'Tax', required: false },
+        { label: 'Paid At', required: false },
+        { label: 'Created At', required: false },
+        { label: 'Shipped At', required: false },
+        { label: 'Delivered At', required: false },
+      ],
+      subscriptions: [
+        { label: 'ID', required: true },
+        { label: 'Customer ID', required: false },
+        { label: 'Email', required: false },
+        { label: 'Status', required: false },
+        { label: 'Plan', required: false },
+        { label: 'Started At', required: false },
+        { label: 'Expires At', required: false },
+        { label: 'Created At', required: false },
+      ],
+    };
+
+    const fields = fieldDefinitions[tableType];
+    const toFieldKey = (label: string) => label.toLowerCase().replace(/ /g, '_');
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          {fields.map((field) => {
+            const fieldKey = toFieldKey(field.label);
+            const isMapped = !!config.field_mapping[fieldKey];
+            return (
+              <div key={fieldKey}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase">
+                    {field.label} {field.required && <span className="text-rose-500">*</span>}
+                  </label>
+                  {isMapped && (
+                    <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-600">
+                      <CheckCircle2 size={10} />
+                      <span>Auto</span>
+                    </span>
+                  )}
+                </div>
+                <select
+                  className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 ${
+                    isMapped ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
+                  }`}
+                  value={config.field_mapping[fieldKey] || ''}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      field_mapping: { ...prev.field_mapping, [fieldKey]: e.target.value },
+                    }))
+                  }
+                >
+                  <option value="">-- Select column --</option>
+                  {config.columns.map((col) => (
+                    <option key={col} value={col}>
+                      {col}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Available columns reference */}
+        {config.columns.length > 0 && (
+          <div className="mt-4 p-3 bg-slate-50 rounded-lg">
+            <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Available Columns</p>
+            <div className="flex flex-wrap gap-1.5">
+              {config.columns.map((col) => {
+                const isMapped = Object.values(config.field_mapping).includes(col);
+                return (
+                  <span
+                    key={col}
+                    className={`text-[10px] font-mono px-2 py-1 rounded ${
+                      isMapped ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {col}
+                    {isMapped && <CheckCircle2 size={10} className="inline ml-1" />}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -252,9 +654,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             </p>
           </div>
         </div>
-        {!isAddingNew && (
+        {wizardStep === 'idle' && (
           <button
-            onClick={() => setIsAddingNew(true)}
+            onClick={() => setWizardStep('connect')}
             className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
           >
             <Plus size={16} />
@@ -263,271 +665,814 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         )}
       </div>
 
-      {/* Add New Connection Form */}
-      {isAddingNew && (
-        <div className="bg-white rounded-2xl border-2 border-emerald-200 shadow-sm p-6 space-y-5">
-          <div className="flex items-center space-x-2 text-emerald-600 mb-2">
-            <Plug size={18} />
-            <span className="text-sm font-black uppercase">New Connection</span>
-          </div>
+      {/* Wizard */}
+      {wizardStep !== 'idle' && (
+        <div className="bg-white rounded-2xl border-2 border-emerald-200 shadow-sm p-6">
+          {renderProgressIndicator()}
 
-          {/* Display Name */}
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-              Display Name
-            </label>
-            <input
-              type="text"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
-              placeholder="e.g., ATL Urban Farms"
-              value={newConnection.name}
-              onChange={(e) => setNewConnection((prev) => ({ ...prev, name: e.target.value }))}
-            />
-          </div>
-
-          {/* Supabase URL */}
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-              Supabase URL
-            </label>
-            <input
-              type="text"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
-              placeholder="https://xxxxx.supabase.co"
-              value={newConnection.supabase_url}
-              onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_url: e.target.value }))}
-            />
-          </div>
-
-          {/* API Key */}
-          <div className="relative">
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-              API Key (anon)
-            </label>
-            <input
-              type={visibleKeys['new_key'] ? 'text' : 'password'}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
-              placeholder="Enter your anon key..."
-              value={newConnection.supabase_key}
-              onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_key: e.target.value }))}
-            />
-            <button
-              onClick={() => toggleKeyVisibility('new_key')}
-              className="absolute right-4 top-9 text-slate-400 hover:text-slate-800 transition"
-            >
-              {visibleKeys['new_key'] ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-
-          {/* Table Name */}
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-              Table Name
-            </label>
-            <input
-              type="text"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
-              placeholder="profiles"
-              value={newConnection.table_name}
-              onChange={(e) => setNewConnection((prev) => ({ ...prev, table_name: e.target.value }))}
-            />
-          </div>
-
-          {/* Field Mapping (Collapsible) */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <button
-              onClick={() => setShowFieldMapping(!showFieldMapping)}
-              className="w-full px-4 py-3 bg-slate-50 flex items-center justify-between text-left hover:bg-slate-100 transition"
-            >
-              <div className="flex items-center space-x-2">
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                  Field Mapping
-                </span>
-                {autoMapResult && autoMapResult.matched.length > 0 && (
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600">
-                    {autoMapResult.matched.length} auto-mapped
-                  </span>
-                )}
+          {/* Step: Connect */}
+          {wizardStep === 'connect' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-emerald-600 mb-2">
+                <Plug size={18} />
+                <span className="text-sm font-black uppercase">Step 1: Connect to Database</span>
               </div>
-              {showFieldMapping ? (
-                <ChevronUp size={16} className="text-slate-400" />
-              ) : (
-                <ChevronDown size={16} className="text-slate-400" />
-              )}
-            </button>
-            {showFieldMapping && (
-              <div className="p-4 space-y-4 bg-white">
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[9px] font-black text-slate-400 uppercase">
-                      Email Column <span className="text-rose-500">*</span>
-                    </label>
-                    {autoMapResult?.matched.includes('email') && (
-                      <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-600">
-                        <CheckCircle2 size={12} />
-                        <span>Auto-detected</span>
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 ${
-                      autoMapResult?.matched.includes('email') ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
-                    }`}
-                    placeholder="email"
-                    value={newConnection.field_mapping.email}
-                    onChange={(e) =>
-                      setNewConnection((prev) => ({
-                        ...prev,
-                        field_mapping: { ...prev.field_mapping, email: e.target.value },
-                      }))
-                    }
-                  />
+
+              {/* Display Name */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Display Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
+                  placeholder="e.g., ATL Urban Farms"
+                  value={newConnection.name}
+                  onChange={(e) => setNewConnection((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+
+              {/* Supabase URL */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Supabase URL
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
+                  placeholder="https://xxxxx.supabase.co"
+                  value={newConnection.supabase_url}
+                  onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_url: e.target.value }))}
+                />
+              </div>
+
+              {/* API Key */}
+              <div className="relative">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  API Key (anon)
+                </label>
+                <input
+                  type={visibleKeys['new_key'] ? 'text' : 'password'}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
+                  placeholder="Enter your anon key..."
+                  value={newConnection.supabase_key}
+                  onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_key: e.target.value }))}
+                />
+                <button
+                  onClick={() => toggleKeyVisibility('new_key')}
+                  className="absolute right-4 top-9 text-slate-400 hover:text-slate-800 transition"
+                >
+                  {visibleKeys['new_key'] ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+
+              {/* Test Result */}
+              {testResult && (
+                <div
+                  className={`flex items-center space-x-2 p-3 rounded-xl ${
+                    testResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                  }`}
+                >
+                  {testResult.success ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                  <span className="text-sm font-bold">{testResult.message}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { key: 'first_name', label: 'First Name Column' },
-                    { key: 'last_name', label: 'Last Name Column' },
-                    { key: 'phone', label: 'Phone Column' },
-                    { key: 'subscribed', label: 'Subscribed Column' },
-                    { key: 'created_at', label: 'Created At Column' },
-                  ].map((field) => {
-                    const isAutoMapped = autoMapResult?.matched.includes(field.key);
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={handleTestConnection}
+                  disabled={isTesting || isDiscovering || !newConnection.supabase_url || !newConnection.supabase_key || !newConnection.name}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isTesting || isDiscovering ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <ChevronRight size={14} />
+                  )}
+                  <span>{isTesting ? 'Connecting...' : isDiscovering ? 'Discovering Tables...' : 'Test Connection'}</span>
+                </button>
+                <button
+                  onClick={resetWizard}
+                  className="px-4 py-2.5 text-slate-500 hover:text-slate-800 font-bold text-xs transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Discover */}
+          {wizardStep === 'discover' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-emerald-600 mb-2">
+                <Database size={18} />
+                <span className="text-sm font-black uppercase">Step 2: Tables Discovered</span>
+              </div>
+
+              <p className="text-sm text-slate-600">
+                Found <span className="font-bold text-emerald-600">{discoveredTables.length}</span> tables in this database:
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {discoveredTables.map((table) => {
+                  const isCustomerTable = ['customers', 'profiles', 'users'].includes(table.toLowerCase());
+                  return (
+                    <div
+                      key={table}
+                      className={`p-3 rounded-xl border-2 flex items-center space-x-2 ${
+                        isCustomerTable
+                          ? 'bg-emerald-50 border-emerald-200'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      {getTableIcon(table)}
+                      <span className="text-sm font-bold text-slate-700">{table}</span>
+                      {isCustomerTable && (
+                        <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-500 text-white">
+                          Customer
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {discoveredTables.length === 0 && (
+                <div className="text-center py-8 text-slate-400">
+                  <AlertTriangle size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm font-bold">No common tables found</p>
+                  <p className="text-xs mt-1">Make sure your database has accessible tables</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={() => {
+                    // Auto-select customer table if found
+                    const customerTable = discoveredTables.find(t =>
+                      ['customers', 'profiles', 'users'].includes(t.toLowerCase())
+                    );
+                    if (customerTable) {
+                      handleSelectCustomerTable(customerTable);
+                    }
+                    setWizardStep('customers');
+                  }}
+                  disabled={discoveredTables.length === 0}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  <span>Continue</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Customers */}
+          {wizardStep === 'customers' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-emerald-600 mb-2">
+                <Users size={18} />
+                <span className="text-sm font-black uppercase">Step 3: Configure Customers Table</span>
+              </div>
+
+              {/* Table Selection */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Select Customer Table
+                </label>
+                <select
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
+                  value={customerTableConfig.table_name}
+                  onChange={(e) => handleSelectCustomerTable(e.target.value)}
+                >
+                  <option value="">-- Select a table --</option>
+                  {discoveredTables.map((table) => (
+                    <option key={table} value={table}>
+                      {table}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Field Mapping */}
+              {customerTableConfig.table_name && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Field Mapping</span>
+                    <button
+                      onClick={() => {
+                        const mapping = autoMapFields(customerTableConfig.columns, 'customers');
+                        setCustomerTableConfig((prev) => ({ ...prev, field_mapping: mapping }));
+                      }}
+                      className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700"
+                    >
+                      Auto-Detect Fields
+                    </button>
+                  </div>
+                  {renderFieldMappingInputs('customers', customerTableConfig, setCustomerTableConfig)}
+                </>
+              )}
+
+              {/* Validation Warning */}
+              {customerTableConfig.table_name && !customerTableConfig.field_mapping.email && (
+                <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                  <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm font-bold text-amber-700">Email field mapping is required</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={navigateNext}
+                  disabled={!canProceedFromCustomers}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  <span>Continue</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Data Types */}
+          {wizardStep === 'data-types' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-emerald-600 mb-2">
+                <Layers size={18} />
+                <span className="text-sm font-black uppercase">Step 4: What other data does this spoke have?</span>
+              </div>
+
+              <p className="text-sm text-slate-600 mb-4">
+                Select any additional data types available in this database:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Orders Card */}
+                <button
+                  onClick={() => setSelectedDataTypes((prev) => ({ ...prev, orders: !prev.orders }))}
+                  disabled={!discoveredTables.some(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item'))}
+                  className={`p-4 rounded-xl border-2 text-left transition ${
+                    selectedDataTypes.orders
+                      ? 'bg-blue-50 border-blue-300'
+                      : discoveredTables.some(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item'))
+                      ? 'bg-white border-slate-200 hover:border-blue-200'
+                      : 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        selectedDataTypes.orders ? 'bg-blue-100' : 'bg-slate-100'
+                      }`}>
+                        <Package size={20} className={selectedDataTypes.orders ? 'text-blue-600' : 'text-slate-400'} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-800">Orders</p>
+                        <p className="text-[10px] text-slate-500">Purchase/order data</p>
+                      </div>
+                    </div>
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                      selectedDataTypes.orders ? 'bg-blue-500 border-blue-500' : 'border-slate-300'
+                    }`}>
+                      {selectedDataTypes.orders && <Check size={12} className="text-white" />}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Order Items Card */}
+                <button
+                  onClick={() => setSelectedDataTypes((prev) => ({ ...prev, orderItems: !prev.orderItems }))}
+                  disabled={!discoveredTables.some(t => t.toLowerCase().includes('item'))}
+                  className={`p-4 rounded-xl border-2 text-left transition ${
+                    selectedDataTypes.orderItems
+                      ? 'bg-purple-50 border-purple-300'
+                      : discoveredTables.some(t => t.toLowerCase().includes('item'))
+                      ? 'bg-white border-slate-200 hover:border-purple-200'
+                      : 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        selectedDataTypes.orderItems ? 'bg-purple-100' : 'bg-slate-100'
+                      }`}>
+                        <Layers size={20} className={selectedDataTypes.orderItems ? 'text-purple-600' : 'text-slate-400'} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-800">Order Items</p>
+                        <p className="text-[10px] text-slate-500">Product-level data</p>
+                      </div>
+                    </div>
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                      selectedDataTypes.orderItems ? 'bg-purple-500 border-purple-500' : 'border-slate-300'
+                    }`}>
+                      {selectedDataTypes.orderItems && <Check size={12} className="text-white" />}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Subscriptions Card */}
+                <button
+                  onClick={() => setSelectedDataTypes((prev) => ({ ...prev, subscriptions: !prev.subscriptions }))}
+                  disabled={!discoveredTables.some(t => t.toLowerCase().includes('subscription'))}
+                  className={`p-4 rounded-xl border-2 text-left transition ${
+                    selectedDataTypes.subscriptions
+                      ? 'bg-amber-50 border-amber-300'
+                      : discoveredTables.some(t => t.toLowerCase().includes('subscription'))
+                      ? 'bg-white border-slate-200 hover:border-amber-200'
+                      : 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                        selectedDataTypes.subscriptions ? 'bg-amber-100' : 'bg-slate-100'
+                      }`}>
+                        <CreditCard size={20} className={selectedDataTypes.subscriptions ? 'text-amber-600' : 'text-slate-400'} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-800">Subscriptions</p>
+                        <p className="text-[10px] text-slate-500">Recurring billing data</p>
+                      </div>
+                    </div>
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                      selectedDataTypes.subscriptions ? 'bg-amber-500 border-amber-500' : 'border-slate-300'
+                    }`}>
+                      {selectedDataTypes.subscriptions && <Check size={12} className="text-white" />}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={navigateNext}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+                >
+                  <span>Continue</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Orders */}
+          {wizardStep === 'orders' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-blue-600 mb-2">
+                <Package size={18} />
+                <span className="text-sm font-black uppercase">Step 5: Configure Order Tables</span>
+              </div>
+
+              <p className="text-sm text-slate-600">
+                Select all tables that contain order/purchase data:
+              </p>
+
+              <div className="space-y-4">
+                {discoveredTables
+                  .filter(t => (t.toLowerCase().includes('order') && !t.toLowerCase().includes('item')) || t === 'purchases' || t === 'transactions')
+                  .map(tableName => {
+                    const isSelected = orderTableConfigs.some(c => c.table_name === tableName);
+                    const config = orderTableConfigs.find(c => c.table_name === tableName);
+
                     return (
-                      <div key={field.key}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="text-[9px] font-black text-slate-400 uppercase">
-                            {field.label}
-                          </label>
-                          {isAutoMapped && (
-                            <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-600">
-                              <CheckCircle2 size={10} />
-                              <span>Auto</span>
+                      <div key={tableName} className={`border rounded-xl p-4 transition-colors ${isSelected ? 'border-blue-300 bg-blue-50/50' : 'bg-white border-slate-200'}`}>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                handleAddOrderTable(tableName);
+                              } else {
+                                handleRemoveOrderTable(tableName);
+                              }
+                            }}
+                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <Package className="w-4 h-4 text-blue-600" />
+                          <span className="font-medium text-gray-900">{tableName}</span>
+                          {isSelected && config && (
+                            <span className="text-xs text-blue-600 ml-auto">
+                              {Object.values(config.field_mapping).filter(Boolean).length} fields mapped
                             </span>
                           )}
-                        </div>
-                        <input
-                          type="text"
-                          className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 ${
-                            isAutoMapped ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
-                          }`}
-                          placeholder={field.key}
-                          value={(newConnection.field_mapping as any)[field.key]}
-                          onChange={(e) =>
-                            setNewConnection((prev) => ({
-                              ...prev,
-                              field_mapping: { ...prev.field_mapping, [field.key]: e.target.value },
-                            }))
-                          }
-                        />
+                        </label>
+
+                        {isSelected && config && (
+                          <div className="mt-4 pt-4 border-t border-blue-200">
+                            <div className="flex justify-between items-center mb-3">
+                              <p className="text-xs font-semibold text-gray-500 uppercase">Field Mapping</p>
+                              <button
+                                onClick={() => {
+                                  const autoMapping = autoMapFields(config.columns, 'orders');
+                                  setOrderTableConfigs(prev => prev.map(c =>
+                                    c.table_name === tableName ? { ...c, field_mapping: autoMapping } : c
+                                  ));
+                                }}
+                                className="text-xs text-blue-600 hover:text-blue-700"
+                              >
+                                Auto-Detect Fields
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                              {['id', 'customer_id', 'order_number', 'status', 'total', 'created_at'].map(field => (
+                                <div key={field}>
+                                  <label className="block text-xs text-gray-500 mb-1">
+                                    {field.replace(/_/g, ' ')}
+                                    {field === 'id' && <span className="text-rose-500 ml-0.5">*</span>}
+                                  </label>
+                                  <select
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono text-slate-800 outline-none focus:border-blue-500"
+                                    value={config.field_mapping[field] || ''}
+                                    onChange={(e) => updateOrderTableMapping(tableName, field, e.target.value)}
+                                  >
+                                    <option value="">-- Select --</option>
+                                    {config.columns.map((col) => (
+                                      <option key={col} value={col}>{col}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
-                </div>
 
-                {/* Discovered Columns (collapsible) */}
-                {discoveredColumns.length > 0 && (
-                  <div className="border border-slate-100 rounded-lg overflow-hidden mt-4">
-                    <button
-                      onClick={() => setShowDiscoveredColumns(!showDiscoveredColumns)}
-                      className="w-full px-3 py-2 bg-slate-50 flex items-center justify-between text-left hover:bg-slate-100 transition"
-                    >
-                      <span className="text-[9px] font-black text-slate-500 uppercase">
-                        Available Columns ({discoveredColumns.length})
-                      </span>
-                      {showDiscoveredColumns ? (
-                        <ChevronUp size={14} className="text-slate-400" />
-                      ) : (
-                        <ChevronDown size={14} className="text-slate-400" />
-                      )}
-                    </button>
-                    {showDiscoveredColumns && (
-                      <div className="p-3 bg-white">
-                        <div className="flex flex-wrap gap-1.5">
-                          {discoveredColumns.map((col) => {
-                            const isMapped = autoMapResult?.matched.some(
-                              (field) => autoMapResult.mapping[field as keyof typeof autoMapResult.mapping] === col
-                            );
-                            return (
-                              <span
-                                key={col}
-                                className={`text-[10px] font-mono px-2 py-1 rounded ${
-                                  isMapped
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}
-                              >
-                                {col}
-                                {isMapped && <CheckCircle2 size={10} className="inline ml-1" />}
-                              </span>
-                            );
-                          })}
-                        </div>
-                        {autoMapResult && autoMapResult.unmatched.length > 0 && (
-                          <p className="text-[9px] text-slate-400 mt-2">
-                            Unmapped columns can be used for custom field mapping above.
-                          </p>
-                        )}
-                      </div>
-                    )}
+                {discoveredTables.filter(t => (t.toLowerCase().includes('order') && !t.toLowerCase().includes('item')) || t === 'purchases' || t === 'transactions').length === 0 && (
+                  <div className="text-center py-6 text-slate-400">
+                    <Package size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm font-bold">No order tables found</p>
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Test Result */}
-          {testResult && (
-            <div
-              className={`flex items-center space-x-2 p-3 rounded-xl ${
-                testResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-              }`}
-            >
-              {testResult.success ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-              <span className="text-sm font-bold">{testResult.message}</span>
-            </div>
-          )}
-
-          {/* Field Mapping Warnings */}
-          {fieldMappingWarnings.length > 0 && (
-            <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
-              <AlertTriangle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                {fieldMappingWarnings.map((warning, index) => (
-                  <p key={index} className="text-sm font-bold text-amber-700">{warning}</p>
-                ))}
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={navigateNext}
+                  disabled={orderTableConfigs.length === 0 || !orderTableConfigs.every(c => c.field_mapping.id)}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  <span>Continue</span>
+                  <ChevronRight size={14} />
+                </button>
               </div>
             </div>
           )}
 
-          {/* Form Actions */}
-          <div className="flex items-center space-x-3 pt-2">
-            <button
-              onClick={handleTestConnection}
-              disabled={isTesting || !newConnection.supabase_url || !newConnection.supabase_key || !newConnection.table_name}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isTesting ? (
-                <RefreshCw size={14} className="animate-spin" />
-              ) : (
-                <RefreshCw size={14} />
+          {/* Step: Order Items */}
+          {wizardStep === 'order-items' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-purple-600 mb-2">
+                <Layers size={18} />
+                <span className="text-sm font-black uppercase">Step {selectedDataTypes.orders ? '6' : '5'}: Configure Order Items Tables</span>
+              </div>
+
+              <p className="text-sm text-slate-600">
+                Select tables that contain line-item/product details for orders:
+              </p>
+
+              <div className="space-y-4">
+                {discoveredTables
+                  .filter(t => t.toLowerCase().includes('item'))
+                  .map(tableName => {
+                    const isSelected = orderItemTableConfigs.some(c => c.table_name === tableName);
+                    const config = orderItemTableConfigs.find(c => c.table_name === tableName);
+
+                    return (
+                      <div key={tableName} className={`border rounded-xl p-4 transition-colors ${isSelected ? 'border-purple-300 bg-purple-50/50' : 'bg-white border-slate-200'}`}>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                handleAddOrderItemTable(tableName);
+                              } else {
+                                handleRemoveOrderItemTable(tableName);
+                              }
+                            }}
+                            className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                          />
+                          <Layers className="w-4 h-4 text-purple-600" />
+                          <span className="font-medium text-gray-900">{tableName}</span>
+                          {isSelected && config && (
+                            <span className="text-xs text-purple-600 ml-auto">
+                              {Object.values(config.field_mapping).filter(Boolean).length} fields mapped
+                            </span>
+                          )}
+                        </label>
+
+                        {isSelected && config && (
+                          <div className="mt-4 pt-4 border-t border-purple-200">
+                            <div className="flex justify-between items-center mb-3">
+                              <p className="text-xs font-semibold text-gray-500 uppercase">Field Mapping</p>
+                              <button
+                                onClick={() => {
+                                  const autoMapping = autoMapFields(config.columns, 'order_items');
+                                  setOrderItemTableConfigs(prev => prev.map(c =>
+                                    c.table_name === tableName ? { ...c, field_mapping: autoMapping } : c
+                                  ));
+                                }}
+                                className="text-xs text-purple-600 hover:text-purple-700"
+                              >
+                                Auto-Detect Fields
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                              {['id', 'order_id', 'product_name', 'quantity', 'line_total'].map(field => (
+                                <div key={field}>
+                                  <label className="block text-xs text-gray-500 mb-1">
+                                    {field.replace(/_/g, ' ')}
+                                    {(field === 'id' || field === 'order_id') && <span className="text-rose-500 ml-0.5">*</span>}
+                                  </label>
+                                  <select
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono text-slate-800 outline-none focus:border-purple-500"
+                                    value={config.field_mapping[field] || ''}
+                                    onChange={(e) => updateOrderItemTableMapping(tableName, field, e.target.value)}
+                                  >
+                                    <option value="">-- Select --</option>
+                                    {config.columns.map((col) => (
+                                      <option key={col} value={col}>{col}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                {discoveredTables.filter(t => t.toLowerCase().includes('item')).length === 0 && (
+                  <div className="text-center py-6 text-slate-400">
+                    <Layers size={32} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm font-bold">No order item tables found</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={navigateNext}
+                  disabled={orderItemTableConfigs.length === 0 || !orderItemTableConfigs.every(c => c.field_mapping.id && c.field_mapping.order_id)}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  <span>Continue</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Subscriptions */}
+          {wizardStep === 'subscriptions' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-amber-600 mb-2">
+                <CreditCard size={18} />
+                <span className="text-sm font-black uppercase">Step 6: Configure Subscriptions Table</span>
+              </div>
+
+              {/* Table Selection */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Select Subscriptions Table
+                </label>
+                <select
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-amber-500 transition"
+                  value={subscriptionTableConfig.table_name}
+                  onChange={(e) => handleSelectSubscriptionTable(e.target.value)}
+                >
+                  <option value="">-- Select a table --</option>
+                  {discoveredTables.map((table) => (
+                    <option key={table} value={table}>
+                      {table}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Field Mapping */}
+              {subscriptionTableConfig.table_name && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Field Mapping</span>
+                    <button
+                      onClick={() => {
+                        const mapping = autoMapFields(subscriptionTableConfig.columns, 'subscriptions');
+                        setSubscriptionTableConfig((prev) => ({ ...prev, field_mapping: mapping }));
+                      }}
+                      className="text-[10px] font-bold text-amber-600 hover:text-amber-700"
+                    >
+                      Auto-Detect Fields
+                    </button>
+                  </div>
+                  {renderFieldMappingInputs('subscriptions', subscriptionTableConfig, setSubscriptionTableConfig)}
+                </>
               )}
-              <span>{isTesting ? 'Testing...' : 'Test Connection'}</span>
-            </button>
-            <button
-              onClick={handleSaveConnection}
-              disabled={!canSave}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <CheckCircle2 size={14} />
-              <span>Save Connection</span>
-            </button>
-            <button
-              onClick={handleCancel}
-              className="px-4 py-2.5 text-slate-500 hover:text-slate-800 font-bold text-xs transition"
-            >
-              Cancel
-            </button>
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={navigateNext}
+                  disabled={!subscriptionTableConfig.table_name || !subscriptionTableConfig.field_mapping.id}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  <span>Continue</span>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Review */}
+          {wizardStep === 'review' && (
+            <div className="space-y-5">
+              <div className="flex items-center space-x-2 text-emerald-600 mb-2">
+                <CheckCircle2 size={18} />
+                <span className="text-sm font-black uppercase">Review & Save</span>
+              </div>
+
+              {/* Summary Card */}
+              <div className="bg-slate-50 rounded-xl p-4 space-y-4">
+                <div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase">Connection Name</p>
+                  <p className="text-sm font-bold text-slate-800">{newConnection.name}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase">Supabase URL</p>
+                  <p className="text-sm font-mono text-slate-600">{newConnection.supabase_url}</p>
+                </div>
+
+                <div className="border-t border-slate-200 pt-4">
+                  <p className="text-[9px] font-black text-slate-400 uppercase mb-3">Configured Tables</p>
+                  <div className="space-y-2">
+                    {/* Customers Table */}
+                    <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                      <div className="flex items-center space-x-2">
+                        <Users size={14} className="text-emerald-500" />
+                        <span className="text-xs font-bold text-slate-700">Customers</span>
+                        <span className="text-[9px] font-mono text-slate-400">{customerTableConfig.table_name}</span>
+                      </div>
+                      <span className="text-[9px] font-bold text-emerald-600">
+                        {Object.values(customerTableConfig.field_mapping).filter(Boolean).length} fields
+                      </span>
+                    </div>
+
+                    {/* Orders Tables */}
+                    {selectedDataTypes.orders && orderTableConfigs.map((orderConfig) => (
+                      <div key={orderConfig.table_name} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                        <div className="flex items-center space-x-2">
+                          <Package size={14} className="text-blue-500" />
+                          <span className="text-xs font-bold text-slate-700">Orders</span>
+                          <span className="text-[9px] font-mono text-slate-400">{orderConfig.table_name}</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-blue-600">
+                          {Object.values(orderConfig.field_mapping).filter(Boolean).length} fields
+                        </span>
+                      </div>
+                    ))}
+
+                    {/* Order Items Tables */}
+                    {selectedDataTypes.orderItems && orderItemTableConfigs.map((itemConfig) => (
+                      <div key={itemConfig.table_name} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                        <div className="flex items-center space-x-2">
+                          <Layers size={14} className="text-purple-500" />
+                          <span className="text-xs font-bold text-slate-700">Order Items</span>
+                          <span className="text-[9px] font-mono text-slate-400">{itemConfig.table_name}</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-purple-600">
+                          {Object.values(itemConfig.field_mapping).filter(Boolean).length} fields
+                        </span>
+                      </div>
+                    ))}
+
+                    {/* Subscriptions Table */}
+                    {selectedDataTypes.subscriptions && subscriptionTableConfig.table_name && (
+                      <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                        <div className="flex items-center space-x-2">
+                          <CreditCard size={14} className="text-amber-500" />
+                          <span className="text-xs font-bold text-slate-700">Subscriptions</span>
+                          <span className="text-[9px] font-mono text-slate-400">{subscriptionTableConfig.table_name}</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-amber-600">
+                          {Object.values(subscriptionTableConfig.field_mapping).filter(Boolean).length} fields
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center space-x-3 pt-2">
+                <button
+                  onClick={navigateBack}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                >
+                  <ChevronLeft size={14} />
+                  <span>Back</span>
+                </button>
+                <button
+                  onClick={handleSaveConnection}
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Save Connection</span>
+                </button>
+                <button
+                  onClick={resetWizard}
+                  className="px-4 py-2.5 text-slate-500 hover:text-slate-800 font-bold text-xs transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Success Summary Banner */}
+      {successSummary && (
+        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 relative">
+          <button
+            onClick={() => setSuccessSummary(null)}
+            className="absolute top-3 right-3 text-emerald-400 hover:text-emerald-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <Check className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <h4 className="font-semibold text-emerald-900">Connection Created!</h4>
+              <p className="text-sm text-emerald-700 mt-1">
+                <span className="font-medium">{successSummary.name}</span> is now connected.
+              </p>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {successSummary.tables.map((t, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">
+                    {t.type === 'customers' && <Users className="w-3 h-3" />}
+                    {t.type === 'orders' && <Package className="w-3 h-3" />}
+                    {t.type === 'order_items' && <Layers className="w-3 h-3" />}
+                    {t.type === 'subscriptions' && <CreditCard className="w-3 h-3" />}
+                    {t.type === 'order_items' ? 'Order Items' : t.type.charAt(0).toUpperCase() + t.type.slice(1)}: {t.fields} fields
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -562,9 +1507,38 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   <div className="flex items-center space-x-2">
                     {getStatusIndicator(connection.status)}
                     <h4 className="text-sm font-black text-slate-800">{connection.name}</h4>
-                    <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500">
-                      {connection.table_name}
-                    </span>
+                  </div>
+                  {/* Table badges */}
+                  <div className="flex items-center space-x-1.5 mt-1.5">
+                    {(connection.tables || []).filter(t => t.enabled).map((table) => (
+                      <span
+                        key={table.id}
+                        className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded flex items-center space-x-1 ${
+                          table.table_type === 'customers'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : table.table_type === 'orders'
+                            ? 'bg-blue-100 text-blue-700'
+                            : table.table_type === 'order_items'
+                            ? 'bg-purple-100 text-purple-700'
+                            : table.table_type === 'subscriptions'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {table.table_type === 'customers' && <Users size={10} />}
+                        {table.table_type === 'orders' && <Package size={10} />}
+                        {table.table_type === 'order_items' && <Layers size={10} />}
+                        {table.table_type === 'subscriptions' && <CreditCard size={10} />}
+                        <span>{table.table_type === 'order_items' ? 'items' : table.table_type}</span>
+                      </span>
+                    ))}
+                    {/* Legacy connection indicator */}
+                    {(!connection.tables || connection.tables.length === 0) && (
+                      <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center space-x-1">
+                        <AlertTriangle size={10} />
+                        <span>Needs reconfiguration</span>
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 font-mono mt-1">{connection.supabase_url}</p>
                   <div className="flex items-center space-x-4 mt-2">
@@ -624,7 +1598,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           </div>
         ))}
 
-        {connections.length === 0 && !isAddingNew && (
+        {connections.length === 0 && wizardStep === 'idle' && (
           <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-2xl border border-slate-200">
             <Database size={48} className="mx-auto mb-4 opacity-50" />
             <p className="text-sm font-bold">No connections yet</p>

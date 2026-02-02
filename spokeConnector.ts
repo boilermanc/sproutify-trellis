@@ -1,18 +1,56 @@
 import { createClient } from '@supabase/supabase-js';
-import { SpokeConnection } from './types';
+import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase } from './types';
 
-type TestConnectionInput = Pick<SpokeConnection, 'supabase_url' | 'supabase_key' | 'table_name'>;
+type TestConnectionInput = {
+  supabase_url: string;
+  supabase_key: string;
+  table_name: string;
+};
 
 type TestConnectionResult =
   | { success: true; rowCount: number; columns: string[] }
   | { success: false; error: string };
 
-export interface NormalizedSpokeProfile {
-  email: string;
-  first_name?: string;
-  last_name?: string;
-  phone?: string;
-  subscribed?: boolean;
+// Re-export for backwards compatibility
+export type { NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats } from './types';
+
+export interface NormalizedOrder {
+  id: string;
+  order_number?: string;
+  customer_id?: string;
+  guest_email?: string;
+  status?: string;
+  total?: number;
+  subtotal?: number;
+  tax?: number;
+  paid_at?: string;
+  created_at?: string;
+  shipped_at?: string;
+  delivered_at?: string;
+  _spoke_id: string;
+  _spoke_name: string;
+  _source_table?: string;  // Track which table the order came from
+}
+
+export interface NormalizedOrderItem {
+  id: string;
+  order_id: string;
+  product_name?: string;
+  product_price?: number;
+  quantity?: number;
+  line_total?: number;
+  _spoke_id: string;
+  _spoke_name: string;
+}
+
+export interface NormalizedSubscription {
+  id: string;
+  customer_id?: string;
+  email?: string;
+  status?: string;
+  plan?: string;
+  started_at?: string;
+  expires_at?: string;
   created_at?: string;
   _spoke_id: string;
   _spoke_name: string;
@@ -45,93 +83,123 @@ export async function testSpokeConnection(
   }
 }
 
-export interface AutoMapResult {
-  email: string;
-  first_name: string;
-  last_name: string;
-  phone: string;
-  subscribed: string;
-  created_at: string;
-}
+export const discoverTables = async (
+  supabase_url: string,
+  supabase_key: string
+): Promise<{ tables: string[]; error?: string }> => {
+  try {
+    const client = createClient(supabase_url, supabase_key);
 
-export interface AutoMapFieldsResult {
-  mapping: AutoMapResult;
-  matched: string[];
-  unmatched: string[];
-}
+    const commonTables = [
+      'customers', 'profiles', 'users',
+      'orders', 'order_items', 'legacy_orders', 'legacy_order_items',
+      'subscriptions', 'payments', 'products'
+    ];
+    const foundTables: string[] = [];
 
-// Pattern definitions for field matching
-const FIELD_PATTERNS: Record<keyof AutoMapResult, RegExp[]> = {
-  email: [/^email$/i, /^e[-_]?mail$/i, /^email[-_]?address$/i, /^user[-_]?email$/i],
-  first_name: [/^first[-_]?name$/i, /^fname$/i, /^given[-_]?name$/i, /^forename$/i],
-  last_name: [/^last[-_]?name$/i, /^lname$/i, /^surname$/i, /^family[-_]?name$/i],
-  phone: [/^phone$/i, /^phone[-_]?number$/i, /^mobile$/i, /^cell$/i, /^telephone$/i, /^tel$/i],
-  subscribed: [/^subscribed$/i, /^is[-_]?subscribed$/i, /^opted[-_]?in$/i, /^newsletter$/i, /^email[-_]?opt[-_]?in$/i],
-  created_at: [/^created[-_]?at$/i, /^created$/i, /^created[-_]?date$/i, /^signup[-_]?date$/i, /^registered[-_]?at$/i, /^date[-_]?created$/i],
+    for (const tableName of commonTables) {
+      try {
+        const response = await client
+          .from(tableName)
+          .select('*', { count: 'exact', head: true });
+
+        // Only add tables that return status 200 (actual data)
+        // Status 204 means "No Content" which Supabase returns for non-existent tables
+        if (response.status === 200) {
+          foundTables.push(tableName);
+        }
+      } catch {
+        // Table doesn't exist or no access, skip silently
+      }
+    }
+
+    return { tables: foundTables };
+  } catch (err) {
+    return { tables: [], error: err instanceof Error ? err.message : 'Discovery failed' };
+  }
 };
 
-export function autoMapFields(columns: string[]): AutoMapFieldsResult {
-  const mapping: AutoMapResult = {
-    email: '',
-    first_name: '',
-    last_name: '',
-    phone: '',
-    subscribed: '',
-    created_at: '',
+export const autoMapFields = (
+  columns: string[],
+  tableType: 'customers' | 'orders' | 'order_items' | 'subscriptions'
+): Record<string, string> => {
+  const patterns: Record<string, Record<string, string[]>> = {
+    customers: {
+      id: ['id', 'customer_id', 'user_id', 'uuid'],
+      email: ['email', 'e_mail', 'email_address', 'user_email'],
+      first_name: ['first_name', 'firstname', 'fname', 'given_name'],
+      last_name: ['last_name', 'lastname', 'lname', 'surname', 'family_name'],
+      phone: ['phone', 'phone_number', 'mobile', 'cell', 'telephone'],
+      subscribed: ['subscribed', 'is_subscribed', 'newsletter_subscribed', 'opted_in', 'newsletter'],
+      created_at: ['created_at', 'created', 'createdat', 'signup_date', 'registered_at'],
+    },
+    orders: {
+      id: ['id', 'order_id', 'uuid'],
+      order_number: ['order_number', 'ordernumber', 'number', 'order_no'],
+      customer_id: ['customer_id', 'customerid', 'user_id', 'userid'],
+      guest_email: ['guest_email', 'email', 'guest_mail'],
+      status: ['status', 'order_status', 'state'],
+      total: ['total', 'order_total', 'grand_total', 'amount'],
+      subtotal: ['subtotal', 'sub_total'],
+      tax: ['tax', 'tax_amount', 'sales_tax'],
+      paid_at: ['paid_at', 'payment_date', 'paid_date'],
+      created_at: ['created_at', 'created', 'order_date', 'date'],
+      shipped_at: ['shipped_at', 'ship_date', 'shipping_date'],
+      delivered_at: ['delivered_at', 'delivery_date'],
+    },
+    order_items: {
+      id: ['id', 'item_id', 'line_id'],
+      order_id: ['order_id', 'legacy_order_id', 'orderid'],
+      product_name: ['product_name', 'name', 'item_name', 'title', 'product'],
+      product_price: ['product_price', 'price', 'unit_price'],
+      quantity: ['quantity', 'qty', 'amount'],
+      line_total: ['line_total', 'total', 'subtotal', 'item_total', 'price'],
+    },
+    subscriptions: {
+      id: ['id', 'subscription_id'],
+      customer_id: ['customer_id', 'user_id', 'customerid'],
+      email: ['email', 'user_email'],
+      status: ['status', 'subscription_status', 'state'],
+      plan: ['plan', 'plan_name', 'tier', 'subscription_tier'],
+      started_at: ['started_at', 'start_date', 'subscribed_at'],
+      expires_at: ['expires_at', 'expiry_date', 'end_date', 'subscription_expires_at'],
+      created_at: ['created_at', 'created'],
+    },
   };
-  const matched: string[] = [];
-  const unmatched: string[] = [];
 
-  // Try to match each column to a field
-  columns.forEach((column) => {
-    let wasMatched = false;
+  const mapping: Record<string, string> = {};
+  const tablePatterns = patterns[tableType] || {};
 
-    for (const [field, patterns] of Object.entries(FIELD_PATTERNS)) {
-      // Skip if this field is already mapped
-      if (mapping[field as keyof AutoMapResult]) continue;
-
-      for (const pattern of patterns) {
-        if (pattern.test(column)) {
-          mapping[field as keyof AutoMapResult] = column;
-          matched.push(field);
-          wasMatched = true;
-          break;
-        }
-      }
-      if (wasMatched) break;
+  for (const [field, possibleNames] of Object.entries(tablePatterns)) {
+    const match = columns.find(col =>
+      possibleNames.includes(col.toLowerCase())
+    );
+    if (match) {
+      mapping[field] = match;
     }
+  }
 
-    if (!wasMatched) {
-      unmatched.push(column);
-    }
-  });
-
-  return { mapping, matched, unmatched };
-}
+  return mapping;
+};
 
 export async function fetchSpokeProfiles(
   connection: SpokeConnection
 ): Promise<NormalizedSpokeProfile[]> {
+  // Find the customers table config
+  const tableConfig = connection.tables.find(t => t.table_type === 'customers' && t.enabled);
+  if (!tableConfig) return [];
+
   try {
     const client = createClient(connection.supabase_url, connection.supabase_key);
 
     // Build the select string from field_mapping
-    const fieldMapping = connection.field_mapping;
-    const selectFields: string[] = [];
-
-    // Always include email (required)
-    selectFields.push(fieldMapping.email);
-
-    // Add optional fields if they exist in the mapping
-    if (fieldMapping.first_name) selectFields.push(fieldMapping.first_name);
-    if (fieldMapping.last_name) selectFields.push(fieldMapping.last_name);
-    if (fieldMapping.phone) selectFields.push(fieldMapping.phone);
-    if (fieldMapping.subscribed) selectFields.push(fieldMapping.subscribed);
-    if (fieldMapping.created_at) selectFields.push(fieldMapping.created_at);
+    const fieldMapping = tableConfig.field_mapping;
+    const fields = Object.values(fieldMapping).filter(Boolean);
+    const selectString = fields.join(',');
 
     const { data, error } = await client
-      .from(connection.table_name)
-      .select(selectFields.join(', '))
+      .from(tableConfig.table_name)
+      .select(selectString)
       .limit(1000);
 
     if (error) {
@@ -156,31 +224,37 @@ export async function fetchSpokeProfiles(
     }
 
     // Normalize the data to our standard profile shape
+    const mapping = fieldMapping;
     return data.map((row: Record<string, unknown>) => {
       const profile: NormalizedSpokeProfile = {
-        email: String(row[fieldMapping.email] ?? ''),
+        email: String(row[mapping.email] ?? ''),
         _spoke_id: connection.id,
         _spoke_name: connection.name,
       };
 
-      if (fieldMapping.first_name && row[fieldMapping.first_name] !== undefined) {
-        profile.first_name = String(row[fieldMapping.first_name]);
+      // Include id if mapped (needed for order linking)
+      if (mapping.id && row[mapping.id] !== undefined) {
+        profile.id = String(row[mapping.id]);
       }
 
-      if (fieldMapping.last_name && row[fieldMapping.last_name] !== undefined) {
-        profile.last_name = String(row[fieldMapping.last_name]);
+      if (mapping.first_name && row[mapping.first_name] !== undefined) {
+        profile.first_name = String(row[mapping.first_name]);
       }
 
-      if (fieldMapping.phone && row[fieldMapping.phone] !== undefined) {
-        profile.phone = String(row[fieldMapping.phone]);
+      if (mapping.last_name && row[mapping.last_name] !== undefined) {
+        profile.last_name = String(row[mapping.last_name]);
       }
 
-      if (fieldMapping.subscribed && row[fieldMapping.subscribed] !== undefined) {
-        profile.subscribed = Boolean(row[fieldMapping.subscribed]);
+      if (mapping.phone && row[mapping.phone] !== undefined) {
+        profile.phone = String(row[mapping.phone]);
       }
 
-      if (fieldMapping.created_at && row[fieldMapping.created_at] !== undefined) {
-        profile.created_at = String(row[fieldMapping.created_at]);
+      if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
+        profile.subscribed = Boolean(row[mapping.subscribed]);
+      }
+
+      if (mapping.created_at && row[mapping.created_at] !== undefined) {
+        profile.created_at = String(row[mapping.created_at]);
       }
 
       return profile;
@@ -205,8 +279,11 @@ export interface FetchAllSpokesResult {
 export async function fetchAllSpokesProfiles(
   connections: SpokeConnection[]
 ): Promise<FetchAllSpokesResult> {
-  // Filter to only active connections
-  const activeConnections = connections.filter((c) => c.status === 'active');
+  // Filter to only active connections with customers table enabled
+  const activeConnections = connections.filter(c =>
+    c.status === 'active' &&
+    c.tables.some(t => t.table_type === 'customers' && t.enabled)
+  );
 
   // Fetch from all spokes in parallel, using allSettled to handle partial failures
   const results = await Promise.allSettled(
@@ -226,3 +303,400 @@ export async function fetchAllSpokesProfiles(
 
   return { profiles, errors };
 }
+
+// Orders fetching - supports multiple order tables (e.g., 'orders' + 'legacy_orders')
+export const fetchSpokeOrders = async (
+  connection: SpokeConnection
+): Promise<NormalizedOrder[]> => {
+  // Find ALL enabled order tables (could be 'orders', 'legacy_orders', etc.)
+  const orderTableConfigs = connection.tables.filter(
+    t => t.table_type === 'orders' && t.enabled
+  );
+
+  if (orderTableConfigs.length === 0) return [];
+
+  const allOrders: NormalizedOrder[] = [];
+
+  for (const tableConfig of orderTableConfigs) {
+    try {
+      const client = createClient(connection.supabase_url, connection.supabase_key);
+
+      // Build select string from field mapping
+      const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
+      const selectString = fields.join(',');
+
+      const { data, error } = await client
+        .from(tableConfig.table_name)
+        .select(selectString)
+        .limit(1000);
+
+      if (error) {
+        console.error(`Error fetching from ${tableConfig.table_name}:`, error.message);
+        continue; // Skip this table but continue with others
+      }
+
+      if (!data) continue;
+
+      // Normalize the data
+      const mapping = tableConfig.field_mapping;
+      const normalized = data.map((row: any) => ({
+        id: row[mapping.id] || '',
+        order_number: row[mapping.order_number],
+        customer_id: row[mapping.customer_id],
+        guest_email: row[mapping.guest_email],
+        status: row[mapping.status],
+        total: row[mapping.total] ? parseFloat(row[mapping.total]) : undefined,
+        subtotal: row[mapping.subtotal] ? parseFloat(row[mapping.subtotal]) : undefined,
+        tax: row[mapping.tax] ? parseFloat(row[mapping.tax]) : undefined,
+        paid_at: row[mapping.paid_at],
+        created_at: row[mapping.created_at],
+        shipped_at: row[mapping.shipped_at],
+        delivered_at: row[mapping.delivered_at],
+        _spoke_id: connection.id,
+        _spoke_name: connection.name,
+        _source_table: tableConfig.table_name, // Track which table this came from
+      }));
+
+      allOrders.push(...normalized);
+    } catch (err) {
+      console.error(`Error fetching orders from ${tableConfig.table_name}:`, err);
+    }
+  }
+
+  return allOrders;
+};
+
+export interface FetchAllSpokesOrdersResult {
+  orders: NormalizedOrder[];
+  errors: string[];
+}
+
+export const fetchAllSpokesOrders = async (
+  connections: SpokeConnection[]
+): Promise<FetchAllSpokesOrdersResult> => {
+  const activeConnections = connections.filter(c =>
+    c.status === 'active' &&
+    c.tables.some(t => t.table_type === 'orders' && t.enabled)
+  );
+
+  const results = await Promise.allSettled(
+    activeConnections.map(conn => fetchSpokeOrders(conn))
+  );
+
+  const orders: NormalizedOrder[] = [];
+  const errors: string[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      orders.push(...result.value);
+    } else {
+      errors.push(`${activeConnections[index].name}: ${result.reason}`);
+    }
+  });
+
+  return { orders, errors };
+};
+
+// Order items fetching - supports multiple order_items tables
+export const fetchSpokeOrderItems = async (
+  connection: SpokeConnection
+): Promise<NormalizedOrderItem[]> => {
+  // Find ALL enabled order_items tables
+  const itemTableConfigs = connection.tables.filter(
+    t => t.table_type === 'order_items' && t.enabled
+  );
+
+  if (itemTableConfigs.length === 0) return [];
+
+  const allItems: NormalizedOrderItem[] = [];
+
+  for (const tableConfig of itemTableConfigs) {
+    try {
+      const client = createClient(connection.supabase_url, connection.supabase_key);
+
+      const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
+      const selectString = fields.join(',');
+
+      const { data, error } = await client
+        .from(tableConfig.table_name)
+        .select(selectString)
+        .limit(5000);
+
+      if (error) {
+        console.error(`Error fetching from ${tableConfig.table_name}:`, error.message);
+        continue;
+      }
+
+      if (!data) continue;
+
+      const mapping = tableConfig.field_mapping;
+      const normalized = data.map((row: any) => ({
+        id: row[mapping.id] || '',
+        order_id: row[mapping.order_id] || '',
+        product_name: row[mapping.product_name],
+        product_price: row[mapping.product_price] ? parseFloat(row[mapping.product_price]) : undefined,
+        quantity: row[mapping.quantity] ? parseInt(row[mapping.quantity]) : undefined,
+        line_total: row[mapping.line_total] ? parseFloat(row[mapping.line_total]) : undefined,
+        _spoke_id: connection.id,
+        _spoke_name: connection.name,
+      }));
+
+      allItems.push(...normalized);
+    } catch (err) {
+      console.error(`Error fetching order items from ${tableConfig.table_name}:`, err);
+    }
+  }
+
+  return allItems;
+};
+
+export interface FetchAllSpokesOrderItemsResult {
+  items: NormalizedOrderItem[];
+  errors: string[];
+}
+
+export const fetchAllSpokesOrderItems = async (
+  connections: SpokeConnection[]
+): Promise<FetchAllSpokesOrderItemsResult> => {
+  const activeConnections = connections.filter(c =>
+    c.status === 'active' &&
+    c.tables?.some(t => t.table_type === 'order_items' && t.enabled)
+  );
+
+  const results = await Promise.allSettled(
+    activeConnections.map(conn => fetchSpokeOrderItems(conn))
+  );
+
+  const items: NormalizedOrderItem[] = [];
+  const errors: string[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      items.push(...result.value);
+    } else {
+      errors.push(`${activeConnections[index].name}: ${result.reason}`);
+    }
+  });
+
+  return { items, errors };
+};
+
+// Subscriptions fetching
+export const fetchSpokeSubscriptions = async (
+  connection: SpokeConnection
+): Promise<NormalizedSubscription[]> => {
+  const tableConfig = connection.tables.find(t => t.table_type === 'subscriptions' && t.enabled);
+  if (!tableConfig) return [];
+
+  try {
+    const client = createClient(connection.supabase_url, connection.supabase_key);
+
+    // Build select string from field mapping
+    const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
+    const selectString = fields.join(',');
+
+    const { data, error } = await client
+      .from(tableConfig.table_name)
+      .select(selectString)
+      .limit(1000);
+
+    if (error) throw new Error(error.message);
+    if (!data) return [];
+
+    // Normalize the data
+    const mapping = tableConfig.field_mapping;
+    return data.map((row: any) => ({
+      id: row[mapping.id] || '',
+      customer_id: row[mapping.customer_id],
+      email: row[mapping.email],
+      status: row[mapping.status],
+      plan: row[mapping.plan],
+      started_at: row[mapping.started_at],
+      expires_at: row[mapping.expires_at],
+      created_at: row[mapping.created_at],
+      _spoke_id: connection.id,
+      _spoke_name: connection.name,
+    }));
+  } catch (err) {
+    console.error(`Error fetching subscriptions from ${connection.name}:`, err);
+    return [];
+  }
+};
+
+export interface FetchAllSpokesSubscriptionsResult {
+  subscriptions: NormalizedSubscription[];
+  errors: string[];
+}
+
+export const fetchAllSpokesSubscriptions = async (
+  connections: SpokeConnection[]
+): Promise<FetchAllSpokesSubscriptionsResult> => {
+  const activeConnections = connections.filter(c =>
+    c.status === 'active' &&
+    c.tables.some(t => t.table_type === 'subscriptions' && t.enabled)
+  );
+
+  const results = await Promise.allSettled(
+    activeConnections.map(conn => fetchSpokeSubscriptions(conn))
+  );
+
+  const subscriptions: NormalizedSubscription[] = [];
+  const errors: string[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      subscriptions.push(...result.value);
+    } else {
+      errors.push(`${activeConnections[index].name}: ${result.reason}`);
+    }
+  });
+
+  return { subscriptions, errors };
+};
+
+// Profile enrichment with order intelligence
+export const enrichProfilesWithOrders = (
+  profiles: NormalizedSpokeProfile[],
+  orders: NormalizedOrder[],
+  orderItems?: NormalizedOrderItem[]
+): EnrichedProfile[] => {
+  // Group orders by customer_id and spoke
+  const ordersByCustomer = new Map<string, NormalizedOrder[]>();
+
+  for (const order of orders) {
+    // Create a composite key: spoke_id + customer_id
+    // This ensures we only match within the same spoke
+    if (order.customer_id) {
+      const key = `${order._spoke_id}:${order.customer_id}`;
+      const existing = ordersByCustomer.get(key) || [];
+      existing.push(order);
+      ordersByCustomer.set(key, existing);
+    }
+
+    // Also index by guest_email for guest checkouts
+    if (order.guest_email) {
+      const key = `${order._spoke_id}:email:${order.guest_email.toLowerCase()}`;
+      const existing = ordersByCustomer.get(key) || [];
+      existing.push(order);
+      ordersByCustomer.set(key, existing);
+    }
+  }
+
+  // Group order items by order_id for quick lookup
+  const itemsByOrderId = new Map<string, NormalizedOrderItem[]>();
+  if (orderItems) {
+    for (const item of orderItems) {
+      const key = `${item._spoke_id}:${item.order_id}`;
+      const existing = itemsByOrderId.get(key) || [];
+      existing.push(item);
+      itemsByOrderId.set(key, existing);
+    }
+  }
+
+  // Enrich each profile
+  return profiles.map(profile => {
+    let customerOrders: NormalizedOrder[] = [];
+
+    // Try to find orders by customer_id first (if profile has an id)
+    if (profile.id) {
+      const customerIdKey = `${profile._spoke_id}:${profile.id}`;
+      customerOrders = ordersByCustomer.get(customerIdKey) || [];
+    }
+
+    // If no orders found by ID, try by email
+    if (customerOrders.length === 0 && profile.email) {
+      const emailKey = `${profile._spoke_id}:email:${profile.email.toLowerCase()}`;
+      customerOrders = ordersByCustomer.get(emailKey) || [];
+    }
+
+    // Calculate stats if orders exist
+    if (customerOrders.length === 0) {
+      return profile as EnrichedProfile;
+    }
+
+    const ltv = customerOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const orderDates = customerOrders
+      .map(o => o.created_at)
+      .filter(Boolean)
+      .sort();
+
+    // Build products_purchased from order items
+    let products_purchased: ProductPurchase[] | undefined;
+    if (orderItems && orderItems.length > 0) {
+      const productMap = new Map<string, ProductPurchase>();
+
+      for (const order of customerOrders) {
+        const itemKey = `${order._spoke_id}:${order.id}`;
+        const items = itemsByOrderId.get(itemKey) || [];
+
+        for (const item of items) {
+          if (!item.product_name) continue;
+
+          const existing = productMap.get(item.product_name);
+          if (existing) {
+            existing.total_quantity += item.quantity || 1;
+            existing.total_spent += item.line_total || 0;
+            // Update last_purchased_at if this order is more recent
+            if (order.created_at && (!existing.last_purchased_at || order.created_at > existing.last_purchased_at)) {
+              existing.last_purchased_at = order.created_at;
+            }
+          } else {
+            productMap.set(item.product_name, {
+              product_name: item.product_name,
+              total_quantity: item.quantity || 1,
+              total_spent: item.line_total || 0,
+              last_purchased_at: order.created_at,
+            });
+          }
+        }
+      }
+
+      if (productMap.size > 0) {
+        // Sort by total_spent descending
+        products_purchased = Array.from(productMap.values())
+          .sort((a, b) => b.total_spent - a.total_spent);
+      }
+    }
+
+    const order_stats: ProfileOrderStats = {
+      ltv,
+      order_count: customerOrders.length,
+      first_purchase_at: orderDates[0],
+      last_purchase_at: orderDates[orderDates.length - 1],
+      avg_order_value: ltv / customerOrders.length,
+      products_purchased,
+    };
+
+    return {
+      ...profile,
+      order_stats,
+    } as EnrichedProfile;
+  });
+};
+
+export const fetchEnrichedProfiles = async (
+  connections: SpokeConnection[]
+): Promise<{ profiles: EnrichedProfile[]; errors: string[] }> => {
+  // Fetch profiles, orders, and order items in parallel
+  const [profilesResult, ordersResult, itemsResult] = await Promise.all([
+    fetchAllSpokesProfiles(connections),
+    fetchAllSpokesOrders(connections),
+    fetchAllSpokesOrderItems(connections),
+  ]);
+
+  // Combine errors
+  const errors = [
+    ...profilesResult.errors,
+    ...ordersResult.errors,
+    ...itemsResult.errors,
+  ];
+
+  // Enrich profiles with order data and order items
+  const enrichedProfiles = enrichProfilesWithOrders(
+    profilesResult.profiles,
+    ordersResult.orders,
+    itemsResult.items
+  );
+
+  return { profiles: enrichedProfiles, errors };
+};
