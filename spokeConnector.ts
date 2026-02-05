@@ -20,6 +20,9 @@ export interface NormalizedOrder {
   order_number?: string;
   customer_id?: string;
   guest_email?: string;
+  billing_email?: string;
+  billing_first_name?: string;
+  billing_last_name?: string;
   status?: string;
   total?: number;
   subtotal?: number;
@@ -140,7 +143,10 @@ export const autoMapFields = (
       id: ['id', 'order_id', 'uuid'],
       order_number: ['order_number', 'ordernumber', 'number', 'order_no'],
       customer_id: ['customer_id', 'customerid', 'user_id', 'userid'],
-      guest_email: ['guest_email', 'email', 'guest_mail'],
+      guest_email: ['guest_email', 'email', 'guest_mail', 'billing_email'],
+      billing_email: ['billing_email', 'guest_email', 'email'],
+      billing_first_name: ['billing_first_name', 'first_name', 'firstname', 'billing_fname'],
+      billing_last_name: ['billing_last_name', 'last_name', 'lastname', 'billing_lname'],
       status: ['status', 'order_status', 'state'],
       total: ['total', 'order_total', 'grand_total', 'amount'],
       subtotal: ['subtotal', 'sub_total'],
@@ -354,7 +360,10 @@ export const fetchSpokeOrders = async (
         id: row[mapping.id] || '',
         order_number: row[mapping.order_number],
         customer_id: row[mapping.customer_id],
-        guest_email: row[mapping.guest_email],
+        guest_email: row[mapping.guest_email] || row[mapping.billing_email],
+        billing_email: row[mapping.billing_email] || row[mapping.guest_email],
+        billing_first_name: row[mapping.billing_first_name],
+        billing_last_name: row[mapping.billing_last_name],
         status: row[mapping.status],
         total: row[mapping.total] ? parseFloat(row[mapping.total]) : undefined,
         subtotal: row[mapping.subtotal] ? parseFloat(row[mapping.subtotal]) : undefined,
@@ -712,6 +721,85 @@ export const enrichProfilesWithOrders = (
   });
 };
 
+// Extract unique customer identities from orders (for order-only customers)
+interface OrderIdentity {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  order_count: number;
+  total_spent: number;
+  first_order_date?: string;
+  last_order_date?: string;
+  spoke_id: string;
+  spoke_name: string;
+  source_table?: string;
+}
+
+const extractOrderIdentities = (orders: NormalizedOrder[]): Map<string, OrderIdentity> => {
+  const identities = new Map<string, OrderIdentity>();
+
+  for (const order of orders) {
+    // Get email from billing_email or guest_email
+    const email = (order.billing_email || order.guest_email || '').toLowerCase().trim();
+    if (!email) continue;
+
+    // Create composite key: spoke_id + lowercase email
+    const key = `${order._spoke_id}:${email}`;
+
+    const existing = identities.get(key);
+    const orderDate = order.created_at || order.paid_at;
+    const orderTotal = order.total || 0;
+
+    if (existing) {
+      // Update existing identity
+      existing.order_count += 1;
+      existing.total_spent += orderTotal;
+
+      if (orderDate) {
+        if (!existing.first_order_date || orderDate < existing.first_order_date) {
+          existing.first_order_date = orderDate;
+        }
+        if (!existing.last_order_date || orderDate > existing.last_order_date) {
+          existing.last_order_date = orderDate;
+        }
+      }
+
+      // Update name if we don't have it yet
+      if (!existing.first_name && order.billing_first_name) {
+        existing.first_name = order.billing_first_name;
+      }
+      if (!existing.last_name && order.billing_last_name) {
+        existing.last_name = order.billing_last_name;
+      }
+    } else {
+      // Create new identity
+      identities.set(key, {
+        email,
+        first_name: order.billing_first_name,
+        last_name: order.billing_last_name,
+        order_count: 1,
+        total_spent: orderTotal,
+        first_order_date: orderDate,
+        last_order_date: orderDate,
+        spoke_id: order._spoke_id,
+        spoke_name: order._spoke_name,
+        source_table: order._source_table,
+      });
+    }
+  }
+
+  return identities;
+};
+
+// Generate a deterministic ID from email
+const generateIdFromEmail = (email: string, spokeId: string): string => {
+  // Simple hash-like ID generation
+  const hash = email.split('').reduce((acc, char) => {
+    return ((acc << 5) - acc) + char.charCodeAt(0);
+  }, 0);
+  return `order_${spokeId}_${Math.abs(hash).toString(36)}`;
+};
+
 export const fetchEnrichedProfiles = async (
   connections: SpokeConnection[]
 ): Promise<{ profiles: EnrichedProfile[]; errors: string[] }> => {
@@ -729,12 +817,65 @@ export const fetchEnrichedProfiles = async (
     ...itemsResult.errors,
   ];
 
+  // Build a map of existing profiles by lowercase email + spoke_id
+  const profilesByEmail = new Map<string, NormalizedSpokeProfile>();
+  for (const profile of profilesResult.profiles) {
+    if (profile.email) {
+      const key = `${profile._spoke_id}:${profile.email.toLowerCase().trim()}`;
+      profilesByEmail.set(key, profile);
+    }
+  }
+
+  // Extract unique identities from orders
+  const orderIdentities = extractOrderIdentities(ordersResult.orders);
+
+  // Create profiles for order-only identities (those not in customers table)
+  const orderOnlyProfiles: NormalizedSpokeProfile[] = [];
+
+  for (const [key, identity] of orderIdentities) {
+    // Check if this email already exists in customers
+    if (!profilesByEmail.has(key)) {
+      // Create a new profile from order data
+      const newProfile: NormalizedSpokeProfile = {
+        id: generateIdFromEmail(identity.email, identity.spoke_id),
+        email: identity.email,
+        first_name: identity.first_name,
+        last_name: identity.last_name,
+        subscribed: true, // Default to subscribed
+        created_at: identity.first_order_date,
+        _spoke_id: identity.spoke_id,
+        _spoke_name: identity.spoke_name,
+      };
+
+      orderOnlyProfiles.push(newProfile);
+      // Add to map so enrichment can find it
+      profilesByEmail.set(key, newProfile);
+    }
+  }
+
+  // Combine customer profiles + order-only profiles
+  const allProfiles = [...profilesResult.profiles, ...orderOnlyProfiles];
+
   // Enrich profiles with order data and order items
   const enrichedProfiles = enrichProfilesWithOrders(
-    profilesResult.profiles,
+    allProfiles,
     ordersResult.orders,
     itemsResult.items
   );
+
+  // Mark order-only profiles with special tags/metadata
+  const orderOnlyEmails = new Set(orderOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
+
+  enrichedProfiles.forEach(profile => {
+    const key = `${profile._spoke_id}:${profile.email.toLowerCase()}`;
+    const identity = orderIdentities.get(key);
+
+    if (orderOnlyEmails.has(key) && identity) {
+      // This is an order-only profile - add metadata
+      (profile as any)._order_only = true;
+      (profile as any)._source = identity.source_table || 'orders';
+    }
+  });
 
   // Enrich with predicted demographics
   await loadNameCache();

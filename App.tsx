@@ -27,7 +27,7 @@ import { getProfileByEmail } from './lib/supabaseService';
 import { fetchProfiles } from './supabaseService';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection } from './types';
-import { MOCK_PROFILES, MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
+import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
 const PERSISTENCE_KEY = 'trellis_v1_store';
@@ -126,7 +126,7 @@ const AppContent: React.FC = () => {
     const loadProfiles = async () => {
       setIsLoadingProfiles(true);
       const data = await fetchProfiles();
-      setProfiles(data.length > 0 ? data : MOCK_PROFILES); // Fallback to mock if empty
+      setProfiles(data); // Profiles come fresh from spoke connector
       setIsLoadingProfiles(false);
     };
     loadProfiles();
