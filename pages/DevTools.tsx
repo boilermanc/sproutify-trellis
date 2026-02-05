@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { SQL_SCHEMA, WEBHOOK_SPECS, MOCK_PROFILES, MOCK_SPOKE_CONFIGS, MOCK_FAILED_SYNCS, SITES_LIST, N8N_BLUEPRINTS } from '../constants';
+import { SQL_SCHEMA, WEBHOOK_SPECS, MOCK_SPOKE_CONFIGS, MOCK_FAILED_SYNCS, SITES_LIST, N8N_BLUEPRINTS } from '../constants';
 import { QueuedTask, Profile } from '../types';
 import { 
   Terminal, Database, CheckSquare, ExternalLink, Activity, 
@@ -29,8 +29,22 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
   const [eventId, setEventId] = useState('evt_' + Math.random().toString(36).substr(2, 5));
   const [processedEvents, setProcessedEvents] = useState<string[]>(['evt_initial_123']);
   
-  // Lifecycle Simulation State
-  const [simProfile, setSimProfile] = useState<Profile>(profiles[0] || MOCK_PROFILES[0]);
+  // Lifecycle Simulation State - creates a demo profile if no real profiles exist
+  const demoProfile: Profile = {
+    id: 'demo_sim',
+    email: 'demo@simulation.local',
+    first_name: 'Demo',
+    is_subscribed: true,
+    marketing_pause: false,
+    tags: [],
+    segments: [],
+    branches: ['farm.sproutify.app', 'school.sproutify.app'],
+    status: 'active',
+    ltv: 0,
+    churn_risk: 'minimal',
+    last_active: new Date().toISOString(),
+  };
+  const [simProfile, setSimProfile] = useState<Profile>(profiles[0] || demoProfile);
 
   // Worker Queue State
   const [taskQueue, setTaskQueue] = useState<QueuedTask[]>([]);
@@ -184,8 +198,8 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
                                <UserRound size={12} />
                                <span>Target identity: {simProfile.email}</span>
                             </div>
-                            <button 
-                                onClick={() => setSimProfile(profiles[0] || MOCK_PROFILES[0])}
+                            <button
+                                onClick={() => setSimProfile(profiles[0] || demoProfile)}
                                 className="text-[8px] font-black text-slate-500 uppercase hover:text-white"
                             >
                                 Reset Profile

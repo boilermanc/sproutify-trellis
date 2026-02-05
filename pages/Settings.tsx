@@ -1,12 +1,11 @@
 
 import React, { useState } from 'react';
-import { ApiKeyConfig, LlmProvider, Profile, Integration, SpokeConnection } from '../types';
-import Importer from './Importer';
+import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection } from '../types';
 import ConnectionsManager from '../ConnectionsManager';
 import {
   Key, Globe, Save, RefreshCw,
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
-  Phone, Cpu, Sparkles, Zap, Database, Plug,
+  Phone, Cpu, Sparkles, Zap, Plug,
   Trash2, Plus, X, Slack, Link
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
@@ -14,8 +13,6 @@ import { MOCK_INTEGRATIONS } from '../constants';
 interface SettingsProps {
   apiKeys: ApiKeyConfig;
   onUpdateApiKeys: (keys: ApiKeyConfig) => void;
-  profiles: Profile[];
-  onImportComplete: (newProfiles: Profile[]) => void;
   spokeConnections: SpokeConnection[];
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
 }
@@ -36,12 +33,10 @@ const INTEGRATION_TYPES: { id: Integration['type']; label: string }[] = [
 const Settings: React.FC<SettingsProps> = ({
   apiKeys,
   onUpdateApiKeys,
-  profiles,
-  onImportComplete,
   spokeConnections,
   onSpokeConnectionsChange
 }) => {
-  const [activeTab, setActiveTab] = useState<'integrations' | 'connections' | 'api' | 'import'>('integrations');
+  const [activeTab, setActiveTab] = useState<'integrations' | 'connections' | 'api'>('integrations');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);
@@ -101,7 +96,6 @@ const Settings: React.FC<SettingsProps> = ({
         {[
           { id: 'integrations', label: 'Integrations', icon: Plug },
           { id: 'connections', label: 'Connections', icon: Link },
-          { id: 'import', label: 'Import', icon: Database },
           { id: 'api', label: 'Secrets', icon: Key },
         ].map(tab => (
           <button 
@@ -303,10 +297,6 @@ const Settings: React.FC<SettingsProps> = ({
             />
           )}
 
-          {activeTab === 'import' && (
-            <Importer profiles={profiles} onImportComplete={onImportComplete} />
-          )}
-
           {activeTab === 'api' && (
             <div className="space-y-10 animate-in fade-in duration-300">
                <div>
@@ -461,7 +451,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
         </div>
 
-        {activeTab !== 'import' && activeTab !== 'integrations' && activeTab !== 'connections' && (
+        {activeTab !== 'integrations' && activeTab !== 'connections' && (
           <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end items-center space-x-4">
             <button 
               onClick={handleSave}

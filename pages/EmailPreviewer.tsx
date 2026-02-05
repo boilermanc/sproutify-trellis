@@ -1,11 +1,10 @@
 
 import React, { useState } from 'react';
-import { MOCK_PROFILES } from '../constants';
 import UnifiedOnboarding from '../components/UnifiedOnboarding';
 import { Profile } from '../types';
-import { 
-  Smartphone, Mail, RefreshCw, Monitor, Palette,
-  Globe, Zap, Info, ExternalLink
+import {
+  Smartphone, Mail, Monitor, Palette,
+  Globe, Zap, Info, AlertCircle
 } from 'lucide-react';
 
 const THEME_PRESETS = [
@@ -20,17 +19,31 @@ interface EmailPreviewerProps {
   profiles: Profile[];
 }
 
-// Updated component to accept profiles prop
+// Updated component to accept profiles prop - data comes live from spokes
 const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles }) => {
-  // Initialize with the provided email if present, otherwise default to first profile from state
-  const [selectedProfile, setSelectedProfile] = useState<Profile>(() => {
+  // Initialize with the provided email if present, otherwise default to first profile
+  const [selectedProfile, setSelectedProfile] = useState<Profile | null>(() => {
+    if (profiles.length === 0) return null;
     if (initialEmail) {
-      return profiles.find(p => p.email === initialEmail) || profiles[0] || MOCK_PROFILES[0];
+      return profiles.find(p => p.email === initialEmail) || profiles[0];
     }
-    return profiles[0] || MOCK_PROFILES[0];
+    return profiles[0];
   });
   const [themeColor, setThemeColor] = useState(THEME_PRESETS[0].color);
   const [isMobile, setIsMobile] = useState(false);
+
+  // Handle empty state when no profiles are connected
+  if (!selectedProfile || profiles.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <AlertCircle size={48} className="text-slate-300 mb-4" />
+        <h3 className="text-lg font-bold text-slate-700 mb-2">No Profiles Available</h3>
+        <p className="text-sm text-slate-500 max-w-md">
+          Connect a spoke database in Branches to start previewing emails with real customer data.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 pb-20">

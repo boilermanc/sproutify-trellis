@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ViewState, User, Brand } from '../types';
+import { ViewState, User, Brand, Profile } from '../types';
 import SageChat from './SageChat';
 import ContextAwareHelp from './ContextAwareHelp';
 import {
@@ -15,10 +15,11 @@ interface LayoutProps {
   onViewChange: (view: ViewState) => void;
   user: User;
   brand: Brand;
+  profiles?: Profile[];
   onLogout?: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, onLogout }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout }) => {
   const navItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
@@ -156,7 +157,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
         {/* Global Overlays */}
         <ContextAwareHelp activeView={activeView} />
-        <SageChat brand={brand} />
+        <SageChat brand={brand} profiles={profiles} />
       </main>
     </div>
   );

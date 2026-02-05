@@ -1,5 +1,5 @@
 
-import { Profile, MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
+import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -126,26 +126,6 @@ export const MOCK_FAILED_SYNCS: FailedSync[] = [
     error_message: 'API Key Revoked on Instagram n8n node.',
     retry_count: 0,
     created_at: new Date(Date.now() - 7200000).toISOString()
-  }
-];
-
-export const MOCK_PROFILES: Profile[] = [
-  {
-    id: 'p_uuid_1',
-    spoke_uuid: 'ext_user_4491',
-    email: 'sarah.green@example.com',
-    first_name: 'Sarah',
-    phone: '+15550101',
-    is_subscribed: true,
-    marketing_pause: true,
-    tags: ['gardening', 'organic'],
-    segments: ['woo_customer'],
-    branches: ['farm.sproutify.app', 'micro.sproutify.app'],
-    status: 'active',
-    ltv: 1240.00,
-    churn_risk: 'minimal',
-    last_active: '2023-10-24T10:00:00Z',
-    last_event_timestamp: '2023-10-24T09:00:00Z'
   }
 ];
 

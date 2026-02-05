@@ -197,19 +197,6 @@ const AppContent: React.FC = () => {
     }, 4000);
   }, []);
 
-  const handleSaveConnection = useCallback((connection: SavedConnection) => {
-    setSavedConnections(prev => {
-      const existingIndex = prev.findIndex(c => c.id === connection.id);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = connection;
-        return updated;
-      }
-      return [...prev, connection];
-    });
-    addToast(`Connection "${connection.name}" saved successfully.`);
-  }, [addToast]);
-
   const handleToggleFavorite = useCallback((connectionId: string) => {
     setSavedConnections(prev =>
       prev.map(c =>
@@ -262,15 +249,8 @@ const AppContent: React.FC = () => {
               success ? 'success' : 'error'
             );
           }}
-          profiles={profiles}
-          onImportComplete={(newProfiles) => {
-            setProfiles(prev => [...prev, ...newProfiles]);
-            addToast(`Identity ingest complete: ${newProfiles.length} new gardeners synced.`);
-          }}
           spokeConnections={spokeConnections}
           onSpokeConnectionsChange={setSpokeConnections}
-          savedConnections={savedConnections}
-          onSaveConnection={handleSaveConnection}
         />
       );
       default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} />;
@@ -293,7 +273,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} onLogout={signOut}>
+    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut}>
       {renderView()}
 
       {/* Global Toast Notification Engine */}

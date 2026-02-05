@@ -9,11 +9,12 @@ import {
 } from 'lucide-react';
 import { ChatMessage, LlmProvider, Brand, Ticket, Profile } from '../types';
 import { chatWithSage } from '../services/aiService';
-import { MOCK_TICKETS, MOCK_PROFILES } from '../constants';
+import { MOCK_TICKETS } from '../constants';
 
 interface SageChatProps {
   provider?: LlmProvider;
   brand?: Brand;
+  profiles?: Profile[];
 }
 
 // Stylized Icon Component with Purple-Pink Gradient Background
@@ -30,7 +31,7 @@ const SageIcon = ({ size = 24, className = "" }: { size?: number, className?: st
   </div>
 );
 
-const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand }) => {
+const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [] }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState('');
@@ -55,8 +56,8 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand }) => {
       return keywords.some(k => k.length > 3 && fullText.includes(k));
     });
 
-    const relevantProfiles = MOCK_PROFILES.filter(p => 
-      fullText.includes(p.first_name.toLowerCase()) || 
+    const relevantProfiles = profiles.filter(p =>
+      (p.first_name && fullText.includes(p.first_name.toLowerCase())) ||
       fullText.includes(p.email.toLowerCase())
     );
 
@@ -75,7 +76,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand }) => {
       profiles: relevantProfiles,
       questions: dynamicQuestions.slice(0, 4)
     };
-  }, [messages]);
+  }, [messages, profiles]);
 
   const handleSend = async (e?: React.FormEvent, customMsg?: string) => {
     if (e) e.preventDefault();
