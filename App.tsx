@@ -24,7 +24,7 @@ import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getProfileByEmail } from './lib/supabaseService';
-import { fetchProfiles } from './supabaseService';
+import { fetchEnrichedProfiles } from './spokeConnector';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection } from './types';
 import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
@@ -121,16 +121,52 @@ const AppContent: React.FC = () => {
     fetchSecrets(SPROUTIFY_ORG_ID).then(setApiKeys);
   }, []);
 
-  // Fetch profiles from Supabase on mount
+  // Fetch profiles from spoke connections using enriched merge logic
   useEffect(() => {
     const loadProfiles = async () => {
+      if (spokeConnections.length === 0) {
+        setProfiles([]);
+        setIsLoadingProfiles(false);
+        return;
+      }
       setIsLoadingProfiles(true);
-      const data = await fetchProfiles();
-      setProfiles(data); // Profiles come fresh from spoke connector
-      setIsLoadingProfiles(false);
+      try {
+        const { profiles: enrichedProfiles, errors } = await fetchEnrichedProfiles(spokeConnections);
+        if (errors.length > 0) {
+          console.warn('Profile fetch errors:', errors);
+        }
+        // Convert EnrichedProfile to Profile type for app state
+        setProfiles(enrichedProfiles.map(p => ({
+          id: p.id || p.email,
+          email: p.email,
+          first_name: p.first_name || '',
+          last_name: p.last_name,
+          phone: p.phone,
+          is_subscribed: p.subscribed ?? true,
+          marketing_pause: false,
+          tags: (p as any)._order_only ? ['order_only'] : [],
+          segments: (p as any)._order_only ? ['legacy_orders'] : [],
+          branches: [p._spoke_name],
+          status: 'active' as const,
+          ltv: p.order_stats?.ltv || 0,
+          churn_risk: 'minimal' as const,
+          last_active: p.order_stats?.last_purchase_at || p.created_at,
+          metadata: {
+            spoke_id: p._spoke_id,
+            spoke_name: p._spoke_name,
+            order_stats: p.order_stats,
+            predicted_demographics: p._predicted_demographics,
+          },
+        })));
+      } catch (err) {
+        console.error('Failed to load profiles:', err);
+        setProfiles([]);
+      } finally {
+        setIsLoadingProfiles(false);
+      }
     };
     loadProfiles();
-  }, []);
+  }, [spokeConnections]);
 
   // Derive currentUser from Supabase auth user + profile
   const currentUser: User = {

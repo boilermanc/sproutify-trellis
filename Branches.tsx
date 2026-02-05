@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Globe, Database, Check, X, AlertCircle, Eye, EyeOff, RefreshCw, Unplug, Loader2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { SpokeConnection, SpokeTableConfig } from './types';
+import { SpokeConnection } from './types';
 import { SITES_LIST } from './constants';
+import { fetchEnrichedProfiles } from './spokeConnector';
 
 interface BranchesProps {
   spokeConnections: SpokeConnection[];
@@ -30,35 +31,47 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
   const [profileCounts, setProfileCounts] = useState<Record<string, number>>({});
   const [isLoadingCounts, setIsLoadingCounts] = useState<Record<string, boolean>>({});
 
-  // Fetch profile counts for connected spokes on mount
-  useEffect(() => {
-    spokeConnections.forEach(conn => {
-      if (conn.status === 'active') {
-        fetchProfileCount(conn);
-      }
-    });
-  }, []);
+  // Fetch profile counts for all connected spokes using enriched merge logic
+  const fetchAllProfileCounts = async () => {
+    const activeConns = spokeConnections.filter(c => c.status === 'active');
+    if (activeConns.length === 0) return;
 
-  const fetchProfileCount = async (connection: SpokeConnection) => {
-    setIsLoadingCounts(prev => ({ ...prev, [connection.name]: true }));
+    // Set loading state for all active connections
+    const loadingState: Record<string, boolean> = {};
+    activeConns.forEach(c => { loadingState[c.name] = true; });
+    setIsLoadingCounts(loadingState);
+
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
-      const customerTable = connection.tables.find(t => t.table_type === 'customers');
-      const tableName = customerTable?.table_name || 'profiles';
+      // Use fetchEnrichedProfiles which merges customers + order-only identities
+      const { profiles, errors } = await fetchEnrichedProfiles(spokeConnections);
 
-      const { count, error } = await client
-        .from(tableName)
-        .select('id', { count: 'exact', head: true });
-
-      if (!error && count !== null) {
-        setProfileCounts(prev => ({ ...prev, [connection.name]: count }));
+      if (errors.length > 0) {
+        console.warn('Profile fetch errors:', errors);
       }
+
+      // Group profiles by spoke_name and count
+      const counts: Record<string, number> = {};
+      for (const profile of profiles) {
+        const spokeName = profile._spoke_name;
+        counts[spokeName] = (counts[spokeName] || 0) + 1;
+      }
+
+      setProfileCounts(counts);
     } catch (err) {
-      console.error('Failed to fetch profile count:', err);
+      console.error('Failed to fetch enriched profiles:', err);
     } finally {
-      setIsLoadingCounts(prev => ({ ...prev, [connection.name]: false }));
+      // Clear loading state
+      const doneState: Record<string, boolean> = {};
+      activeConns.forEach(c => { doneState[c.name] = false; });
+      setIsLoadingCounts(doneState);
     }
   };
+
+  useEffect(() => {
+    if (spokeConnections.some(c => c.status === 'active')) {
+      fetchAllProfileCounts();
+    }
+  }, [spokeConnections]);
 
   const getConnectionForSite = (site: string): SpokeConnection | undefined => {
     return spokeConnections.find(conn => conn.name === site && conn.status === 'active');

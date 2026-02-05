@@ -3,8 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, SpokeConnection } from '../types';
 import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
-import { createClient } from '@supabase/supabase-js';
-import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
+import { fetchAllSpokesOrders, fetchEnrichedProfiles, NormalizedOrder } from '../spokeConnector';
 import {
   Globe, CheckSquare, Sparkles, ChevronDown, ChevronRight, X, Target,
   LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2,
@@ -52,40 +51,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     loadDashboardData();
   }, []);
 
-  // Fetch profile counts from all active spokes
+  // Fetch profile counts from all active spokes using enriched merge logic
   const fetchSpokeCounts = async () => {
     setIsLoadingCounts(true);
     const counts: Record<string, number> = {};
-    let total = 0;
 
-    const activeConns = spokeConnections.filter(c => c.status === 'active');
+    try {
+      // Use fetchEnrichedProfiles which merges customers + order-only identities
+      const { profiles, errors } = await fetchEnrichedProfiles(spokeConnections);
 
-    for (const connection of activeConns) {
-      // Find the customers table config
-      const customersTable = connection.tables?.find(t => t.table_type === 'customers' && t.enabled);
-      if (!customersTable) {
-        counts[connection.id] = 0;
-        continue;
+      if (errors.length > 0) {
+        console.warn('Profile fetch errors:', errors);
       }
 
-      try {
-        const client = createClient(connection.supabase_url, connection.supabase_key);
-        const { count, error } = await client
-          .from(customersTable.table_name)
-          .select('*', { count: 'exact', head: true });
+      // Group profiles by spoke_id and count
+      for (const profile of profiles) {
+        const spokeId = profile._spoke_id;
+        counts[spokeId] = (counts[spokeId] || 0) + 1;
+      }
 
-        if (!error && count !== null) {
-          counts[connection.id] = count;
-          total += count;
+      // Mark any active connections without profiles as 0
+      for (const conn of spokeConnections.filter(c => c.status === 'active')) {
+        if (counts[conn.id] === undefined) {
+          counts[conn.id] = 0;
         }
-      } catch (err) {
-        counts[connection.id] = -1; // Error indicator
       }
-    }
 
-    setSpokeCounts(counts);
-    setTotalFederatedProfiles(total);
-    setIsLoadingCounts(false);
+      setSpokeCounts(counts);
+      setTotalFederatedProfiles(profiles.length);
+    } catch (err) {
+      console.error('Failed to fetch enriched profiles:', err);
+      // Set error state for all active connections
+      for (const conn of spokeConnections.filter(c => c.status === 'active')) {
+        counts[conn.id] = -1;
+      }
+      setSpokeCounts(counts);
+      setTotalFederatedProfiles(0);
+    } finally {
+      setIsLoadingCounts(false);
+    }
   };
 
   useEffect(() => {
