@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp } from 'lucide-react';
+import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain } from 'lucide-react';
 import { EnrichedProfile } from '../types';
 
 interface ProfileDetailDrawerProps {
@@ -73,6 +73,88 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
               )}
             </div>
           </div>
+
+          {/* Address Info */}
+          {(profile.billing_address?.city || profile.shipping_address?.city) && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Location</h3>
+              <div className="space-y-3">
+                {profile.billing_address && (profile.billing_address.city || profile.billing_address.state) && (
+                  <div className="flex items-start gap-3 text-sm">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Billing</p>
+                      <p className="text-gray-900">
+                        {[
+                          profile.billing_address.address,
+                          profile.billing_address.city,
+                          profile.billing_address.state,
+                          profile.billing_address.zip
+                        ].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {profile.shipping_address && (profile.shipping_address.city || profile.shipping_address.state) && (
+                  <div className="flex items-start gap-3 text-sm">
+                    <MapPin className="w-4 h-4 text-blue-400 mt-0.5" />
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Shipping</p>
+                      <p className="text-gray-900">
+                        {[
+                          profile.shipping_address.address,
+                          profile.shipping_address.city,
+                          profile.shipping_address.state,
+                          profile.shipping_address.zip
+                        ].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Demographics */}
+          {profile._predicted_demographics && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                Predicted Demographics
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Gender */}
+                <div className="flex items-start gap-2">
+                  <User className="w-4 h-4 text-gray-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 capitalize">
+                      {profile._predicted_demographics.gender.gender}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {profile._predicted_demographics.gender.confidence} confidence
+                      {profile._predicted_demographics.gender.origin && (
+                        <span className="text-gray-400"> • {profile._predicted_demographics.gender.origin}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Age */}
+                <div className="flex items-start gap-2">
+                  <Brain className="w-4 h-4 text-gray-400 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {profile._predicted_demographics.age.age_range === 'unknown'
+                        ? 'Unknown'
+                        : `${profile._predicted_demographics.age.age_range} years`}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {profile._predicted_demographics.age.confidence} confidence
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Order Stats */}
           {profile.order_stats && profile.order_stats.order_count > 0 ? (

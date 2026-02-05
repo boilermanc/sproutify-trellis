@@ -1100,8 +1100,8 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                                 Auto-Detect Fields
                               </button>
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                              {['id', 'customer_id', 'order_number', 'status', 'total', 'created_at'].map(field => (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {['id', 'customer_id', 'order_number', 'status', 'total', 'created_at', 'billing_city', 'billing_state', 'billing_zip', 'shipping_city', 'shipping_state', 'shipping_zip'].map(field => (
                                 <div key={field}>
                                   <label className="block text-xs text-gray-500 mb-1">
                                     {field.replace(/_/g, ' ')}

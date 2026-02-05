@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(timeout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Supabase authentication and wire up Profiles to database\n\n- Add login page with password visibility toggle and reset password flow\n- Create AuthContext for Supabase auth state management\n- Wire Profiles component to fetch from Supabase instead of mock data\n- Add loading and error states to Profiles\n- Connect logout button in Layout sidebar\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(npx vite --port 5173)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd spoke connections feature for external Supabase database queries\n\n- Add SpokeConnection interface for read-only external DB connections\n- Create spokeConnector.ts service with test/fetch functions\n- Build ConnectionsManager.tsx UI component for managing connections\n- Integrate Connections tab into Settings page\n- Add localStorage persistence for spoke connections in App.tsx\n- Include various service modules and UI improvements\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)"
+    ]
+  }
+}

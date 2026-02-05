@@ -6,7 +6,7 @@ import ContextAwareHelp from './ContextAwareHelp';
 import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
-  LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch
+  LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -24,8 +24,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'knowledge-base', label: 'Knowledge Base', icon: BookOpen },
     { id: 'profiles', label: 'Profiles', icon: Users },
+    { id: 'segments', label: 'Segments', icon: Layers },
+    { id: 'intelligence', label: 'Intelligence', icon: BarChart3 },
     { id: 'branches', label: 'Branches', icon: GitBranch },
     { id: 'social-hub', label: 'Social Hub', icon: Share2 },
+    { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
     { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },
     { id: 'automations', label: 'n8n Flows', icon: Workflow },
     { id: 'tasks', label: 'Campaign Tasks', icon: CheckSquare },

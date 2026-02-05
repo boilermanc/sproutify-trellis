@@ -17,13 +17,16 @@ import Reports from './pages/Reports';
 import TeamMembers from './pages/TeamMembers';
 import UserProfile from './pages/UserProfile';
 import Branches from './src/pages/Branches';
+import Segments from './Segments';
+import CustomerIntelligence from './CustomerIntelligence';
+import BrandIntelligence from './BrandIntelligence';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getProfileByEmail } from './lib/supabaseService';
 import { fetchProfiles } from './supabaseService';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
-import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection } from './types';
+import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection } from './types';
 import { MOCK_PROFILES, MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
@@ -55,6 +58,33 @@ const AppContent: React.FC = () => {
   const [tickets, setTickets] = useState<Ticket[]>(() => {
     const saved = localStorage.getItem(`${PERSISTENCE_KEY}_tickets`);
     return saved ? JSON.parse(saved) : MOCK_TICKETS;
+  });
+  const [savedConnections, setSavedConnections] = useState<SavedConnection[]>(() => {
+    const saved = localStorage.getItem(`${PERSISTENCE_KEY}_connections`);
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'conn_1',
+        name: 'Mailchimp - Main Audience',
+        type: 'mailchimp',
+        icon_type: 'mail',
+        last_used: new Date().toISOString(),
+        is_favorite: true,
+        config: { list_id: 'main_audience_2024' },
+        status: 'connected',
+        profile_count: 4816
+      },
+      {
+        id: 'conn_2',
+        name: 'Supabase - Farm Store',
+        type: 'supabase',
+        icon_type: 'database',
+        last_used: new Date(Date.now() - 86400000 * 3).toISOString(),
+        is_favorite: false,
+        config: { table: 'customers', schema: 'public' },
+        status: 'connected',
+        profile_count: 1203
+      }
+    ];
   });
   const [apiKeys, setApiKeys] = useState<ApiKeyConfig>({
     active_llm: 'gemini',
@@ -116,7 +146,8 @@ const AppContent: React.FC = () => {
     localStorage.setItem(`${PERSISTENCE_KEY}_events`, JSON.stringify(events));
     localStorage.setItem(`${PERSISTENCE_KEY}_tasks`, JSON.stringify(tasks));
     localStorage.setItem(`${PERSISTENCE_KEY}_tickets`, JSON.stringify(tickets));
-  }, [events, tasks, tickets]);
+    localStorage.setItem(`${PERSISTENCE_KEY}_connections`, JSON.stringify(savedConnections));
+  }, [events, tasks, tickets, savedConnections]);
 
   useEffect(() => {
     localStorage.setItem('trellis_spoke_connections', JSON.stringify(spokeConnections));
@@ -128,6 +159,27 @@ const AppContent: React.FC = () => {
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
+  }, []);
+
+  const handleSaveConnection = useCallback((connection: SavedConnection) => {
+    setSavedConnections(prev => {
+      const existingIndex = prev.findIndex(c => c.id === connection.id);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex] = connection;
+        return updated;
+      }
+      return [...prev, connection];
+    });
+    addToast(`Connection "${connection.name}" saved successfully.`);
+  }, [addToast]);
+
+  const handleToggleFavorite = useCallback((connectionId: string) => {
+    setSavedConnections(prev =>
+      prev.map(c =>
+        c.id === connectionId ? { ...c, is_favorite: !c.is_favorite } : c
+      )
+    );
   }, []);
 
   const handleCampaignLaunch = (campaign: { name: string, audienceSize: number, segments: string[] }) => {
@@ -145,10 +197,13 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} />;
+      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} />;
+      case 'segments': return <Segments spokeConnections={spokeConnections} />;
+      case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} />;
       case 'branches': return <Branches />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} />;
+      case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} />;
       case 'knowledge-base': return <KnowledgeBase />;
       case 'help-center': return <HelpCenter />;
@@ -157,7 +212,7 @@ const AppContent: React.FC = () => {
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} />;
       case 'dev-tools': return <DevTools profiles={profiles} />;
-      case 'reports': return <Reports />;
+      case 'reports': return <Reports profiles={profiles} />;
       case 'team': return <TeamMembers />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'settings': return (
@@ -178,9 +233,11 @@ const AppContent: React.FC = () => {
           }}
           spokeConnections={spokeConnections}
           onSpokeConnectionsChange={setSpokeConnections}
+          savedConnections={savedConnections}
+          onSaveConnection={handleSaveConnection}
         />
       );
-      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} />;
+      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} />;
     }
   };
 

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase } from './types';
+import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress } from './types';
+import { loadNameCache, predictDemographicsSync } from './demographicsService';
 
 type TestConnectionInput = {
   supabase_url: string;
@@ -27,6 +28,8 @@ export interface NormalizedOrder {
   created_at?: string;
   shipped_at?: string;
   delivered_at?: string;
+  billing_address?: ProfileAddress;
+  shipping_address?: ProfileAddress;
   _spoke_id: string;
   _spoke_name: string;
   _source_table?: string;  // Track which table the order came from
@@ -146,6 +149,14 @@ export const autoMapFields = (
       created_at: ['created_at', 'created', 'order_date', 'date'],
       shipped_at: ['shipped_at', 'ship_date', 'shipping_date'],
       delivered_at: ['delivered_at', 'delivery_date'],
+      billing_address: ['billing_address', 'billing_street', 'bill_address', 'address'],
+      billing_city: ['billing_city', 'bill_city', 'city'],
+      billing_state: ['billing_state', 'bill_state', 'state', 'region', 'province'],
+      billing_zip: ['billing_zip', 'billing_postal', 'bill_zip', 'zip', 'postal_code', 'postcode'],
+      shipping_address: ['shipping_address', 'ship_address', 'delivery_address'],
+      shipping_city: ['shipping_city', 'ship_city', 'delivery_city'],
+      shipping_state: ['shipping_state', 'ship_state', 'delivery_state'],
+      shipping_zip: ['shipping_zip', 'shipping_postal', 'ship_zip', 'delivery_zip'],
     },
     order_items: {
       id: ['id', 'item_id', 'line_id'],
@@ -352,6 +363,19 @@ export const fetchSpokeOrders = async (
         created_at: row[mapping.created_at],
         shipped_at: row[mapping.shipped_at],
         delivered_at: row[mapping.delivered_at],
+        // Address fields
+        billing_address: (mapping.billing_address || mapping.billing_city || mapping.billing_state || mapping.billing_zip) ? {
+          address: row[mapping.billing_address],
+          city: row[mapping.billing_city],
+          state: row[mapping.billing_state],
+          zip: row[mapping.billing_zip],
+        } : undefined,
+        shipping_address: (mapping.shipping_address || mapping.shipping_city || mapping.shipping_state || mapping.shipping_zip) ? {
+          address: row[mapping.shipping_address],
+          city: row[mapping.shipping_city],
+          state: row[mapping.shipping_state],
+          zip: row[mapping.shipping_zip],
+        } : undefined,
         _spoke_id: connection.id,
         _spoke_name: connection.name,
         _source_table: tableConfig.table_name, // Track which table this came from
@@ -667,9 +691,23 @@ export const enrichProfilesWithOrders = (
       products_purchased,
     };
 
+    // Find most recent order with address data
+    const ordersWithAddress = customerOrders
+      .filter(o => o.billing_address?.city || o.shipping_address?.city)
+      .sort((a, b) => {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateB - dateA; // Most recent first
+      });
+
+    const mostRecentWithAddress = ordersWithAddress[0];
+
     return {
       ...profile,
       order_stats,
+      // Add address from most recent order if profile doesn't have one
+      billing_address: profile.billing_address || mostRecentWithAddress?.billing_address,
+      shipping_address: profile.shipping_address || mostRecentWithAddress?.shipping_address,
     } as EnrichedProfile;
   });
 };
@@ -697,6 +735,16 @@ export const fetchEnrichedProfiles = async (
     ordersResult.orders,
     itemsResult.items
   );
+
+  // Enrich with predicted demographics
+  await loadNameCache();
+  enrichedProfiles.forEach(profile => {
+    profile._predicted_demographics = predictDemographicsSync(
+      profile.first_name,
+      profile.order_stats,
+      profile.created_at
+    );
+  });
 
   return { profiles: enrichedProfiles, errors };
 };

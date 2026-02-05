@@ -2,9 +2,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Profile } from '../types';
 import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
-import { 
-  Users, Mail, Calendar, Rocket, ChevronRight, 
-  ChevronLeft, CheckCircle2, Search, Target, 
+import { Segment, PRESET_SEGMENTS, SEGMENT_FIELDS } from '../segmentTypes';
+import { filterProfilesBySegment, countProfilesInSegment } from '../segmentEngine';
+import { loadNameCache } from '../demographicsService';
+import {
+  Users, Mail, Calendar, Rocket, ChevronRight,
+  ChevronLeft, CheckCircle2, Search, Target,
   Layout, Send, Zap, Eye, Smartphone, Clock, History,
   FileText, Sparkles, Megaphone, RefreshCw,
   Info, ShieldCheck, Activity, BarChart3, ArrowRight
@@ -55,6 +58,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
   const [savedCampaigns, setSavedCampaigns] = useState<Campaign[]>([]);
   const [scheduledDate, setScheduledDate] = useState<string>('');
   const [scheduledTime, setScheduledTime] = useState<string>('09:00');
+  const [selectedSegment, setSelectedSegment] = useState<Segment | null>(null);
+  const [customSegments, setCustomSegments] = useState<Segment[]>(() => {
+    const saved = localStorage.getItem('trellis_custom_segments');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Load existing campaigns on mount
   useEffect(() => {
@@ -65,16 +73,36 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
     loadCampaigns();
   }, []);
 
+  // Load demographics cache on mount
+  useEffect(() => {
+    loadNameCache();
+  }, []);
+
   const availableSegments: string[] = Array.from(new Set(profiles.flatMap(p => p.segments)));
   const availableTags: string[] = Array.from(new Set(profiles.flatMap(p => p.tags)));
 
   const audienceSize = useMemo(() => {
     if (campaignData.segments.length === 0 && campaignData.tags.length === 0) return 0;
-    return profiles.filter(p => 
+    return profiles.filter(p =>
       (campaignData.segments.length === 0 || p.segments.some(s => campaignData.segments.includes(s))) &&
       (campaignData.tags.length === 0 || p.tags.some(t => campaignData.tags.includes(t)))
     ).length;
   }, [campaignData.segments, campaignData.tags, profiles]);
+
+  const allSegments = useMemo(() => {
+    const presets: Segment[] = PRESET_SEGMENTS.map((preset, index) => ({
+      ...preset,
+      id: `preset-${index}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+    return [...presets, ...customSegments];
+  }, [customSegments]);
+
+  const segmentProfiles = useMemo(() => {
+    if (!selectedSegment) return profiles;
+    return filterProfilesBySegment(profiles, selectedSegment);
+  }, [profiles, selectedSegment]);
 
   const injectVariable = (variable: string) => {
     setCampaignData(prev => ({ ...prev, subject: prev.subject + ` {{${variable}}}` }));
@@ -109,8 +137,13 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
       segments: campaignData.segments,
       tags: campaignData.tags,
       branches: [],
-      audience_size: audienceSize,
-      metadata: null,
+      audience_size: selectedSegment ? segmentProfiles.length : audienceSize,
+      metadata: {
+        segment_id: selectedSegment?.id || null,
+        segment_name: selectedSegment?.name || 'All Profiles',
+        recipient_count: segmentProfiles.length,
+        recipients: segmentProfiles.slice(0, 100).map(p => ({ email: p.email, first_name: p.first_name })),
+      },
       created_by: 'system',
       launched_at: campaignData.trigger === 'immediate' ? launchedAt : null,
     });
@@ -130,7 +163,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
 
         onCampaignLaunch({
           name: campaignData.name,
-          audienceSize: audienceSize,
+          audienceSize: selectedSegment ? segmentProfiles.length : audienceSize,
           segments: campaignData.segments
         });
 
@@ -138,7 +171,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
         setDeployedCampaigns(prev => [{
           name: campaignData.name,
           date: new Date().toISOString(),
-          reach: audienceSize
+          reach: selectedSegment ? segmentProfiles.length : audienceSize
         }, ...prev]);
 
         setTimeout(() => {
@@ -155,6 +188,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
           });
           setScheduledDate('');
           setScheduledTime('09:00');
+          setSelectedSegment(null);
         }, 500);
       }
     }, 50);
@@ -234,6 +268,108 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
                       {tag}
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Audience Selection */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5 text-gray-400" />
+                Target Audience
+              </h3>
+
+              <div className="space-y-4">
+                {/* Segment Selector */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Segment
+                  </label>
+                  <select
+                    value={selectedSegment?.id || ''}
+                    onChange={(e) => {
+                      const segment = allSegments.find(s => s.id === e.target.value);
+                      setSelectedSegment(segment || null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  >
+                    <option value="">All Profiles ({profiles.length})</option>
+                    <optgroup label="Preset Segments">
+                      {allSegments.filter(s => s.is_preset).map(segment => (
+                        <option key={segment.id} value={segment.id}>
+                          {segment.name} ({countProfilesInSegment(profiles, segment)})
+                        </option>
+                      ))}
+                    </optgroup>
+                    {customSegments.length > 0 && (
+                      <optgroup label="Custom Segments">
+                        {customSegments.map(segment => (
+                          <option key={segment.id} value={segment.id}>
+                            {segment.name} ({countProfilesInSegment(profiles, segment)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                {/* Segment Info */}
+                {selectedSegment && (
+                  <div className="p-4 bg-emerald-50 rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-emerald-800">{selectedSegment.name}</span>
+                      <span className="text-2xl font-bold text-emerald-700">
+                        {segmentProfiles.length}
+                      </span>
+                    </div>
+                    {selectedSegment.description && (
+                      <p className="text-sm text-emerald-600 mb-2">{selectedSegment.description}</p>
+                    )}
+                    <p className="text-xs text-emerald-500">
+                      {selectedSegment.rule_groups[0]?.rules.map(rule => {
+                        const field = SEGMENT_FIELDS.find(f => f.id === rule.field);
+                        return `${field?.label || rule.field} ${rule.operator} ${rule.value}`;
+                      }).join(' AND ')}
+                    </p>
+                  </div>
+                )}
+
+                {/* Recipients Preview */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Recipients Preview</span>
+                    <span className="text-sm text-gray-500">{segmentProfiles.length} profiles</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto border border-gray-100 rounded-xl">
+                    {segmentProfiles.slice(0, 10).map((profile, idx) => (
+                      <div
+                        key={profile.id || profile.email || idx}
+                        className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-0"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {profile.first_name} {profile.last_name}
+                          </p>
+                          <p className="text-xs text-gray-500">{profile.email}</p>
+                        </div>
+                        {profile.order_stats && (
+                          <span className="text-xs text-emerald-600 font-medium">
+                            ${profile.order_stats.ltv.toFixed(0)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    {segmentProfiles.length > 10 && (
+                      <div className="px-3 py-2 text-center text-xs text-gray-500 bg-gray-50">
+                        +{segmentProfiles.length - 10} more recipients
+                      </div>
+                    )}
+                    {segmentProfiles.length === 0 && (
+                      <div className="px-3 py-6 text-center text-sm text-gray-500">
+                        No profiles match this segment
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

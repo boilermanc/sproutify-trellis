@@ -1,325 +1,585 @@
 
 import React, { useState, useMemo } from 'react';
-import { TrellisReport } from '../types';
-import { 
-  BarChart3, FileText, Download, Plus, Search, 
-  Calendar, Globe, ShieldCheck, Zap, Sparkles, 
-  ChevronRight, MoreVertical, LayoutGrid, List,
-  ArrowUpRight, FileSpreadsheet, FileJson, 
-  CheckCircle2, Clock, Activity, RefreshCw, X
+import { Profile } from '../types';
+import { GoogleGenAI } from '@google/genai';
+import {
+  BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
+  Activity, ShieldCheck, TrendingUp, AlertTriangle, Crown, Zap,
+  ChevronRight, Heart, UserX, PauseCircle
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 
-const REPORT_BLUEPRINTS: TrellisReport[] = [
-  { id: 'rep_1', name: 'Monthly Multi-Site Conversion Audit', type: 'system', created_at: '2023-11-01', last_generated: '2023-12-01', metrics: ['CTR', 'Conversion', 'LTV'], spokes: ['farm.sproutify.app', 'school.sproutify.app'], status: 'ready' },
-  { id: 'rep_2', name: 'Identity Resolution & Churn Forecast', type: 'system', created_at: '2023-11-15', last_generated: '2023-12-02', metrics: ['Duplicates Matched', 'Churn Probability'], spokes: ['letsrejoice.app', 'farm.sproutify.app'], status: 'ready' },
-  { id: 'rep_3', name: 'Support Performance & Sentiment Pulse', type: 'system', created_at: '2023-11-20', last_generated: '2023-12-04', metrics: ['Avg. Response', 'CSAT', 'Sentiment'], spokes: ['All Spokes'], status: 'ready' },
-];
+interface ReportsProps {
+  profiles: Profile[];
+}
 
-const Reports: React.FC = () => {
-  const [reports, setReports] = useState<TrellisReport[]>(REPORT_BLUEPRINTS);
-  const [activeView, setActiveView] = useState<'blueprints' | 'custom'>('blueprints');
-  const [isBuilderOpen, setIsBuilderOpen] = useState(false);
-  const [exportingId, setExportingId] = useState<string | null>(null);
-  const [exportType, setExportType] = useState<'pdf' | 'xlsx' | null>(null);
-  const [isGeneratingAiInsight, setIsGeneratingAiInsight] = useState(false);
-  const [selectedReport, setSelectedReport] = useState<TrellisReport | null>(null);
-  const [aiInsight, setAiInsight] = useState<string | null>(null);
+interface SageMessage {
+  role: 'user' | 'sage';
+  content: string;
+}
 
-  const [newReport, setNewReport] = useState<Partial<TrellisReport>>({
-    name: '',
-    metrics: [],
-    spokes: [],
-  });
+const Reports: React.FC<ReportsProps> = ({ profiles }) => {
+  const [sageQuery, setSageQuery] = useState('');
+  const [sageResponse, setSageResponse] = useState<string | null>(null);
+  const [sageLoading, setSageLoading] = useState(false);
+  const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);
 
-  const handleExport = (id: string, type: 'pdf' | 'xlsx') => {
-    setExportingId(id);
-    setExportType(type);
-    // Simulate high-fidelity export process
-    setTimeout(() => {
-      setExportingId(null);
-      setExportType(null);
-      alert(`${type.toUpperCase()} Export Dispatched to Browser Hub.`);
-    }, 2500);
-  };
+  // ═══════════════════════════════════════════════════════════════
+  // CARD 1: Audience Composition
+  // ═══════════════════════════════════════════════════════════════
+  const audienceData = useMemo(() => {
+    const total = profiles.length;
 
-  const handleAiDeepDive = async (report: TrellisReport) => {
-    setSelectedReport(report);
-    setIsGeneratingAiInsight(true);
-    setAiInsight(null);
+    // Gender distribution
+    const genderCounts = { male: 0, female: 0, unknown: 0 };
+    profiles.forEach(p => {
+      const gender = p.metadata?.predicted_gender || 'unknown';
+      if (gender === 'male') genderCounts.male++;
+      else if (gender === 'female') genderCounts.female++;
+      else genderCounts.unknown++;
+    });
+
+    // Source site distribution
+    const sourceCounts: Record<string, number> = {};
+    profiles.forEach(p => {
+      const source = p.metadata?.source_site || 'Unknown';
+      sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+    });
+    const topSources = Object.entries(sourceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return { total, genderCounts, topSources };
+  }, [profiles]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // CARD 2: LTV & Revenue Distribution
+  // ═══════════════════════════════════════════════════════════════
+  const ltvData = useMemo(() => {
+    const ltvs = profiles.map(p => p.ltv || 0);
+    const total = ltvs.reduce((sum, ltv) => sum + ltv, 0);
+    const avg = profiles.length > 0 ? total / profiles.length : 0;
+
+    // Median
+    const sorted = [...ltvs].sort((a, b) => a - b);
+    const median = sorted.length > 0
+      ? sorted[Math.floor(sorted.length / 2)]
+      : 0;
+
+    // LTV Tiers
+    const tiers = {
+      zero: profiles.filter(p => (p.ltv || 0) === 0).length,
+      micro: profiles.filter(p => (p.ltv || 0) > 0 && (p.ltv || 0) <= 50).length,
+      standard: profiles.filter(p => (p.ltv || 0) > 50 && (p.ltv || 0) <= 200).length,
+      premium: profiles.filter(p => (p.ltv || 0) > 200 && (p.ltv || 0) <= 500).length,
+      vip: profiles.filter(p => (p.ltv || 0) > 500).length,
+    };
+
+    // Top 10 by LTV
+    const topProfiles = [...profiles]
+      .sort((a, b) => (b.ltv || 0) - (a.ltv || 0))
+      .slice(0, 10);
+
+    return { avg, median, tiers, topProfiles, total };
+  }, [profiles]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // CARD 3: Subscription Health
+  // ═══════════════════════════════════════════════════════════════
+  const subscriptionData = useMemo(() => {
+    const subscribed = profiles.filter(p => p.is_subscribed).length;
+    const unsubscribed = profiles.filter(p => !p.is_subscribed).length;
+    const marketingPaused = profiles.filter(p => p.marketing_pause).length;
+
+    // Churn risk distribution
+    const churnRisk = {
+      minimal: profiles.filter(p => p.churn_risk === 'minimal').length,
+      moderate: profiles.filter(p => p.churn_risk === 'moderate').length,
+      high: profiles.filter(p => p.churn_risk === 'high').length,
+      critical: profiles.filter(p => p.churn_risk === 'critical').length,
+    };
+
+    // Status breakdown
+    const statusCounts = {
+      active: profiles.filter(p => p.status === 'active').length,
+      archived: profiles.filter(p => p.status === 'archived').length,
+      banned: profiles.filter(p => p.status === 'banned').length,
+      deleted: profiles.filter(p => p.status === 'deleted').length,
+    };
+
+    return { subscribed, unsubscribed, marketingPaused, churnRisk, statusCounts };
+  }, [profiles]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // CARD 4: Segment & Tag Intelligence
+  // ═══════════════════════════════════════════════════════════════
+  const segmentData = useMemo(() => {
+    // Segment counts
+    const segmentCounts: Record<string, number> = {};
+    let totalSegments = 0;
+    profiles.forEach(p => {
+      (p.segments || []).forEach(seg => {
+        segmentCounts[seg] = (segmentCounts[seg] || 0) + 1;
+        totalSegments++;
+      });
+    });
+    const topSegments = Object.entries(segmentCounts)
+      .sort((a, b) => b[1] - a[1]);
+
+    // Tag counts
+    const tagCounts: Record<string, number> = {};
+    let totalTags = 0;
+    profiles.forEach(p => {
+      (p.tags || []).forEach(tag => {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        totalTags++;
+      });
+    });
+    const topTags = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15);
+
+    const avgSegmentsPerProfile = profiles.length > 0
+      ? totalSegments / profiles.length
+      : 0;
+    const avgTagsPerProfile = profiles.length > 0
+      ? totalTags / profiles.length
+      : 0;
+
+    return { topSegments, topTags, avgSegmentsPerProfile, avgTagsPerProfile };
+  }, [profiles]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // SAGE AI HANDLER
+  // ═══════════════════════════════════════════════════════════════
+  const handleSageSubmit = async () => {
+    if (!sageQuery.trim() || sageLoading) return;
+
+    const query = sageQuery.trim();
+    setSageQuery('');
+    setSageLoading(true);
+    setSageHistory(prev => [...prev, { role: 'user', content: query }]);
+
+    // Build statistical summary
+    const sortedLtvs = [...profiles].map(p => p.ltv || 0).sort((a, b) => a - b);
+    const statsSummary = {
+      total_profiles: profiles.length,
+      subscribed: profiles.filter(p => p.is_subscribed).length,
+      unsubscribed: profiles.filter(p => !p.is_subscribed).length,
+      marketing_paused: profiles.filter(p => p.marketing_pause).length,
+      avg_ltv: profiles.length > 0
+        ? (profiles.reduce((s, p) => s + (p.ltv || 0), 0) / profiles.length).toFixed(2)
+        : '0.00',
+      median_ltv: sortedLtvs.length > 0
+        ? sortedLtvs[Math.floor(sortedLtvs.length / 2)]
+        : 0,
+      ltv_tiers: ltvData.tiers,
+      churn_risk: subscriptionData.churnRisk,
+      top_segments: segmentData.topSegments.slice(0, 10).map(([name, count]) => ({ name, count })),
+      top_tags: segmentData.topTags.map(([name, count]) => ({ name, count })),
+      site_distribution: audienceData.topSources.map(([site, count]) => ({ site, count })),
+      status_breakdown: subscriptionData.statusCounts,
+      gender_distribution: audienceData.genderCounts,
+    };
+
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Analyze this marketing report config: ${report.name}. Metrics: ${report.metrics.join(', ')}. Spokes: ${report.spokes.join(', ')}. Suggest 2 strategic optimizations for a multi-site brand. Keep it concise.`,
+        model: 'gemini-2.0-flash',
+        contents: `You are Sage, the AI marketing strategist for Sproutify Trellis. You analyze customer data to provide actionable marketing insights.
+
+Here is the current customer database summary:
+${JSON.stringify(statsSummary, null, 2)}
+
+The user's question: "${query}"
+
+Provide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
       });
-      setAiInsight(response.text || "Insight resolution failed. Sage engine offline.");
-    } catch (e) {
-      setAiInsight("Unable to connect to Sage Strategic Core for real-time analysis.");
+
+      const sageText = response.text || "I couldn't generate an insight. Please try again.";
+      setSageResponse(sageText);
+      setSageHistory(prev => [...prev, { role: 'sage', content: sageText }]);
+    } catch (error) {
+      const errorMsg = "Unable to connect to the Sage Intelligence Core. Please check your API configuration.";
+      setSageResponse(errorMsg);
+      setSageHistory(prev => [...prev, { role: 'sage', content: errorMsg }]);
     } finally {
-      setIsGeneratingAiInsight(false);
+      setSageLoading(false);
     }
   };
 
-  const handleCreateReport = (e: React.FormEvent) => {
-    e.preventDefault();
-    const created: TrellisReport = {
-      id: `rep_${Date.now()}`,
-      name: newReport.name || 'Untitled Audit',
-      type: 'custom',
-      created_at: new Date().toISOString().split('T')[0],
-      last_generated: 'Never',
-      metrics: newReport.metrics || [],
-      spokes: newReport.spokes || [],
-      status: 'ready'
-    };
-    setReports([created, ...reports]);
-    setIsBuilderOpen(false);
-    setNewReport({ name: '', metrics: [], spokes: [] });
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSageSubmit();
+    }
+  };
+
+  // Helper for percentage bar
+  const PercentBar = ({ value, max, color }: { value: number; max: number; color: string }) => {
+    const pct = max > 0 ? (value / max) * 100 : 0;
+    return (
+      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+    );
   };
 
   return (
     <div className="space-y-8 pb-40">
-      
-      {/* Dynamic Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-8">
-        <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit border border-slate-200 shadow-inner">
-          <button 
-            onClick={() => setActiveView('blueprints')}
-            className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeView === 'blueprints' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            <ShieldCheck size={18} />
-            <span>System Blueprints</span>
-          </button>
-          <button 
-            onClick={() => setActiveView('custom')}
-            className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeView === 'custom' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
-          >
-            <Zap size={18} />
-            <span>Custom Workspace</span>
-          </button>
+      {/* Section Header */}
+      <div className="flex items-center space-x-4">
+        <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
+          <BarChart3 size={28} className="text-white" />
         </div>
-
-        <button 
-          onClick={() => setIsBuilderOpen(true)}
-          className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-600 transition-all"
-        >
-          <Plus size={18} />
-          <span>New Strategic Audit</span>
-        </button>
+        <div>
+          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ecosystem Analytics</h1>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time Profile Intelligence</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
-        {/* Reports Grid/List */}
-        <div className="lg:col-span-3 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {reports.filter(r => activeView === 'blueprints' ? r.type === 'system' : r.type === 'custom').map(report => (
-              <div key={report.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:border-emerald-400 transition-all group relative overflow-hidden flex flex-col">
-                <div className="flex justify-between items-start mb-6">
-                   <div className={`p-3.5 rounded-2xl ${report.type === 'system' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'} transition-transform group-hover:scale-110`}>
-                      <BarChart3 size={24} />
-                   </div>
-                   <div className="flex space-x-2">
-                      <button 
-                        onClick={() => handleExport(report.id, 'pdf')}
-                        disabled={exportingId === report.id}
-                        className="p-2 text-slate-400 hover:text-rose-600 transition-colors" 
-                        title="Export as PDF"
-                      >
-                         {exportingId === report.id && exportType === 'pdf' ? <RefreshCw size={16} className="animate-spin" /> : <FileText size={18} />}
-                      </button>
-                      <button 
-                        onClick={() => handleExport(report.id, 'xlsx')}
-                        disabled={exportingId === report.id}
-                        className="p-2 text-slate-400 hover:text-emerald-600 transition-colors" 
-                        title="Export as Excel"
-                      >
-                         {exportingId === report.id && exportType === 'xlsx' ? <RefreshCw size={16} className="animate-spin" /> : <FileSpreadsheet size={18} />}
-                      </button>
-                   </div>
-                </div>
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* PREBUILT ANALYTICS CARDS - 2x2 Grid */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-2 leading-tight">{report.name}</h3>
-                <div className="flex flex-wrap gap-2 mb-8">
-                   {report.metrics.slice(0, 3).map(m => (
-                     <span key={m} className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                       {m}
-                     </span>
-                   ))}
-                   {report.metrics.length > 3 && <span className="text-[8px] font-black text-slate-300 uppercase">+{report.metrics.length - 3} More</span>}
-                </div>
+        {/* Card 1: Audience Composition */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                <Users size={20} />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Audience Composition</p>
+            </div>
+            <span className="text-4xl font-black text-slate-800">{audienceData.total.toLocaleString()}</span>
+          </div>
 
-                <div className="mt-auto pt-6 border-t border-slate-50 flex items-center justify-between">
-                   <div className="space-y-0.5">
-                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Last Sync</p>
-                      <p className="text-[11px] font-bold text-slate-500">{report.last_generated}</p>
-                   </div>
-                   <button 
-                    onClick={() => handleAiDeepDive(report)}
-                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-2 hover:bg-emerald-600 transition shadow-lg"
-                   >
-                      <Sparkles size={12} className="text-emerald-400" />
-                      <span>Sage Audit</span>
-                   </button>
+          {/* Gender Distribution */}
+          <div className="space-y-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Gender Distribution</p>
+            {audienceData.genderCounts.male + audienceData.genderCounts.female > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-600">Male</span>
+                  <span className="font-black text-indigo-600">{audienceData.genderCounts.male} ({audienceData.total > 0 ? ((audienceData.genderCounts.male / audienceData.total) * 100).toFixed(1) : 0}%)</span>
                 </div>
+                <PercentBar value={audienceData.genderCounts.male} max={audienceData.total} color="bg-indigo-500" />
+
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-600">Female</span>
+                  <span className="font-black text-rose-500">{audienceData.genderCounts.female} ({audienceData.total > 0 ? ((audienceData.genderCounts.female / audienceData.total) * 100).toFixed(1) : 0}%)</span>
+                </div>
+                <PercentBar value={audienceData.genderCounts.female} max={audienceData.total} color="bg-rose-400" />
+
+                {audienceData.genderCounts.unknown > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-600">Unknown</span>
+                      <span className="font-black text-slate-400">{audienceData.genderCounts.unknown}</span>
+                    </div>
+                    <PercentBar value={audienceData.genderCounts.unknown} max={audienceData.total} color="bg-slate-300" />
+                  </>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">Demographics not yet computed</p>
+            )}
+          </div>
+
+          {/* Top Sources */}
+          <div className="space-y-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top Source Sites</p>
+            <div className="space-y-2">
+              {audienceData.topSources.length > 0 ? audienceData.topSources.map(([site, count], i) => (
+                <div key={site} className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-600 truncate max-w-[180px]">{site}</span>
+                  <span className="text-xs font-black text-emerald-600">{count}</span>
+                </div>
+              )) : (
+                <p className="text-xs text-slate-400 italic">No source data available</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: LTV & Revenue Distribution */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                <DollarSign size={20} />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LTV & Revenue</p>
+            </div>
+          </div>
+
+          {/* LTV Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg LTV</p>
+              <p className="text-2xl font-black text-slate-800">${ltvData.avg.toFixed(2)}</p>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Median LTV</p>
+              <p className="text-2xl font-black text-slate-800">${ltvData.median.toFixed(2)}</p>
+            </div>
+          </div>
+
+          {/* LTV Tiers */}
+          <div className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">LTV Distribution</p>
+            {[
+              { label: '$0 (No Revenue)', count: ltvData.tiers.zero, color: 'bg-slate-300' },
+              { label: '$0.01-$50 (Micro)', count: ltvData.tiers.micro, color: 'bg-amber-400' },
+              { label: '$50-$200 (Standard)', count: ltvData.tiers.standard, color: 'bg-emerald-400' },
+              { label: '$200-$500 (Premium)', count: ltvData.tiers.premium, color: 'bg-indigo-500' },
+              { label: '$500+ (VIP)', count: ltvData.tiers.vip, color: 'bg-purple-600' },
+            ].map(tier => (
+              <div key={tier.label} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-600">{tier.label}</span>
+                  <span className="font-black text-slate-700">{tier.count} ({profiles.length > 0 ? ((tier.count / profiles.length) * 100).toFixed(1) : 0}%)</span>
+                </div>
+                <PercentBar value={tier.count} max={profiles.length} color={tier.color} />
               </div>
             ))}
           </div>
-          
-          {reports.filter(r => activeView === 'blueprints' ? r.type === 'system' : r.type === 'custom').length === 0 && (
-            <div className="py-40 text-center bg-slate-50 border-4 border-dashed border-slate-200 rounded-[4rem]">
-               <Activity size={64} className="mx-auto text-slate-200 mb-6 opacity-40" />
-               <p className="text-xl font-black text-slate-400 uppercase tracking-widest">Workspace Empty</p>
-               <p className="text-xs text-slate-500 font-bold mt-2">Initialize a Custom Strategy Audit to begin monitoring.</p>
+
+          {/* Top 10 Profiles */}
+          <div className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top 10 by LTV</p>
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {ltvData.topProfiles.map((p, i) => (
+                <div key={p.id} className="flex items-center justify-between text-xs py-1 border-b border-slate-50">
+                  <div className="flex items-center space-x-2">
+                    {i === 0 && <Crown size={12} className="text-amber-500" />}
+                    <span className="font-bold text-slate-600 truncate max-w-[120px]">{p.first_name} {p.last_name || ''}</span>
+                  </div>
+                  <span className="font-black text-emerald-600">${(p.ltv || 0).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Subscription Health */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+              <ShieldCheck size={20} />
+            </div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Subscription Health</p>
+          </div>
+
+          {/* Subscription Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-emerald-50 rounded-2xl p-4 text-center">
+              <Heart size={16} className="mx-auto text-emerald-600 mb-1" />
+              <p className="text-xl font-black text-emerald-700">{subscriptionData.subscribed}</p>
+              <p className="text-[8px] font-black uppercase tracking-widest text-emerald-500">Subscribed</p>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+              <UserX size={16} className="mx-auto text-slate-500 mb-1" />
+              <p className="text-xl font-black text-slate-700">{subscriptionData.unsubscribed}</p>
+              <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Unsubscribed</p>
+            </div>
+            <div className="bg-amber-50 rounded-2xl p-4 text-center">
+              <PauseCircle size={16} className="mx-auto text-amber-600 mb-1" />
+              <p className="text-xl font-black text-amber-700">{subscriptionData.marketingPaused}</p>
+              <p className="text-[8px] font-black uppercase tracking-widest text-amber-500">Paused</p>
+            </div>
+          </div>
+
+          {/* Churn Risk */}
+          <div className="space-y-3">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Churn Risk Distribution</p>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
+                Minimal: {subscriptionData.churnRisk.minimal}
+              </span>
+              <span className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full text-xs font-black">
+                Moderate: {subscriptionData.churnRisk.moderate}
+              </span>
+              <span className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-black">
+                High: {subscriptionData.churnRisk.high}
+              </span>
+              <span className="px-3 py-1.5 bg-rose-100 text-rose-700 rounded-full text-xs font-black">
+                Critical: {subscriptionData.churnRisk.critical}
+              </span>
+            </div>
+          </div>
+
+          {/* Status Breakdown */}
+          <div className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Status Breakdown</p>
+            <div className="grid grid-cols-4 gap-2">
+              {Object.entries(subscriptionData.statusCounts).map(([status, count]) => (
+                <div key={status} className="text-center">
+                  <p className="text-lg font-black text-slate-800">{count}</p>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 capitalize">{status}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: Segment & Tag Intelligence */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
+                <Tag size={20} />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Segment & Tag Intelligence</p>
+            </div>
+          </div>
+
+          {/* Averages */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg Segments/Profile</p>
+              <p className="text-2xl font-black text-slate-800">{segmentData.avgSegmentsPerProfile.toFixed(1)}</p>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg Tags/Profile</p>
+              <p className="text-2xl font-black text-slate-800">{segmentData.avgTagsPerProfile.toFixed(1)}</p>
+            </div>
+          </div>
+
+          {/* Top Segments */}
+          <div className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Segments by Members</p>
+            <div className="max-h-28 overflow-y-auto space-y-1">
+              {segmentData.topSegments.length > 0 ? segmentData.topSegments.map(([seg, count]) => (
+                <div key={seg} className="flex items-center justify-between text-xs py-1">
+                  <span className="font-bold text-slate-600 truncate max-w-[180px]">{seg}</span>
+                  <span className="font-black text-purple-600">{count}</span>
+                </div>
+              )) : (
+                <p className="text-xs text-slate-400 italic">No segments defined</p>
+              )}
+            </div>
+          </div>
+
+          {/* Top Tags */}
+          <div className="space-y-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top 15 Tags</p>
+            <div className="flex flex-wrap gap-1.5">
+              {segmentData.topTags.length > 0 ? segmentData.topTags.map(([tag, count]) => (
+                <span key={tag} className="px-2 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-black">
+                  {tag} ({count})
+                </span>
+              )) : (
+                <p className="text-xs text-slate-400 italic">No tags assigned</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* ASK SAGE — AI Analysis Panel */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center space-x-4 mb-6 pb-6 border-b border-slate-800">
+          <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg">
+            <Sparkles size={24} className="text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-white uppercase tracking-tight">Ask Sage</h3>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ad Hoc AI Analysis</p>
+          </div>
+        </div>
+
+        {/* Chat History */}
+        <div className="min-h-[200px] max-h-[400px] overflow-y-auto space-y-4 mb-6">
+          {sageHistory.length === 0 ? (
+            <div className="text-center py-16 opacity-30">
+              <Activity size={48} className="mx-auto text-slate-500 mb-4" />
+              <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Sage Intelligence Dormant</p>
+              <p className="text-xs text-slate-600 mt-2">Ask a question about your customer data to activate</p>
+            </div>
+          ) : (
+            sageHistory.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] p-4 rounded-2xl ${
+                  msg.role === 'user'
+                    ? 'bg-emerald-600 text-white rounded-br-sm'
+                    : 'bg-slate-800 text-slate-200 rounded-bl-sm'
+                }`}>
+                  {msg.role === 'sage' && (
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Sparkles size={12} className="text-emerald-400" />
+                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Sage</span>
+                    </div>
+                  )}
+                  <p className={`text-sm leading-relaxed ${msg.role === 'sage' ? 'italic' : ''}`}>
+                    {msg.content}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* Loading State */}
+          {sageLoading && (
+            <div className="flex justify-start">
+              <div className="bg-slate-800 p-4 rounded-2xl rounded-bl-sm">
+                <div className="flex items-center space-x-3">
+                  <RefreshCw size={16} className="text-emerald-400 animate-spin" />
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest animate-pulse">
+                    Sage is analyzing your ecosystem...
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Sidebar: Sage Analysis */}
-        <div className="lg:col-span-1 space-y-8">
-           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm min-h-[500px] flex flex-col">
-              <div className="flex items-center space-x-4 mb-8 border-b border-slate-50 pb-8">
-                 <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-lg"><Sparkles size={24} /></div>
-                 <div>
-                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">Strategic Auditor</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Trellis Global Sync</p>
-                 </div>
-              </div>
+        {/* Input */}
+        <div className="flex items-center space-x-4">
+          <input
+            type="text"
+            value={sageQuery}
+            onChange={(e) => setSageQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask Sage about your customer data..."
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-6 py-4 text-white text-sm font-medium placeholder:text-slate-500 outline-none focus:border-emerald-500 transition"
+            disabled={sageLoading}
+          />
+          <button
+            onClick={handleSageSubmit}
+            disabled={sageLoading || !sageQuery.trim()}
+            className="w-14 h-14 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-2xl flex items-center justify-center transition shadow-lg"
+          >
+            {sageLoading ? (
+              <RefreshCw size={20} className="animate-spin" />
+            ) : (
+              <Send size={20} />
+            )}
+          </button>
+        </div>
 
-              {selectedReport ? (
-                <div className="flex-1 space-y-8 animate-in fade-in duration-300">
-                   <div className="space-y-2">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Active Audit</p>
-                      <h5 className="text-sm font-black text-slate-800 leading-tight">{selectedReport.name}</h5>
-                   </div>
-
-                   {isGeneratingAiInsight ? (
-                     <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
-                        <RefreshCw className="animate-spin text-emerald-500" size={32} />
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Resolving Cross-Site Patterns...</p>
-                     </div>
-                   ) : aiInsight ? (
-                     <div className="bg-emerald-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
-                           <Activity size={80} />
-                        </div>
-                        <h6 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-4">Sage Multi-Site Insight</h6>
-                        <p className="text-sm font-medium leading-relaxed italic border-l-2 border-emerald-500 pl-4">
-                          "{aiInsight}"
-                        </p>
-                     </div>
-                   ) : (
-                     <div className="p-10 text-center opacity-30">
-                        <BarChart3 size={48} className="mx-auto mb-4" />
-                        <p className="text-[10px] font-black uppercase tracking-widest">Select Audit to view Logic</p>
-                     </div>
-                   )}
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 opacity-20">
-                   <LayoutGrid size={64} className="mb-6" />
-                   <p className="text-sm font-black uppercase tracking-widest">Insight Engine Dormant</p>
-                   <p className="text-[10px] mt-2 font-medium">Trigger a 'Sage Audit' on any blueprint to activate patterns.</p>
-                </div>
-              )}
-
-              <div className="pt-8 border-t border-slate-50 mt-auto">
-                 <div className="bg-slate-50 p-6 rounded-2xl space-y-4">
-                    <div className="flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                       <span>Data Integrity</span>
-                       <span className="text-emerald-600">99.8%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                       <div className="h-full bg-emerald-500" style={{ width: '99.8%' }}></div>
-                    </div>
-                 </div>
-              </div>
-           </div>
+        {/* Quick Prompts */}
+        <div className="flex flex-wrap gap-2 mt-4">
+          {[
+            'Who are my highest value customers?',
+            'Which segments are at risk of churning?',
+            'How can I improve subscription rates?',
+            'What marketing campaigns should I run?',
+          ].map(prompt => (
+            <button
+              key={prompt}
+              onClick={() => setSageQuery(prompt)}
+              disabled={sageLoading}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+            >
+              {prompt}
+            </button>
+          ))}
         </div>
       </div>
-
-      {/* Report Builder Modal */}
-      {isBuilderOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl rounded-[4rem] p-12 shadow-2xl overflow-hidden border border-white/20">
-             <div className="flex justify-between items-center mb-10 pb-10 border-b border-slate-100">
-                <div className="flex items-center space-x-6">
-                   <div className="w-16 h-16 bg-slate-900 text-emerald-400 rounded-3xl flex items-center justify-center shadow-lg"><Plus size={32} /></div>
-                   <div>
-                      <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Custom Strategy Audit</h3>
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Global Ecosystem Configuration</p>
-                   </div>
-                </div>
-                <button onClick={() => setIsBuilderOpen(false)} className="p-3 bg-slate-50 text-slate-400 hover:text-rose-500 rounded-2xl transition-colors"><X size={32} /></button>
-             </div>
-
-             <form onSubmit={handleCreateReport} className="space-y-10">
-                <div className="grid grid-cols-2 gap-10">
-                   <div className="space-y-6">
-                      <div className="space-y-2">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Audit Identity</label>
-                         <input 
-                           className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] font-black uppercase text-sm outline-none focus:border-emerald-500 transition shadow-inner" 
-                           placeholder="e.g. Q4 GROWTH CORRELATION"
-                           value={newReport.name}
-                           onChange={e => setNewReport({...newReport, name: e.target.value})}
-                           required
-                         />
-                      </div>
-                      <div className="space-y-4">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Spoke Sites Scope</label>
-                         <div className="flex flex-wrap gap-2">
-                            {['farm.sproutify.app', 'school.sproutify.app', 'letsrejoice.app', 'micro.sproutify.app'].map(site => {
-                               const active = newReport.spokes?.includes(site);
-                               return (
-                                 <button 
-                                   key={site} 
-                                   type="button" 
-                                   onClick={() => setNewReport({...newReport, spokes: active ? newReport.spokes?.filter(s => s !== site) : [...(newReport.spokes || []), site]})}
-                                   className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border ${active ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'}`}
-                                 >
-                                    {site.split('.')[0]}
-                                 </button>
-                               );
-                            })}
-                         </div>
-                      </div>
-                   </div>
-
-                   <div className="space-y-6">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Performance Metrics</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {['LTV Growth', 'CTR Pulse', 'Identity Churn', 'Site Resolution', 'Campaign Velocity', 'CSAT Sync'].map(metric => {
-                           const active = newReport.metrics?.includes(metric);
-                           return (
-                             <button 
-                               key={metric} 
-                               type="button" 
-                               onClick={() => setNewReport({...newReport, metrics: active ? newReport.metrics?.filter(m => m !== metric) : [...(newReport.metrics || []), metric]})}
-                               className={`p-4 rounded-2xl border-2 text-left flex flex-col justify-between transition-all h-24 ${active ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-md scale-[1.02]' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
-                             >
-                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${active ? 'bg-emerald-500 text-white' : 'bg-slate-50 text-slate-300'}`}>
-                                   <Activity size={12} />
-                                </div>
-                                <span className="text-[10px] font-black uppercase tracking-tight">{metric}</span>
-                             </button>
-                           );
-                        })}
-                      </div>
-                   </div>
-                </div>
-
-                <div className="pt-10 flex space-x-4">
-                   <button type="submit" className="flex-1 py-8 bg-slate-900 text-white rounded-[2.5rem] font-black text-2xl flex items-center justify-center space-x-6 shadow-2xl hover:bg-emerald-600 transition active:scale-95">
-                      <ArrowUpRight size={32} className="text-emerald-400" />
-                      <span>Initialize Strategic Logic</span>
-                   </button>
-                </div>
-             </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

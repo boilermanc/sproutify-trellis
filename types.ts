@@ -24,6 +24,7 @@ export interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: string | null }>;
 }
 
+// DEPRECATED: Use BrandIdentity instead. Keeping for backwards compatibility during migration.
 export interface Brand {
   id: string;
   name: string;
@@ -64,7 +65,7 @@ export interface CustomerFieldMapping {
 }
 
 export interface OrderFieldMapping {
-  id: string;
+  id?: string;
   order_number?: string;
   customer_id?: string;
   guest_email?: string;
@@ -76,6 +77,15 @@ export interface OrderFieldMapping {
   created_at?: string;
   shipped_at?: string;
   delivered_at?: string;
+  // Address fields
+  billing_address?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_zip?: string;
+  shipping_address?: string;
+  shipping_city?: string;
+  shipping_state?: string;
+  shipping_zip?: string;
 }
 
 export interface OrderItemFieldMapping {
@@ -118,6 +128,14 @@ export interface SpokeConnection {
   created_at: string;
 }
 
+export interface ProfileAddress {
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+}
+
 export interface NormalizedSpokeProfile {
   id?: string;           // Customer ID for linking to orders
   email: string;
@@ -126,6 +144,11 @@ export interface NormalizedSpokeProfile {
   phone?: string;
   subscribed?: boolean;
   created_at?: string;
+  referral_source?: string;
+  email_notifications?: boolean;
+  sms_notifications?: boolean;
+  billing_address?: ProfileAddress;
+  shipping_address?: ProfileAddress;
   _spoke_id: string;
   _spoke_name: string;
 }
@@ -148,6 +171,19 @@ export interface ProfileOrderStats {
 
 export interface EnrichedProfile extends NormalizedSpokeProfile {
   order_stats?: ProfileOrderStats;
+  _predicted_demographics?: {
+    gender: {
+      gender: 'male' | 'female' | 'unknown';
+      confidence: 'high' | 'medium' | 'low';
+      method: string;
+      origin?: string;
+    };
+    age: {
+      age_range: string;
+      confidence: 'high' | 'medium' | 'low';
+      method: string;
+    };
+  };
 }
 
 export interface QueuedTask {
@@ -290,7 +326,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections';
 
 export interface TrellisReport {
   id: string;
@@ -374,4 +410,73 @@ export interface Branch {
   default_reply_to?: string;
   created_at: string;
   updated_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BRAND INTELLIGENCE (Pomelli-style Brand DNA)
+// ═══════════════════════════════════════════════════════════════
+
+export interface BrandColorPalette {
+  primary: string;
+  secondary: string;
+  accent: string;
+  neutral: string;
+}
+
+export interface BrandTypography {
+  heading: string;
+  body: string;
+}
+
+export interface BrandIdentity {
+  id: string;
+  branch_id: string;
+  name: string;
+  tagline: string;
+  mission: string;
+  values: string[];
+  target_audience: string;
+  voice: string;
+  website_url?: string;
+  screenshot_url?: string;
+  color_palette: BrandColorPalette;
+  typography: BrandTypography;
+  image_prompt: string;
+  marketing_hooks: string[];
+  site_preview_description?: string;
+  extracted_images?: string[];
+  status: 'draft' | 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GeneratedBrandAsset {
+  id: string;
+  brand_id: string;
+  type: 'logo' | 'social' | 'banner' | 'mockup';
+  platform?: 'Instagram' | 'LinkedIn' | 'TikTok' | 'Facebook' | 'X';
+  url: string;
+  prompt_used?: string;
+  aspect_ratio: '1:1' | '16:9' | '9:16' | '4:5';
+  created_at: string;
+}
+
+export type BrandAnalysisState =
+  | 'idle'
+  | 'analyzing_site'
+  | 'generating_strategy'
+  | 'generating_visuals'
+  | 'results'
+  | 'error';
+
+export interface SavedConnection {
+  id: string;
+  name: string;
+  type: 'mailchimp' | 'supabase' | 'csv';
+  icon_type: 'mail' | 'database' | 'file';
+  last_used: string;
+  is_favorite: boolean;
+  config?: Record<string, any>;
+  status: 'connected' | 'disconnected' | 'error';
+  profile_count?: number;
 }

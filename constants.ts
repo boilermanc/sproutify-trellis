@@ -1,5 +1,5 @@
 
-import { Profile, MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync } from './types';
+import { Profile, MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -69,6 +69,44 @@ export const MOCK_INTEGRATIONS: Integration[] = [
 
 // Legacy alias
 export const MOCK_SPOKE_CONFIGS = MOCK_INTEGRATIONS;
+
+export const MOCK_BRAND_IDENTITIES: BrandIdentity[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000001',
+    branch_id: 'atlurbanfarms.com',
+    name: 'ATL Urban Farms',
+    tagline: 'Growing Community, One Garden at a Time',
+    mission: 'Empowering Atlanta neighborhoods with sustainable urban agriculture education and fresh local produce.',
+    values: ['Sustainability', 'Community', 'Education', 'Local First'],
+    target_audience: 'Urban gardeners, community organizers, and eco-conscious Atlanta residents aged 25-55',
+    voice: 'Warm, knowledgeable, and community-focused with occasional gardening metaphors.',
+    website_url: 'https://atlurbanfarms.com',
+    screenshot_url: 'https://s0.wp.com/mshots/v1/https%3A%2F%2Fatlurbanfarms.com?w=1280&h=960',
+    color_palette: {
+      primary: '#2D5A27',
+      secondary: '#8B4513',
+      accent: '#F4A460',
+      neutral: '#F5F5DC'
+    },
+    typography: {
+      heading: 'Playfair Display',
+      body: 'Open Sans'
+    },
+    image_prompt: 'Lush urban garden with raised beds, Atlanta skyline in background, warm golden hour lighting, community members tending plants',
+    marketing_hooks: [
+      'Transform your balcony into a thriving garden oasis',
+      'Join 500+ Atlanta families growing their own food',
+      'From seed to table in the heart of the city'
+    ],
+    site_preview_description: 'Earth-toned website with hero image of community garden, prominent CTA, testimonial carousel',
+    extracted_images: [],
+    status: 'active',
+    created_at: '2024-01-15T10:00:00Z',
+    updated_at: '2024-01-15T10:00:00Z'
+  }
+];
+
+export const MOCK_BRAND_ASSETS: GeneratedBrandAsset[] = [];
 
 export const MOCK_FAILED_SYNCS: FailedSync[] = [
   {
