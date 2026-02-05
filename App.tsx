@@ -16,7 +16,7 @@ import Settings from './pages/Settings';
 import Reports from './pages/Reports';
 import TeamMembers from './pages/TeamMembers';
 import UserProfile from './pages/UserProfile';
-import Branches from './src/pages/Branches';
+import Branches from './Branches';
 import Segments from './Segments';
 import CustomerIntelligence from './CustomerIntelligence';
 import BrandIntelligence from './BrandIntelligence';
@@ -201,7 +201,7 @@ const AppContent: React.FC = () => {
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} />;
-      case 'branches': return <Branches />;
+      case 'branches': return <Branches spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} />;

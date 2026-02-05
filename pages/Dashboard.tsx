@@ -8,7 +8,7 @@ import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
 import {
   Globe, CheckSquare, Sparkles, ChevronDown, ChevronRight, X, Target,
   LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2,
-  Package, DollarSign
+  Package, DollarSign, GitBranch
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -492,10 +492,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                 <p className="text-sm font-medium text-slate-600 mb-1">No data sources connected</p>
                 <p className="text-[10px] text-slate-400 mb-4">Connect external databases to see federated profile counts</p>
                 <button
-                  onClick={() => onViewChange?.('settings')}
-                  className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:underline"
+                  onClick={() => onViewChange?.('branches')}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center space-x-2"
                 >
-                  Go to Settings → Connections
+                  <Zap size={16} />
+                  <span>Connect Your First Spoke</span>
                 </button>
               </div>
             ) : (
@@ -551,6 +552,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                       );
                     })}
                 </div>
+
+                {/* Manage Branches button */}
+                <button
+                  onClick={() => onViewChange?.('branches')}
+                  className="w-full mt-4 py-3 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-emerald-700 transition-all flex items-center justify-center space-x-2"
+                >
+                  <GitBranch size={14} />
+                  <span>Manage Branches</span>
+                </button>
               </div>
             )}
           </div>
