@@ -62,6 +62,43 @@ export interface NormalizedSubscription {
   _spoke_name: string;
 }
 
+// Pagination helper to fetch all records from a Supabase table
+const BATCH_SIZE = 1000; // Supabase default max rows per request
+
+async function fetchAllRows<T>(
+  client: ReturnType<typeof createClient>,
+  tableName: string,
+  selectString: string
+): Promise<{ data: T[]; error: string | null }> {
+  const allData: T[] = [];
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await client
+      .from(tableName)
+      .select(selectString)
+      .range(offset, offset + BATCH_SIZE - 1);
+
+    if (error) {
+      return { data: allData, error: error.message };
+    }
+
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allData.push(...(data as T[]));
+      offset += data.length;
+      // If we got fewer than BATCH_SIZE, we've reached the end
+      if (data.length < BATCH_SIZE) {
+        hasMore = false;
+      }
+    }
+  }
+
+  return { data: allData, error: null };
+}
+
 export async function testSpokeConnection(
   connection: TestConnectionInput
 ): Promise<TestConnectionResult> {
@@ -214,14 +251,16 @@ export async function fetchSpokeProfiles(
     const fields = Object.values(fieldMapping).filter(Boolean);
     const selectString = fields.join(',');
 
-    const { data, error } = await client
-      .from(tableConfig.table_name)
-      .select(selectString)
-      .limit(1000);
+    // Fetch all records using pagination
+    const { data, error } = await fetchAllRows<Record<string, unknown>>(
+      client,
+      tableConfig.table_name,
+      selectString
+    );
 
     if (error) {
       // Provide a more descriptive error message
-      let errorMessage = `${connection.name}: ${error.message}`;
+      let errorMessage = `${connection.name}: ${error}`;
 
       // Check for common error patterns and add helpful hints
       if (error.message.includes('does not exist')) {
@@ -342,17 +381,19 @@ export const fetchSpokeOrders = async (
       const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
       const selectString = fields.join(',');
 
-      const { data, error } = await client
-        .from(tableConfig.table_name)
-        .select(selectString)
-        .limit(1000);
+      // Fetch all orders using pagination for full order history
+      const { data, error } = await fetchAllRows<Record<string, unknown>>(
+        client,
+        tableConfig.table_name,
+        selectString
+      );
 
       if (error) {
-        console.error(`Error fetching from ${tableConfig.table_name}:`, error.message);
+        console.error(`Error fetching from ${tableConfig.table_name}:`, error);
         continue; // Skip this table but continue with others
       }
 
-      if (!data) continue;
+      if (!data || data.length === 0) continue;
 
       // Normalize the data
       const mapping = tableConfig.field_mapping;
@@ -450,17 +491,19 @@ export const fetchSpokeOrderItems = async (
       const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
       const selectString = fields.join(',');
 
-      const { data, error } = await client
-        .from(tableConfig.table_name)
-        .select(selectString)
-        .limit(5000);
+      // Fetch all order items using pagination for complete product purchase history
+      const { data, error } = await fetchAllRows<Record<string, unknown>>(
+        client,
+        tableConfig.table_name,
+        selectString
+      );
 
       if (error) {
-        console.error(`Error fetching from ${tableConfig.table_name}:`, error.message);
+        console.error(`Error fetching from ${tableConfig.table_name}:`, error);
         continue;
       }
 
-      if (!data) continue;
+      if (!data || data.length === 0) continue;
 
       const mapping = tableConfig.field_mapping;
       const normalized = data.map((row: any) => ({
@@ -528,13 +571,15 @@ export const fetchSpokeSubscriptions = async (
     const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
     const selectString = fields.join(',');
 
-    const { data, error } = await client
-      .from(tableConfig.table_name)
-      .select(selectString)
-      .limit(1000);
+    // Fetch all subscriptions using pagination
+    const { data, error } = await fetchAllRows<Record<string, unknown>>(
+      client,
+      tableConfig.table_name,
+      selectString
+    );
 
-    if (error) throw new Error(error.message);
-    if (!data) return [];
+    if (error) throw new Error(error);
+    if (!data || data.length === 0) return [];
 
     // Normalize the data
     const mapping = tableConfig.field_mapping;
