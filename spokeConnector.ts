@@ -183,30 +183,35 @@ export const discoverTables = async (
   supabase_key: string
 ): Promise<{ tables: string[]; error?: string }> => {
   try {
-    const client = getSpokeClient(supabase_url, supabase_key);
+    // Fetch the OpenAPI spec — single request that lists all accessible tables
+    const cacheKey = `${supabase_url}:${supabase_key}`;
+    let spec = openApiSpecCache.get(cacheKey);
+    if (!spec) {
+      const res = await fetch(`${supabase_url}/rest/v1/`, {
+        headers: {
+          apikey: supabase_key,
+          Authorization: `Bearer ${supabase_key}`,
+        },
+      });
+      if (!res.ok) {
+        return { tables: [], error: `API returned ${res.status}` };
+      }
+      spec = await res.json();
+      openApiSpecCache.set(cacheKey, spec);
+    }
 
-    const commonTables = [
+    // Extract table names from the spec definitions
+    const allTables = spec.definitions ? Object.keys(spec.definitions) : [];
+
+    // Filter to tables we care about
+    const commonTables = new Set([
       'customers', 'profiles', 'users',
       'orders', 'order_items', 'legacy_orders', 'legacy_order_items',
       'subscriptions', 'payments', 'products',
       'newsletter_subscribers', 'customer_tags', 'customer_addresses'
-    ];
-    const foundTables: string[] = [];
+    ]);
 
-    for (const tableName of commonTables) {
-      try {
-        const { error } = await client
-          .from(tableName)
-          .select('*', { count: 'exact', head: true });
-
-        // If no error, the table exists and is accessible
-        if (!error) {
-          foundTables.push(tableName);
-        }
-      } catch {
-        // Table doesn't exist or no access, skip silently
-      }
-    }
+    const foundTables = allTables.filter(t => commonTables.has(t));
 
     return { tables: foundTables };
   } catch (err) {
