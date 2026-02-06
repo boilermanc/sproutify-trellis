@@ -44,12 +44,10 @@ export async function getProfileByEmail(email: string): Promise<Profile | null> 
     .from('profiles')
     .select('*')
     .eq('email', email)
-    .single();
+    .maybeSingle();
 
   if (error) {
-    if (error.code !== 'PGRST116') { // Not found is expected
-      console.error(`Error fetching profile by email ${email}:`, error);
-    }
+    console.error(`Error fetching profile by email ${email}:`, error);
     return null;
   }
 

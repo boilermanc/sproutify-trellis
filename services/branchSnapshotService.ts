@@ -1,13 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase as hubClient } from '../lib/supabase';
 import { predictGenderSync, loadNameCache } from '../demographicsService';
-
-// ---------------------------------------------------------------------------
-// Hub client singleton — writes snapshots to the Trellis hub database
-// ---------------------------------------------------------------------------
-const hubUrl = import.meta.env.VITE_SUPABASE_URL;
-const hubKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const hubClient: SupabaseClient | null =
-  hubUrl && hubKey ? createClient(hubUrl, hubKey) : null;
 
 // ---------------------------------------------------------------------------
 // Types

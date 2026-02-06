@@ -1,6 +1,18 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress } from './types';
 import { loadNameCache, predictDemographicsSync } from './demographicsService';
+
+// Cache spoke clients by URL to avoid duplicate GoTrueClient instances
+const spokeClientCache = new Map<string, SupabaseClient>();
+function getSpokeClient(url: string, key: string): SupabaseClient {
+  const cacheKey = `${url}:${key}`;
+  let client = spokeClientCache.get(cacheKey);
+  if (!client) {
+    client = createClient(url, key);
+    spokeClientCache.set(cacheKey, client);
+  }
+  return client;
+}
 
 type TestConnectionInput = {
   supabase_url: string;
@@ -130,7 +142,7 @@ export async function testSpokeConnection(
   connection: TestConnectionInput
 ): Promise<TestConnectionResult> {
   try {
-    const client = createClient(connection.supabase_url, connection.supabase_key);
+    const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
 
     const { data, error, count } = await client
       .from(connection.table_name)
@@ -167,7 +179,7 @@ export const discoverTables = async (
   supabase_key: string
 ): Promise<{ tables: string[]; error?: string }> => {
   try {
-    const client = createClient(supabase_url, supabase_key);
+    const client = getSpokeClient(supabase_url, supabase_key);
 
     const commonTables = [
       'customers', 'profiles', 'users',
@@ -280,7 +292,7 @@ export async function fetchSpokeProfiles(
   if (!tableConfig) return [];
 
   try {
-    const client = createClient(connection.supabase_url, connection.supabase_key);
+    const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
 
     // Build the select string from field_mapping
     const fieldMapping = tableConfig.field_mapping;
@@ -411,7 +423,7 @@ export const fetchSpokeOrders = async (
 
   for (const tableConfig of orderTableConfigs) {
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
 
       // Build select string from field mapping
       const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
@@ -522,7 +534,7 @@ export const fetchSpokeOrderItems = async (
 
   for (const tableConfig of itemTableConfigs) {
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
 
       const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
       const selectString = fields.join(',');
@@ -601,7 +613,7 @@ export const fetchSpokeSubscriptions = async (
   if (!tableConfig) return [];
 
   try {
-    const client = createClient(connection.supabase_url, connection.supabase_key);
+    const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
 
     // Build select string from field mapping
     const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
