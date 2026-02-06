@@ -44,7 +44,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles }
   }, [tickets, profiles, searchTerm, priorityFilter]);
 
   const selectedTicket = tickets.find(t => t.id === selectedTicketId);
-  const profile = profiles.find(p => p.id === selectedTicket?.profile_id) || profiles[0];
+  const profile = profiles.find(p => p.id === selectedTicket?.profile_id) || profiles[0] || null;
 
   const handleApproveAndSend = async () => {
     if (!selectedTicketId || selectedTicket?.needs_human_review) return;
@@ -122,7 +122,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles }
           <div className="flex-1 flex flex-col bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
              <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/20">
                 <div className="flex items-center space-x-4">
-                   <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center font-black text-lg">{profile?.first_name.charAt(0)}</div>
+                   <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center font-black text-lg">{profile?.first_name?.charAt(0) || '?'}</div>
                    <div>
                       <h3 className="text-lg font-black text-slate-800 leading-tight">{selectedTicket.subject}</h3>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{profile?.email} • {selectedTicket.id}</p>

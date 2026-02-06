@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile } from '../types';
-import { getProfiles, fetchBranches } from '../lib/supabaseService';
+import { fetchBranches } from '../lib/supabaseService';
 import { fetchEnrichedProfiles } from '../spokeConnector';
 import {
   Search, Tag, MoreHorizontal, X, Edit3,
@@ -61,7 +61,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [federatedProfiles, setFederatedProfiles] = useState<EnrichedProfile[]>([]);
   const [isFederating, setIsFederating] = useState(false);
   const [federationError, setFederationError] = useState<string | null>(null);
-  const [dataSource, setDataSource] = useState<'local' | 'federated'>('local');
+  const [dataSource, setDataSource] = useState<'local' | 'federated'>('federated');
   const [selectedSpokeIds, setSelectedSpokeIds] = useState<Set<string>>(new Set());
   const [selectedFederatedProfile, setSelectedFederatedProfile] = useState<EnrichedProfile | null>(null);
 
@@ -98,17 +98,32 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Auto-select all active spokes and fetch federated profiles on mount
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
         setError(null);
-        const [profilesData, branchesData] = await Promise.all([
-          getProfiles(),
-          fetchBranches()
-        ]);
-        setProfiles(profilesData);
+
+        // Fetch branches for display purposes
+        const branchesData = await fetchBranches();
         setBranches(branchesData);
+
+        // Auto-select all active spoke connections
+        const activeConnections = spokeConnections.filter(c => c.status === 'active');
+        if (activeConnections.length > 0) {
+          setSelectedSpokeIds(new Set(activeConnections.map(c => c.id)));
+
+          // Auto-fetch from all active spokes
+          setIsFederating(true);
+          const { profiles, errors } = await fetchEnrichedProfiles(activeConnections);
+          setFederatedProfiles(profiles);
+
+          if (errors.length > 0) {
+            setFederationError(errors.join('; '));
+          }
+          setIsFederating(false);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch data');
       } finally {
@@ -116,7 +131,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       }
     }
     fetchData();
-  }, []);
+  }, [spokeConnections]);
 
   const handleFetchFederated = async () => {
     setIsFederating(true);
