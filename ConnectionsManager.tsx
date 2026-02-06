@@ -378,8 +378,24 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         spoke_connection_id: connection.id,
       }).then(branch => {
         console.log('[branchLink] Created and linked branch:', branch.name, '→', connection.name);
-      }).catch(err => {
-        console.warn('[branchLink] Failed to create branch (non-blocking):', err);
+      }).catch(async (err) => {
+        // Duplicate slug — find existing branch and link to it instead
+        if (err?.code === '23505') {
+          try {
+            const allBranches = await fetchAllBranches();
+            const existing = allBranches.find(b => b.name === savedBranchName || b.slug === savedBranchName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''));
+            if (existing) {
+              await linkConnectionToBranch(existing.id, connection.id);
+              console.log('[branchLink] Linked to existing branch:', existing.name, '→', connection.name);
+            } else {
+              console.warn('[branchLink] Duplicate slug but no matching branch found');
+            }
+          } catch (linkErr) {
+            console.warn('[branchLink] Failed to link existing branch:', linkErr);
+          }
+        } else {
+          console.warn('[branchLink] Failed to create branch (non-blocking):', err);
+        }
       });
     } else if (savedBranchMode === 'existing' && savedBranchId) {
       linkConnectionToBranch(savedBranchId, connection.id).then(() => {

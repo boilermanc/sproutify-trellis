@@ -203,25 +203,22 @@ export async function saveSnapshot(snapshot: BranchSnapshot): Promise<boolean> {
   try {
     const { error } = await hubClient
       .from('branch_snapshots')
-      .upsert(
-        {
-          branch_id: snapshot.branch_id,
-          branch_name: snapshot.branch_name,
-          branch_url: snapshot.branch_url,
-          total_profiles: snapshot.total_profiles,
-          gender_breakdown: snapshot.gender_breakdown,
-          age_breakdown: snapshot.age_breakdown,
-          total_orders: snapshot.total_orders,
-          total_revenue: snapshot.total_revenue,
-          avg_order_value: snapshot.avg_order_value,
-          top_products: snapshot.top_products,
-          active_subscribers: snapshot.active_subscribers,
-          churn_risk_high: snapshot.churn_risk_high,
-          snapshot_source: snapshot.snapshot_source,
-          created_at: new Date().toISOString(),
-        },
-        { onConflict: 'branch_id,created_at' },
-      );
+      .insert({
+        branch_id: snapshot.branch_id,
+        branch_name: snapshot.branch_name,
+        branch_url: snapshot.branch_url,
+        total_profiles: snapshot.total_profiles,
+        gender_breakdown: snapshot.gender_breakdown,
+        age_breakdown: snapshot.age_breakdown,
+        total_orders: snapshot.total_orders,
+        total_revenue: snapshot.total_revenue,
+        avg_order_value: snapshot.avg_order_value,
+        top_products: snapshot.top_products,
+        active_subscribers: snapshot.active_subscribers,
+        churn_risk_high: snapshot.churn_risk_high,
+        snapshot_source: snapshot.snapshot_source,
+        created_at: new Date().toISOString(),
+      });
 
     if (error) {
       console.error('[branchSnapshot] Failed to save snapshot:', error.message);
