@@ -8,6 +8,7 @@ import {
   Trash2, Plus, X, Slack, Link2, Copy, Database, Clock
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
+import ConnectionsManager from '../ConnectionsManager';
 
 interface SettingsProps {
   apiKeys: ApiKeyConfig;
@@ -56,6 +57,7 @@ const Settings: React.FC<SettingsProps> = ({
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [integrations, setIntegrations] = useState<Integration[]>(MOCK_INTEGRATIONS);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showConnectionWizard, setShowConnectionWizard] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [newIntegration, setNewIntegration] = useState<Partial<Integration>>({
     name: '',
@@ -118,6 +120,20 @@ const Settings: React.FC<SettingsProps> = ({
     const linkedBranch = branches.find(b => b.spoke_connection_id === conn.id);
     return { connection: conn, branch: linkedBranch || null };
   });
+
+  if (showConnectionWizard) {
+    return (
+      <div className="max-w-6xl mx-auto space-y-8 pb-20">
+        <ConnectionsManager
+          connections={spokeConnections}
+          onConnectionsChange={(updated: SpokeConnection[]) => {
+            onSpokeConnectionsChange(updated);
+            setShowConnectionWizard(false);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-20">
@@ -322,11 +338,20 @@ const Settings: React.FC<SettingsProps> = ({
 
           {activeTab === 'spokes' && (
             <div className="space-y-8 animate-in fade-in duration-300">
-              <div>
-                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Spoke Registry</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
-                  {pairs.length} connection{pairs.length !== 1 ? 's' : ''} registered
-                </p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Spoke Registry</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
+                    {pairs.length} connection{pairs.length !== 1 ? 's' : ''} registered
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowConnectionWizard(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+                >
+                  <Plus size={16} />
+                  <span>Add Connection</span>
+                </button>
               </div>
 
               <div className="space-y-4">
@@ -427,7 +452,7 @@ const Settings: React.FC<SettingsProps> = ({
                   <div className="text-center py-16 text-slate-400">
                     <Database size={48} className="mx-auto mb-4 opacity-50" />
                     <p className="text-sm font-bold">No spoke connections</p>
-                    <p className="text-xs mt-1">Add a connection via the Connections Manager to get started</p>
+                    <p className="text-xs mt-1">Click "Add Connection" above to get started</p>
                   </div>
                 )}
               </div>

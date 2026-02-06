@@ -407,7 +407,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           const cardKey = mb.spokeConnectionId || mb.branchId || mb.name;
 
           return (
-            <div key={cardKey} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div key={cardKey} className="bg-white rounded-2xl border border-slate-200 shadow-sm">
               {/* Card Header */}
               <div className="p-5 pb-0">
                 <div className="flex items-start justify-between">
