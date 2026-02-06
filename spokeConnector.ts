@@ -111,28 +111,32 @@ async function fetchAllRows<T>(
   return { data: allData, error: null };
 }
 
-// Fetch column names via CSV header — works even for empty tables
-async function fetchColumnsViaCsv(
+// Fetch column names from the PostgREST OpenAPI definition — works for empty tables
+const openApiSpecCache = new Map<string, Record<string, any>>();
+async function fetchTableColumns(
   supabase_url: string,
   supabase_key: string,
   table_name: string
 ): Promise<string[]> {
   try {
-    const res = await fetch(
-      `${supabase_url}/rest/v1/${encodeURIComponent(table_name)}?limit=0`,
-      {
+    const cacheKey = `${supabase_url}:${supabase_key}`;
+    let spec = openApiSpecCache.get(cacheKey);
+    if (!spec) {
+      const res = await fetch(`${supabase_url}/rest/v1/`, {
         headers: {
           apikey: supabase_key,
           Authorization: `Bearer ${supabase_key}`,
-          Accept: 'text/csv',
         },
-      }
-    );
-    if (!res.ok) return [];
-    const csv = await res.text();
-    const headerLine = csv.trim().split('\n')[0];
-    if (!headerLine) return [];
-    return headerLine.split(',').map(c => c.replace(/^"|"$/g, ''));
+      });
+      if (!res.ok) return [];
+      spec = await res.json();
+      openApiSpecCache.set(cacheKey, spec);
+    }
+    const tableDef = spec.definitions?.[table_name];
+    if (tableDef?.properties) {
+      return Object.keys(tableDef.properties);
+    }
+    return [];
   } catch {
     return [];
   }
@@ -158,7 +162,7 @@ export async function testSpokeConnection(
 
     // Fallback: fetch columns via CSV header for empty tables
     if (columns.length === 0) {
-      columns = await fetchColumnsViaCsv(
+      columns = await fetchTableColumns(
         connection.supabase_url,
         connection.supabase_key,
         connection.table_name
