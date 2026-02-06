@@ -143,13 +143,12 @@ export const discoverTables = async (
 
     for (const tableName of commonTables) {
       try {
-        const response = await client
+        const { error } = await client
           .from(tableName)
           .select('*', { count: 'exact', head: true });
 
-        // Only add tables that return status 200 (actual data)
-        // Status 204 means "No Content" which Supabase returns for non-existent tables
-        if (response.status === 200) {
+        // If no error, the table exists and is accessible
+        if (!error) {
           foundTables.push(tableName);
         }
       } catch {
