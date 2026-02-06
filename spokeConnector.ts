@@ -136,7 +136,8 @@ export const discoverTables = async (
     const commonTables = [
       'customers', 'profiles', 'users',
       'orders', 'order_items', 'legacy_orders', 'legacy_order_items',
-      'subscriptions', 'payments', 'products'
+      'subscriptions', 'payments', 'products',
+      'newsletter_subscribers', 'customer_tags', 'customer_addresses'
     ];
     const foundTables: string[] = [];
 
