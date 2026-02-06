@@ -111,32 +111,24 @@ async function fetchAllRows<T>(
   return { data: allData, error: null };
 }
 
-// Fetch column names from the PostgREST OpenAPI definition — works for empty tables
-const openApiSpecCache = new Map<string, Record<string, any>>();
-async function fetchTableColumns(
-  supabase_url: string,
-  supabase_key: string,
+// Fetch column names via CSV through the Supabase JS client (handles auth properly)
+async function fetchTableColumnsCsv(
+  url: string,
+  key: string,
   table_name: string
 ): Promise<string[]> {
   try {
-    const cacheKey = `${supabase_url}:${supabase_key}`;
-    let spec = openApiSpecCache.get(cacheKey);
-    if (!spec) {
-      const res = await fetch(`${supabase_url}/rest/v1/`, {
-        headers: {
-          apikey: supabase_key,
-          Authorization: `Bearer ${supabase_key}`,
-        },
-      });
-      if (!res.ok) return [];
-      spec = await res.json();
-      openApiSpecCache.set(cacheKey, spec);
-    }
-    const tableDef = spec.definitions?.[table_name];
-    if (tableDef?.properties) {
-      return Object.keys(tableDef.properties);
-    }
-    return [];
+    const client = getSpokeClient(url, key);
+    const { data, error } = await client
+      .from(table_name)
+      .select('*')
+      .limit(1)
+      .csv();
+
+    if (error || !data) return [];
+    const headerLine = String(data).trim().split('\n')[0];
+    if (!headerLine) return [];
+    return headerLine.split(',').map(c => c.replace(/^"|"$/g, ''));
   } catch {
     return [];
   }
@@ -160,9 +152,9 @@ export async function testSpokeConnection(
     // Extract column names from the first row of data
     let columns = data && data.length > 0 ? Object.keys(data[0]) : [];
 
-    // Fallback: fetch columns via CSV header for empty tables
+    // Fallback: fetch columns via CSV for empty tables
     if (columns.length === 0) {
-      columns = await fetchTableColumns(
+      columns = await fetchTableColumnsCsv(
         connection.supabase_url,
         connection.supabase_key,
         connection.table_name
@@ -183,35 +175,31 @@ export const discoverTables = async (
   supabase_key: string
 ): Promise<{ tables: string[]; error?: string }> => {
   try {
-    // Fetch the OpenAPI spec — single request that lists all accessible tables
-    const cacheKey = `${supabase_url}:${supabase_key}`;
-    let spec = openApiSpecCache.get(cacheKey);
-    if (!spec) {
-      const res = await fetch(`${supabase_url}/rest/v1/`, {
-        headers: {
-          apikey: supabase_key,
-          Authorization: `Bearer ${supabase_key}`,
-        },
-      });
-      if (!res.ok) {
-        return { tables: [], error: `API returned ${res.status}` };
-      }
-      spec = await res.json();
-      openApiSpecCache.set(cacheKey, spec);
-    }
+    const client = getSpokeClient(supabase_url, supabase_key);
 
-    // Extract table names from the spec definitions
-    const allTables = spec.definitions ? Object.keys(spec.definitions) : [];
-
-    // Filter to tables we care about
-    const commonTables = new Set([
+    const commonTables = [
       'customers', 'profiles', 'users',
       'orders', 'order_items', 'legacy_orders', 'legacy_order_items',
       'subscriptions', 'payments', 'products',
       'newsletter_subscribers', 'customer_tags', 'customer_addresses'
-    ]);
+    ];
+    const foundTables: string[] = [];
 
-    const foundTables = allTables.filter(t => commonTables.has(t));
+    for (const tableName of commonTables) {
+      try {
+        // Use GET (not HEAD) so errors are properly reported for non-existent tables
+        const { error } = await client
+          .from(tableName)
+          .select('*')
+          .limit(1);
+
+        if (!error) {
+          foundTables.push(tableName);
+        }
+      } catch {
+        // Table doesn't exist or no access, skip silently
+      }
+    }
 
     return { tables: foundTables };
   } catch (err) {
