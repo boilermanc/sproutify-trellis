@@ -235,7 +235,7 @@ const AppContent: React.FC = () => {
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} />;
       case 'dev-tools': return <DevTools profiles={profiles} />;
-      case 'reports': return <Reports profiles={profiles} />;
+      case 'reports': return <Reports spokeConnections={spokeConnections} />;
       case 'team': return <TeamMembers />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'settings': return (

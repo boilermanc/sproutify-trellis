@@ -1,15 +1,16 @@
 
-import React, { useState, useMemo } from 'react';
-import { Profile } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { SpokeConnection, EnrichedProfile } from '../types';
+import { fetchEnrichedProfiles } from '../spokeConnector';
 import { GoogleGenAI } from '@google/genai';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
   Activity, ShieldCheck, TrendingUp, AlertTriangle, Crown, Zap,
-  ChevronRight, Heart, UserX, PauseCircle
+  ChevronRight, Heart, UserX, PauseCircle, Loader2, Radio
 } from 'lucide-react';
 
 interface ReportsProps {
-  profiles: Profile[];
+  spokeConnections: SpokeConnection[];
 }
 
 interface SageMessage {
@@ -17,11 +18,42 @@ interface SageMessage {
   content: string;
 }
 
-const Reports: React.FC<ReportsProps> = ({ profiles }) => {
+const Reports: React.FC<ReportsProps> = ({ spokeConnections }) => {
   const [sageQuery, setSageQuery] = useState('');
   const [sageResponse, setSageResponse] = useState<string | null>(null);
   const [sageLoading, setSageLoading] = useState(false);
   const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);
+
+  // Federated data state
+  const [profiles, setProfiles] = useState<EnrichedProfile[]>([]);
+  const [isFederating, setIsFederating] = useState(false);
+  const [federationError, setFederationError] = useState<string | null>(null);
+
+  // Auto-fetch from all active spokes on mount
+  useEffect(() => {
+    async function fetchData() {
+      const activeConnections = spokeConnections.filter(c => c.status === 'active');
+      if (activeConnections.length === 0) {
+        setProfiles([]);
+        return;
+      }
+      setIsFederating(true);
+      setFederationError(null);
+      try {
+        const { profiles: enriched, errors } = await fetchEnrichedProfiles(activeConnections);
+        setProfiles(enriched);
+        if (errors.length > 0) {
+          setFederationError(errors.join('; '));
+        }
+      } catch (err) {
+        setFederationError(err instanceof Error ? err.message : 'Failed to fetch federated data');
+        setProfiles([]);
+      } finally {
+        setIsFederating(false);
+      }
+    }
+    fetchData();
+  }, [spokeConnections]);
 
   // ═══════════════════════════════════════════════════════════════
   // CARD 1: Audience Composition
@@ -29,22 +61,22 @@ const Reports: React.FC<ReportsProps> = ({ profiles }) => {
   const audienceData = useMemo(() => {
     const total = profiles.length;
 
-    // Gender distribution
+    // Gender distribution (from predicted demographics)
     const genderCounts = { male: 0, female: 0, unknown: 0 };
     profiles.forEach(p => {
-      const gender = p.metadata?.predicted_gender || 'unknown';
+      const gender = p._predicted_demographics?.gender?.gender || 'unknown';
       if (gender === 'male') genderCounts.male++;
       else if (gender === 'female') genderCounts.female++;
       else genderCounts.unknown++;
     });
 
-    // Source site distribution
-    const sourceCounts: Record<string, number> = {};
+    // Spoke distribution (which databases are profiles coming from)
+    const spokeCounts: Record<string, number> = {};
     profiles.forEach(p => {
-      const source = p.metadata?.source_site || 'Unknown';
-      sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+      const spoke = p._spoke_name || 'Unknown';
+      spokeCounts[spoke] = (spokeCounts[spoke] || 0) + 1;
     });
-    const topSources = Object.entries(sourceCounts)
+    const topSources = Object.entries(spokeCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
@@ -55,7 +87,8 @@ const Reports: React.FC<ReportsProps> = ({ profiles }) => {
   // CARD 2: LTV & Revenue Distribution
   // ═══════════════════════════════════════════════════════════════
   const ltvData = useMemo(() => {
-    const ltvs = profiles.map(p => p.ltv || 0);
+    const getLtv = (p: EnrichedProfile) => p.order_stats?.ltv || 0;
+    const ltvs = profiles.map(getLtv);
     const total = ltvs.reduce((sum, ltv) => sum + ltv, 0);
     const avg = profiles.length > 0 ? total / profiles.length : 0;
 
@@ -67,85 +100,91 @@ const Reports: React.FC<ReportsProps> = ({ profiles }) => {
 
     // LTV Tiers
     const tiers = {
-      zero: profiles.filter(p => (p.ltv || 0) === 0).length,
-      micro: profiles.filter(p => (p.ltv || 0) > 0 && (p.ltv || 0) <= 50).length,
-      standard: profiles.filter(p => (p.ltv || 0) > 50 && (p.ltv || 0) <= 200).length,
-      premium: profiles.filter(p => (p.ltv || 0) > 200 && (p.ltv || 0) <= 500).length,
-      vip: profiles.filter(p => (p.ltv || 0) > 500).length,
+      zero: profiles.filter(p => getLtv(p) === 0).length,
+      micro: profiles.filter(p => getLtv(p) > 0 && getLtv(p) <= 50).length,
+      standard: profiles.filter(p => getLtv(p) > 50 && getLtv(p) <= 200).length,
+      premium: profiles.filter(p => getLtv(p) > 200 && getLtv(p) <= 500).length,
+      vip: profiles.filter(p => getLtv(p) > 500).length,
     };
 
     // Top 10 by LTV
     const topProfiles = [...profiles]
-      .sort((a, b) => (b.ltv || 0) - (a.ltv || 0))
+      .sort((a, b) => getLtv(b) - getLtv(a))
       .slice(0, 10);
 
     return { avg, median, tiers, topProfiles, total };
   }, [profiles]);
 
   // ═══════════════════════════════════════════════════════════════
-  // CARD 3: Subscription Health
+  // CARD 3: Subscription & Order Health
   // ═══════════════════════════════════════════════════════════════
   const subscriptionData = useMemo(() => {
-    const subscribed = profiles.filter(p => p.is_subscribed).length;
-    const unsubscribed = profiles.filter(p => !p.is_subscribed).length;
-    const marketingPaused = profiles.filter(p => p.marketing_pause).length;
+    const subscribed = profiles.filter(p => p.subscribed === true).length;
+    const unsubscribed = profiles.filter(p => p.subscribed === false).length;
+    const unknown = profiles.filter(p => p.subscribed == null).length;
 
-    // Churn risk distribution
-    const churnRisk = {
-      minimal: profiles.filter(p => p.churn_risk === 'minimal').length,
-      moderate: profiles.filter(p => p.churn_risk === 'moderate').length,
-      high: profiles.filter(p => p.churn_risk === 'high').length,
-      critical: profiles.filter(p => p.churn_risk === 'critical').length,
-    };
+    // Order-based activity (derived from actual federated order data)
+    const withOrders = profiles.filter(p => p.order_stats && p.order_stats.order_count > 0);
+    const withoutOrders = profiles.length - withOrders.length;
+    const repeatBuyers = profiles.filter(p => p.order_stats && p.order_stats.order_count > 1).length;
+    const oneTimeBuyers = withOrders.length - repeatBuyers;
 
-    // Status breakdown
-    const statusCounts = {
-      active: profiles.filter(p => p.status === 'active').length,
-      archived: profiles.filter(p => p.status === 'archived').length,
-      banned: profiles.filter(p => p.status === 'banned').length,
-      deleted: profiles.filter(p => p.status === 'deleted').length,
-    };
+    // Recency-based engagement (from last purchase date)
+    const now = Date.now();
+    const recentlyActive = withOrders.filter(p => {
+      const last = p.order_stats?.last_purchase_at;
+      return last && (now - new Date(last).getTime()) < 90 * 24 * 60 * 60 * 1000; // 90 days
+    }).length;
+    const dormant = withOrders.length - recentlyActive;
 
-    return { subscribed, unsubscribed, marketingPaused, churnRisk, statusCounts };
+    return { subscribed, unsubscribed, unknown, withOrders: withOrders.length, withoutOrders, repeatBuyers, oneTimeBuyers, recentlyActive, dormant };
   }, [profiles]);
 
   // ═══════════════════════════════════════════════════════════════
-  // CARD 4: Segment & Tag Intelligence
+  // CARD 4: Product & Spoke Intelligence
   // ═══════════════════════════════════════════════════════════════
-  const segmentData = useMemo(() => {
-    // Segment counts
-    const segmentCounts: Record<string, number> = {};
-    let totalSegments = 0;
+  const productData = useMemo(() => {
+    // Aggregate product purchase data across all profiles
+    const productCounts: Record<string, { quantity: number; revenue: number; buyers: number }> = {};
     profiles.forEach(p => {
-      (p.segments || []).forEach(seg => {
-        segmentCounts[seg] = (segmentCounts[seg] || 0) + 1;
-        totalSegments++;
+      (p.order_stats?.products_purchased || []).forEach(prod => {
+        if (!productCounts[prod.product_name]) {
+          productCounts[prod.product_name] = { quantity: 0, revenue: 0, buyers: 0 };
+        }
+        productCounts[prod.product_name].quantity += prod.total_quantity;
+        productCounts[prod.product_name].revenue += prod.total_spent;
+        productCounts[prod.product_name].buyers += 1;
       });
     });
-    const topSegments = Object.entries(segmentCounts)
-      .sort((a, b) => b[1] - a[1]);
-
-    // Tag counts
-    const tagCounts: Record<string, number> = {};
-    let totalTags = 0;
-    profiles.forEach(p => {
-      (p.tags || []).forEach(tag => {
-        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-        totalTags++;
-      });
-    });
-    const topTags = Object.entries(tagCounts)
-      .sort((a, b) => b[1] - a[1])
+    const topProducts = Object.entries(productCounts)
+      .sort((a, b) => b[1].revenue - a[1].revenue)
       .slice(0, 15);
 
-    const avgSegmentsPerProfile = profiles.length > 0
-      ? totalSegments / profiles.length
-      : 0;
-    const avgTagsPerProfile = profiles.length > 0
-      ? totalTags / profiles.length
-      : 0;
+    // Spoke distribution with order stats
+    const spokeStats: Record<string, { profiles: number; withOrders: number; revenue: number }> = {};
+    profiles.forEach(p => {
+      const spoke = p._spoke_name || 'Unknown';
+      if (!spokeStats[spoke]) {
+        spokeStats[spoke] = { profiles: 0, withOrders: 0, revenue: 0 };
+      }
+      spokeStats[spoke].profiles += 1;
+      if (p.order_stats && p.order_stats.order_count > 0) {
+        spokeStats[spoke].withOrders += 1;
+        spokeStats[spoke].revenue += p.order_stats.ltv;
+      }
+    });
+    const spokeBreakdown = Object.entries(spokeStats)
+      .sort((a, b) => b[1].revenue - a[1].revenue);
 
-    return { topSegments, topTags, avgSegmentsPerProfile, avgTagsPerProfile };
+    const totalProducts = Object.keys(productCounts).length;
+    const avgProductsPerBuyer = (() => {
+      const buyers = profiles.filter(p => (p.order_stats?.products_purchased?.length || 0) > 0);
+      if (buyers.length === 0) return 0;
+      const totalPurchased = buyers.reduce((sum, p) => sum + (p.order_stats?.products_purchased?.length || 0), 0);
+      return totalPurchased / buyers.length;
+    })();
+
+    return { topProducts, spokeBreakdown, totalProducts, avgProductsPerBuyer };
   }, [profiles]);
 
   // ═══════════════════════════════════════════════════════════════
@@ -159,25 +198,31 @@ const Reports: React.FC<ReportsProps> = ({ profiles }) => {
     setSageLoading(true);
     setSageHistory(prev => [...prev, { role: 'user', content: query }]);
 
-    // Build statistical summary
-    const sortedLtvs = [...profiles].map(p => p.ltv || 0).sort((a, b) => a - b);
+    // Build statistical summary from federated data
+    const getLtv = (p: EnrichedProfile) => p.order_stats?.ltv || 0;
+    const sortedLtvs = [...profiles].map(getLtv).sort((a, b) => a - b);
     const statsSummary = {
       total_profiles: profiles.length,
-      subscribed: profiles.filter(p => p.is_subscribed).length,
-      unsubscribed: profiles.filter(p => !p.is_subscribed).length,
-      marketing_paused: profiles.filter(p => p.marketing_pause).length,
+      subscribed: subscriptionData.subscribed,
+      unsubscribed: subscriptionData.unsubscribed,
+      subscription_unknown: subscriptionData.unknown,
       avg_ltv: profiles.length > 0
-        ? (profiles.reduce((s, p) => s + (p.ltv || 0), 0) / profiles.length).toFixed(2)
+        ? (profiles.reduce((s, p) => s + getLtv(p), 0) / profiles.length).toFixed(2)
         : '0.00',
       median_ltv: sortedLtvs.length > 0
         ? sortedLtvs[Math.floor(sortedLtvs.length / 2)]
         : 0,
       ltv_tiers: ltvData.tiers,
-      churn_risk: subscriptionData.churnRisk,
-      top_segments: segmentData.topSegments.slice(0, 10).map(([name, count]) => ({ name, count })),
-      top_tags: segmentData.topTags.map(([name, count]) => ({ name, count })),
-      site_distribution: audienceData.topSources.map(([site, count]) => ({ site, count })),
-      status_breakdown: subscriptionData.statusCounts,
+      order_activity: {
+        with_orders: subscriptionData.withOrders,
+        without_orders: subscriptionData.withoutOrders,
+        repeat_buyers: subscriptionData.repeatBuyers,
+        one_time_buyers: subscriptionData.oneTimeBuyers,
+        recently_active_90d: subscriptionData.recentlyActive,
+        dormant: subscriptionData.dormant,
+      },
+      top_products: productData.topProducts.slice(0, 10).map(([name, stats]) => ({ name, ...stats })),
+      spoke_distribution: audienceData.topSources.map(([spoke, count]) => ({ spoke, count })),
       gender_distribution: audienceData.genderCounts,
     };
 
@@ -227,15 +272,45 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
   return (
     <div className="space-y-8 pb-40">
       {/* Section Header */}
-      <div className="flex items-center space-x-4">
-        <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
-          <BarChart3 size={28} className="text-white" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
+            <BarChart3 size={28} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ecosystem Analytics</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Federated Spoke Intelligence</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ecosystem Analytics</h1>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time Profile Intelligence</p>
-        </div>
+        {isFederating && (
+          <div className="flex items-center space-x-2 text-indigo-600">
+            <Loader2 size={16} className="animate-spin" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Federating...</span>
+          </div>
+        )}
+        {!isFederating && profiles.length > 0 && (
+          <div className="flex items-center space-x-2 text-emerald-600">
+            <Radio size={14} />
+            <span className="text-[10px] font-black uppercase tracking-widest">{profiles.length} profiles from {spokeConnections.filter(c => c.status === 'active').length} spokes</span>
+          </div>
+        )}
       </div>
+
+      {federationError && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start space-x-3">
+          <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs font-bold text-amber-700">{federationError}</p>
+        </div>
+      )}
+
+      {isFederating && profiles.length === 0 && (
+        <div className="flex items-center justify-center py-24">
+          <div className="text-center space-y-4">
+            <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto" />
+            <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Fetching data from spokes...</p>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* PREBUILT ANALYTICS CARDS - 2x2 Grid */}
@@ -288,7 +363,7 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
 
           {/* Top Sources */}
           <div className="space-y-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top Source Sites</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Spoke Distribution</p>
             <div className="space-y-2">
               {audienceData.topSources.length > 0 ? audienceData.topSources.map(([site, count], i) => (
                 <div key={site} className="flex items-center justify-between">
@@ -350,25 +425,25 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top 10 by LTV</p>
             <div className="max-h-32 overflow-y-auto space-y-1">
               {ltvData.topProfiles.map((p, i) => (
-                <div key={p.id} className="flex items-center justify-between text-xs py-1 border-b border-slate-50">
+                <div key={p.id || p.email} className="flex items-center justify-between text-xs py-1 border-b border-slate-50">
                   <div className="flex items-center space-x-2">
                     {i === 0 && <Crown size={12} className="text-amber-500" />}
                     <span className="font-bold text-slate-600 truncate max-w-[120px]">{p.first_name} {p.last_name || ''}</span>
                   </div>
-                  <span className="font-black text-emerald-600">${(p.ltv || 0).toFixed(2)}</span>
+                  <span className="font-black text-emerald-600">${(p.order_stats?.ltv || 0).toFixed(2)}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Card 3: Subscription Health */}
+        {/* Card 3: Subscription & Order Health */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
               <ShieldCheck size={20} />
             </div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Subscription Health</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Subscription & Order Health</p>
           </div>
 
           {/* Subscription Stats */}
@@ -385,92 +460,92 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
             </div>
             <div className="bg-amber-50 rounded-2xl p-4 text-center">
               <PauseCircle size={16} className="mx-auto text-amber-600 mb-1" />
-              <p className="text-xl font-black text-amber-700">{subscriptionData.marketingPaused}</p>
-              <p className="text-[8px] font-black uppercase tracking-widest text-amber-500">Paused</p>
+              <p className="text-xl font-black text-amber-700">{subscriptionData.unknown}</p>
+              <p className="text-[8px] font-black uppercase tracking-widest text-amber-500">Unknown</p>
             </div>
           </div>
 
-          {/* Churn Risk */}
+          {/* Order Activity */}
           <div className="space-y-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Churn Risk Distribution</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Order Activity</p>
             <div className="flex flex-wrap gap-2">
               <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
-                Minimal: {subscriptionData.churnRisk.minimal}
+                Repeat Buyers: {subscriptionData.repeatBuyers}
               </span>
               <span className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full text-xs font-black">
-                Moderate: {subscriptionData.churnRisk.moderate}
+                One-Time: {subscriptionData.oneTimeBuyers}
               </span>
-              <span className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-black">
-                High: {subscriptionData.churnRisk.high}
-              </span>
-              <span className="px-3 py-1.5 bg-rose-100 text-rose-700 rounded-full text-xs font-black">
-                Critical: {subscriptionData.churnRisk.critical}
+              <span className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-full text-xs font-black">
+                No Orders: {subscriptionData.withoutOrders}
               </span>
             </div>
           </div>
 
-          {/* Status Breakdown */}
+          {/* Engagement Recency */}
           <div className="space-y-2">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Status Breakdown</p>
-            <div className="grid grid-cols-4 gap-2">
-              {Object.entries(subscriptionData.statusCounts).map(([status, count]) => (
-                <div key={status} className="text-center">
-                  <p className="text-lg font-black text-slate-800">{count}</p>
-                  <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 capitalize">{status}</p>
-                </div>
-              ))}
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Purchase Recency (90 days)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center">
+                <p className="text-lg font-black text-emerald-700">{subscriptionData.recentlyActive}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-emerald-500">Recently Active</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-black text-slate-700">{subscriptionData.dormant}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Dormant</p>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Card 4: Segment & Tag Intelligence */}
+        {/* Card 4: Product & Spoke Intelligence */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
                 <Tag size={20} />
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Segment & Tag Intelligence</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Product & Spoke Intelligence</p>
             </div>
           </div>
 
           {/* Averages */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-50 rounded-2xl p-4 text-center">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg Segments/Profile</p>
-              <p className="text-2xl font-black text-slate-800">{segmentData.avgSegmentsPerProfile.toFixed(1)}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Unique Products</p>
+              <p className="text-2xl font-black text-slate-800">{productData.totalProducts}</p>
             </div>
             <div className="bg-slate-50 rounded-2xl p-4 text-center">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg Tags/Profile</p>
-              <p className="text-2xl font-black text-slate-800">{segmentData.avgTagsPerProfile.toFixed(1)}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg Products/Buyer</p>
+              <p className="text-2xl font-black text-slate-800">{productData.avgProductsPerBuyer.toFixed(1)}</p>
             </div>
           </div>
 
-          {/* Top Segments */}
+          {/* Top Products by Revenue */}
           <div className="space-y-2">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Segments by Members</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top Products by Revenue</p>
             <div className="max-h-28 overflow-y-auto space-y-1">
-              {segmentData.topSegments.length > 0 ? segmentData.topSegments.map(([seg, count]) => (
-                <div key={seg} className="flex items-center justify-between text-xs py-1">
-                  <span className="font-bold text-slate-600 truncate max-w-[180px]">{seg}</span>
-                  <span className="font-black text-purple-600">{count}</span>
+              {productData.topProducts.length > 0 ? productData.topProducts.map(([name, stats]) => (
+                <div key={name} className="flex items-center justify-between text-xs py-1">
+                  <span className="font-bold text-slate-600 truncate max-w-[180px]">{name}</span>
+                  <span className="font-black text-purple-600">${stats.revenue.toFixed(0)} ({stats.buyers})</span>
                 </div>
               )) : (
-                <p className="text-xs text-slate-400 italic">No segments defined</p>
+                <p className="text-xs text-slate-400 italic">No product data available</p>
               )}
             </div>
           </div>
 
-          {/* Top Tags */}
+          {/* Spoke Breakdown */}
           <div className="space-y-2">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Top 15 Tags</p>
-            <div className="flex flex-wrap gap-1.5">
-              {segmentData.topTags.length > 0 ? segmentData.topTags.map(([tag, count]) => (
-                <span key={tag} className="px-2 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-black">
-                  {tag} ({count})
-                </span>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Spoke Performance</p>
+            <div className="space-y-1.5">
+              {productData.spokeBreakdown.length > 0 ? productData.spokeBreakdown.map(([spoke, stats]) => (
+                <div key={spoke} className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-600 truncate max-w-[140px]">{spoke}</span>
+                  <span className="font-black text-purple-600">{stats.profiles} profiles &middot; ${stats.revenue.toFixed(0)}</span>
+                </div>
               )) : (
-                <p className="text-xs text-slate-400 italic">No tags assigned</p>
+                <p className="text-xs text-slate-400 italic">No spoke data available</p>
               )}
             </div>
           </div>
