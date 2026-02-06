@@ -1377,7 +1377,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   onChange={(e) => handleSelectSubscriptionTable(e.target.value)}
                 >
                   <option value="">-- Select a table --</option>
-                  {discoveredTables.map((table) => (
+                  {discoveredTables
+                    .filter(t => t.toLowerCase().includes('subscri') || t.toLowerCase().includes('newsletter') || t.toLowerCase().includes('member'))
+                    .map((table) => (
                     <option key={table} value={table}>
                       {table}
                     </option>

@@ -99,6 +99,33 @@ async function fetchAllRows<T>(
   return { data: allData, error: null };
 }
 
+// Fetch column names via CSV header — works even for empty tables
+async function fetchColumnsViaCsv(
+  supabase_url: string,
+  supabase_key: string,
+  table_name: string
+): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `${supabase_url}/rest/v1/${encodeURIComponent(table_name)}?limit=0`,
+      {
+        headers: {
+          apikey: supabase_key,
+          Authorization: `Bearer ${supabase_key}`,
+          Accept: 'text/csv',
+        },
+      }
+    );
+    if (!res.ok) return [];
+    const csv = await res.text();
+    const headerLine = csv.trim().split('\n')[0];
+    if (!headerLine) return [];
+    return headerLine.split(',').map(c => c.replace(/^"|"$/g, ''));
+  } catch {
+    return [];
+  }
+}
+
 export async function testSpokeConnection(
   connection: TestConnectionInput
 ): Promise<TestConnectionResult> {
@@ -115,7 +142,16 @@ export async function testSpokeConnection(
     }
 
     // Extract column names from the first row of data
-    const columns = data && data.length > 0 ? Object.keys(data[0]) : [];
+    let columns = data && data.length > 0 ? Object.keys(data[0]) : [];
+
+    // Fallback: fetch columns via CSV header for empty tables
+    if (columns.length === 0) {
+      columns = await fetchColumnsViaCsv(
+        connection.supabase_url,
+        connection.supabase_key,
+        connection.table_name
+      );
+    }
 
     return { success: true, rowCount: count ?? data?.length ?? 0, columns };
   } catch (err) {
