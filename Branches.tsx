@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Database, Check, X, AlertCircle, Eye, EyeOff, RefreshCw, Unplug, Loader2 } from 'lucide-react';
+import { Globe, Database, Check, X, AlertCircle, Eye, EyeOff, RefreshCw, Unplug, Loader2, PlugZap, Settings2, Users, Package, Layers, CreditCard, AlertTriangle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { SpokeConnection } from './types';
 import { SITES_LIST } from './constants';
@@ -30,6 +30,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
   const [isTesting, setIsTesting] = useState<Record<string, boolean>>({});
   const [profileCounts, setProfileCounts] = useState<Record<string, number>>({});
   const [isLoadingCounts, setIsLoadingCounts] = useState<Record<string, boolean>>({});
+  const [reconnectErrors, setReconnectErrors] = useState<Record<string, string>>({});
 
   // Fetch profile counts for all connected spokes using enriched merge logic
   const fetchAllProfileCounts = async () => {
@@ -75,6 +76,10 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
 
   const getConnectionForSite = (site: string): SpokeConnection | undefined => {
     return spokeConnections.find(conn => conn.name === site && conn.status === 'active');
+  };
+
+  const getDisconnectedConnectionForSite = (site: string): SpokeConnection | undefined => {
+    return spokeConnections.find(conn => conn.name === site && conn.status === 'disconnected');
   };
 
   const connectedCount = SITES_LIST.filter(site => getConnectionForSite(site)).length;
@@ -252,6 +257,52 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
     }
   };
 
+  const handleReconnect = async (connection: SpokeConnection) => {
+    setIsTesting(prev => ({ ...prev, [connection.name]: true }));
+    setReconnectErrors(prev => {
+      const updated = { ...prev };
+      delete updated[connection.name];
+      return updated;
+    });
+
+    try {
+      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const customerTable = connection.tables.find(t => t.table_type === 'customers');
+      const tableName = customerTable?.table_name || 'profiles';
+
+      const { count, error } = await client
+        .from(tableName)
+        .select('id', { count: 'exact', head: true });
+
+      if (error) {
+        setReconnectErrors(prev => ({ ...prev, [connection.name]: error.message }));
+      } else {
+        // Reactivate the connection
+        const updated = spokeConnections.map(c =>
+          c.id === connection.id ? { ...c, status: 'active' as const, last_error: undefined, last_tested_at: new Date().toISOString() } : c
+        );
+        onSpokeConnectionsChange(updated);
+        if (count !== null) {
+          setProfileCounts(prev => ({ ...prev, [connection.name]: count }));
+        }
+      }
+    } catch (err: any) {
+      setReconnectErrors(prev => ({ ...prev, [connection.name]: err.message || 'Reconnection failed' }));
+    } finally {
+      setIsTesting(prev => ({ ...prev, [connection.name]: false }));
+    }
+  };
+
+  const handleForgetConnection = (site: string) => {
+    const filtered = spokeConnections.filter(c => c.name !== site);
+    onSpokeConnectionsChange(filtered);
+    setReconnectErrors(prev => {
+      const updated = { ...prev };
+      delete updated[site];
+      return updated;
+    });
+  };
+
   const formatTimestamp = (ts?: string) => {
     if (!ts) return 'Never';
     const date = new Date(ts);
@@ -280,11 +331,14 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {SITES_LIST.map(site => {
           const connection = getConnectionForSite(site);
+          const disconnectedConnection = getDisconnectedConnectionForSite(site);
           const isConnected = !!connection;
+          const isDisconnected = !!disconnectedConnection;
           const isExpanded = expandedSite === site;
           const form = connectionForms[site];
           const testResult = testResults[site];
           const testing = isTesting[site];
+          const reconnectError = reconnectErrors[site];
 
           return (
             <div key={site} className="flex flex-col">
@@ -293,6 +347,8 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                 className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${
                   isConnected
                     ? 'border-l-4 border-l-emerald-500 border-slate-200'
+                    : isDisconnected
+                    ? 'border-l-4 border-l-amber-400 border-slate-200'
                     : 'border-l-4 border-l-slate-200 border-slate-200'
                 }`}
               >
@@ -300,16 +356,16 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        isConnected ? 'bg-emerald-100' : 'bg-slate-100'
+                        isConnected ? 'bg-emerald-100' : isDisconnected ? 'bg-amber-50' : 'bg-slate-100'
                       }`}>
-                        <Database className={`w-5 h-5 ${isConnected ? 'text-emerald-600' : 'text-slate-400'}`} />
+                        <Database className={`w-5 h-5 ${isConnected ? 'text-emerald-600' : isDisconnected ? 'text-amber-500' : 'text-slate-400'}`} />
                       </div>
                       <div>
                         <h3 className="font-bold text-slate-800">{site}</h3>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                          <span className={`text-xs font-medium ${isConnected ? 'text-emerald-600' : 'text-slate-400'}`}>
-                            {isConnected ? 'Connected' : 'Not Connected'}
+                          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : isDisconnected ? 'bg-amber-400' : 'bg-slate-300'}`} />
+                          <span className={`text-xs font-medium ${isConnected ? 'text-emerald-600' : isDisconnected ? 'text-amber-600' : 'text-slate-400'}`}>
+                            {isConnected ? 'Connected' : isDisconnected ? 'Saved — Disconnected' : 'Not Connected'}
                           </span>
                         </div>
                       </div>
@@ -319,6 +375,44 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                   {/* Connected State Details */}
                   {isConnected && connection && (
                     <div className="mt-4 space-y-3">
+                      {/* Table type badges */}
+                      <div className="flex items-center flex-wrap gap-1.5">
+                        {(connection.tables || []).filter(t => t.enabled).map((table) => (
+                          <span
+                            key={table.id}
+                            className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded flex items-center gap-1 ${
+                              table.table_type === 'customers'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : table.table_type === 'orders'
+                                ? 'bg-blue-100 text-blue-700'
+                                : table.table_type === 'order_items'
+                                ? 'bg-purple-100 text-purple-700'
+                                : table.table_type === 'subscriptions'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {table.table_type === 'customers' && <Users className="w-2.5 h-2.5" />}
+                            {table.table_type === 'orders' && <Package className="w-2.5 h-2.5" />}
+                            {table.table_type === 'order_items' && <Layers className="w-2.5 h-2.5" />}
+                            {table.table_type === 'subscriptions' && <CreditCard className="w-2.5 h-2.5" />}
+                            <span>{table.table_type === 'order_items' ? 'items' : table.table_type}</span>
+                            <span className="opacity-60 font-mono">{table.table_name}</span>
+                            <span className="opacity-60">{Object.values(table.field_mapping).filter(Boolean).length}f</span>
+                          </span>
+                        ))}
+                        {(!connection.tables || connection.tables.length === 0) && (
+                          <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            <span>Needs reconfiguration</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* URL */}
+                      <p className="text-[11px] text-slate-400 font-mono truncate">{connection.supabase_url}</p>
+
+                      {/* Stats row */}
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-500">Profiles</span>
                         <span className="font-bold text-slate-800">
@@ -330,15 +424,17 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-500">Table</span>
-                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs font-mono">
-                          {connection.tables.find(t => t.table_type === 'customers')?.table_name || 'profiles'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-500">Last Tested</span>
                         <span className="text-slate-600 text-xs">{formatTimestamp(connection.last_tested_at)}</span>
                       </div>
+
+                      {/* Error display */}
+                      {connection.last_error && (
+                        <div className="flex items-center gap-1.5 text-rose-500">
+                          <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                          <span className="text-[10px] font-bold truncate">{connection.last_error}</span>
+                        </div>
+                      )}
 
                       {/* Connected Actions */}
                       <div className="flex items-center gap-2 pt-2">
@@ -365,8 +461,84 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                     </div>
                   )}
 
+                  {/* Disconnected - Quick Reconnect */}
+                  {!isConnected && isDisconnected && disconnectedConnection && !isExpanded && (
+                    <div className="mt-4 space-y-3">
+                      {/* Table type badges */}
+                      <div className="flex items-center flex-wrap gap-1.5">
+                        {(disconnectedConnection.tables || []).filter(t => t.enabled).map((table) => (
+                          <span
+                            key={table.id}
+                            className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded flex items-center gap-1 opacity-70 ${
+                              table.table_type === 'customers'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : table.table_type === 'orders'
+                                ? 'bg-blue-100 text-blue-700'
+                                : table.table_type === 'order_items'
+                                ? 'bg-purple-100 text-purple-700'
+                                : table.table_type === 'subscriptions'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {table.table_type === 'customers' && <Users className="w-2.5 h-2.5" />}
+                            {table.table_type === 'orders' && <Package className="w-2.5 h-2.5" />}
+                            {table.table_type === 'order_items' && <Layers className="w-2.5 h-2.5" />}
+                            {table.table_type === 'subscriptions' && <CreditCard className="w-2.5 h-2.5" />}
+                            <span>{table.table_type === 'order_items' ? 'items' : table.table_type}</span>
+                            <span className="opacity-60 font-mono">{table.table_name}</span>
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* URL */}
+                      <p className="text-[11px] text-slate-400 font-mono truncate">{disconnectedConnection.supabase_url}</p>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">Last Connected</span>
+                        <span className="text-slate-600 text-xs">{formatTimestamp(disconnectedConnection.last_tested_at)}</span>
+                      </div>
+
+                      {/* Reconnect Error */}
+                      {reconnectError && (
+                        <div className="p-3 rounded-xl flex items-center gap-2 bg-red-50 text-red-700 border border-red-200">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                          <span className="text-sm font-medium">{reconnectError}</span>
+                        </div>
+                      )}
+
+                      {/* Reconnect Actions */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => handleReconnect(disconnectedConnection)}
+                          disabled={testing}
+                          className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {testing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Reconnecting...
+                            </>
+                          ) : (
+                            <>
+                              <PlugZap className="w-4 h-4" />
+                              Reconnect
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleForgetConnection(site)}
+                          className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                          title="Forget saved credentials and connect fresh"
+                        >
+                          <Settings2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Not Connected - Connect Button */}
-                  {!isConnected && !isExpanded && (
+                  {!isConnected && !isDisconnected && !isExpanded && (
                     <div className="mt-4">
                       <button
                         onClick={() => handleExpandSite(site)}
@@ -379,7 +551,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                 </div>
 
                 {/* Expanded Connection Form */}
-                {isExpanded && !isConnected && (
+                {isExpanded && !isConnected && !isDisconnected && (
                   <div className="border-t border-slate-100 bg-slate-50 p-5 space-y-4">
                     {/* Supabase URL */}
                     <div>
