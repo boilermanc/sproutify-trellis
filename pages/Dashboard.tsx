@@ -1,14 +1,27 @@
 
-import React, { useState, useEffect } from 'react';
-import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, SpokeConnection } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, SpokeConnection, BranchStatsResult } from '../types';
 import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
-import { fetchAllSpokesOrders, fetchEnrichedProfiles, NormalizedOrder } from '../spokeConnector';
+import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
+import { timeAgo } from '../utils';
 import {
-  Globe, CheckSquare, Sparkles, ChevronDown, ChevronRight, X, Target,
+  Globe, Sparkles, ChevronDown, ChevronRight, X, Target,
   LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2,
-  Package, DollarSign, GitBranch
+  Package, DollarSign, GitBranch, AlertTriangle, Clock, Send, Rocket
 } from 'lucide-react';
+
+interface CampaignRecord {
+  id: string;
+  name: string;
+  launchedAt: string;
+  audienceSize: number;
+  branches: string[];
+  presets: string[];
+  template: string;
+  trigger: string;
+  status: 'deployed' | 'scheduled' | 'draft';
+}
 
 interface DashboardProps {
   onViewChange?: (view: ViewState) => void;
@@ -17,9 +30,22 @@ interface DashboardProps {
   profiles: Profile[];
   brand: Brand;
   spokeConnections: SpokeConnection[];
+  branchStats: BranchStatsResult;
+  branches: Branch[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections }) => {
+/** Classify how fresh a timestamp is */
+function getFreshness(ts?: string): { label: string; isStale: boolean; isWarning: boolean } {
+  if (!ts) return { label: 'Never synced', isStale: true, isWarning: true };
+  const hours = (Date.now() - new Date(ts).getTime()) / (1000 * 60 * 60);
+  if (hours < 1) return { label: 'Just now', isStale: false, isWarning: false };
+  if (hours < 24) return { label: `${Math.floor(hours)}h ago`, isStale: false, isWarning: false };
+  if (hours < 48) return { label: `${Math.floor(hours)}h ago`, isStale: false, isWarning: true };
+  const days = Math.floor(hours / 24);
+  return { label: `${days}d ago`, isStale: true, isWarning: true };
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches }) => {
   const [isBriefingOpen, setIsBriefingOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -27,14 +53,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
   const [isLoading, setIsLoading] = useState(true);
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
 
-  // Spoke connections live data
-  const [spokeCounts, setSpokeCounts] = useState<Record<string, number>>({});
-  const [isLoadingCounts, setIsLoadingCounts] = useState(false);
-  const [totalFederatedProfiles, setTotalFederatedProfiles] = useState(0);
-
-  // Orders data
-  const [federatedOrders, setFederatedOrders] = useState<NormalizedOrder[]>([]);
+  // Recent orders (only thing Dashboard still fetches independently)
+  const [recentOrders, setRecentOrders] = useState<NormalizedOrder[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
+
+  // Campaign history from localStorage
+  const [campaignHistory, setCampaignHistory] = useState<CampaignRecord[]>([]);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('trellis_campaign_history');
+      if (saved) setCampaignHistory(JSON.parse(saved));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -51,74 +81,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     loadDashboardData();
   }, []);
 
-  // Fetch profile counts from all active spokes using enriched merge logic
-  const fetchSpokeCounts = async () => {
-    setIsLoadingCounts(true);
-    const counts: Record<string, number> = {};
-
-    try {
-      // Use fetchEnrichedProfiles which merges customers + order-only identities
-      const { profiles, errors } = await fetchEnrichedProfiles(spokeConnections);
-
-      if (errors.length > 0) {
-        console.warn('Profile fetch errors:', errors);
-      }
-
-      // Group profiles by spoke_id and count
-      for (const profile of profiles) {
-        const spokeId = profile._spoke_id;
-        counts[spokeId] = (counts[spokeId] || 0) + 1;
-      }
-
-      // Mark any active connections without profiles as 0
-      for (const conn of spokeConnections.filter(c => c.status === 'active')) {
-        if (counts[conn.id] === undefined) {
-          counts[conn.id] = 0;
-        }
-      }
-
-      setSpokeCounts(counts);
-      setTotalFederatedProfiles(profiles.length);
-    } catch (err) {
-      console.error('Failed to fetch enriched profiles:', err);
-      // Set error state for all active connections
-      for (const conn of spokeConnections.filter(c => c.status === 'active')) {
-        counts[conn.id] = -1;
-      }
-      setSpokeCounts(counts);
-      setTotalFederatedProfiles(0);
-    } finally {
-      setIsLoadingCounts(false);
-    }
-  };
-
+  // Fetch recent orders (raw order rows, not available from branchStats)
   useEffect(() => {
-    if (spokeConnections.some(c => c.status === 'active')) {
-      fetchSpokeCounts();
-    }
-  }, [spokeConnections]);
-
-  // Fetch orders from all spokes
-  const fetchOrdersData = async () => {
-    if (spokeConnections.length === 0) return;
-    setIsLoadingOrders(true);
-    try {
-      const { orders, errors } = await fetchAllSpokesOrders(spokeConnections);
-      setFederatedOrders(orders);
-      if (errors.length > 0) {
-        console.warn('Order fetch errors:', errors);
+    const fetchOrdersData = async () => {
+      if (!spokeConnections.some(c => c.status === 'active')) return;
+      setIsLoadingOrders(true);
+      try {
+        const { orders } = await fetchAllSpokesOrders(spokeConnections);
+        const sorted = [...orders].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 5);
+        setRecentOrders(sorted);
+      } catch (err) {
+        console.error('Failed to fetch orders:', err);
+      } finally {
+        setIsLoadingOrders(false);
       }
-    } catch (err) {
-      console.error('Failed to fetch orders:', err);
-    } finally {
-      setIsLoadingOrders(false);
-    }
-  };
-
-  useEffect(() => {
-    if (spokeConnections.some(c => c.status === 'active')) {
-      fetchOrdersData();
-    }
+    };
+    fetchOrdersData();
   }, [spokeConnections]);
 
   // Simulation: Checking for items that need human action
@@ -126,14 +104,50 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
   const activeConnections = spokeConnections.filter(c => c.status === 'active');
 
-  // Order stats calculations
-  const totalOrders = federatedOrders.length;
-  const totalRevenue = federatedOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-  const paidOrders = federatedOrders.filter(o => o.paid_at).length;
-  const recentOrders = [...federatedOrders]
-    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-    .slice(0, 5);
+  // Use branchStats for all aggregate metrics
+  const spokeCounts = branchStats.spokeStats;
+  const isLoadingCounts = branchStats.isLoading;
+  const totalFederatedProfiles = branchStats.totals.profiles;
+  const totalOrders = branchStats.totals.orders;
+  const totalRevenue = branchStats.totals.revenue;
+  const paidOrders = branchStats.totals.orders; // approximation: branchStats doesn't track paid specifically
   const spokesWithOrders = spokeConnections.filter(c => c.tables?.some(t => t.table_type === 'orders' && t.enabled)).length;
+
+  // Campaign aggregate stats
+  const campaignStats = useMemo(() => {
+    const deployed = campaignHistory.filter(c => c.status === 'deployed');
+    const scheduled = campaignHistory.filter(c => c.status === 'scheduled');
+    const totalAudience = deployed.reduce((sum, c) => sum + c.audienceSize, 0);
+    const uniqueBranches = new Set(deployed.flatMap(c => c.branches));
+    return {
+      deployedCount: deployed.length,
+      scheduledCount: scheduled.length,
+      totalAudience,
+      branchesReached: uniqueBranches.size,
+      recentCampaigns: [...campaignHistory].sort((a, b) => new Date(b.launchedAt).getTime() - new Date(a.launchedAt).getTime()).slice(0, 4),
+    };
+  }, [campaignHistory]);
+
+  // Branch lookup: connectionId → branch record
+  const branchByConnectionId = useMemo(() => {
+    const map = new Map<string, Branch>();
+    for (const b of branches) {
+      if (b.spoke_connection_id) map.set(b.spoke_connection_id, b);
+    }
+    return map;
+  }, [branches]);
+
+  // Health counts for the header
+  const healthCounts = useMemo(() => {
+    let healthy = 0, warning = 0, error = 0;
+    for (const c of spokeConnections) {
+      if (c.status === 'error' || c.status === 'disconnected') { error++; continue; }
+      const freshness = getFreshness(c.last_tested_at);
+      if (freshness.isStale) warning++;
+      else healthy++;
+    }
+    return { healthy, warning, error };
+  }, [spokeConnections]);
 
   const stats = [
     {
@@ -170,21 +184,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       subtext: `From ${spokesWithOrders} spoke${spokesWithOrders !== 1 ? 's' : ''}`
     },
     {
-      label: 'Marketing Actions',
-      value: tasks.filter(t => t.status !== 'completed').length,
-      icon: CheckSquare,
+      label: 'Campaigns Deployed',
+      value: campaignStats.deployedCount,
+      icon: Send,
       color: 'text-purple-600',
       bg: 'bg-purple-50',
       cardBg: 'bg-white',
       textColor: 'text-yale-blue',
       labelColor: 'text-slate-500',
-      subtext: 'pending tasks'
+      subtext: campaignStats.scheduledCount > 0 ? `${campaignStats.scheduledCount} scheduled` : `${campaignStats.totalAudience.toLocaleString()} reached`
     },
   ];
 
   return (
     <div className="space-y-8 pb-10">
-      
+
       {/* High-Action Alert Strip */}
       {pendingApprovalsCount > 0 && (
         <div className="bg-blue-slate-2 text-white px-8 py-5 rounded-[2rem] shadow-xl flex items-center justify-between animate-in slide-in-from-top duration-500 border-4 border-blue-slate/50">
@@ -300,24 +314,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          
-          {/* Connected Data Sources */}
+
+          {/* Branch Network Health */}
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative">
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-lg font-black text-yale-blue flex items-center">
-                  <Database size={20} className="mr-2 text-emerald-600" />
-                  Connected Data Sources
+                  <GitBranch size={20} className="mr-2 text-emerald-600" />
+                  Branch Network Health
                 </h3>
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                  {activeConnections.length > 0
-                    ? `Live data from ${activeConnections.length} spoke${activeConnections.length > 1 ? 's' : ''}`
-                    : 'No data sources connected'}
+                  {spokeConnections.length === 0
+                    ? 'No connections configured'
+                    : `${spokeConnections.length} connection${spokeConnections.length !== 1 ? 's' : ''} \u2022 ${healthCounts.healthy} healthy${healthCounts.warning > 0 ? ` \u2022 ${healthCounts.warning} stale` : ''}${healthCounts.error > 0 ? ` \u2022 ${healthCounts.error} down` : ''}`}
                 </p>
               </div>
-              {activeConnections.length > 0 && (
+              {spokeConnections.length > 0 && (
                 <button
-                  onClick={fetchSpokeCounts}
+                  onClick={() => branchStats.refresh()}
                   disabled={isLoadingCounts}
                   className="p-2 text-slate-400 hover:text-emerald-600 transition disabled:opacity-50 rounded-xl hover:bg-emerald-50"
                 >
@@ -326,7 +340,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
               )}
             </div>
 
-            {activeConnections.length === 0 ? (
+            {spokeConnections.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <Database size={32} className="text-slate-400" />
@@ -336,72 +350,244 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                   Connect external Supabase databases to see federated profile counts and unified analytics.
                 </p>
                 <button
-                  onClick={() => onViewChange?.('settings')}
+                  onClick={() => onViewChange?.('branches')}
                   className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition"
                 >
                   Connect Your First Spoke
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                <div className="space-y-3">
-                  {activeConnections.map((connection, idx) => {
-                    const count = spokeCounts[connection.id];
-                    const hasError = count === -1;
-                    const percentage = totalFederatedProfiles > 0 && count > 0
-                      ? Math.round((count / totalFederatedProfiles) * 100)
-                      : 0;
-                    const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500'];
-                    return (
-                      <div key={connection.id} className="space-y-1.5">
-                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tighter">
-                          <div className="flex items-center space-x-2">
-                            <div
-                              className={`w-2 h-2 rounded-full ${
-                                hasError ? 'bg-red-500' : 'bg-emerald-500'
-                              }`}
-                            />
-                            <span className="text-yale-blue">{connection.name}</span>
-                          </div>
-                          <span className="text-slate-400">
-                            {isLoadingCounts ? (
-                              '...'
-                            ) : hasError ? (
-                              <span className="text-red-500">Error</span>
-                            ) : (
-                              `${count?.toLocaleString() ?? 0} profiles`
-                            )}
-                          </span>
-                        </div>
-                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="space-y-3">
+                {spokeConnections.map(connection => {
+                  const branch = branchByConnectionId.get(connection.id);
+                  const spokeData = spokeCounts[connection.id];
+                  const count = spokeData?.profileCount ?? 0;
+                  const percentage = totalFederatedProfiles > 0 && count > 0
+                    ? Math.round((count / totalFederatedProfiles) * 100)
+                    : 0;
+
+                  const isActive = connection.status === 'active';
+                  const isError = connection.status === 'error';
+                  const isDisconnected = connection.status === 'disconnected';
+                  const freshness = getFreshness(connection.last_tested_at);
+                  const showStaleWarning = isActive && freshness.isStale;
+
+                  const branchColor = branch?.primary_color || '#64748b';
+                  const displayName = branch?.name || connection.name;
+
+                  // Status styling
+                  const statusDot = isActive && !freshness.isStale
+                    ? 'bg-emerald-500'
+                    : isActive && freshness.isWarning
+                    ? 'bg-amber-400'
+                    : isError
+                    ? 'bg-rose-500'
+                    : 'bg-slate-400';
+
+                  const statusLabel = isActive && !freshness.isWarning
+                    ? 'Healthy'
+                    : isActive && freshness.isStale
+                    ? 'Stale'
+                    : isActive && freshness.isWarning
+                    ? 'Aging'
+                    : isError
+                    ? 'Error'
+                    : 'Disconnected';
+
+                  const statusColor = isActive && !freshness.isWarning
+                    ? 'text-emerald-600'
+                    : isActive && freshness.isWarning
+                    ? 'text-amber-600'
+                    : isError
+                    ? 'text-rose-600'
+                    : 'text-slate-500';
+
+                  // Card border highlights problems
+                  const cardBorder = isError
+                    ? 'border-rose-200 bg-rose-50/30'
+                    : showStaleWarning
+                    ? 'border-amber-200 bg-amber-50/20'
+                    : isDisconnected
+                    ? 'border-slate-200 bg-slate-50/30'
+                    : 'border-slate-200';
+
+                  return (
+                    <div key={connection.id} className={`p-4 rounded-2xl border ${cardBorder} transition-all`}>
+                      <div className="flex items-center justify-between">
+                        {/* Left: branch identity */}
+                        <div className="flex items-center gap-3 min-w-0">
                           <div
-                            className={`h-full ${colors[idx % colors.length]} transition-all duration-500`}
-                            style={{ width: isLoadingCounts ? '0%' : `${percentage}%` }}
-                          />
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-black shadow-sm flex-shrink-0"
+                            style={{ backgroundColor: branchColor }}
+                          >
+                            {branch?.logo_url ? (
+                              <img src={branch.logo_url} alt="" className="w-full h-full object-contain rounded-xl" />
+                            ) : (
+                              displayName.charAt(0)
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-bold text-slate-800 truncate">{displayName}</span>
+                              {branch?.slug && (
+                                <span className="text-[10px] text-slate-400 font-mono flex-shrink-0">/{branch.slug}</span>
+                              )}
+                              {!branch && (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded flex-shrink-0">UNLINKED</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot}`} />
+                              <span className={`text-[10px] font-bold ${statusColor}`}>{statusLabel}</span>
+                              <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                <Clock size={9} />
+                                {freshness.label}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: profile count */}
+                        <div className="text-right flex-shrink-0 pl-3">
+                          {isLoadingCounts ? (
+                            <Loader2 size={16} className="animate-spin text-slate-400" />
+                          ) : isDisconnected ? (
+                            <span className="text-xs font-bold text-slate-400">Offline</span>
+                          ) : (
+                            <>
+                              <p className="text-lg font-black text-slate-800">{count.toLocaleString()}</p>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase">profiles</p>
+                            </>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
+
+                      {/* Distribution bar */}
+                      {isActive && count > 0 && (
+                        <div className="mt-2.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: isLoadingCounts ? '0%' : `${percentage}%`, backgroundColor: branchColor }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Error message */}
+                      {connection.last_error && (isError || isDisconnected) && (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <AlertTriangle size={12} className="text-rose-500 flex-shrink-0" />
+                          <span className="text-[10px] font-bold text-rose-600 truncate">{connection.last_error}</span>
+                        </div>
+                      )}
+
+                      {/* Stale sync warning */}
+                      {showStaleWarning && (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <Clock size={12} className="text-amber-500 flex-shrink-0" />
+                          <span className="text-[10px] font-bold text-amber-600">
+                            Last synced {freshness.label} — data may be outdated
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Link to Command Center */}
+                <button
+                  onClick={() => onViewChange?.('branches')}
+                  className="w-full mt-2 py-3 bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-emerald-700 transition-all flex items-center justify-center space-x-2"
+                >
+                  <GitBranch size={14} />
+                  <span>Open Command Center</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Campaign Velocity */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-lg font-black text-yale-blue flex items-center">
+                  <Rocket size={20} className="mr-2 text-purple-600" />
+                  Campaign Velocity
+                </h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  {campaignStats.deployedCount === 0
+                    ? 'No campaigns launched yet'
+                    : `${campaignStats.deployedCount} deployed \u2022 ${campaignStats.totalAudience.toLocaleString()} total reach \u2022 ${campaignStats.branchesReached} branch${campaignStats.branchesReached !== 1 ? 'es' : ''}`}
+                </p>
+              </div>
+              <button
+                onClick={() => onViewChange?.('campaign-builder')}
+                className="px-4 py-2 bg-purple-50 text-purple-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-100 transition flex items-center space-x-1.5"
+              >
+                <Send size={12} />
+                <span>New Campaign</span>
+              </button>
+            </div>
+
+            {campaignStats.recentCampaigns.length === 0 ? (
+              <div className="text-center py-10">
+                <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Send size={28} className="text-purple-300" />
                 </div>
-                <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <Activity size={18} className="text-emerald-600" />
-                    <h4 className="text-xs font-black text-emerald-700 uppercase tracking-widest">Ecosystem Sync Health</h4>
-                  </div>
-                  <div className="text-4xl font-black text-emerald-700 mb-2">
-                    {activeConnections.length}
-                  </div>
-                  <p className="text-[10px] text-emerald-600 font-medium">
-                    {activeConnections.length === 1
-                      ? '1 data source connected and syncing'
-                      : `${activeConnections.length} data sources connected and syncing`}
-                  </p>
-                  {totalFederatedProfiles > 0 && (
-                    <p className="text-[10px] text-slate-500 font-medium mt-2">
-                      {totalFederatedProfiles.toLocaleString()} total profiles across all spokes
-                    </p>
-                  )}
-                </div>
+                <p className="text-sm font-bold text-slate-600 mb-1">No campaigns yet</p>
+                <p className="text-[10px] text-slate-400 mb-4 max-w-xs mx-auto">
+                  Launch your first campaign from the Campaign Builder to see metrics here.
+                </p>
+                <button
+                  onClick={() => onViewChange?.('campaign-builder')}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-purple-700 transition"
+                >
+                  Open Campaign Builder
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {campaignStats.recentCampaigns.map(campaign => {
+                  const statusColors: Record<string, string> = {
+                    deployed: 'bg-emerald-100 text-emerald-700',
+                    scheduled: 'bg-amber-100 text-amber-700',
+                    draft: 'bg-slate-100 text-slate-600',
+                  };
+                  return (
+                    <div key={campaign.id} className="flex items-center justify-between p-4 rounded-2xl border border-slate-200 hover:border-purple-200 transition-all">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <Send size={16} className="text-purple-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-800 truncate">{campaign.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${statusColors[campaign.status] || statusColors.draft}`}>
+                              {campaign.status}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{timeAgo(campaign.launchedAt)}</span>
+                            {campaign.branches.length > 0 && (
+                              <span className="text-[10px] text-slate-400">
+                                {campaign.branches.length} branch{campaign.branches.length !== 1 ? 'es' : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 pl-3">
+                        <p className="text-lg font-black text-slate-800">{campaign.audienceSize.toLocaleString()}</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">recipients</p>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <button
+                  onClick={() => onViewChange?.('campaign-builder')}
+                  className="w-full mt-2 py-3 bg-slate-50 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-purple-700 transition-all flex items-center justify-center space-x-2"
+                >
+                  <Rocket size={14} />
+                  <span>View All Campaigns</span>
+                </button>
               </div>
             )}
           </div>
@@ -469,16 +655,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
         {/* Sidebar Widgets */}
         <div className="space-y-8">
-          {/* Connected Spokes Card */}
+          {/* Branch Status Card */}
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black text-emerald-700 uppercase tracking-widest flex items-center">
-                <Database size={16} className="mr-2" />
-                Connected Spokes
+                <GitBranch size={16} className="mr-2" />
+                Branch Status
               </h3>
               {spokeConnections.some(c => c.status === 'active') && (
                 <button
-                  onClick={fetchSpokeCounts}
+                  onClick={() => branchStats.refresh()}
                   disabled={isLoadingCounts}
                   className="p-1.5 text-slate-400 hover:text-emerald-600 transition disabled:opacity-50"
                 >
@@ -487,7 +673,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
               )}
             </div>
 
-            {spokeConnections.filter(c => c.status === 'active').length === 0 ? (
+            {spokeConnections.length === 0 ? (
               // Empty state
               <div className="text-center py-6">
                 <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
@@ -504,7 +690,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                 </button>
               </div>
             ) : (
-              // Active connections display
               <div className="space-y-4">
                 {/* Total federated profiles */}
                 <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
@@ -521,40 +706,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                   )}
                 </div>
 
-                {/* Individual spoke rows */}
+                {/* Individual branch/connection rows */}
                 <div className="space-y-2">
-                  {spokeConnections
-                    .filter(c => c.status === 'active')
-                    .map(connection => {
-                      const count = spokeCounts[connection.id];
-                      const hasError = count === -1;
-                      return (
-                        <div
-                          key={connection.id}
-                          className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <div
-                              className={`w-2 h-2 rounded-full ${
-                                hasError ? 'bg-red-500' : 'bg-emerald-500'
-                              }`}
-                            />
-                            <span className="text-xs font-bold text-slate-700 truncate max-w-[120px]">
-                              {connection.name}
-                            </span>
-                          </div>
-                          <span className="text-xs font-black text-slate-500">
-                            {isLoadingCounts ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : hasError ? (
-                              <span className="text-red-500">Error</span>
-                            ) : (
-                              count?.toLocaleString() ?? '—'
-                            )}
+                  {spokeConnections.map(connection => {
+                    const branch = branchByConnectionId.get(connection.id);
+                    const spokeData = spokeCounts[connection.id];
+                    const count = spokeData?.profileCount ?? 0;
+                    const isActive = connection.status === 'active';
+                    const isError = connection.status === 'error';
+                    const freshness = getFreshness(connection.last_tested_at);
+                    const branchColor = branch?.primary_color || '#64748b';
+
+                    const dotColor = isError
+                      ? 'bg-rose-500'
+                      : !isActive
+                      ? 'bg-slate-400'
+                      : freshness.isStale
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-500';
+
+                    return (
+                      <div
+                        key={connection.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
+                      >
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <div
+                            className="w-5 h-5 rounded flex-shrink-0"
+                            style={{ backgroundColor: branchColor }}
+                          />
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
+                          <span className="text-xs font-bold text-slate-700 truncate">
+                            {branch?.name || connection.name}
                           </span>
                         </div>
-                      );
-                    })}
+                        <span className="text-xs font-black text-slate-500 flex-shrink-0 pl-2">
+                          {isLoadingCounts ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : !isActive ? (
+                            <span className={isError ? 'text-rose-500' : 'text-slate-400'}>
+                              {isError ? 'Error' : 'Off'}
+                            </span>
+                          ) : (
+                            count?.toLocaleString() ?? '—'
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Manage Branches button */}
@@ -578,7 +777,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
               <div className="p-4 bg-white rounded-xl border border-rose-200">
                 <p className="text-xs font-black text-slate-800">{MOCK_BRIEFING.detailed_analysis.support_load.open_tickets} Active Conversations</p>
                 <p className="text-[10px] text-slate-400 mt-1">Sage detected <b>{MOCK_BRIEFING.detailed_analysis.support_load.urgent_count}</b> customers needing immediate attention.</p>
-                <button 
+                <button
                   onClick={() => onViewChange?.('support-hub')}
                   className="mt-4 text-[10px] font-black text-rose-600 uppercase hover:underline"
                 >

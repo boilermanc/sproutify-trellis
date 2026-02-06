@@ -1,12 +1,11 @@
 
 import React, { useState } from 'react';
-import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection } from '../types';
-import ConnectionsManager from '../ConnectionsManager';
+import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection, Branch } from '../types';
 import {
   Key, Globe, Save, RefreshCw,
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
   Phone, Cpu, Sparkles, Zap, Plug,
-  Trash2, Plus, X, Slack, Link
+  Trash2, Plus, X, Slack, Link2, Copy, Database, Clock
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
 
@@ -15,6 +14,7 @@ interface SettingsProps {
   onUpdateApiKeys: (keys: ApiKeyConfig) => void;
   spokeConnections: SpokeConnection[];
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
+  branches: Branch[];
 }
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
@@ -30,19 +30,33 @@ const INTEGRATION_TYPES: { id: Integration['type']; label: string }[] = [
   { id: 'custom', label: 'Custom' },
 ];
 
+const relativeTime = (dateStr?: string) => {
+  if (!dateStr) return 'Never';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+};
+
 const Settings: React.FC<SettingsProps> = ({
   apiKeys,
   onUpdateApiKeys,
   spokeConnections,
-  onSpokeConnectionsChange
+  onSpokeConnectionsChange,
+  branches
 }) => {
-  const [activeTab, setActiveTab] = useState<'integrations' | 'connections' | 'api'>('integrations');
+  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api'>('integrations');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [integrations, setIntegrations] = useState<Integration[]>(MOCK_INTEGRATIONS);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [newIntegration, setNewIntegration] = useState<Partial<Integration>>({
     name: '',
     type: 'webhook',
@@ -89,16 +103,32 @@ const Settings: React.FC<SettingsProps> = ({
     setShowAddModal(false);
   };
 
+  const handleCopyUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(url);
+    setTimeout(() => setCopiedUrl(null), 2000);
+  };
+
+  const statusDot = (status: SpokeConnection['status']) => {
+    const colors = { active: 'bg-emerald-500', disconnected: 'bg-amber-500', error: 'bg-rose-500' };
+    return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]}`} />;
+  };
+
+  const pairs = spokeConnections.map(conn => {
+    const linkedBranch = branches.find(b => b.spoke_connection_id === conn.id);
+    return { connection: conn, branch: linkedBranch || null };
+  });
+
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-20">
 
       <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-fit overflow-x-auto max-w-full">
         {[
           { id: 'integrations', label: 'Integrations', icon: Plug },
-          { id: 'connections', label: 'Connections', icon: Link },
+          { id: 'spokes', label: 'Spoke Registry', icon: Database },
           { id: 'api', label: 'Secrets', icon: Key },
         ].map(tab => (
-          <button 
+          <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
@@ -290,11 +320,118 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
           )}
 
-          {activeTab === 'connections' && (
-            <ConnectionsManager
-              connections={spokeConnections}
-              onConnectionsChange={onSpokeConnectionsChange}
-            />
+          {activeTab === 'spokes' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Spoke Registry</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
+                  {pairs.length} connection{pairs.length !== 1 ? 's' : ''} registered
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {pairs.map(({ connection: conn, branch }) => (
+                  <div
+                    key={conn.id}
+                    className={`rounded-2xl border-2 border-slate-100 overflow-hidden transition-all hover:shadow-md ${
+                      branch ? 'border-l-emerald-500 border-l-4' : 'border-l-amber-400 border-l-4'
+                    }`}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr,auto,1fr] items-stretch">
+                      {/* LEFT — Connection */}
+                      <div className="p-6 space-y-3">
+                        <div className="flex items-center space-x-3">
+                          <Database size={16} className="text-slate-400" />
+                          <h4 className="text-sm font-black text-slate-800">{conn.name}</h4>
+                          <span className="flex items-center space-x-1.5">
+                            {statusDot(conn.status)}
+                            <span className={`text-[9px] font-bold uppercase ${
+                              conn.status === 'active' ? 'text-emerald-600' : conn.status === 'disconnected' ? 'text-amber-600' : 'text-rose-600'
+                            }`}>{conn.status}</span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-mono text-slate-500 truncate max-w-[240px]">
+                            {conn.supabase_url}
+                          </span>
+                          <button
+                            onClick={() => handleCopyUrl(conn.supabase_url)}
+                            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+                            title="Copy URL"
+                          >
+                            <Copy size={12} />
+                          </button>
+                          {copiedUrl === conn.supabase_url && (
+                            <span className="text-[9px] font-bold text-emerald-500">Copied!</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-4">
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {conn.tables.length} table{conn.tables.length !== 1 ? 's' : ''} mapped
+                          </span>
+                          <span className="flex items-center space-x-1 text-[10px] text-slate-400">
+                            <Clock size={10} />
+                            <span className="font-bold">{relativeTime(conn.last_tested_at)}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* CENTER — Link indicator */}
+                      <div className="hidden md:flex items-center justify-center px-4">
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                          branch ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-100 text-slate-300'
+                        }`}>
+                          <Link2 size={16} />
+                        </div>
+                      </div>
+
+                      {/* RIGHT — Branch or empty state */}
+                      <div className="p-6 bg-slate-50/50 space-y-3 border-t md:border-t-0 md:border-l border-slate-100">
+                        {branch ? (
+                          <>
+                            <div className="flex items-center space-x-3">
+                              <span
+                                className="w-4 h-4 rounded-full ring-2 ring-white shadow-sm flex-shrink-0"
+                                style={{ backgroundColor: branch.primary_color }}
+                              />
+                              <h4 className="text-sm font-black text-slate-800">{branch.name}</h4>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                {branch.slug}
+                              </span>
+                              {branch.is_active ? (
+                                <span className="text-[9px] font-bold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Active</span>
+                              ) : (
+                                <span className="text-[9px] font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Inactive</span>
+                              )}
+                            </div>
+                            {branch.website_url && (
+                              <span className="text-[10px] text-slate-400 truncate block">{branch.website_url}</span>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full text-center py-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">No branch linked</span>
+                            <span className="text-[9px] text-slate-300 mt-1">Link via Branch Command Center</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {pairs.length === 0 && (
+                  <div className="text-center py-16 text-slate-400">
+                    <Database size={48} className="mx-auto mb-4 opacity-50" />
+                    <p className="text-sm font-bold">No spoke connections</p>
+                    <p className="text-xs mt-1">Add a connection via the Connections Manager to get started</p>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {activeTab === 'api' && (
@@ -451,9 +588,9 @@ const Settings: React.FC<SettingsProps> = ({
           )}
         </div>
 
-        {activeTab !== 'integrations' && activeTab !== 'connections' && (
+        {activeTab !== 'integrations' && activeTab !== 'spokes' && (
           <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end items-center space-x-4">
-            <button 
+            <button
               onClick={handleSave}
               disabled={isSaving}
               className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-black text-sm flex items-center space-x-2 shadow-lg hover:bg-emerald-700 transition"

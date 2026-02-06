@@ -1,8 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile } from '../types';
+import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile, BranchStatsResult } from '../types';
 import { fetchBranches } from '../lib/supabaseService';
-import { fetchEnrichedProfiles } from '../spokeConnector';
 import {
   Search, Tag, MoreHorizontal, X, Edit3,
   History, Globe, GraduationCap, Sprout, Heart, Building2,
@@ -12,11 +11,13 @@ import {
   Radio, RefreshCw, AlertCircle, Link, ShoppingBag, DollarSign, Calendar
 } from 'lucide-react';
 import { ProfileDetailDrawer } from './ProfileDetailDrawer';
+import { getConsentLabel } from '../utils';
 
 interface ProfilesProps {
   onTestFlow?: (email: string) => void;
   events: MarketingEvent[];
   spokeConnections: SpokeConnection[];
+  branchStats: BranchStatsResult;
 }
 
 const SITE_ICONS: Record<string, any> = {
@@ -51,19 +52,24 @@ const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }>
   );
 };
 
-const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections }) => {
+const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections, branchStats }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Federated data state
-  const [federatedProfiles, setFederatedProfiles] = useState<EnrichedProfile[]>([]);
-  const [isFederating, setIsFederating] = useState(false);
-  const [federationError, setFederationError] = useState<string | null>(null);
+  // Federated data — now driven by branchStats (client-side filter instead of re-fetch)
   const [dataSource, setDataSource] = useState<'local' | 'federated'>('federated');
   const [selectedSpokeIds, setSelectedSpokeIds] = useState<Set<string>>(new Set());
   const [selectedFederatedProfile, setSelectedFederatedProfile] = useState<EnrichedProfile | null>(null);
+
+  // Derive federated profiles from branchStats filtered by selected spokes
+  const federatedProfiles = useMemo(() => {
+    if (selectedSpokeIds.size === 0) return branchStats.enrichedProfiles;
+    return branchStats.enrichedProfiles.filter(p => selectedSpokeIds.has(p._spoke_id));
+  }, [branchStats.enrichedProfiles, selectedSpokeIds]);
+  const isFederating = branchStats.isLoading;
+  const federationError = branchStats.errors.length > 0 ? branchStats.errors.join('; ') : null;
 
   const profileStats = useMemo(() => {
     if (federatedProfiles.length === 0) return null;
@@ -74,6 +80,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     const vipCount = withOrders.filter(p => (p.order_stats?.ltv || 0) >= 50).length;
     const avgOrderValue = totalOrders > 0 ? totalLTV / totalOrders : 0;
 
+    // Consent breakdown
+    const optedIn = federatedProfiles.filter(p => p.subscribed === true).length;
+    const optedOut = federatedProfiles.filter(p => p.subscribed === false).length;
+    const consentUnverified = federatedProfiles.filter(p => p.subscribed === undefined || p.subscribed === null).length;
+
     return {
       totalProfiles: federatedProfiles.length,
       withOrders: withOrders.length,
@@ -82,6 +93,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       totalOrders,
       vipCount,
       avgOrderValue,
+      optedIn,
+      optedOut,
+      consentUnverified,
     };
   }, [federatedProfiles]);
 
@@ -98,32 +112,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Auto-select all active spokes and fetch federated profiles on mount
+  // Fetch branches for display and auto-select active spokes
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
         setError(null);
-
-        // Fetch branches for display purposes
         const branchesData = await fetchBranches();
         setBranches(branchesData);
-
-        // Auto-select all active spoke connections
-        const activeConnections = spokeConnections.filter(c => c.status === 'active');
-        if (activeConnections.length > 0) {
-          setSelectedSpokeIds(new Set(activeConnections.map(c => c.id)));
-
-          // Auto-fetch from all active spokes
-          setIsFederating(true);
-          const { profiles, errors } = await fetchEnrichedProfiles(activeConnections);
-          setFederatedProfiles(profiles);
-
-          if (errors.length > 0) {
-            setFederationError(errors.join('; '));
-          }
-          setIsFederating(false);
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch data');
       } finally {
@@ -131,27 +127,15 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       }
     }
     fetchData();
-  }, [spokeConnections]);
+  }, []);
 
-  const handleFetchFederated = async () => {
-    setIsFederating(true);
-    setFederationError(null);
-    try {
-      const selectedConnections = spokeConnections.filter(c => selectedSpokeIds.has(c.id));
-      const { profiles, errors } = await fetchEnrichedProfiles(selectedConnections);
-      setFederatedProfiles(profiles);
-      setDataSource('federated');
-
-      // Show any errors that occurred during fetching
-      if (errors.length > 0) {
-        setFederationError(errors.join('; '));
-      }
-    } catch (err) {
-      setFederationError(err instanceof Error ? err.message : 'Failed to fetch');
-    } finally {
-      setIsFederating(false);
+  // Auto-select all active spokes on mount
+  useEffect(() => {
+    const activeConnections = spokeConnections.filter(c => c.status === 'active');
+    if (activeConnections.length > 0) {
+      setSelectedSpokeIds(new Set(activeConnections.map(c => c.id)));
     }
-  };
+  }, [spokeConnections]);
 
   const toggleSpokeSelection = (id: string) => {
     setSelectedSpokeIds(prev => {
@@ -358,22 +342,17 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
             <div className="flex items-center space-x-3 pt-2">
               <button
-                onClick={handleFetchFederated}
-                disabled={isFederating || selectedSpokeIds.size === 0}
+                onClick={() => branchStats.refresh()}
+                disabled={isFederating}
                 className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isFederating ? (
                   <RefreshCw size={14} className="animate-spin" />
                 ) : (
-                  <Radio size={14} />
+                  <RefreshCw size={14} />
                 )}
                 <span>
-                  {isFederating
-                    ? 'Fetching...'
-                    : selectedSpokeIds.size === 0
-                    ? 'Select Spokes to Fetch'
-                    : `Fetch from ${selectedSpokeIds.size} Spoke${selectedSpokeIds.size !== 1 ? 's' : ''}`
-                  }
+                  {isFederating ? 'Refreshing...' : 'Refresh Profiles'}
                 </span>
               </button>
 
@@ -404,7 +383,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
         {/* KPI Summary Bar */}
         {dataSource === 'federated' && profileStats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
             {/* Total Profiles */}
             <div className="bg-white rounded-xl p-4 border border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Profiles</p>
@@ -444,12 +423,32 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               <p className="text-xs text-gray-400 mt-1">LTV ≥ $50</p>
             </div>
 
-            {/* No Orders */}
-            <div className="bg-white rounded-xl p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">No Orders</p>
-              <p className="text-2xl font-bold text-gray-400 mt-1">{profileStats.withoutOrders}</p>
-              <p className="text-xs text-gray-400 mt-1">never purchased</p>
+            {/* Opted-In */}
+            <div className="bg-white rounded-xl p-4 border border-emerald-100">
+              <p className="text-xs text-emerald-600 uppercase tracking-wide font-bold">Opted-In</p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">{profileStats.optedIn}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {profileStats.totalProfiles > 0
+                  ? `${Math.round((profileStats.optedIn / profileStats.totalProfiles) * 100)}% of total`
+                  : 'verified consent'}
+              </p>
             </div>
+
+            {/* Opted-Out */}
+            <div className="bg-white rounded-xl p-4 border border-rose-100">
+              <p className="text-xs text-rose-600 uppercase tracking-wide font-bold">Opted-Out</p>
+              <p className="text-2xl font-bold text-rose-600 mt-1">{profileStats.optedOut}</p>
+              <p className="text-xs text-gray-400 mt-1">unsubscribed</p>
+            </div>
+
+            {/* Consent Unverified */}
+            {profileStats.consentUnverified > 0 && (
+              <div className="bg-white rounded-xl p-4 border border-amber-100">
+                <p className="text-xs text-amber-600 uppercase tracking-wide font-bold">Unverified</p>
+                <p className="text-2xl font-bold text-amber-600 mt-1">{profileStats.consentUnverified}</p>
+                <p className="text-xs text-gray-400 mt-1">consent unknown</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -614,13 +613,26 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                     )}
                   </td>
                   <td className="px-10 py-6 text-right">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
-                      profile.subscribed
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                        : 'bg-slate-50 text-slate-500 border border-slate-100'
-                    }`}>
-                      {profile.subscribed ? 'Subscribed' : 'Unsubscribed'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                        profile.subscribed
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                          : profile.subscribed === false
+                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                          : 'bg-amber-50 text-amber-600 border border-amber-100'
+                      }`}>
+                        {profile.subscribed === true ? 'Subscribed' : profile.subscribed === false ? 'Unsubscribed' : 'Unverified'}
+                      </span>
+                      {(() => {
+                        const source = profile.subscribed !== undefined && profile.subscribed !== null ? 'spoke_native' : 'import_default';
+                        const consent = getConsentLabel(source);
+                        return (
+                          <span className={`text-[8px] font-bold uppercase tracking-widest text-${consent.color}-600`}>
+                            {consent.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </td>
                 </tr>
               ))

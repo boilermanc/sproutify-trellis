@@ -272,6 +272,23 @@ CREATE TABLE IF NOT EXISTS marketing_task_queue (
 
 CREATE INDEX IF NOT EXISTS idx_task_queue_status_priority ON marketing_task_queue (status, priority DESC);
 
+-- 6b. CAMPAIGN REGISTRY (Query-Based Dispatch)
+CREATE TABLE IF NOT EXISTS campaigns (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'deployed', 'paused', 'completed')),
+  query_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+  -- query_definition shape: { branches: string[], presets: string[], template: string, subject: string, trigger: string, branchContent: {} }
+  audience_size_at_launch INTEGER DEFAULT 0,
+  consent_confirmed BOOLEAN DEFAULT false,
+  deployed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns (status);
+CREATE INDEX IF NOT EXISTS idx_campaigns_deployed ON campaigns (deployed_at DESC);
+
 -- 7. PERFORMANCE INDEXING
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_spoke_uuid ON profiles (spoke_uuid);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email_unique ON profiles (email);
@@ -312,8 +329,11 @@ CREATE POLICY "Service Role Only" ON failed_syncs FOR ALL TO service_role USING 
 CREATE POLICY "Service Role Only" ON marketing_task_queue FOR ALL TO service_role USING (true) WITH CHECK (true);
 `;
 
+export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.io/webhook/trellis-campaign-dispatch";
+
 export const WEBHOOK_SPECS = {
   ingest: "https://n8n.sproutify.io/webhook/trellis-ingest-gateway",
+  campaign_dispatch: "https://n8n.sproutify.io/webhook/trellis-campaign-dispatch",
   social_intent: "https://n8n.sproutify.io/webhook/ig-intent-loop",
   compliance: "https://n8n.sproutify.io/webhook/resend-compliance",
   voice: "https://n8n.sproutify.io/webhook/twilio-whisper-sync"
@@ -378,6 +398,64 @@ export const N8N_BLUEPRINTS = {
       "name": "Fetch Batch",
       "type": "n8n-nodes-base.supabase",
       "position": [450, 400]
+    }
+  ]
+}`,
+  campaign_dispatch: `{
+  "name": "Trellis: Campaign Dispatch Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-campaign-dispatch",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Campaign Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.email, p.first_name, p.branches, p.is_subscribed, p.marketing_pause FROM profiles p WHERE p.branches && $1::text[] AND p.is_subscribed = true AND p.marketing_pause = false",
+        "additionalFields": {}
+      },
+      "name": "Resolve Audience",
+      "type": "n8n-nodes-base.supabase",
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": { "reset": false }
+      },
+      "name": "Batch Splitter",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "campaigns@sproutify.me",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $node['Campaign Webhook'].json.subject }}",
+        "html": "={{ $node['Campaign Webhook'].json.html_body }}"
+      },
+      "name": "Resend Dispatch",
+      "type": "n8n-nodes-base.resend",
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "campaigns",
+        "id": "={{ $node['Campaign Webhook'].json.campaign_id }}",
+        "columns": { "status": "completed", "updated_at": "={{ $now }}" }
+      },
+      "name": "Mark Complete",
+      "type": "n8n-nodes-base.supabase",
+      "position": [1250, 300]
     }
   ]
 }`,

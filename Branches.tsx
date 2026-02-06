@@ -3,6 +3,7 @@ import { Globe, Database, AlertCircle, RefreshCw, Unplug, Loader2, PlugZap, Sett
 import { createClient } from '@supabase/supabase-js';
 import { SpokeConnection } from './types';
 import { fetchEnrichedProfiles } from './spokeConnector';
+import { generateSnapshot, saveSnapshot } from './services/branchSnapshotService';
 
 interface BranchesProps {
   spokeConnections: SpokeConnection[];
@@ -59,6 +60,29 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
 
   const activeCount = spokeConnections.filter(c => c.status === 'active').length;
 
+  const fireSnapshotForConnection = (connection: SpokeConnection) => {
+    const customerTable = connection.tables.find(t => t.table_type === 'customers');
+    const orderTables = connection.tables.filter(t => t.table_type === 'orders');
+    generateSnapshot({
+      id: connection.id,
+      name: connection.name,
+      supabase_url: connection.supabase_url,
+      supabase_key: connection.supabase_key,
+      tables: {
+        customers: customerTable?.table_name,
+        orders: orderTables.find(t => t.table_name === 'orders')?.table_name,
+        legacy_orders: orderTables.find(t => t.table_name !== 'orders')?.table_name,
+      },
+    }, 'on_connect').then(snapshot => {
+      saveSnapshot(snapshot);
+      console.log('[branchSnapshot] Snapshot saved:', snapshot.branch_name,
+        '| Profiles:', snapshot.total_profiles,
+        '| Revenue: $' + snapshot.total_revenue);
+    }).catch(err => {
+      console.warn('[branchSnapshot] Snapshot generation failed (non-blocking):', err);
+    });
+  };
+
   const handleDisconnect = (site: string) => {
     const updated = spokeConnections.map(conn =>
       conn.name === site ? { ...conn, status: 'disconnected' as const } : conn
@@ -93,6 +117,8 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
         if (count !== null) {
           setProfileCounts(prev => ({ ...prev, [connection.name]: count }));
         }
+        // Fire-and-forget snapshot on successful retest
+        fireSnapshotForConnection(connection);
       }
     } catch (err: any) {
       const updated = spokeConnections.map(c =>
@@ -132,6 +158,8 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
         if (count !== null) {
           setProfileCounts(prev => ({ ...prev, [connection.name]: count }));
         }
+        // Fire-and-forget snapshot on successful reconnect
+        fireSnapshotForConnection(connection);
       }
     } catch (err: any) {
       setReconnectErrors(prev => ({ ...prev, [connection.name]: err.message || 'Reconnection failed' }));

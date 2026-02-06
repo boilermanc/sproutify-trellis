@@ -1,7 +1,6 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { SpokeConnection, EnrichedProfile } from '../types';
-import { fetchEnrichedProfiles } from '../spokeConnector';
+import React, { useState, useMemo } from 'react';
+import { SpokeConnection, EnrichedProfile, BranchStatsResult } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
@@ -11,6 +10,7 @@ import {
 
 interface ReportsProps {
   spokeConnections: SpokeConnection[];
+  branchStats: BranchStatsResult;
 }
 
 interface SageMessage {
@@ -18,42 +18,16 @@ interface SageMessage {
   content: string;
 }
 
-const Reports: React.FC<ReportsProps> = ({ spokeConnections }) => {
+const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats }) => {
   const [sageQuery, setSageQuery] = useState('');
   const [sageResponse, setSageResponse] = useState<string | null>(null);
   const [sageLoading, setSageLoading] = useState(false);
   const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);
 
-  // Federated data state
-  const [profiles, setProfiles] = useState<EnrichedProfile[]>([]);
-  const [isFederating, setIsFederating] = useState(false);
-  const [federationError, setFederationError] = useState<string | null>(null);
-
-  // Auto-fetch from all active spokes on mount
-  useEffect(() => {
-    async function fetchData() {
-      const activeConnections = spokeConnections.filter(c => c.status === 'active');
-      if (activeConnections.length === 0) {
-        setProfiles([]);
-        return;
-      }
-      setIsFederating(true);
-      setFederationError(null);
-      try {
-        const { profiles: enriched, errors } = await fetchEnrichedProfiles(activeConnections);
-        setProfiles(enriched);
-        if (errors.length > 0) {
-          setFederationError(errors.join('; '));
-        }
-      } catch (err) {
-        setFederationError(err instanceof Error ? err.message : 'Failed to fetch federated data');
-        setProfiles([]);
-      } finally {
-        setIsFederating(false);
-      }
-    }
-    fetchData();
-  }, [spokeConnections]);
+  // Use shared branchStats data instead of fetching independently
+  const profiles = branchStats.enrichedProfiles;
+  const isFederating = branchStats.isLoading;
+  const federationError = branchStats.errors.length > 0 ? branchStats.errors.join('; ') : null;
 
   // ═══════════════════════════════════════════════════════════════
   // CARD 1: Audience Composition

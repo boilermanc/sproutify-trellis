@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Profiles from './pages/Profiles';
@@ -16,17 +16,18 @@ import Settings from './pages/Settings';
 import Reports from './pages/Reports';
 import TeamMembers from './pages/TeamMembers';
 import UserProfile from './pages/UserProfile';
-import Branches from './Branches';
+import BranchCommandCenter from './pages/BranchCommandCenter';
 import Segments from './Segments';
 import CustomerIntelligence from './CustomerIntelligence';
 import BrandIntelligence from './BrandIntelligence';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { getProfileByEmail } from './lib/supabaseService';
-import { fetchEnrichedProfiles } from './spokeConnector';
+import { getProfileByEmail, fetchAllBranches } from './lib/supabaseService';
+import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
-import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection } from './types';
+import { mapFederatedConsent } from './utils/profileMapper';
+import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch } from './types';
 import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
@@ -45,8 +46,6 @@ const AppContent: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
   
   // Initialize Global State from LocalStorage or Mocks
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [isLoadingProfiles, setIsLoadingProfiles] = useState(true);
   const [events, setEvents] = useState<MarketingEvent[]>(() => {
     const saved = localStorage.getItem(`${PERSISTENCE_KEY}_events`);
     return saved ? JSON.parse(saved) : MOCK_EVENTS;
@@ -105,6 +104,55 @@ const AppContent: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Shared branch stats hook — single source of truth for all federated data
+  const branchStats = useBranchStats(spokeConnections);
+
+  // Branch records from Supabase — needed to resolve connectionId → branch slug
+  const [branches, setBranches] = useState<Branch[]>([]);
+  useEffect(() => {
+    fetchAllBranches().then(setBranches).catch(() => {});
+  }, []);
+
+  // Derive Profile[] for backwards compatibility with pages that still use it
+  // Build connectionId → branch slug lookup so profiles carry slugs, not display names
+  const profiles: Profile[] = useMemo(() => {
+    const slugByConnectionId = new Map<string, string>();
+    for (const b of branches) {
+      if (b.spoke_connection_id && b.slug) {
+        slugByConnectionId.set(b.spoke_connection_id, b.slug);
+      }
+    }
+
+    return branchStats.enrichedProfiles.map(p => {
+      const consent = mapFederatedConsent(p);
+      return {
+        id: p.id || p.email,
+        email: p.email,
+        first_name: p.first_name || '',
+        last_name: p.last_name,
+        phone: p.phone,
+        is_subscribed: consent.is_subscribed,
+        marketing_pause: consent.marketing_pause,
+        tags: (p as any)._order_only ? ['order_only'] : [],
+        segments: (p as any)._order_only ? ['legacy_orders'] : [],
+        branches: [slugByConnectionId.get(p._spoke_id) || p._spoke_name],
+        status: 'active' as const,
+        ltv: p.order_stats?.ltv || 0,
+        churn_risk: 'minimal' as const,
+        last_active: p.order_stats?.last_purchase_at || p.created_at,
+        metadata: {
+          consent_source: consent.consent_source,
+          spoke_origin: p._spoke_name,
+          spoke_id: p._spoke_id,
+          spoke_name: p._spoke_name,
+          order_stats: p.order_stats,
+          predicted_demographics: p._predicted_demographics,
+        },
+      };
+    });
+  }, [branchStats.enrichedProfiles, branches]);
+  const isLoadingProfiles = branchStats.isLoading;
+
   // Fetch user's profile from Supabase to get first_name
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
 
@@ -120,53 +168,6 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     fetchSecrets(SPROUTIFY_ORG_ID).then(setApiKeys);
   }, []);
-
-  // Fetch profiles from spoke connections using enriched merge logic
-  useEffect(() => {
-    const loadProfiles = async () => {
-      if (spokeConnections.length === 0) {
-        setProfiles([]);
-        setIsLoadingProfiles(false);
-        return;
-      }
-      setIsLoadingProfiles(true);
-      try {
-        const { profiles: enrichedProfiles, errors } = await fetchEnrichedProfiles(spokeConnections);
-        if (errors.length > 0) {
-          console.warn('Profile fetch errors:', errors);
-        }
-        // Convert EnrichedProfile to Profile type for app state
-        setProfiles(enrichedProfiles.map(p => ({
-          id: p.id || p.email,
-          email: p.email,
-          first_name: p.first_name || '',
-          last_name: p.last_name,
-          phone: p.phone,
-          is_subscribed: p.subscribed ?? true,
-          marketing_pause: false,
-          tags: (p as any)._order_only ? ['order_only'] : [],
-          segments: (p as any)._order_only ? ['legacy_orders'] : [],
-          branches: [p._spoke_name],
-          status: 'active' as const,
-          ltv: p.order_stats?.ltv || 0,
-          churn_risk: 'minimal' as const,
-          last_active: p.order_stats?.last_purchase_at || p.created_at,
-          metadata: {
-            spoke_id: p._spoke_id,
-            spoke_name: p._spoke_name,
-            order_stats: p.order_stats,
-            predicted_demographics: p._predicted_demographics,
-          },
-        })));
-      } catch (err) {
-        console.error('Failed to load profiles:', err);
-        setProfiles([]);
-      } finally {
-        setIsLoadingProfiles(false);
-      }
-    };
-    loadProfiles();
-  }, [spokeConnections]);
 
   // Derive currentUser from Supabase auth user + profile
   const currentUser: User = {
@@ -220,22 +221,22 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} />;
-      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} />;
-      case 'segments': return <Segments spokeConnections={spokeConnections} />;
-      case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} />;
-      case 'branches': return <Branches spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} />;
+      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} />;
+      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} />;
+      case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} />;
+      case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
+      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} />;
       case 'knowledge-base': return <KnowledgeBase />;
       case 'help-center': return <HelpCenter />;
-      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} />;
+      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} />;
       case 'automations': return <Automations />;
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} />;
       case 'dev-tools': return <DevTools profiles={profiles} />;
-      case 'reports': return <Reports spokeConnections={spokeConnections} />;
+      case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'team': return <TeamMembers />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'settings': return (
@@ -251,9 +252,10 @@ const AppContent: React.FC = () => {
           }}
           spokeConnections={spokeConnections}
           onSpokeConnectionsChange={setSpokeConnections}
+          branches={branches}
         />
       );
-      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} />;
+      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} />;
     }
   };
 

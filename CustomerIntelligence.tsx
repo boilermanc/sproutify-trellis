@@ -4,9 +4,8 @@ import {
   Crown, Clock, Repeat, UserPlus, UserX, AlertTriangle,
   ChevronRight, ArrowUp, ArrowDown, BarChart3, PieChart
 } from 'lucide-react';
-import { EnrichedProfile } from './types';
+import { EnrichedProfile, BranchStatsResult } from './types';
 import { SpokeConnection } from './types';
-import { fetchEnrichedProfiles } from './spokeConnector';
 import { PRESET_SEGMENTS } from './segmentTypes';
 import { countProfilesInSegment, filterProfilesBySegment } from './segmentEngine';
 import { Segment } from './segmentTypes';
@@ -20,32 +19,14 @@ import {
 
 interface CustomerIntelligenceProps {
   spokeConnections: SpokeConnection[];
+  branchStats: BranchStatsResult;
 }
 
-export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spokeConnections }) => {
-  const [profiles, setProfiles] = useState<EnrichedProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spokeConnections, branchStats }) => {
+  // Use shared branchStats data instead of fetching independently
+  const profiles = branchStats.enrichedProfiles;
+  const isLoading = branchStats.isLoading;
   const [demographicsLoaded, setDemographicsLoaded] = useState(false);
-
-  // Fetch profiles on mount
-  useEffect(() => {
-    const fetchData = async () => {
-      if (spokeConnections.length === 0) {
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const { profiles: fetchedProfiles } = await fetchEnrichedProfiles(spokeConnections);
-        setProfiles(fetchedProfiles);
-      } catch (err) {
-        console.error('Failed to fetch profiles:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-  }, [spokeConnections]);
 
   // Load demographics name cache
   useEffect(() => {
@@ -149,7 +130,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
     const withOrders = profiles.filter(p => p.order_stats && p.order_stats.order_count > 0);
 
     // Order frequency buckets
-    const frequencyBuckets = {
+    const frequencyBuckets: Record<string, number> = {
       '1 order': 0,
       '2-3 orders': 0,
       '4-5 orders': 0,
@@ -167,7 +148,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
     });
 
     // LTV tiers
-    const ltvTiers = {
+    const ltvTiers: Record<string, number> = {
       '$0-$50': 0,
       '$51-$100': 0,
       '$101-$250': 0,
@@ -253,7 +234,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
   const demographics = useMemo(() => {
     if (!demographicsLoaded || profiles.length === 0) {
       return {
-        gender: { male: 0, female: 0, unknown: 0, byOrigin: {} },
+        gender: { male: 0, female: 0, unknown: 0, byOrigin: {} as Record<string, { male: number; female: number; unknown: number }> },
         age: {
           '18-24': 0, '25-34': 0, '35-44': 0, '45-54': 0, '55-64': 0, '65+': 0, 'unknown': 0,
         },
@@ -570,7 +551,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
                 <div className="pt-4 border-t border-gray-100">
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-2">By Name Origin</p>
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(demographics.gender.byOrigin)
+                    {(Object.entries(demographics.gender.byOrigin) as [string, { male: number; female: number }][])
                       .filter(([origin]) => origin !== 'unknown')
                       .sort((a, b) => (b[1].male + b[1].female) - (a[1].male + a[1].female))
                       .slice(0, 5)
@@ -709,7 +690,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
             LTV Distribution
           </h2>
           <div className="space-y-3">
-            {Object.entries(purchaseBehavior.ltvTiers).map(([tier, count], idx) => (
+            {(Object.entries(purchaseBehavior.ltvTiers) as [string, number][]).map(([tier, count], idx) => (
               <div key={tier} className="flex items-center justify-between">
                 <span className="text-sm text-gray-600 w-20">{tier}</span>
                 <div className="flex-1 mx-4">
@@ -793,8 +774,8 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
             Order Frequency Distribution
           </h2>
           <div className="flex items-end gap-4 h-40">
-            {Object.entries(purchaseBehavior.frequencyBuckets).map(([bucket, count], idx) => {
-              const maxCount = Math.max(...Object.values(purchaseBehavior.frequencyBuckets));
+            {(Object.entries(purchaseBehavior.frequencyBuckets) as [string, number][]).map(([bucket, count], idx) => {
+              const maxCount = Math.max(...(Object.values(purchaseBehavior.frequencyBuckets) as number[]));
               const height = maxCount > 0 ? (count / maxCount) * 100 : 0;
 
               return (

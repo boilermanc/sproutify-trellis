@@ -1,14 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { 
-  Workflow, Play, Clock, CheckCircle2, GitBranch, ArrowRight, 
-  Mail, Instagram, Sparkles, MessageSquare, Share2, Slack, 
+import {
+  Workflow, Play, Clock, CheckCircle2, GitBranch, ArrowRight,
+  Mail, Instagram, Sparkles, MessageSquare, Share2, Slack,
   Terminal, Zap, Copy, Check, Layout, Database, ShieldCheck,
-  Plus, Trash2, Settings, ChevronRight, MousePointer2, 
-  Search, Rocket, AlertTriangle, Layers, Split, Timer, 
-  PlusCircle, Save, History, X, RefreshCw
+  Plus, Trash2, Settings, ChevronRight, MousePointer2,
+  Search, Rocket, AlertTriangle, Layers, Split, Timer,
+  PlusCircle, Save, X, RefreshCw, FileCode
 } from 'lucide-react';
+import { N8N_BLUEPRINTS, CAMPAIGN_WEBHOOK } from '../constants';
 
 interface FlowNode {
   id: string;
@@ -30,6 +31,12 @@ const NODE_TEMPLATES: Record<string, Partial<FlowNode>> = {
   delay_time: { type: 'delay', label: 'Wait Period', sublabel: '24 Hour Default', icon: Timer, color: 'text-slate-600', bg: 'bg-slate-50' },
 };
 
+const BLUEPRINT_META: Record<string, { title: string; desc: string; icon: any; color: string }> = {
+  welcome_series: { title: 'Welcome Series', desc: '3-email drip for new signups', icon: Mail, color: 'text-indigo-600' },
+  abandoned_cart: { title: 'Abandoned Cart', desc: 'Recovery flow with timed reminders', icon: Clock, color: 'text-amber-600' },
+  campaign_dispatch: { title: 'Campaign Dispatch', desc: 'Full audience resolve → batch → send pipeline', icon: Rocket, color: 'text-emerald-600' },
+};
+
 const Automations: React.FC = () => {
   const [activeMode, setActiveMode] = useState<'builder' | 'blueprints'>('builder');
   const [flowName, setFlowName] = useState('New Onboarding Flow');
@@ -40,6 +47,7 @@ const Automations: React.FC = () => {
   ]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [copiedBlueprint, setCopiedBlueprint] = useState<string | null>(null);
 
   const addNode = (typeKey: string) => {
     const newNode = {
@@ -83,47 +91,57 @@ const Automations: React.FC = () => {
     }
   };
 
+  const handleCopyBlueprint = (key: string) => {
+    const json = (N8N_BLUEPRINTS as Record<string, string>)[key];
+    if (!json) return;
+    navigator.clipboard.writeText(json);
+    setCopiedBlueprint(key);
+    setTimeout(() => setCopiedBlueprint(null), 2000);
+  };
+
   return (
     <div className="space-y-8 pb-40 min-h-screen">
-      
+
       {/* Top Controller */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-6">
         <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit border border-slate-200 shadow-inner">
-          <button 
+          <button
             onClick={() => setActiveMode('builder')}
             className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeMode === 'builder' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Layers size={18} />
             <span>Flow Builder</span>
           </button>
-          <button 
+          <button
             onClick={() => setActiveMode('blueprints')}
             className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeMode === 'blueprints' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
           >
-            <History size={18} />
-            <span>Historical Runs</span>
+            <FileCode size={18} />
+            <span>n8n Blueprints</span>
           </button>
         </div>
 
-        <div className="flex items-center space-x-4">
-           <button 
-             onClick={handleAiBuild}
-             disabled={isGenerating}
-             className="px-6 py-3.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-3 hover:bg-emerald-600 transition-all shadow-xl disabled:opacity-50"
-           >
-              {/* Added RefreshCw to imports to fix error on line 114 */}
-              {isGenerating ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} className="text-emerald-400" />}
-              <span>{isGenerating ? 'Consulting Sage...' : 'AI Strategy Build'}</span>
-           </button>
-           <button className="px-6 py-3.5 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-3 hover:bg-emerald-700 transition-all shadow-xl">
-              <Save size={16} />
-              <span>Deploy Flow</span>
-           </button>
-        </div>
+        {activeMode === 'builder' && (
+          <div className="flex items-center space-x-4">
+             <button
+               onClick={handleAiBuild}
+               disabled={isGenerating}
+               className="px-6 py-3.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-3 hover:bg-emerald-600 transition-all shadow-xl disabled:opacity-50"
+             >
+                {isGenerating ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} className="text-emerald-400" />}
+                <span>{isGenerating ? 'Consulting Sage...' : 'AI Strategy Build'}</span>
+             </button>
+             <button className="px-6 py-3.5 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center space-x-3 hover:bg-emerald-700 transition-all shadow-xl">
+                <Save size={16} />
+                <span>Deploy Flow</span>
+             </button>
+          </div>
+        )}
       </div>
 
+      {activeMode === 'builder' && (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
+
         {/* Left Library: Node Library */}
         <div className="lg:col-span-1 space-y-8">
            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
@@ -196,10 +214,10 @@ const Automations: React.FC = () => {
            <div className="bg-white rounded-[4rem] border-4 border-slate-100 shadow-sm min-h-[800px] flex flex-col relative overflow-hidden">
               {/* Background Grid Lines */}
               <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
-              
+
               <div className="p-10 border-b border-slate-50 flex items-center justify-between relative z-10">
                  <div>
-                    <input 
+                    <input
                       className="text-2xl font-black text-slate-800 uppercase tracking-tight outline-none bg-transparent focus:text-emerald-600"
                       value={flowName}
                       onChange={e => setFlowName(e.target.value)}
@@ -215,11 +233,11 @@ const Automations: React.FC = () => {
               <div className="flex-1 p-12 space-y-12 flex flex-col items-center relative z-10 overflow-y-auto custom-scrollbar">
                  {nodes.length > 0 ? nodes.map((node, index) => (
                    <React.Fragment key={node.id}>
-                      <div 
+                      <div
                         onClick={() => setSelectedNode(node.id)}
                         className={`w-full max-w-sm bg-white p-6 rounded-3xl border-2 transition-all cursor-pointer group relative ${
-                          selectedNode === node.id 
-                          ? 'border-emerald-500 shadow-2xl scale-105 ring-8 ring-emerald-500/5' 
+                          selectedNode === node.id
+                          ? 'border-emerald-500 shadow-2xl scale-105 ring-8 ring-emerald-500/5'
                           : 'border-slate-100 hover:border-slate-300 shadow-sm'
                         }`}
                       >
@@ -276,7 +294,7 @@ const Automations: React.FC = () => {
                  <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                     <div className="space-y-3">
                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Label</label>
-                       <input 
+                       <input
                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
                          value={nodes.find(n => n.id === selectedNode)?.label || ''}
                          onChange={e => setNodes(nodes.map(n => n.id === selectedNode ? {...n, label: e.target.value} : n))}
@@ -339,6 +357,96 @@ const Automations: React.FC = () => {
            </div>
         </div>
       </div>
+      )}
+
+      {activeMode === 'blueprints' && (
+        <div className="space-y-8">
+          {/* Blueprint Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Object.entries(BLUEPRINT_META).map(([key, meta]) => {
+              const json = (N8N_BLUEPRINTS as Record<string, string>)[key];
+              if (!json) return null;
+              let parsed: any = {};
+              try { parsed = JSON.parse(json); } catch {}
+              const nodeCount = parsed.nodes?.length || 0;
+              const nodeNames: string[] = (parsed.nodes || []).map((n: any) => n.name || n.type).slice(0, 6);
+              const isCopied = copiedBlueprint === key;
+
+              return (
+                <div key={key} className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                  <div className="p-8 flex-1">
+                    <div className="flex items-center space-x-3 mb-4">
+                      <div className={`p-3 rounded-2xl bg-slate-50 ${meta.color}`}>
+                        {React.createElement(meta.icon, { size: 22 })}
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">{meta.title}</h3>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{meta.desc}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 mb-4">
+                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{nodeCount} nodes</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {nodeNames.map((name, i) => (
+                        <span key={i} className="text-[9px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-lg">{name}</span>
+                      ))}
+                    </div>
+
+                    <pre className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-[9px] text-slate-500 font-mono max-h-32 overflow-hidden leading-relaxed">
+                      {json.slice(0, 300)}...
+                    </pre>
+                  </div>
+
+                  <div className="p-6 border-t border-slate-100">
+                    <button
+                      onClick={() => handleCopyBlueprint(key)}
+                      className={`w-full py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center space-x-2 transition-all ${
+                        isCopied
+                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                          : 'bg-slate-900 text-white hover:bg-emerald-600 shadow-lg'
+                      }`}
+                    >
+                      {isCopied ? <Check size={14} /> : <Copy size={14} />}
+                      <span>{isCopied ? 'Copied to Clipboard' : 'Copy JSON for n8n'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Webhook Endpoints Reference */}
+          <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-6 opacity-10">
+              <Terminal size={100} className="text-emerald-400" />
+            </div>
+            <div className="relative z-10">
+              <h3 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-4 flex items-center">
+                <Terminal size={14} className="mr-2" />
+                Webhook Endpoints
+              </h3>
+              <p className="text-xs text-slate-400 font-medium mb-6">These endpoints are pre-configured in each blueprint. Update them in your n8n instance after import.</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-[10px] font-black text-white uppercase tracking-widest">Campaign Dispatch</p>
+                    <p className="text-[10px] font-mono text-emerald-400 mt-0.5">{CAMPAIGN_WEBHOOK}</p>
+                  </div>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(CAMPAIGN_WEBHOOK); }}
+                    className="p-2 text-slate-400 hover:text-emerald-400 transition"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

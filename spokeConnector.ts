@@ -9,7 +9,7 @@ type TestConnectionInput = {
 };
 
 type TestConnectionResult =
-  | { success: true; rowCount: number; columns: string[] }
+  | { success: true; rowCount: number; columns: string[]; error?: string }
   | { success: false; error: string };
 
 // Re-export for backwards compatibility

@@ -125,6 +125,7 @@ export interface SpokeConnection {
   status: 'active' | 'disconnected' | 'error';
   last_tested_at?: string;
   last_error?: string;
+  branch_skipped?: boolean;
   created_at: string;
 }
 
@@ -408,6 +409,7 @@ export interface Branch {
   is_active: boolean;
   default_from_name?: string;
   default_reply_to?: string;
+  spoke_connection_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -472,11 +474,97 @@ export type BrandAnalysisState =
 export interface SavedConnection {
   id: string;
   name: string;
-  type: 'mailchimp' | 'supabase' | 'csv';
+  type: 'mailchimp' | 'supabase';
   icon_type: 'mail' | 'database' | 'file';
   last_used: string;
   is_favorite: boolean;
   config?: Record<string, any>;
   status: 'connected' | 'disconnected' | 'error';
   profile_count?: number;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BRANCH STATS (Shared computation layer for Branch Command Center)
+// ═══════════════════════════════════════════════════════════════
+
+export interface SpokeStats {
+  spokeId: string;
+  spokeName: string;
+  supabaseUrl: string;
+  connectionStatus: 'active' | 'disconnected' | 'error';
+  lastTestedAt?: string;
+  lastError?: string;
+
+  profileCount: number;
+  subscribedCount: number;
+  unsubscribedCount: number;
+
+  totalRevenue: number;
+  totalOrders: number;
+  avgOrderValue: number;
+  avgLTV: number;
+  repeatBuyerCount: number;
+  oneTimeBuyerCount: number;
+  profilesWithOrders: number;
+  profilesWithoutOrders: number;
+  vipCount: number;
+
+  activeIn90Days: number;
+  dormantCount: number;
+
+  genderDistribution: { male: number; female: number; unknown: number };
+  ageDistribution: Record<string, number>;
+
+  topProducts: Array<{ name: string; revenue: number; quantity: number; buyers: number }>;
+}
+
+export interface BranchStatsResult {
+  enrichedProfiles: EnrichedProfile[];
+
+  spokeStats: Record<string, SpokeStats>;
+  spokeStatsList: SpokeStats[];
+
+  totals: {
+    profiles: number;
+    revenue: number;
+    orders: number;
+    avgOrderValue: number;
+    avgLTV: number;
+    subscribedCount: number;
+    unsubscribedCount: number;
+    vipCount: number;
+    repeatBuyers: number;
+    activeIn90Days: number;
+    profilesWithOrders: number;
+  };
+
+  isLoading: boolean;
+  errors: string[];
+  lastFetchedAt: string | null;
+
+  refresh: () => Promise<void>;
+}
+
+export interface MergedBranch {
+  branchId: string | null;
+  spokeConnectionId: string | null;
+
+  name: string;
+  slug: string | null;
+  type: 'internal' | 'external' | null;
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  websiteUrl: string | null;
+  tagline: string | null;
+  tone: string | null;
+  fontFamily: string | null;
+
+  connection: SpokeConnection | null;
+  branch: Branch | null;
+  brandIdentity: BrandIdentity | null;
+  stats: SpokeStats | null;
+
+  linkStatus: 'linked' | 'connection-only' | 'branch-only';
 }

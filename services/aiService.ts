@@ -207,10 +207,11 @@ export const chatWithSage = async (
       ? `Ecosystem Load: ${context.tickets.length} open tickets. Profiles: ${context?.profilesCount || 'Unknown'}.`
       : "";
 
-    const systemInstruction = `You are Sage, the Strategic Intelligence for Sproutify Trellis. 
-    You manage 5 spokes: atlurbanfarms.com, micro.sproutify.app, farm.sproutify.app, school.sproutify.app, and letsrejoice.app.
-    Always provide advice that links site behaviors for cross-selling. 
-    Tone: Sophisticated, data-driven, yet earthy. 
+    const systemInstruction = `You are Sage, the Strategic Intelligence for Sproutify Trellis.
+    You manage ecosystem branches: atlurbanfarms.com, micro.sproutify.app, farm.sproutify.app, school.sproutify.app, and letsrejoice.app.
+    Always provide advice that links cross-branch behaviors for audience growth.
+    The Campaign Builder now uses a Segment Engine with computed presets (high_value, at_risk, engaged, dormant, subscribed, multi_branch) instead of static tags.
+    Tone: Sophisticated, data-driven, yet earthy.
     ${supportContext}`;
 
     const response = await ai.models.generateContent({
@@ -236,9 +237,11 @@ export const chatWithSage = async (
 export const generateEmailCopy = async (profile: Profile, brandName: string) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Craft a 2-sentence marketing intro for ${profile.first_name} at ${brandName}. 
-    Active on: ${profile.branches.join(', ')}. Interests: ${profile.tags.join(', ')}. 
-    Highlight cross-spoke benefits.`;
+    const prompt = `Craft a 2-sentence marketing intro for ${profile.first_name} at ${brandName}.
+    Active on: ${profile.branches.join(', ')}.
+    Lifetime Value: $${profile.ltv.toFixed(2)}. Engagement: ${profile.engagement_score || 0}/100.
+    Churn Risk: ${profile.churn_risk}.
+    Highlight cross-spoke benefits based on which sites they use.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",

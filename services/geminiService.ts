@@ -10,9 +10,11 @@ export const generateEmailCopy = async (profile: Profile) => {
   const prompt = `
     Generate a short, friendly 2-sentence marketing intro for an email.
     The customer is named ${profile.first_name}.
-    They are interested in: ${profile.tags.join(', ')}.
-    They are part of these segments: ${profile.segments.join(', ')}.
-    The company is 'Sproutify', which has a garden store, a smart gardening app, and local events.
+    They are active on: ${profile.branches.join(', ')}.
+    Their lifetime value is $${profile.ltv.toFixed(2)}.
+    Their engagement level: ${profile.churn_risk === 'minimal' ? 'highly engaged' : profile.churn_risk === 'moderate' ? 'moderately engaged' : 'at risk of churning'}.
+    The company is 'Sproutify', which has a garden store (atlurbanfarms.com), a smart gardening app (farm.sproutify.app), educational programs (school.sproutify.app), and community events (letsrejoice.app).
+    Tailor the message based on which sites they're active on.
   `;
 
   try {

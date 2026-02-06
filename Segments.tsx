@@ -4,9 +4,8 @@ import {
   UserX, MapPin, Package, Trash2, Edit2, Play, X, ChevronDown, ChevronRight,
   Save, Layers
 } from 'lucide-react';
-import { EnrichedProfile } from './types';
+import { BranchStatsResult } from './types';
 import { SpokeConnection } from './types';
-import { fetchEnrichedProfiles } from './spokeConnector';
 import {
   Segment,
   SegmentRule,
@@ -25,6 +24,7 @@ import { SegmentProfilesModal } from './SegmentProfilesModal';
 
 interface SegmentsProps {
   spokeConnections: SpokeConnection[];
+  branchStats: BranchStatsResult;
 }
 
 // Icon map for segments
@@ -52,10 +52,11 @@ const colorMap: Record<string, string> = {
   'green': 'bg-green-100 text-green-700 border-green-200',
 };
 
-export const Segments: React.FC<SegmentsProps> = ({ spokeConnections }) => {
+export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStats }) => {
+  const profiles = branchStats.enrichedProfiles;
+  const isLoading = branchStats.isLoading;
+
   // State
-  const [profiles, setProfiles] = useState<EnrichedProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [customSegments, setCustomSegments] = useState<Segment[]>(() => {
     const saved = localStorage.getItem('trellis_custom_segments');
     return saved ? JSON.parse(saved) : [];
@@ -87,23 +88,6 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections }) => {
     [...presetSegments, ...customSegments],
     [presetSegments, customSegments]
   );
-
-  // Fetch profiles on mount
-  useEffect(() => {
-    const fetchProfiles = async () => {
-      if (spokeConnections.length === 0) return;
-      setIsLoading(true);
-      try {
-        const { profiles: fetchedProfiles } = await fetchEnrichedProfiles(spokeConnections);
-        setProfiles(fetchedProfiles);
-      } catch (err) {
-        console.error('Failed to fetch profiles:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchProfiles();
-  }, [spokeConnections]);
 
   // Save custom segments to localStorage
   useEffect(() => {

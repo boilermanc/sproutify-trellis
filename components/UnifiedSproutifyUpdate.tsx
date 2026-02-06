@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Profile, EmailModule, FooterConfig } from '../types';
+import { formatBranchName } from '../utils';
 import { Instagram, Twitter, Facebook, Smartphone, Award, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface UnifiedSproutifyUpdateProps {
@@ -9,11 +10,12 @@ interface UnifiedSproutifyUpdateProps {
   activeModules: EmailModule[];
   themeColor?: string;
   footerConfig?: FooterConfig;
+  branchContent?: Record<string, string>;
 }
 
-const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({ 
-  profile, 
-  customCopy, 
+const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({
+  profile,
+  customCopy,
   activeModules,
   themeColor = '#059669',
   footerConfig = {
@@ -22,13 +24,20 @@ const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({
     platforms: ['instagram', 'tiktok'],
     address: '123 Sprout Way, Garden City, CA 90210',
     legalDisclaimer: "You're receiving this because you're a member of the Sproutify inner circle."
-  }
+  },
+  branchContent
 }) => {
   const isVisible = (module: EmailModule) => activeModules.includes(module);
 
+  const primaryBranch = profile.branches[0] || 'sproutify.app';
+  const branchDisplay = formatBranchName(primaryBranch);
+
   const renderText = (text: string) => {
-    return text.replace(/\{\{first_name\}\}/g, profile.first_name)
-               .replace(/\{\{email\}\}/g, profile.email);
+    return text
+      .replace(/\{\{first_name\}\}/g, profile.first_name)
+      .replace(/\{\{email\}\}/g, profile.email)
+      .replace(/\{\{branch\}\}/g, branchDisplay)
+      .replace(/\{\{ltv\}\}/g, `$${profile.ltv.toFixed(2)}`);
   };
 
   const SocialIcons = {
@@ -68,7 +77,7 @@ const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({
             <p className="text-[9px] text-slate-400 border-t border-slate-200 pt-6">
               {renderText(legalDisclaimer)}
               <br/><br/>
-              © {new Date().getFullYear()} Sproutify Inc. All rights reserved. 
+              © {new Date().getFullYear()} Sproutify Inc. All rights reserved.
               <a href="#" className="ml-2 font-bold text-slate-600 hover:underline">Unsubscribe</a> | <a href="#" className="ml-2 font-bold text-slate-600 hover:underline">Privacy Policy</a>
             </p>
           </div>
@@ -159,13 +168,31 @@ const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({
         {isVisible('intro') && (
           <section className="animate-in fade-in slide-in-from-top-4 duration-500">
             <h2 className="text-2xl font-bold text-slate-800 mb-3">Hey {profile.first_name}!</h2>
-            <div 
+            <div
               className="text-slate-600 leading-relaxed italic border-l-4 pl-4 bg-slate-50 py-3"
               style={{ borderLeftColor: themeColor }}
             >
               {customCopy ? renderText(customCopy) : "Nature is calling. We've curated these updates based on your unique gardening journey."}
             </div>
           </section>
+        )}
+
+        {/* Branch-Conditional Content */}
+        {branchContent && branchContent[primaryBranch] && (
+          <div style={{
+            padding: '24px 32px',
+            margin: '16px 0',
+            backgroundColor: '#f0fdf4',
+            borderLeft: `4px solid ${themeColor}`,
+            borderRadius: '8px'
+          }}>
+            <p style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: themeColor, marginBottom: '8px' }}>
+              Exclusive for {branchDisplay} Members
+            </p>
+            <p style={{ fontSize: '14px', color: '#334155', lineHeight: '1.6' }}>
+              {renderText(branchContent[primaryBranch])}
+            </p>
+          </div>
         )}
 
         {/* Module: Local Events */}
@@ -177,7 +204,7 @@ const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({
             </div>
             <p className="text-amber-900 font-bold text-lg mb-1">Native Plant Exchange</p>
             <p className="text-amber-700 text-xs mb-4">Saturday, Nov 12th @ Downtown Plaza</p>
-            <button 
+            <button
               className="w-full py-3 text-white rounded-xl text-sm font-bold shadow-lg shadow-amber-900/20 transition-transform active:scale-95"
               style={{ backgroundColor: themeColor }}
             >
@@ -200,10 +227,10 @@ const UnifiedSproutifyUpdate: React.FC<UnifiedSproutifyUpdateProps> = ({
               ].map((p, i) => (
                 <div key={i} className="group cursor-pointer">
                   <div className="aspect-square bg-slate-100 rounded-2xl mb-3 overflow-hidden">
-                    <img 
-                      src={`https://picsum.photos/seed/${p.img}/400/400`} 
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
-                      alt={p.name} 
+                    <img
+                      src={`https://picsum.photos/seed/${p.img}/400/400`}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      alt={p.name}
                     />
                   </div>
                   <p className="font-bold text-sm text-slate-800 mb-1">{p.name}</p>
