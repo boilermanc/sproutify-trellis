@@ -292,6 +292,15 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+export interface BranchConsentEntry {
+  subscribed: boolean;
+  paused: boolean;
+  updated_at: string;
+}
+
+/** JSONB shape: { "atl-urban-farms": { subscribed: true, paused: false, updated_at: "..." } } */
+export type BranchConsentMap = Record<string, BranchConsentEntry>;
+
 export interface Profile {
   id: string;
   spoke_uuid?: string; // The specific external ID from a source site
@@ -306,6 +315,7 @@ export interface Profile {
   tags: string[];
   segments: string[];
   branches: string[];
+  branch_consent?: BranchConsentMap; // Per-branch subscription state
   status: 'active' | 'archived' | 'banned' | 'deleted';
   ltv: number;
   churn_risk: 'minimal' | 'moderate' | 'high' | 'critical';

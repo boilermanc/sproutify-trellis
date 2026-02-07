@@ -6,8 +6,8 @@ import {
   Building2, ExternalLink, Plus, X, ArrowLeft, Archive, ChevronDown,
   Crown, Repeat, Activity, Clock, Pause
 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
 import { SpokeConnection, Branch, BrandIdentity, BranchStatsResult, MergedBranch } from '../types';
+import { getSpokeClient } from '../spokeConnector';
 import { fetchAllBranches, createBranch, updateBranch, deleteBranch } from '../lib/supabaseService';
 import { fetchAllBrands } from '../brandRepository';
 import { mergeBranchData, linkConnectionToBranch, unlinkConnectionFromBranch } from '../services/branchLinker';
@@ -121,7 +121,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   const handleRetest = async (connection: SpokeConnection) => {
     setIsTesting(prev => ({ ...prev, [connection.id]: true }));
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
       const customerTable = connection.tables.find(t => t.table_type === 'customers');
       const tableName = customerTable?.table_name || 'profiles';
       const { error } = await client.from(tableName).select('id', { count: 'exact', head: true });
@@ -152,7 +152,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     setIsTesting(prev => ({ ...prev, [connection.id]: true }));
     setReconnectErrors(prev => { const u = { ...prev }; delete u[connection.id]; return u; });
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
       const customerTable = connection.tables.find(t => t.table_type === 'customers');
       const tableName = customerTable?.table_name || 'profiles';
       const { error } = await client.from(tableName).select('id', { count: 'exact', head: true });

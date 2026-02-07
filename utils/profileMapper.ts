@@ -87,6 +87,13 @@ export const mapSpokeToProfile = (spokeCustomer: any, spokeName: string, origin:
     tags: [],
     segments: [],
     branches: [spokeName],
+    branch_consent: {
+      [spokeName]: {
+        subscribed: consent.is_subscribed,
+        paused: consent.marketing_pause,
+        updated_at: new Date().toISOString(),
+      },
+    },
     status: 'active',
     ltv: parseFloat(spokeCustomer.ltv) || 0,
     churn_risk: 'minimal',

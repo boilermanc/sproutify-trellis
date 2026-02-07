@@ -14,6 +14,13 @@ export function getSpokeClient(url: string, key: string): SupabaseClient {
   return client;
 }
 
+/**
+ * Remove a spoke client from cache (call when permanently deleting a connection).
+ */
+export function disconnectSpoke(url: string, key: string): void {
+  spokeClientCache.delete(`${url}:${key}`);
+}
+
 type TestConnectionInput = {
   supabase_url: string;
   supabase_key: string;

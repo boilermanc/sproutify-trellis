@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SpokeConnection, SpokeTableConfig, Branch } from './types';
-import { testSpokeConnection, discoverTables, autoMapFields } from './spokeConnector';
+import { testSpokeConnection, discoverTables, autoMapFields, disconnectSpoke } from './spokeConnector';
 import { generateSnapshot, saveSnapshot } from './services/branchSnapshotService';
 import { fetchAllBranches } from './lib/supabaseService';
 import { linkConnectionToBranch } from './services/branchLinker';
@@ -415,6 +415,8 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   };
 
   const handleDeleteConnection = (id: string) => {
+    const conn = connections.find((c) => c.id === id);
+    if (conn) disconnectSpoke(conn.supabase_url, conn.supabase_key);
     onConnectionsChange(connections.filter((c) => c.id !== id));
     setDeleteConfirm(null);
   };

@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   segments JSONB DEFAULT '[]'::jsonb,     
   is_subscribed BOOLEAN DEFAULT true,
   marketing_pause BOOLEAN DEFAULT false,
+  branch_consent JSONB DEFAULT '{}'::jsonb,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'archived', 'banned', 'deleted')),
   churn_risk TEXT DEFAULT 'minimal' CHECK (churn_risk IN ('minimal', 'moderate', 'high', 'critical')),
   ltv DECIMAL(12, 2) DEFAULT 0.00,

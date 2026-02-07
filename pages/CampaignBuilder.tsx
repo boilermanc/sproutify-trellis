@@ -4,6 +4,7 @@ import { Profile, SpokeConnection, BranchContext } from '../types';
 import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
 import { loadNameCache } from '../demographicsService';
 import { timeAgo, formatBranchName } from '../utils';
+import { isSubscribedForAnyBranch } from '../consentUtils';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
   ChevronLeft, CheckCircle2, Target,
@@ -161,14 +162,22 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
     });
   }, [profiles, campaignData.selectedBranches]);
 
-  // Step 2: Apply preset filters with OR logic on top of scoped profiles
+  // Step 2: Filter by per-branch consent — only profiles opted-in for selected branches
+  const consentFiltered = useMemo(() => {
+    if (campaignData.selectedBranches.length === 0) return [];
+    return scopedProfiles.filter(p =>
+      isSubscribedForAnyBranch(p, campaignData.selectedBranches)
+    );
+  }, [scopedProfiles, campaignData.selectedBranches]);
+
+  // Step 3: Apply preset filters with OR logic on top of consent-filtered profiles
   const segmentProfiles = useMemo(() => {
-    if (campaignData.activePresets.length === 0) return scopedProfiles;
+    if (campaignData.activePresets.length === 0) return consentFiltered;
     const activeFilters = CAMPAIGN_PRESETS.filter(p => campaignData.activePresets.includes(p.id));
-    return scopedProfiles.filter(profile =>
+    return consentFiltered.filter(profile =>
       activeFilters.some(preset => preset.filter(profile))
     );
-  }, [scopedProfiles, campaignData.activePresets]);
+  }, [consentFiltered, campaignData.activePresets]);
 
   const audienceSize = segmentProfiles.length;
 
@@ -872,23 +881,23 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, pro
               <div className="p-8 space-y-5">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                    <p className="text-2xl font-black text-emerald-700">{segmentProfiles.filter(p => p.is_subscribed && !p.marketing_pause).length}</p>
+                    <p className="text-2xl font-black text-emerald-700">{consentFiltered.length}</p>
                     <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mt-1">Opted-In</p>
                   </div>
                   <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-center">
-                    <p className="text-2xl font-black text-amber-700">{segmentProfiles.filter(p => p.marketing_pause).length}</p>
+                    <p className="text-2xl font-black text-amber-700">{scopedProfiles.filter(p => campaignData.selectedBranches.some(slug => { const entry = p.branch_consent?.[slug]; return entry ? entry.paused : p.marketing_pause; })).length}</p>
                     <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mt-1">Paused</p>
                   </div>
                   <div className="p-4 bg-rose-50 rounded-xl border border-rose-100 text-center">
-                    <p className="text-2xl font-black text-rose-700">{segmentProfiles.filter(p => !p.is_subscribed).length}</p>
-                    <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest mt-1">Unsubscribed</p>
+                    <p className="text-2xl font-black text-rose-700">{scopedProfiles.length - consentFiltered.length}</p>
+                    <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest mt-1">Blocked by Consent</p>
                   </div>
                 </div>
-                {segmentProfiles.some(p => !p.is_subscribed || p.marketing_pause) && (
+                {scopedProfiles.length > consentFiltered.length && (
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start space-x-3">
                     <Info size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
                     <p className="text-xs text-amber-700 leading-relaxed">
-                      <span className="font-bold">{segmentProfiles.filter(p => !p.is_subscribed || p.marketing_pause).length} profiles</span> in your audience are unsubscribed or paused. They will be automatically excluded at send time by the delivery gateway.
+                      <span className="font-bold">{scopedProfiles.length - consentFiltered.length} profiles</span> in your audience are unsubscribed or paused for the selected branches. They will be automatically excluded at send time by the delivery gateway.
                     </p>
                   </div>
                 )}

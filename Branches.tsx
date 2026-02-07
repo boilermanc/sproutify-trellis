@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Globe, Database, AlertCircle, RefreshCw, Unplug, Loader2, PlugZap, Settings2, Users, Package, Layers, CreditCard, AlertTriangle, Settings } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
 import { SpokeConnection } from './types';
-import { fetchEnrichedProfiles } from './spokeConnector';
+import { fetchEnrichedProfiles, getSpokeClient } from './spokeConnector';
 import { generateSnapshot, saveSnapshot } from './services/branchSnapshotService';
 
 interface BranchesProps {
@@ -94,7 +93,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
     setIsTesting(prev => ({ ...prev, [connection.name]: true }));
 
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
       const customerTable = connection.tables.find(t => t.table_type === 'customers');
       const tableName = customerTable?.table_name || 'profiles';
 
@@ -139,7 +138,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
     });
 
     try {
-      const client = createClient(connection.supabase_url, connection.supabase_key);
+      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
       const customerTable = connection.tables.find(t => t.table_type === 'customers');
       const tableName = customerTable?.table_name || 'profiles';
 

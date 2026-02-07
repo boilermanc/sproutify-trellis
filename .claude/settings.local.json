@@ -10,7 +10,17 @@
       "Bash(netstat:*)",
       "Bash(findstr:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd spoke connections feature for external Supabase database queries\n\n- Add SpokeConnection interface for read-only external DB connections\n- Create spokeConnector.ts service with test/fetch functions\n- Build ConnectionsManager.tsx UI component for managing connections\n- Integrate Connections tab into Settings page\n- Add localStorage persistence for spoke connections in App.tsx\n- Include various service modules and UI improvements\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git stash:*)",
+      "Bash(git pull:*)",
+      "Bash(git status:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx vite:*)",
+      "Bash(grep:*)",
+      "Bash(gh pr list:*)",
+      "Bash(where.exe:*)"
     ]
   }
 }

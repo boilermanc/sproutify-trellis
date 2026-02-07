@@ -154,8 +154,10 @@ const AppContent: React.FC = () => {
       }
     }
 
+    const now = new Date().toISOString();
     return branchStats.enrichedProfiles.map(p => {
       const consent = mapFederatedConsent(p);
+      const branchSlug = slugByConnectionId.get(p._spoke_id) || p._spoke_name;
       return {
         id: p.id || p.email,
         email: p.email,
@@ -166,7 +168,14 @@ const AppContent: React.FC = () => {
         marketing_pause: consent.marketing_pause,
         tags: (p as any)._order_only ? ['order_only'] : [],
         segments: (p as any)._order_only ? ['legacy_orders'] : [],
-        branches: [slugByConnectionId.get(p._spoke_id) || p._spoke_name],
+        branches: [branchSlug],
+        branch_consent: {
+          [branchSlug]: {
+            subscribed: consent.is_subscribed,
+            paused: consent.marketing_pause,
+            updated_at: now,
+          },
+        },
         status: 'active' as const,
         ltv: p.order_stats?.ltv || 0,
         churn_risk: 'minimal' as const,
