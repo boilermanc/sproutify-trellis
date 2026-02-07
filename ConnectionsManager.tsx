@@ -90,7 +90,17 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       }
       fetchAllBranches()
         .then(branches => {
-          setAvailableBranches(branches.filter(b => !b.spoke_connection_id));
+          // Show all branches (including already-linked ones) so users can re-link
+          setAvailableBranches(branches);
+          // Auto-select existing branch if one matches the connection name
+          if (newConnection.name) {
+            const slug = newConnection.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            const match = branches.find(b => b.slug === slug || b.name === newConnection.name);
+            if (match) {
+              setBranchMode('existing');
+              setSelectedBranchId(match.id);
+            }
+          }
         })
         .catch(err => console.error('Failed to fetch branches:', err))
         .finally(() => setIsLoadingBranches(false));
@@ -1542,6 +1552,11 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                                     </span>
                                   )}
                                   <span className="text-[10px] text-slate-400 font-mono">{branch.slug}</span>
+                                  {branch.spoke_connection_id && (
+                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">
+                                      linked
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
