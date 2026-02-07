@@ -367,35 +367,28 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     const savedBranchName = newBranchName.trim();
 
     if (savedBranchMode === 'create' && savedBranchName) {
-      createBranch({
-        name: savedBranchName,
-        type: 'external',
-        primary_color: '#10b981',
-        secondary_color: '#f0fdf4',
-        accent_color: '#059669',
-        tone: 'friendly',
-        is_active: true,
-        spoke_connection_id: connection.id,
-      }).then(branch => {
-        console.log('[branchLink] Created and linked branch:', branch.name, '→', connection.name);
-      }).catch(async (err) => {
-        // Duplicate slug — find existing branch and link to it instead
-        if (err?.code === '23505') {
-          try {
-            const allBranches = await fetchAllBranches();
-            const existing = allBranches.find(b => b.name === savedBranchName || b.slug === savedBranchName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''));
-            if (existing) {
-              await linkConnectionToBranch(existing.id, connection.id);
-              console.log('[branchLink] Linked to existing branch:', existing.name, '→', connection.name);
-            } else {
-              console.warn('[branchLink] Duplicate slug but no matching branch found');
-            }
-          } catch (linkErr) {
-            console.warn('[branchLink] Failed to link existing branch:', linkErr);
-          }
+      // Check if branch already exists before attempting create (avoids 409 in console)
+      const slug = savedBranchName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      fetchAllBranches().then(async (allBranches) => {
+        const existing = allBranches.find(b => b.slug === slug);
+        if (existing) {
+          await linkConnectionToBranch(existing.id, connection.id);
+          console.log('[branchLink] Linked to existing branch:', existing.name, '→', connection.name);
         } else {
-          console.warn('[branchLink] Failed to create branch (non-blocking):', err);
+          const branch = await createBranch({
+            name: savedBranchName,
+            type: 'external',
+            primary_color: '#10b981',
+            secondary_color: '#f0fdf4',
+            accent_color: '#059669',
+            tone: 'friendly',
+            is_active: true,
+            spoke_connection_id: connection.id,
+          });
+          console.log('[branchLink] Created and linked branch:', branch.name, '→', connection.name);
         }
+      }).catch(err => {
+        console.warn('[branchLink] Failed to link/create branch (non-blocking):', err);
       });
     } else if (savedBranchMode === 'existing' && savedBranchId) {
       linkConnectionToBranch(savedBranchId, connection.id).then(() => {
