@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SpokeConnection, SpokeTableConfig, Branch } from './types';
 import { testSpokeConnection, discoverTables, autoMapFields } from './spokeConnector';
 import { generateSnapshot, saveSnapshot } from './services/branchSnapshotService';
-import { fetchAllBranches, createBranch } from './lib/supabaseService';
+import { fetchAllBranches } from './lib/supabaseService';
 import { linkConnectionToBranch } from './services/branchLinker';
 import {
   Database,
@@ -77,17 +77,12 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   const [availableBranches, setAvailableBranches] = useState<Branch[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
-  const [newBranchName, setNewBranchName] = useState('');
-  const [branchMode, setBranchMode] = useState<'existing' | 'create' | 'skip'>('create');
+  const [branchMode, setBranchMode] = useState<'existing' | 'skip'>('skip');
 
   // Fetch branches when entering the branch step
   useEffect(() => {
     if (wizardStep === 'branch') {
       setIsLoadingBranches(true);
-      // Pre-fill new branch name from connection name
-      if (!newBranchName && newConnection.name) {
-        setNewBranchName(newConnection.name);
-      }
       fetchAllBranches()
         .then(branches => {
           // Show all branches (including already-linked ones) so users can re-link
@@ -118,8 +113,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     setSubscriptionTableConfig({ table_name: '', field_mapping: {}, columns: [] });
     setTestResult(null);
     setSelectedBranchId(null);
-    setNewBranchName('');
-    setBranchMode('create');
+    setBranchMode('skip');
   };
 
   const buildTablesConfig = (): SpokeTableConfig[] => {
@@ -365,42 +359,16 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       supabase_key: newConnection.supabase_key,
       tables,
       status: 'active',
-      branch_skipped: branchMode === 'skip',
+      branch_skipped: false,
       created_at: new Date().toISOString(),
       last_tested_at: new Date().toISOString(),
     };
     onConnectionsChange([...connections, connection]);
 
-    // Link to branch (create new or link existing)
-    const savedBranchMode = branchMode;
+    // Link to branch if one was selected
     const savedBranchId = selectedBranchId;
-    const savedBranchName = newBranchName.trim();
 
-    if (savedBranchMode === 'create' && savedBranchName) {
-      // Check if branch already exists before attempting create (avoids 409 in console)
-      const slug = savedBranchName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      fetchAllBranches().then(async (allBranches) => {
-        const existing = allBranches.find(b => b.slug === slug);
-        if (existing) {
-          await linkConnectionToBranch(existing.id, connection.id);
-          console.log('[branchLink] Linked to existing branch:', existing.name, '→', connection.name);
-        } else {
-          const branch = await createBranch({
-            name: savedBranchName,
-            type: 'external',
-            primary_color: '#10b981',
-            secondary_color: '#f0fdf4',
-            accent_color: '#059669',
-            tone: 'friendly',
-            is_active: true,
-            spoke_connection_id: connection.id,
-          });
-          console.log('[branchLink] Created and linked branch:', branch.name, '→', connection.name);
-        }
-      }).catch(err => {
-        console.warn('[branchLink] Failed to link/create branch (non-blocking):', err);
-      });
-    } else if (savedBranchMode === 'existing' && savedBranchId) {
+    if (branchMode === 'existing' && savedBranchId) {
       linkConnectionToBranch(savedBranchId, connection.id).then(() => {
         console.log('[branchLink] Linked connection to existing branch:', savedBranchId, '→', connection.name);
       }).catch(err => {
@@ -1465,137 +1433,72 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {/* Create New Branch option */}
-                  <button
-                    onClick={() => {
-                      setBranchMode('create');
-                      setSelectedBranchId(null);
-                    }}
-                    className={`w-full p-4 rounded-xl border-2 text-left transition ${
-                      branchMode === 'create'
-                        ? 'bg-emerald-50 border-emerald-300'
-                        : 'bg-white border-slate-200 hover:border-emerald-200'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          branchMode === 'create' ? 'bg-emerald-100' : 'bg-slate-100'
-                        }`}>
-                          <Plus size={20} className={branchMode === 'create' ? 'text-emerald-600' : 'text-slate-400'} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-black text-slate-800">Create New Branch</p>
-                          <p className="text-[10px] text-slate-500">Set up brand identity later in Command Center</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        branchMode === 'create' ? 'border-emerald-500' : 'border-slate-300'
-                      }`}>
-                        {branchMode === 'create' && <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />}
-                      </div>
-                    </div>
-                    {branchMode === 'create' && (
-                      <div className="mt-3 pl-[52px]">
-                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                          Branch Name
-                        </label>
-                        <input
-                          type="text"
-                          value={newBranchName}
-                          onChange={(e) => setNewBranchName(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
-                          placeholder="e.g., ATL Urban Farms"
-                        />
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Existing branches */}
-                  {availableBranches.length > 0 && (
-                    <>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest pt-2">
-                        Or link to an existing branch
-                      </p>
-                      {availableBranches.map(branch => (
-                        <button
-                          key={branch.id}
-                          onClick={() => {
-                            setBranchMode('existing');
-                            setSelectedBranchId(branch.id);
-                          }}
-                          className={`w-full p-4 rounded-xl border-2 text-left transition ${
-                            branchMode === 'existing' && selectedBranchId === branch.id
-                              ? 'bg-blue-50 border-blue-300'
-                              : 'bg-white border-slate-200 hover:border-blue-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div
-                                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                                style={{ backgroundColor: branch.primary_color ? `${branch.primary_color}20` : '#f1f5f9' }}
-                              >
-                                {branch.logo_url ? (
-                                  <img src={branch.logo_url} alt="" className="w-6 h-6 rounded object-contain" />
-                                ) : (
-                                  <GitBranch size={20} style={{ color: branch.primary_color || '#94a3b8' }} />
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-sm font-black text-slate-800">{branch.name}</p>
-                                <div className="flex items-center space-x-2 mt-0.5">
-                                  {branch.type && (
-                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
-                                      {branch.type}
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] text-slate-400 font-mono">{branch.slug}</span>
-                                  {branch.spoke_connection_id && (
-                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">
-                                      linked
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                              branchMode === 'existing' && selectedBranchId === branch.id ? 'border-blue-500' : 'border-slate-300'
-                            }`}>
-                              {branchMode === 'existing' && selectedBranchId === branch.id && (
-                                <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                  {availableBranches.length > 0 ? (
+                    availableBranches.map(branch => (
+                      <button
+                        key={branch.id}
+                        onClick={() => {
+                          setBranchMode('existing');
+                          setSelectedBranchId(branch.id);
+                        }}
+                        className={`w-full p-4 rounded-xl border-2 text-left transition ${
+                          selectedBranchId === branch.id
+                            ? 'bg-blue-50 border-blue-300'
+                            : 'bg-white border-slate-200 hover:border-blue-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center"
+                              style={{ backgroundColor: branch.primary_color ? `${branch.primary_color}20` : '#f1f5f9' }}
+                            >
+                              {branch.logo_url ? (
+                                <img src={branch.logo_url} alt="" className="w-6 h-6 rounded object-contain" />
+                              ) : (
+                                <GitBranch size={20} style={{ color: branch.primary_color || '#94a3b8' }} />
                               )}
                             </div>
+                            <div>
+                              <p className="text-sm font-black text-slate-800">{branch.name}</p>
+                              <div className="flex items-center space-x-2 mt-0.5">
+                                {branch.type && (
+                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                                    {branch.type}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-slate-400 font-mono">{branch.slug}</span>
+                                {branch.spoke_connection_id && (
+                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">
+                                    linked
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </button>
-                      ))}
-                    </>
-                  )}
-
-                  {/* Skip option */}
-                  <button
-                    onClick={() => {
-                      setBranchMode('skip');
-                      setSelectedBranchId(null);
-                    }}
-                    className={`w-full p-3 rounded-xl border-2 text-left transition ${
-                      branchMode === 'skip'
-                        ? 'bg-slate-50 border-slate-300'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-sm text-slate-500">Skip — I'll link this later</span>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                            selectedBranchId === branch.id ? 'border-blue-500' : 'border-slate-300'
+                          }`}>
+                            {selectedBranchId === branch.id && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 space-y-3">
+                      <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto">
+                        <GitBranch size={24} className="text-slate-400" />
                       </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        branchMode === 'skip' ? 'border-slate-400' : 'border-slate-300'
-                      }`}>
-                        {branchMode === 'skip' && <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />}
+                      <div>
+                        <p className="text-sm font-bold text-slate-700">No branches yet</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Create a branch first on the <span className="font-bold text-emerald-600">Branches</span> page, then come back to connect this data source.
+                        </p>
                       </div>
                     </div>
-                  </button>
+                  )}
                 </div>
               )}
 
@@ -1610,7 +1513,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </button>
                 <button
                   onClick={navigateNext}
-                  disabled={branchMode === 'create' && !newBranchName.trim()}
+                  disabled={!selectedBranchId}
                   className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>Continue</span>
@@ -1702,13 +1605,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <div className="border-t border-slate-200 pt-4">
                   <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Branch</p>
                   <div className="flex items-center space-x-2 p-2 bg-white rounded-lg border border-slate-200">
-                    <GitBranch size={14} className={branchMode === 'skip' ? 'text-slate-400' : 'text-emerald-500'} />
+                    <GitBranch size={14} className="text-emerald-500" />
                     <span className="text-xs font-bold text-slate-700">
-                      {branchMode === 'create'
-                        ? `Create "${newBranchName}"`
-                        : branchMode === 'existing'
-                        ? `Link to "${availableBranches.find(b => b.id === selectedBranchId)?.name || ''}"`
-                        : 'No branch (link later)'}
+                      {availableBranches.find(b => b.id === selectedBranchId)?.name || ''}
                     </span>
                   </div>
                 </div>
