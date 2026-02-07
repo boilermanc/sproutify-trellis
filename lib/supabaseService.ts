@@ -327,7 +327,6 @@ export async function createBranch(branch: Partial<Branch>): Promise<Branch> {
     .single();
 
   if (error) {
-    console.error('Error creating branch:', error);
     throw error;
   }
 

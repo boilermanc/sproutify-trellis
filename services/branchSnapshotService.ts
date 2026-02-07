@@ -30,6 +30,8 @@ interface ConnectionInput {
   supabase_url: string;
   supabase_key: string;
   tables: { customers?: string; orders?: string; legacy_orders?: string };
+  /** Known columns on the customers table (from field_mapping values) */
+  customerColumns?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -77,30 +79,21 @@ export async function generateSnapshot(
       }
     }
 
-    // Active subscribers — try is_subscribed first, fall back to newsletter_opt_in
-    // Wrap each probe in try/catch since the column may not exist (400 from PostgREST)
-    try {
+    // Active subscribers — only query columns we know exist from field_mapping
+    const cols = connection.customerColumns || [];
+    const subCol = cols.includes('is_subscribed') ? 'is_subscribed'
+      : cols.includes('newsletter_opt_in') ? 'newsletter_opt_in'
+      : null;
+
+    if (subCol) {
       const { count: subCount, error: subErr } = await spoke
         .from(table)
         .select('*', { count: 'exact', head: true })
-        .eq('is_subscribed', true);
+        .eq(subCol, true);
 
-      if (!subErr && subCount !== null && subCount > 0) {
+      if (!subErr && subCount !== null) {
         activeSubscribers = subCount;
       }
-    } catch { /* column doesn't exist */ }
-
-    if (activeSubscribers === 0) {
-      try {
-        const { count: optInCount, error: optErr } = await spoke
-          .from(table)
-          .select('*', { count: 'exact', head: true })
-          .eq('newsletter_opt_in', true);
-
-        if (!optErr && optInCount !== null) {
-          activeSubscribers = optInCount;
-        }
-      } catch { /* column doesn't exist */ }
     }
   }
 

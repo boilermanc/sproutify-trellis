@@ -418,6 +418,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         orders: orderTables.find(t => t.table_name === 'orders')?.table_name,
         legacy_orders: orderTables.find(t => t.table_name !== 'orders')?.table_name,
       },
+      customerColumns: customerTable ? Object.values(customerTable.field_mapping).filter(Boolean) : [],
     }, 'on_connect').then(snapshot => {
       saveSnapshot(snapshot);
       console.log('[branchSnapshot] Snapshot saved:', snapshot.branch_name,
