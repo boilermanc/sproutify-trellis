@@ -53,7 +53,7 @@ const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }>
   );
 };
 
-const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections, branchStats }) => {
+const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections, branchStats, branchContext }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,8 +119,13 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       try {
         setLoading(true);
         setError(null);
-        const branchesData = await fetchBranches();
-        setBranches(branchesData);
+        // Prefer branchContext.allBranches if available, otherwise fetch independently
+        if (branchContext && branchContext.allBranches.length > 0) {
+          setBranches(branchContext.allBranches as any);
+        } else {
+          const branchesData = await fetchBranches();
+          setBranches(branchesData);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch data');
       } finally {
@@ -128,7 +133,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       }
     }
     fetchData();
-  }, []);
+  }, [branchContext]);
 
   // Auto-select all active spokes on mount
   useEffect(() => {

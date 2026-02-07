@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext } from '../types';
-import { SITES_LIST } from '../constants';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   Instagram, Twitter, Linkedin, Sparkles, Send, 
@@ -21,7 +20,7 @@ const MOCK_INTENTS: SocialActivity[] = [
   { id: 'sig_2', platform: 'instagram', username: 'plantlover_ca', content: 'Price for the indoor bonsai kit?', intent_type: 'buying_intent', profile_matched: false, created_at: new Date().toISOString() },
 ];
 
-const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents }) => {
+const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext }) => {
   const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline'>('lab');
   const [pipelineView, setPipelineView] = useState<'board' | 'list' | 'calendar'>('board');
   const [baseContent, setBaseContent] = useState('');

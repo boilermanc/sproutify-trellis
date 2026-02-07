@@ -75,7 +75,7 @@ const PRESET_COLOR_MAP: Record<string, { bg: string, border: string, text: strin
   slate: { bg: 'bg-slate-50', border: 'border-slate-400', text: 'text-slate-700', selectedBg: 'bg-slate-500' },
 };
 
-const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, profiles, spokeConnections = [] }) => {
+const CampaignBuilder: React.FC<CampaignBuilderProps> = ({ onCampaignLaunch, profiles, spokeConnections = [], branchContext }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [campaignData, setCampaignData] = useState({
     name: '',

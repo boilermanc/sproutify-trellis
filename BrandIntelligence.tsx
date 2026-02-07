@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BrandIdentity, BrandAnalysisState, GeneratedBrandAsset } from './types';
-import { SITES_LIST, MOCK_BRAND_IDENTITIES } from './constants';
+import { BrandIdentity, BrandAnalysisState, GeneratedBrandAsset, BranchContext } from './types';
+import { MOCK_BRAND_IDENTITIES } from './constants';
 import { extractBrandFromUrl, generateBrandFromDescription } from './brandService';
 import { parseCSS, suggestColorRoles } from './cssParser';
 import {
@@ -23,9 +23,13 @@ import {
 interface BrandIntelligenceProps {
   onBrandUpdate?: (brand: BrandIdentity) => void;
   geminiApiKey?: string;
+  branchContext?: BranchContext;
 }
 
-const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, geminiApiKey = '' }) => {
+const FALLBACK_SITES = ['farm.sproutify.app', 'school.sproutify.app', 'micro.sproutify.app', 'letsrejoice.app', 'atlurbanfarms.com'];
+
+const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, geminiApiKey = '', branchContext }) => {
+  const branchSlugs = branchContext?.allBranches.map(b => b.slug) || FALLBACK_SITES;
   // State
   const [brands, setBrands] = useState<BrandIdentity[]>(MOCK_BRAND_IDENTITIES);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -36,7 +40,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [inputMode, setInputMode] = useState<'url' | 'description' | 'manual'>('url');
   const [urlInput, setUrlInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
-  const [targetBranch, setTargetBranch] = useState<string>(SITES_LIST[0]);
+  const [targetBranch, setTargetBranch] = useState<string>(branchSlugs[0] || '');
 
   // Manual upload state
   const [uploadedLogo, setUploadedLogo] = useState<string | null>(null);
@@ -90,7 +94,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     brands.find(b => b.branch_id === branchId && b.status === 'active');
 
   // Branches without active brands
-  const branchesWithoutBrands = SITES_LIST.filter(site => !getActiveBrand(site));
+  const branchesWithoutBrands = branchSlugs.filter(site => !getActiveBrand(site));
 
   // Handle URL analysis
   const handleAnalyzeUrl = async () => {
@@ -503,7 +507,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   onChange={(e) => setTargetBranch(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
                 >
-                  {SITES_LIST.map(site => (
+                  {branchSlugs.map(site => (
                     <option key={site} value={site}>
                       {site} {getActiveBrand(site) ? '(has brand)' : ''}
                     </option>

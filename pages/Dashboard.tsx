@@ -46,7 +46,7 @@ function getFreshness(ts?: string): { label: string; isStale: boolean; isWarning
   return { label: `${days}d ago`, isStale: true, isWarning: true };
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches, branchContext }) => {
   const [isBriefingOpen, setIsBriefingOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -104,6 +104,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
   const pendingApprovalsCount = 2;
 
   const activeConnections = spokeConnections.filter(c => c.status === 'active');
+
+  // Branch-scoped profile view — respects global branch picker
+  const scopedProfiles = useMemo(() => {
+    if (!branchContext || branchContext.isAllSelected) return profiles;
+    return profiles.filter(p => p.branches.some(b => branchContext.activeBranchSlugs.includes(b)));
+  }, [profiles, branchContext]);
 
   // Use branchStats for all aggregate metrics
   const spokeCounts = branchStats.spokeStats;
@@ -276,6 +282,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
           </div>
         )}
       </div>
+
+      {/* Branch Scope Indicator */}
+      {branchContext && !branchContext.isAllSelected && (
+        <div className="bg-indigo-50 border border-indigo-200 px-6 py-3 rounded-2xl flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <GitBranch size={16} className="text-indigo-600" />
+            <span className="text-xs font-bold text-indigo-700">
+              Viewing {branchContext.activeBranchSlugs.length} of {branchContext.allBranches.length} branches
+            </span>
+          </div>
+          <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">
+            {scopedProfiles.length} scoped profiles
+          </span>
+        </div>
+      )}
 
       {/* Stats Bar */}
       {isLoading ? (

@@ -258,7 +258,7 @@ const AppContent: React.FC = () => {
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} />;
-      case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} />;
       case 'knowledge-base': return <KnowledgeBase />;
       case 'help-center': return <HelpCenter />;

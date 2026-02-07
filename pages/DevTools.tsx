@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { SQL_SCHEMA, WEBHOOK_SPECS, MOCK_SPOKE_CONFIGS, MOCK_FAILED_SYNCS, SITES_LIST, N8N_BLUEPRINTS } from '../constants';
+import { SQL_SCHEMA, WEBHOOK_SPECS, MOCK_SPOKE_CONFIGS, MOCK_FAILED_SYNCS, N8N_BLUEPRINTS } from '../constants';
 import { QueuedTask, Profile, BranchContext } from '../types';
 import { 
   Terminal, Database, CheckSquare, ExternalLink, Activity, 
@@ -19,7 +19,7 @@ interface DevToolsProps {
   branchContext?: BranchContext;
 }
 
-const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
+const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext }) => {
   const [activeTab, setActiveTab] = useState<'sim' | 'worker' | 'hygiene' | 'dlq' | 'sql' | 'n8n'>('sim');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   
@@ -232,7 +232,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {
                         <div className="space-y-3">
                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Simulate Ingest</label>
                             <div className="grid grid-cols-1 gap-2">
-                                {SITES_LIST.slice(0, 2).map(site => (
+                                {(branchContext?.allBranches.map(b => b.slug) || ['farm.sproutify.app', 'school.sproutify.app']).slice(0, 2).map(site => (
                                     <button 
                                         key={site} 
                                         onClick={() => simulateIngest(site)}

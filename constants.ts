@@ -9,15 +9,6 @@ export const DEFAULT_BRAND: Brand = {
   primaryColor: '#059669',
 };
 
-/** @deprecated Use branchContext.allBranches instead. This will be removed. */
-export const SITES_LIST = [
-  'farm.sproutify.app',
-  'school.sproutify.app',
-  'micro.sproutify.app',
-  'letsrejoice.app',
-  'atlurbanfarms.com'
-];
-
 export const MOCK_INTEGRATIONS: Integration[] = [
   {
     id: 'int_1',

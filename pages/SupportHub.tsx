@@ -25,7 +25,7 @@ const SITE_ICONS: Record<string, any> = {
   'letsrejoice.app': Heart,
 };
 
-const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles }) => {
+const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, branchContext }) => {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(tickets[0]?.id || null);
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | 'all'>('all');

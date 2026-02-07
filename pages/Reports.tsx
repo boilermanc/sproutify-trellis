@@ -19,7 +19,7 @@ interface SageMessage {
   content: string;
 }
 
-const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats }) => {
+const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext }) => {
   const [sageQuery, setSageQuery] = useState('');
   const [sageResponse, setSageResponse] = useState<string | null>(null);
   const [sageLoading, setSageLoading] = useState(false);
