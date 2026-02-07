@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { SpokeConnection, EnrichedProfile, BranchStatsResult } from '../types';
+import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
@@ -11,6 +11,7 @@ import {
 interface ReportsProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
+  branchContext?: BranchContext;
 }
 
 interface SageMessage {

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Ticket, Profile, TicketPriority, Sentiment } from '../types';
+import { Ticket, Profile, TicketPriority, Sentiment, BranchContext } from '../types';
 import CustomerSitesTag from '../components/CustomerSitesTag';
 import { sanitizePII } from '../services/aiService';
 import { 
@@ -14,6 +14,7 @@ interface SupportHubProps {
   tickets: Ticket[];
   setTickets: React.Dispatch<React.SetStateAction<Ticket[]>>;
   profiles: Profile[];
+  branchContext?: BranchContext;
 }
 
 const SITE_ICONS: Record<string, any> = {

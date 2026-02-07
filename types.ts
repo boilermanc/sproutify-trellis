@@ -34,6 +34,23 @@ export interface Brand {
   logoUrl?: string;
 }
 
+export interface BranchInfo {
+  id: string;
+  name: string;
+  slug: string;
+  type: 'internal' | 'external';
+  is_active: boolean;
+  primary_color: string;
+  logo_url?: string;
+}
+
+export interface BranchContext {
+  allBranches: BranchInfo[];
+  activeBranchSlugs: string[];
+  setActiveBranchSlugs: (slugs: string[]) => void;
+  isAllSelected: boolean;
+}
+
 export interface Integration {
   id: string;
   name: string;

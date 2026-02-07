@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, SpokeConnection } from '../types';
+import { Profile, SpokeConnection, BranchContext } from '../types';
 import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
 import { loadNameCache } from '../demographicsService';
 import { timeAgo, formatBranchName } from '../utils';
@@ -29,6 +29,7 @@ interface CampaignBuilderProps {
   onCampaignLaunch: (campaign: { name: string, audienceSize: number, segments: string[] }) => void;
   profiles: Profile[];
   spokeConnections?: SpokeConnection[];
+  branchContext?: BranchContext;
 }
 
 const STEPS = [

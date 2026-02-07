@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { DraftPost, SocialActivity, Profile, MarketingEvent } from '../types';
+import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext } from '../types';
 import { SITES_LIST } from '../constants';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
@@ -13,6 +13,7 @@ import {
 interface SocialHubProps {
   profiles: Profile[];
   setEvents: React.Dispatch<React.SetStateAction<MarketingEvent[]>>;
+  branchContext?: BranchContext;
 }
 
 const MOCK_INTENTS: SocialActivity[] = [

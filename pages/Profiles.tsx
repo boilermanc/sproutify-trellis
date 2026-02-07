@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile, BranchStatsResult } from '../types';
+import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext } from '../types';
 import { fetchBranches } from '../lib/supabaseService';
 import {
   Search, Tag, MoreHorizontal, X, Edit3,
@@ -18,6 +18,7 @@ interface ProfilesProps {
   events: MarketingEvent[];
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
+  branchContext?: BranchContext;
 }
 
 const SITE_ICONS: Record<string, any> = {

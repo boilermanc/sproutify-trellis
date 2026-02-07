@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import UnifiedOnboarding from '../components/UnifiedOnboarding';
-import { Profile } from '../types';
+import { Profile, BranchContext } from '../types';
 import {
   Smartphone, Mail, Monitor, Palette,
   Globe, Zap, Info, AlertCircle
@@ -17,6 +17,7 @@ interface EmailPreviewerProps {
   initialEmail?: string | null;
   // Added profiles prop to match App.tsx usage and provide dynamic data
   profiles: Profile[];
+  branchContext?: BranchContext;
 }
 
 // Updated component to accept profiles prop - data comes live from spokes

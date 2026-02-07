@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, SpokeConnection, BranchStatsResult } from '../types';
+import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, SpokeConnection, BranchStatsResult, BranchContext } from '../types';
 import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
 import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
@@ -32,6 +32,7 @@ interface DashboardProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
   branches: Branch[];
+  branchContext?: BranchContext;
 }
 
 /** Classify how fresh a timestamp is */

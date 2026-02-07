@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { SQL_SCHEMA, WEBHOOK_SPECS, MOCK_SPOKE_CONFIGS, MOCK_FAILED_SYNCS, SITES_LIST, N8N_BLUEPRINTS } from '../constants';
-import { QueuedTask, Profile } from '../types';
+import { QueuedTask, Profile, BranchContext } from '../types';
 import { 
   Terminal, Database, CheckSquare, ExternalLink, Activity, 
   Globe, Shield, Code2, Zap, Lock, FileJson, Copy, 
@@ -16,6 +16,7 @@ import {
 
 interface DevToolsProps {
   profiles: Profile[];
+  branchContext?: BranchContext;
 }
 
 const DevTools: React.FC<DevToolsProps> = ({ profiles }) => {

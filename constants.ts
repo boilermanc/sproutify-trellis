@@ -9,6 +9,7 @@ export const DEFAULT_BRAND: Brand = {
   primaryColor: '#059669',
 };
 
+/** @deprecated Use branchContext.allBranches instead. This will be removed. */
 export const SITES_LIST = [
   'farm.sproutify.app',
   'school.sproutify.app',

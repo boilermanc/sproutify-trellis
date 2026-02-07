@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection, Branch } from '../types';
+import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection, Branch, BranchContext } from '../types';
 import {
   Key, Globe, Save, RefreshCw,
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
@@ -16,6 +16,7 @@ interface SettingsProps {
   spokeConnections: SpokeConnection[];
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branches: Branch[];
+  branchContext?: BranchContext;
 }
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
