@@ -4,7 +4,7 @@ import { loadNameCache, predictDemographicsSync } from './demographicsService';
 
 // Cache spoke clients by URL to avoid duplicate GoTrueClient instances
 const spokeClientCache = new Map<string, SupabaseClient>();
-function getSpokeClient(url: string, key: string): SupabaseClient {
+export function getSpokeClient(url: string, key: string): SupabaseClient {
   const cacheKey = `${url}:${key}`;
   let client = spokeClientCache.get(cacheKey);
   if (!client) {

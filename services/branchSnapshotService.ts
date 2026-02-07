@@ -1,5 +1,6 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as hubClient } from '../lib/supabase';
+import { getSpokeClient } from '../spokeConnector';
 import { predictGenderSync, loadNameCache } from '../demographicsService';
 
 // ---------------------------------------------------------------------------
@@ -38,7 +39,7 @@ export async function generateSnapshot(
   connection: ConnectionInput,
   source: 'manual' | 'on_connect' = 'on_connect',
 ): Promise<BranchSnapshot> {
-  const spoke = createClient(connection.supabase_url, connection.supabase_key);
+  const spoke = getSpokeClient(connection.supabase_url, connection.supabase_key);
 
   // ---- Customers / Profiles ------------------------------------------------
   let totalProfiles = 0;
@@ -77,19 +78,29 @@ export async function generateSnapshot(
     }
 
     // Active subscribers — try is_subscribed first, fall back to newsletter_opt_in
-    const { count: subCount } = await spoke
-      .from(table)
-      .select('*', { count: 'exact', head: true })
-      .eq('is_subscribed', true);
-
-    if (subCount !== null && subCount > 0) {
-      activeSubscribers = subCount;
-    } else {
-      const { count: optInCount } = await spoke
+    // Wrap each probe in try/catch since the column may not exist (400 from PostgREST)
+    try {
+      const { count: subCount, error: subErr } = await spoke
         .from(table)
         .select('*', { count: 'exact', head: true })
-        .eq('newsletter_opt_in', true);
-      activeSubscribers = optInCount ?? 0;
+        .eq('is_subscribed', true);
+
+      if (!subErr && subCount !== null && subCount > 0) {
+        activeSubscribers = subCount;
+      }
+    } catch { /* column doesn't exist */ }
+
+    if (activeSubscribers === 0) {
+      try {
+        const { count: optInCount, error: optErr } = await spoke
+          .from(table)
+          .select('*', { count: 'exact', head: true })
+          .eq('newsletter_opt_in', true);
+
+        if (!optErr && optInCount !== null) {
+          activeSubscribers = optInCount;
+        }
+      } catch { /* column doesn't exist */ }
     }
   }
 

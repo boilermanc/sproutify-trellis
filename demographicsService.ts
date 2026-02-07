@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Types
 export type PredictedGender = 'male' | 'female' | 'unknown';
@@ -38,21 +38,27 @@ let cacheLoadPromise: Promise<void> | null = null;
 
 /**
  * Initialize the Supabase client for the Trellis Hub
- * Uses the hub connection from localStorage or falls back to env
+ * Uses the hub connection from localStorage or falls back to env.
+ * Cached as a singleton to avoid multiple GoTrueClient instances.
  */
+let _hubClient: SupabaseClient | null = null;
 const getHubClient = () => {
+  if (_hubClient) return _hubClient;
+
   // Try to get hub connection from localStorage
   const hubConnection = localStorage.getItem('trellis_hub_connection');
   if (hubConnection) {
     const { url, anon_key } = JSON.parse(hubConnection);
-    return createClient(url, anon_key);
+    _hubClient = createClient(url, anon_key);
+    return _hubClient;
   }
 
   // Fallback to environment variables
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (url && key) {
-    return createClient(url, key);
+    _hubClient = createClient(url, key);
+    return _hubClient;
   }
 
   return null;
