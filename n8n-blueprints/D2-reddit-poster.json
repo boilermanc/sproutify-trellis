@@ -1,0 +1,145 @@
+{
+  "name": "Trellis: Reddit Comment Poster",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reddit-post-comment",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Post Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.reddit.com/api/v1/access_token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent", "value": "Trellis/1.0 by YOUR_REDDIT_USERNAME" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "grant_type", "value": "password" },
+            { "name": "username", "value": "YOUR_REDDIT_USERNAME" },
+            { "name": "password", "value": "YOUR_REDDIT_PASSWORD" }
+          ]
+        },
+        "options": {
+          "auth": {
+            "method": "basicAuth",
+            "user": "YOUR_REDDIT_APP_CLIENT_ID",
+            "password": "YOUR_REDDIT_APP_SECRET"
+          }
+        }
+      },
+      "name": "Reddit Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://oauth.reddit.com/api/comment",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" },
+            { "name": "User-Agent", "value": "Trellis/1.0 by YOUR_REDDIT_USERNAME" },
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "parent", "value": "={{ $node['Post Webhook'].json.parent_fullname }}" },
+            { "name": "text", "value": "={{ $node['Post Webhook'].json.approved_text }}" },
+            { "name": "api_type", "value": "json" }
+          ]
+        }
+      },
+      "name": "Post Comment to Reddit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "check_success",
+              "leftValue": "={{ $json.json?.data?.things?.[0]?.data?.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "isNotEmpty" }
+            }
+          ]
+        }
+      },
+      "name": "Post Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, comment_id: $json.json.data.things[0].data.id, comment_fullname: $json.json.data.things[0].data.name, permalink: $json.json.data.things[0].data.permalink, subreddit: $node['Post Webhook'].json.subreddit }) }}"
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.json?.errors?.[0] || 'Unknown error posting to Reddit', rate_limit_remaining: $json.headers?.['x-ratelimit-remaining'], subreddit: $node['Post Webhook'].json.subreddit }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Reddit Comment Poster\n\n**Workflow 2 of 2** — Receives human-approved comment data via webhook from the Trellis Reddit Growth page, authenticates with Reddit, posts the comment, and returns the result.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/reddit-post-comment`\n\n**Expected POST body:**\n```json\n{\n  \"parent_fullname\": \"t1_abc123\",\n  \"approved_text\": \"Your helpful, human-reviewed response...\",\n  \"subreddit\": \"UrbanGardening\",\n  \"comment_url\": \"https://reddit.com/r/UrbanGardening/comments/abc123/thread/c1\"\n}\n```\n\n**Success response:**\n```json\n{\n  \"success\": true,\n  \"comment_id\": \"xyz789\",\n  \"comment_fullname\": \"t1_xyz789\",\n  \"permalink\": \"/r/UrbanGardening/comments/abc123/thread/xyz789\"\n}\n```\n\n---\n\n### SETUP REQUIRED\n\n**Reddit Auth node:**\n- Same credentials as D1 (Reddit Growth Scanner)\n- Replace `YOUR_REDDIT_APP_CLIENT_ID`, `YOUR_REDDIT_APP_SECRET`\n- Replace `YOUR_REDDIT_USERNAME`, `YOUR_REDDIT_PASSWORD`\n- Replace `YOUR_REDDIT_USERNAME` in all User-Agent headers\n\n**Reddit API requires the `submit` scope** — your app must have it.\n\n---\n\n### SAFETY\n\n- This workflow **ONLY fires** when a human clicks \"Post to Reddit\" in the Trellis UI\n- There is no schedule trigger — no auto-posting is possible\n- The Trellis UI enforces human review before any comment reaches this webhook\n- Error responses include rate limit info to help debug 429 (Too Many Requests) errors\n\n---\n\n### PARENT FULLNAME FORMAT\n\n- `t1_` prefix = replying to a **comment** (e.g. `t1_abc123`)\n- `t3_` prefix = replying to a **post** (e.g. `t3_xyz789`)\n- The Trellis Scanner workflow stores the correct fullname automatically",
+        "width": 520,
+        "height": 820
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -380]
+    }
+  ],
+  "connections": {
+    "Post Webhook": {
+      "main": [[{ "node": "Reddit Auth", "type": "main", "index": 0 }]]
+    },
+    "Reddit Auth": {
+      "main": [[{ "node": "Post Comment to Reddit", "type": "main", "index": 0 }]]
+    },
+    "Post Comment to Reddit": {
+      "main": [[{ "node": "Post Succeeded?", "type": "main", "index": 0 }]]
+    },
+    "Post Succeeded?": {
+      "main": [
+        [{ "node": "Respond Success", "type": "main", "index": 0 }],
+        [{ "node": "Respond Error", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

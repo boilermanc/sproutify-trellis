@@ -481,6 +481,59 @@ ALTER TABLE content_calendar_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Service Role Only" ON content_calendar_events FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE INDEX IF NOT EXISTS idx_calendar_scheduled ON content_calendar_events (scheduled_for, branch_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_status ON content_calendar_events (status, channel);
+
+-- 10. MARKETING CAMPAIGN GENERATOR: BRAND PROFILES
+CREATE TABLE IF NOT EXISTS marketing_brands (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch_id UUID REFERENCES branches(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  industry TEXT,
+  description TEXT,
+  target_audience TEXT,
+  tone TEXT,
+  value_proposition TEXT,
+  primary_color TEXT DEFAULT '#059669',
+  logo_url TEXT,
+  website_url TEXT,
+  keywords JSONB DEFAULT '[]'::jsonb,
+  competitors JSONB DEFAULT '[]'::jsonb,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_brands_branch ON marketing_brands (branch_id);
+ALTER TABLE marketing_brands ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Full Access" ON marketing_brands FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 11. MARKETING CAMPAIGN GENERATOR: AI GENERATION LOG
+CREATE TABLE IF NOT EXISTS marketing_generations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL,
+  brand_id UUID REFERENCES marketing_brands(id) ON DELETE SET NULL,
+  branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+  generation_type TEXT NOT NULL CHECK (generation_type IN (
+    'positioning', 'lead_magnet_outline', 'lead_magnet_content',
+    'ad_copy', 'email_sequence', 'competitive_analysis'
+  )),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_hash TEXT,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cost_estimate DECIMAL(10, 6),
+  duration_ms INTEGER,
+  status TEXT DEFAULT 'completed' CHECK (status IN ('pending', 'completed', 'failed', 'cached')),
+  output JSONB NOT NULL,
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_gen_campaign ON marketing_generations (campaign_id);
+CREATE INDEX IF NOT EXISTS idx_marketing_gen_type ON marketing_generations (generation_type);
+CREATE INDEX IF NOT EXISTS idx_marketing_gen_created ON marketing_generations (created_at DESC);
+ALTER TABLE marketing_generations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Full Access" ON marketing_generations FOR ALL TO service_role USING (true) WITH CHECK (true);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
@@ -493,7 +546,9 @@ export const WEBHOOK_SPECS = {
   voice: "https://n8n.sproutify.app/webhook/twilio-whisper-sync",
   social_publish: "https://n8n.sproutify.app/webhook/trellis-social-publish",
   social_ingest: "https://n8n.sproutify.app/webhook/social-signal-ingest",
-  sms_dispatch: "https://n8n.sproutify.app/webhook/twilio-sms-dispatch"
+  sms_dispatch: "https://n8n.sproutify.app/webhook/twilio-sms-dispatch",
+  reddit_review_stage: "https://n8n.sproutify.app/webhook/reddit-review-stage",
+  reddit_post_comment: "https://n8n.sproutify.app/webhook/reddit-post-comment"
 };
 
 export const MOCK_BRIEFING: DailyBriefing = {
@@ -743,5 +798,43 @@ export const N8N_BLUEPRINTS = {
     { "name": "Match Profile", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT id FROM profiles WHERE metadata->'social_handles'->>'linkedin' = '{{ $json.username }}' LIMIT 1" }, "position": [1050, 300] },
     { "name": "Ingest Signal", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://n8n.sproutify.app/webhook/social-signal-ingest" }, "position": [1250, 300] }
   ]
+}`,
+  reddit_scanner: `{
+  "name": "Trellis: Reddit Growth Scanner",
+  "description": "Monitors target subreddits on a 3-hour schedule, discovers engagement opportunities, filters bots/mods, generates AI draft replies via Gemini, and stages qualifying drafts for human review",
+  "trigger": "Schedule (every 3 hours)",
+  "file": "n8n-blueprints/D1-reddit-scanner.json",
+  "webhook": "https://n8n.sproutify.app/webhook/reddit-review-stage",
+  "nodes": [
+    { "name": "Every 3 Hours", "type": "n8n-nodes-base.scheduleTrigger" },
+    { "name": "Config: Targets", "type": "n8n-nodes-base.set" },
+    { "name": "Reddit Auth", "type": "n8n-nodes-base.httpRequest" },
+    { "name": "Search Reddit Posts", "type": "n8n-nodes-base.httpRequest" },
+    { "name": "Split Posts", "type": "n8n-nodes-base.splitOut" },
+    { "name": "Fetch Comments", "type": "n8n-nodes-base.httpRequest" },
+    { "name": "Split Comments", "type": "n8n-nodes-base.splitOut" },
+    { "name": "Filter Bots & Short Comments", "type": "n8n-nodes-base.if" },
+    { "name": "AI Draft Response", "type": "n8n-nodes-base.httpRequest" },
+    { "name": "Shape Output", "type": "n8n-nodes-base.set" },
+    { "name": "Relevance Gate", "type": "n8n-nodes-base.if" },
+    { "name": "Stage for Review", "type": "n8n-nodes-base.httpRequest" }
+  ],
+  "setup": ["Reddit OAuth app (script type) — client_id + secret + username + password", "Gemini API key in AI Draft Response node", "Configure target subreddits + keywords in Config: Targets node"]
+}`,
+  reddit_poster: `{
+  "name": "Trellis: Reddit Comment Poster",
+  "description": "Receives human-approved comment data via webhook from Trellis UI, authenticates with Reddit, posts the comment, and returns success/error",
+  "trigger": "Webhook (POST from Trellis 'Post to Reddit' button)",
+  "file": "n8n-blueprints/D2-reddit-poster.json",
+  "webhook": "https://n8n.sproutify.app/webhook/reddit-post-comment",
+  "nodes": [
+    { "name": "Post Webhook", "type": "n8n-nodes-base.webhook" },
+    { "name": "Reddit Auth", "type": "n8n-nodes-base.httpRequest" },
+    { "name": "Post Comment to Reddit", "type": "n8n-nodes-base.httpRequest" },
+    { "name": "Post Succeeded?", "type": "n8n-nodes-base.if" },
+    { "name": "Respond Success", "type": "n8n-nodes-base.respondToWebhook" },
+    { "name": "Respond Error", "type": "n8n-nodes-base.respondToWebhook" }
+  ],
+  "setup": ["Same Reddit OAuth credentials as D1 scanner", "Reddit app must have 'submit' scope"]
 }`,
 };

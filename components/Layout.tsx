@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug
+  ChevronDown, Plug, Wand2, Palette
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -50,6 +50,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },
     { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
     { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },
+    { id: 'marketing-wizard', label: 'Marketing AI', icon: Wand2 },
+    { id: 'marketing-brands', label: 'Brand Profiles', icon: Palette },
     { id: 'automations', label: 'n8n Flows', icon: Workflow },
     { id: 'tasks', label: 'Campaign Tasks', icon: CheckSquare },
     { id: 'email-preview', label: 'Email Previews', icon: Mail },

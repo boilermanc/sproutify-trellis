@@ -20,7 +20,11 @@
       "Bash(npx vite:*)",
       "Bash(grep:*)",
       "Bash(gh pr list:*)",
-      "Bash(where.exe:*)"
+      "Bash(where.exe:*)",
+      "Bash(ls:*)",
+      "Bash(git diff:*)",
+      "Bash(npm ls:*)",
+      "Bash(git check-ignore:*)"
     ]
   }
 }

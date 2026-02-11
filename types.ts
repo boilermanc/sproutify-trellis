@@ -331,7 +331,7 @@ export interface MarketingEvent {
   id: string;
   profile_id: string; 
   event_type: 'purchase' | 'signup' | 'check-in' | 'social_intent' | 'support_ticket' | string;
-  source: 'woo' | 'app' | 'local' | 'instagram' | 'x' | 'linkedin' | 'twilio' | 'email' | string;
+  source: 'woo' | 'app' | 'local' | 'instagram' | 'x' | 'linkedin' | 'reddit' | 'twilio' | 'email' | string;
   payload: Record<string, any>;
   created_at: string;
 }
@@ -355,7 +355,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth';
 
 export interface TrellisReport {
   id: string;
@@ -729,4 +729,117 @@ export interface MergedBranch {
   stats: SpokeStats | null;
 
   linkStatus: 'linked' | 'connection-only' | 'branch-only';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARKETING WIZARD & BRAND ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+export interface MarketingBrand {
+  id: string;
+  branch_id: string;
+  name: string;
+  industry?: string;
+  description?: string;
+  target_audience?: string;
+  tone?: string;
+  value_proposition?: string;
+  primary_color: string;
+  logo_url?: string;
+  website_url?: string;
+  keywords: string[];
+  competitors: string[];
+  metadata: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarketingWizardState {
+  brand_id: string;
+  objective: 'lead_generation' | 'product_launch' | 'awareness';
+  product_description: string;
+  target_segments: string[];
+  positioning?: PositioningResult;
+  lead_magnet?: LeadMagnetResult;
+  ad_copy?: AdCopyBundle;
+  email_sequence?: EmailSequenceResult;
+  wizard_step: number;
+  last_saved_at: string;
+}
+
+export interface PositioningResult {
+  statement: string;
+  differentiators: string[];
+  competitive_analysis: CompetitorAnalysis[];
+  market_gap: string;
+  unique_angle: string;
+}
+
+export interface CompetitorAnalysis {
+  name: string;
+  strengths: string[];
+  weaknesses: string[];
+  positioning: string;
+}
+
+export interface LeadMagnetResult {
+  title: string;
+  subtitle: string;
+  type: 'ebook' | 'checklist' | 'playbook' | 'guide';
+  outline: LeadMagnetChapter[];
+  content_markdown: string;
+}
+
+export interface LeadMagnetChapter {
+  title: string;
+  description: string;
+  key_points: string[];
+}
+
+export interface AdCopyBundle {
+  google_search: AdVariation[];
+  linkedin: AdVariation[];
+  meta: AdVariation[];
+  x: AdVariation[];
+}
+
+export interface AdVariation {
+  headline: string;
+  body: string;
+  cta: string;
+  platform_notes?: string;
+}
+
+export interface EmailSequenceResult {
+  emails: NurtureEmail[];
+  strategy_notes: string;
+}
+
+export interface NurtureEmail {
+  sequence_number: number;
+  delay_days: number;
+  subject: string;
+  preview_text: string;
+  body_markdown: string;
+  cta_text: string;
+  cta_url_placeholder: string;
+}
+
+export interface MarketingGenerationLog {
+  id: string;
+  campaign_id?: string;
+  brand_id?: string;
+  branch_id?: string;
+  generation_type: 'positioning' | 'lead_magnet_outline' | 'lead_magnet_content' | 'ad_copy' | 'email_sequence' | 'competitive_analysis';
+  provider: string;
+  model: string;
+  prompt_hash?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_estimate?: number;
+  duration_ms?: number;
+  status: 'pending' | 'completed' | 'failed' | 'cached';
+  output: Record<string, any>;
+  error?: string;
+  created_at: string;
 }

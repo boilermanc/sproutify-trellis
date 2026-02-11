@@ -1,0 +1,322 @@
+{
+  "name": "Trellis: Reddit Growth Scanner",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 3 }]
+        }
+      },
+      "name": "Every 3 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "subreddits", "value": "UrbanGardening+gardening+Hydroponics" },
+            { "name": "keywords", "value": "container gardening OR soil mix OR hydroponic system OR grow lights OR composting" }
+          ],
+          "number": [
+            { "name": "limit", "value": 25 }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Config: Targets",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.reddit.com/api/v1/access_token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent", "value": "Trellis/1.0 by YOUR_REDDIT_USERNAME" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "grant_type", "value": "password" },
+            { "name": "username", "value": "YOUR_REDDIT_USERNAME" },
+            { "name": "password", "value": "YOUR_REDDIT_PASSWORD" }
+          ]
+        },
+        "options": {
+          "auth": {
+            "method": "basicAuth",
+            "user": "YOUR_REDDIT_APP_CLIENT_ID",
+            "password": "YOUR_REDDIT_APP_SECRET"
+          }
+        }
+      },
+      "name": "Reddit Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://oauth.reddit.com/r/{{ $node['Config: Targets'].json.subreddits }}/search.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "={{ $node['Config: Targets'].json.keywords }}" },
+            { "name": "sort", "value": "new" },
+            { "name": "t", "value": "day" },
+            { "name": "limit", "value": "={{ $node['Config: Targets'].json.limit }}" },
+            { "name": "restrict_sr", "value": "true" },
+            { "name": "type", "value": "link" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" },
+            { "name": "User-Agent", "value": "Trellis/1.0 by YOUR_REDDIT_USERNAME" }
+          ]
+        }
+      },
+      "name": "Search Reddit Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data.children",
+        "options": {}
+      },
+      "name": "Split Posts",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://oauth.reddit.com/r/{{ $json.data.subreddit }}/comments/{{ $json.data.id }}.json?limit=10&sort=new",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $node['Reddit Auth'].json.access_token }}" },
+            { "name": "User-Agent", "value": "Trellis/1.0 by YOUR_REDDIT_USERNAME" }
+          ]
+        },
+        "options": {
+          "batching": { "batch": { "batchSize": 1, "batchInterval": 1200 } }
+        }
+      },
+      "name": "Fetch Comments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "1.data.children",
+        "options": {}
+      },
+      "name": "Split Comments",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1750, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "filter_bots",
+              "leftValue": "={{ $json.data.author }}",
+              "rightValue": "bot",
+              "operator": { "type": "string", "operation": "notContains" }
+            },
+            {
+              "id": "filter_submitter",
+              "leftValue": "={{ $json.data.is_submitter }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            },
+            {
+              "id": "filter_distinguished",
+              "leftValue": "={{ $json.data.distinguished }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "empty" }
+            },
+            {
+              "id": "min_body_length",
+              "leftValue": "={{ $json.data.body.length }}",
+              "rightValue": 40,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Filter Bots & Short Comments",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "key", "value": "YOUR_GEMINI_API_KEY" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a helpful and experienced community member in the r/' + $json.data.subreddit + ' subreddit. You work in the urban farming and gardening space.\\n\\nA user (u/' + $json.data.author + ') posted the following comment in a thread titled \"' + ($node['Split Posts'].json.data?.title || 'Thread') + '\":\\n\"' + $json.data.body.replace(/\"/g, \"'\") + '\"\\n\\nAnalyze this comment. Is this a genuine opportunity to provide helpful, non-promotional advice about gardening, urban farming, hydroponics, or sustainability?\\n\\nIf yes, draft a response that:\\n- Is 2-3 paragraphs max\\n- Is friendly and conversational\\n- Provides specific, actionable information\\n- Does NOT include any links, URLs, or calls to action\\n- Does NOT mention any brand names or products\\n- Sounds natural — like an experienced community member\\n\\nAlso provide a relevance_score from 0-100.\\n\\nIf NOT a good opportunity, set relevance_score to 0 and response to \"SKIP\".\\n\\nReturn JSON only: { \"response\": \"...\", \"relevance_score\": number }' }] }], generationConfig: { responseMimeType: 'application/json' } }) }}",
+        "options": {
+          "batching": { "batch": { "batchSize": 1, "batchInterval": 3000 } }
+        }
+      },
+      "name": "AI Draft Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "post_title", "value": "={{ $node['Split Posts'].json.data?.title }}" },
+            { "name": "post_url", "value": "=https://reddit.com{{ $node['Split Posts'].json.data?.permalink }}" },
+            { "name": "subreddit", "value": "={{ $json.data.subreddit }}" },
+            { "name": "comment_author", "value": "={{ $json.data.author }}" },
+            { "name": "comment_body", "value": "={{ $json.data.body }}" },
+            { "name": "comment_url", "value": "=https://reddit.com{{ $json.data.permalink }}" },
+            { "name": "parent_fullname", "value": "={{ $json.data.name }}" },
+            { "name": "generated_response", "value": "={{ JSON.parse($node['AI Draft Response'].json.candidates[0].content.parts[0].text).response }}" },
+            { "name": "status", "value": "pending_review" }
+          ],
+          "number": [
+            { "name": "relevance_score", "value": "={{ JSON.parse($node['AI Draft Response'].json.candidates[0].content.parts[0].text).relevance_score }}" },
+            { "name": "comment_score", "value": "={{ $json.data.score }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Shape Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [2500, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "min_relevance",
+              "leftValue": "={{ $json.relevance_score }}",
+              "rightValue": 50,
+              "operator": { "type": "number", "operation": "gte" }
+            },
+            {
+              "id": "not_skip",
+              "leftValue": "={{ $json.generated_response }}",
+              "rightValue": "SKIP",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Relevance Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2750, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/reddit-review-stage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ post_title: $json.post_title, post_url: $json.post_url, subreddit: $json.subreddit, comment_author: $json.comment_author, comment_body: $json.comment_body, comment_url: $json.comment_url, parent_fullname: $json.parent_fullname, generated_response: $json.generated_response, relevance_score: $json.relevance_score, comment_score: $json.comment_score, status: $json.status }) }}"
+      },
+      "name": "Stage for Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [3000, 100]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Reddit Growth Scanner\n\n**Workflow 1 of 2** — Monitors target subreddits on a schedule, discovers engagement opportunities, filters out bots/mods, generates AI draft replies via Gemini, and stages qualifying drafts for human review in the Trellis Reddit Growth page.\n\n**Schedule:** Every 3 hours (configurable in trigger node)\n\n**Webhook URL (staging):** `https://n8n.sproutify.app/webhook/reddit-review-stage`\n\n---\n\n### SETUP REQUIRED\n\n**1. Reddit OAuth App (script type):**\n- Go to https://www.reddit.com/prefs/apps\n- Click \"create another app...\" → choose \"script\"\n- Note the **client ID** (under app name) and **secret**\n- In the **Reddit Auth** node, replace:\n  - `YOUR_REDDIT_APP_CLIENT_ID` and `YOUR_REDDIT_APP_SECRET` (Basic Auth)\n  - `YOUR_REDDIT_USERNAME` and `YOUR_REDDIT_PASSWORD` (body params)\n  - `YOUR_REDDIT_USERNAME` in all User-Agent headers\n\n**2. Gemini API Key:**\n- Replace `YOUR_GEMINI_API_KEY` in the **AI Draft Response** node query params\n- Get it from https://aistudio.google.com/apikey\n\n**3. Target Subreddits:**\n- Edit the **Config: Targets** node to set your subreddits (joined by `+`) and keywords (joined by `OR`)\n\n**4. Rate Limits:**\n- Reddit: 60 req/min per OAuth client. Batching is set to 1 req/1.2s for comments, well under limit\n- Gemini: Batched at 1 req/3s to stay within free-tier quotas\n\n**5. Deduplication (optional):**\n- Add a Google Sheets or Supabase lookup before **Fetch Comments** to skip already-processed post IDs\n- Or use n8n's built-in deduplication node if available\n\n---\n\n### SAFETY GUARDRAILS\n\n- **No auto-posting.** This workflow only stages drafts for human review\n- **Relevance Gate** filters out low-quality drafts (score < 50)\n- **Bot filter** skips bot accounts, submitters, and moderators\n- **Min body length** (40 chars) skips trivial comments\n- All responses are non-promotional, no links, no brand mentions",
+        "width": 560,
+        "height": 880
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -400]
+    }
+  ],
+  "connections": {
+    "Every 3 Hours": {
+      "main": [[{ "node": "Config: Targets", "type": "main", "index": 0 }]]
+    },
+    "Config: Targets": {
+      "main": [[{ "node": "Reddit Auth", "type": "main", "index": 0 }]]
+    },
+    "Reddit Auth": {
+      "main": [[{ "node": "Search Reddit Posts", "type": "main", "index": 0 }]]
+    },
+    "Search Reddit Posts": {
+      "main": [[{ "node": "Split Posts", "type": "main", "index": 0 }]]
+    },
+    "Split Posts": {
+      "main": [[{ "node": "Fetch Comments", "type": "main", "index": 0 }]]
+    },
+    "Fetch Comments": {
+      "main": [[{ "node": "Split Comments", "type": "main", "index": 0 }]]
+    },
+    "Split Comments": {
+      "main": [[{ "node": "Filter Bots & Short Comments", "type": "main", "index": 0 }]]
+    },
+    "Filter Bots & Short Comments": {
+      "main": [
+        [{ "node": "AI Draft Response", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "AI Draft Response": {
+      "main": [[{ "node": "Shape Output", "type": "main", "index": 0 }]]
+    },
+    "Shape Output": {
+      "main": [[{ "node": "Relevance Gate", "type": "main", "index": 0 }]]
+    },
+    "Relevance Gate": {
+      "main": [
+        [{ "node": "Stage for Review", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  }
+}

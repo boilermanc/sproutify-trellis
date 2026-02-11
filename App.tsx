@@ -9,6 +9,7 @@ import Automations from './pages/Automations';
 import Tasks from './pages/Tasks';
 import CampaignBuilder from './pages/CampaignBuilder';
 import SocialHub from './pages/SocialHub';
+import RedditGrowth from './pages/RedditGrowth';
 import SupportHub from './pages/SupportHub';
 import KnowledgeBase from './pages/KnowledgeBase';
 import HelpCenter from './pages/HelpCenter';
@@ -21,6 +22,8 @@ import PlatformSetupWizard from './pages/PlatformSetupWizard';
 import Segments from './Segments';
 import CustomerIntelligence from './CustomerIntelligence';
 import BrandIntelligence from './BrandIntelligence';
+import MarketingBrands from './pages/MarketingBrands';
+import MarketingWizard from './pages/MarketingWizard';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -329,11 +332,26 @@ const AppContent: React.FC = () => {
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} />;
+      case 'reddit-growth': return <RedditGrowth setEvents={setEvents} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} />;
       case 'knowledge-base': return <KnowledgeBase />;
       case 'help-center': return <HelpCenter />;
       case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} />;
+      case 'marketing-brands': return (
+        <MarketingBrands
+          branchContext={branchContext}
+          addToast={addToast}
+        />
+      );
+      case 'marketing-wizard': return (
+        <MarketingWizard
+          branchContext={branchContext}
+          profiles={profiles}
+          addToast={addToast}
+          apiKeys={apiKeys}
+        />
+      );
       case 'automations': return <Automations />;
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} branchContext={branchContext} />;
