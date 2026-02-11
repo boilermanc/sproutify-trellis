@@ -1,17 +1,56 @@
 
-import React, { useState, useMemo } from 'react';
-import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext } from '../types';
-import { GoogleGenAI } from '@google/genai';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport, ApiKeyConfig } from '../types';
+import { generateText } from '../services/aiService';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
-  Activity, ShieldCheck, TrendingUp, AlertTriangle, Crown, Zap,
-  ChevronRight, Heart, UserX, PauseCircle, Loader2, Radio
+  Activity, ShieldCheck, AlertTriangle, Crown,
+  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe
 } from 'lucide-react';
+
+// ═══════════════════════════════════════════════════════════════
+// STATIC DATA (outside component to avoid re-creation per render)
+// ═══════════════════════════════════════════════════════════════
+
+const REPORT_BLUEPRINTS: TrellisReport[] = [
+  { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'], status: 'ready' },
+  { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'], status: 'ready' },
+  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Open Rate', 'Click Rate', 'Conversion Rate', 'Audience Reach'], spokes: ['All Spokes'], status: 'ready' },
+  { id: 'rep_4', name: 'Cross-Channel Performance Analysis', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Email Open Rate', 'Social Engagement', 'Cross-Channel Attribution', 'Channel ROI'], spokes: ['All Spokes'], status: 'ready' },
+];
+
+const DEFAULT_KEYS: ApiKeyConfig = {
+  active_llm: 'gemini',
+  gemini_api_key: '',
+  openai_api_key: '',
+  anthropic_api_key: '',
+  n8n_webhooks: { chat: '', workflow: '' },
+  woo_consumer_key: '',
+  woo_consumer_secret: '',
+  resend_token: '',
+  twilio_sid: '',
+  twilio_token: '',
+};
+
+// Extracted outside the component to prevent unmount/remount on every render
+const PercentBar = ({ value, max, color }: { value: number; max: number; color: string }) => {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  return (
+    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+      <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// COMPONENT
+// ═══════════════════════════════════════════════════════════════
 
 interface ReportsProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
   branchContext?: BranchContext;
+  apiKeys?: ApiKeyConfig;
 }
 
 interface SageMessage {
@@ -19,16 +58,76 @@ interface SageMessage {
   content: string;
 }
 
-const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext }) => {
+const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext, apiKeys }) => {
   const [sageQuery, setSageQuery] = useState('');
-  const [sageResponse, setSageResponse] = useState<string | null>(null);
   const [sageLoading, setSageLoading] = useState(false);
   const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);
+  const [auditingReport, setAuditingReport] = useState<string | null>(null);
 
-  // Use shared branchStats data instead of fetching independently
-  const profiles = branchStats.enrichedProfiles;
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat to bottom when new messages arrive or loading changes
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [sageHistory, sageLoading]);
+
+  const activeKeys = apiKeys || DEFAULT_KEYS;
+
+  const handleAiDeepDive = async (report: TrellisReport) => {
+    setAuditingReport(report.id);
+    const isXChannelReport = report.metrics.includes('Cross-Channel Attribution') || report.metrics.includes('Channel ROI');
+
+    const prompt = isXChannelReport
+      ? `Analyze a Cross-Channel Performance Report for Sproutify Trellis.
+Available channels: Email (Resend), Instagram (Meta Graph), X (X API v2), LinkedIn (LinkedIn API), SMS (Twilio).
+Spokes: ${report.spokes.join(', ')}.
+
+Provide a strategic analysis covering:
+1. Per-channel engagement breakdown (email open rate, social impressions, click-through)
+2. Cross-channel attribution patterns (e.g. "Email + Instagram sequence yields 3.2x conversion vs email alone")
+3. Branch-level comparison (which spoke-site combos perform best on which channel)
+4. Optimal timing recommendations based on channel behavior patterns
+5. Two actionable recommendations for improving cross-channel ROI
+
+Format as a concise strategic brief. Use specific percentages and metrics (simulated but realistic).`
+      : `Analyze this marketing report config: ${report.name}. Metrics: ${report.metrics.join(', ')}. Spokes: ${report.spokes.join(', ')}. Suggest 2 strategic optimizations for a multi-site brand. Keep it concise.`;
+
+    try {
+      const response = await generateText(activeKeys, { prompt, maxTokens: 1024, temperature: 0.7 });
+      const text = response.error ? 'Sage Intelligence offline. Check API configuration.' : (response.text || 'Unable to generate analysis.');
+      setSageHistory(prev => [
+        ...prev,
+        { role: 'user', content: `Sage Audit: ${report.name}` },
+        { role: 'sage', content: text },
+      ]);
+    } catch {
+      setSageHistory(prev => [
+        ...prev,
+        { role: 'user', content: `Sage Audit: ${report.name}` },
+        { role: 'sage', content: 'Sage Intelligence offline. Check API configuration.' },
+      ]);
+    } finally {
+      setAuditingReport(null);
+    }
+  };
+
+  // Use shared branchStats data, filtered by active branch context
   const isFederating = branchStats.isLoading;
   const federationError = branchStats.errors.length > 0 ? branchStats.errors.join('; ') : null;
+
+  // Filter enriched profiles by the global branch context picker
+  const profiles = useMemo(() => {
+    const all = branchStats.enrichedProfiles;
+    if (!branchContext || branchContext.isAllSelected) return all;
+
+    // Build a Set of display names for the branches whose slugs are active
+    const activeNames = new Set(
+      branchContext.allBranches
+        .filter(b => branchContext.activeBranchSlugs.includes(b.slug))
+        .map(b => b.name)
+    );
+    return all.filter(p => activeNames.has(p._spoke_name));
+  }, [branchStats.enrichedProfiles, branchContext]);
 
   // ═══════════════════════════════════════════════════════════════
   // CARD 1: Audience Composition
@@ -202,25 +301,19 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
     };
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `You are Sage, the AI marketing strategist for Sproutify Trellis. You analyze customer data to provide actionable marketing insights.
-
-Here is the current customer database summary:
-${JSON.stringify(statsSummary, null, 2)}
-
-The user's question: "${query}"
-
-Provide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
+      const response = await generateText(activeKeys, {
+        systemPrompt: 'You are Sage, the AI marketing strategist for Sproutify Trellis. You analyze customer data to provide actionable marketing insights.',
+        prompt: `Here is the current customer database summary:\n${JSON.stringify(statsSummary, null, 2)}\n\nThe user's question: "${query}"\n\nProvide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
+        maxTokens: 1024,
+        temperature: 0.7,
       });
 
-      const sageText = response.text || "I couldn't generate an insight. Please try again.";
-      setSageResponse(sageText);
+      const sageText = response.error
+        ? "Unable to connect to the Sage Intelligence Core. Please check your API configuration."
+        : (response.text || "I couldn't generate an insight. Please try again.");
       setSageHistory(prev => [...prev, { role: 'sage', content: sageText }]);
     } catch (error) {
       const errorMsg = "Unable to connect to the Sage Intelligence Core. Please check your API configuration.";
-      setSageResponse(errorMsg);
       setSageHistory(prev => [...prev, { role: 'sage', content: errorMsg }]);
     } finally {
       setSageLoading(false);
@@ -232,16 +325,6 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
       e.preventDefault();
       handleSageSubmit();
     }
-  };
-
-  // Helper for percentage bar
-  const PercentBar = ({ value, max, color }: { value: number; max: number; color: string }) => {
-    const pct = max > 0 ? (value / max) * 100 : 0;
-    return (
-      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
-      </div>
-    );
   };
 
   return (
@@ -340,7 +423,7 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
           <div className="space-y-3">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Spoke Distribution</p>
             <div className="space-y-2">
-              {audienceData.topSources.length > 0 ? audienceData.topSources.map(([site, count], i) => (
+              {audienceData.topSources.length > 0 ? audienceData.topSources.map(([site, count]) => (
                 <div key={site} className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-600 truncate max-w-[180px]">{site}</span>
                   <span className="text-xs font-black text-emerald-600">{count}</span>
@@ -528,6 +611,50 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* SYSTEM REPORT BLUEPRINTS */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      <div className="space-y-6">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center">
+            <FileText size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">System Blueprints</p>
+            <p className="text-xs text-slate-500">Pre-built report templates with Sage audit</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {REPORT_BLUEPRINTS.map(report => (
+            <div key={report.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-black text-slate-800">{report.name}</h4>
+                <span className="text-[8px] font-black uppercase px-2 py-1 rounded bg-emerald-100 text-emerald-700">{report.status}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {report.metrics.map(m => (
+                  <span key={m} className="px-2 py-0.5 bg-slate-50 text-slate-500 rounded text-[9px] font-bold">{m}</span>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-1">
+                  <Globe size={12} className="text-slate-400" />
+                  <span className="text-[9px] font-bold text-slate-400">{report.spokes.join(', ')}</span>
+                </div>
+                <button
+                  onClick={() => handleAiDeepDive(report)}
+                  disabled={auditingReport === report.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black hover:bg-emerald-600 transition disabled:opacity-50"
+                >
+                  {auditingReport === report.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  <span>Sage Audit</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
       {/* ASK SAGE — AI Analysis Panel */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl">
@@ -585,6 +712,9 @@ Provide a concise, data-driven answer. Reference specific numbers from the data.
               </div>
             </div>
           )}
+
+          {/* Scroll anchor */}
+          <div ref={chatEndRef} />
         </div>
 
         {/* Input */}

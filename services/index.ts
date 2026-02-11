@@ -45,3 +45,15 @@ export {
 
 // Secrets Service
 export { fetchSecrets, saveSecrets } from './secretsService';
+
+// Social Services
+export {
+  saveCredential,
+  checkConnections,
+  disconnectPlatform,
+  publishToSocial,
+  ingestSocialSignal,
+  fetchSocialSignals,
+  updateSignalStatus,
+  linkProfileToSocial,
+} from './socialService';

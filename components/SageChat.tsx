@@ -7,7 +7,7 @@ import {
   ShieldCheck, Zap, ChevronRight, BarChart3,
   Search, ExternalLink, HelpCircle
 } from 'lucide-react';
-import { ChatMessage, LlmProvider, Brand, Ticket, Profile } from '../types';
+import { ChatMessage, LlmProvider, Brand, Ticket, Profile, ApiKeyConfig } from '../types';
 import { chatWithSage } from '../services/aiService';
 import { MOCK_TICKETS } from '../constants';
 
@@ -15,6 +15,7 @@ interface SageChatProps {
   provider?: LlmProvider;
   brand?: Brand;
   profiles?: Profile[];
+  apiKeys?: ApiKeyConfig;
 }
 
 // Stylized Icon Component with Purple-Pink Gradient Background
@@ -31,7 +32,7 @@ const SageIcon = ({ size = 24, className = "" }: { size?: number, className?: st
   </div>
 );
 
-const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [] }) => {
+const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [], apiKeys }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState('');
@@ -92,9 +93,14 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
       setTimeout(() => setIsMaximized(true), 500);
     }
 
-    const response = await chatWithSage(messages, text, provider as LlmProvider, { 
-      tickets: MOCK_TICKETS, 
-      brandName: brand?.name || 'Trellis' 
+    const activeKeys: ApiKeyConfig = apiKeys || {
+      active_llm: 'gemini', gemini_api_key: '', openai_api_key: '', anthropic_api_key: '',
+      n8n_webhooks: { chat: '', workflow: '' }, slack_webhook: '', resend_token: '',
+      twilio_sid: '', twilio_token: '', woo_consumer_key: '', woo_consumer_secret: '',
+    };
+    const response = await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
+      tickets: MOCK_TICKETS,
+      brandName: brand?.name || 'Trellis'
     });
     
     const sageMsg: ChatMessage = { role: 'sage', content: response, timestamp: new Date().toISOString() };

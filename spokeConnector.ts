@@ -85,7 +85,7 @@ export interface NormalizedSubscription {
 const BATCH_SIZE = 1000; // Supabase default max rows per request
 
 async function fetchAllRows<T>(
-  client: ReturnType<typeof createClient>,
+  client: SupabaseClient,
   tableName: string,
   selectString: string
 ): Promise<{ data: T[]; error: string | null }> {
@@ -315,15 +315,15 @@ export async function fetchSpokeProfiles(
       let errorMessage = `${connection.name}: ${error}`;
 
       // Check for common error patterns and add helpful hints
-      if (error.message.includes('does not exist')) {
+      if (error.includes('does not exist')) {
         errorMessage += ' - check your field mapping or table name';
-      } else if (error.message.includes('permission denied') || error.message.includes('not authorized')) {
+      } else if (error.includes('permission denied') || error.includes('not authorized')) {
         errorMessage += ' - check your API key permissions';
-      } else if (error.message.includes('relation') && error.message.includes('does not exist')) {
+      } else if (error.includes('relation') && error.includes('does not exist')) {
         errorMessage += ' - table not found, verify the table name';
       }
 
-      console.error(`Error fetching from spoke ${connection.name}:`, error.message);
+      console.error(`Error fetching from spoke ${connection.name}:`, error);
       throw new Error(errorMessage);
     }
 

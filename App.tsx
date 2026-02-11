@@ -17,6 +17,7 @@ import Reports from './pages/Reports';
 import TeamMembers from './pages/TeamMembers';
 import UserProfile from './pages/UserProfile';
 import BranchCommandCenter from './pages/BranchCommandCenter';
+import PlatformSetupWizard from './pages/PlatformSetupWizard';
 import Segments from './Segments';
 import CustomerIntelligence from './CustomerIntelligence';
 import BrandIntelligence from './BrandIntelligence';
@@ -27,8 +28,9 @@ import { getProfileByEmail, fetchAllBranches } from './lib/supabaseService';
 import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
+import { fetchSocialSignals } from './services/socialService';
 import { mapFederatedConsent } from './utils/profileMapper';
-import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch, BranchInfo, BranchContext } from './types';
+import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch, BranchInfo, BranchContext, BranchSocialAccountsMap, SocialActivity, DraftPost, DeployedCampaign } from './types';
 import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 
@@ -105,6 +107,37 @@ const AppContent: React.FC = () => {
   const [spokeConnections, setSpokeConnections] = useState<SpokeConnection[]>(() => {
     const saved = localStorage.getItem('trellis_spoke_connections');
     return saved ? JSON.parse(saved) : [];
+  });
+
+  const [branchSocialAccounts, setBranchSocialAccounts] = useState<BranchSocialAccountsMap>(() => {
+    try {
+      const saved = localStorage.getItem('trellis_branch_social_accounts');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
+  // Social Signals state (Phase 4 — Inbound Social Listening)
+  const [socialSignals, setSocialSignals] = useState<SocialActivity[]>(() => {
+    try {
+      const saved = localStorage.getItem('trellis_social_signals');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Scheduled posts (shared between SocialHub and Calendar)
+  const [scheduledPosts, setScheduledPosts] = useState<DraftPost[]>(() => {
+    try {
+      const stored = localStorage.getItem('trellis_social_pipeline');
+      return stored ? JSON.parse(stored).scheduled || [] : [];
+    } catch { return []; }
+  });
+
+  // Deployed campaigns (fed from CampaignBuilder, read by SocialHub calendar)
+  const [deployedCampaigns, setDeployedCampaigns] = useState<DeployedCampaign[]>(() => {
+    try {
+      const saved = localStorage.getItem('trellis_deployed_campaigns');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
 
   // Shared branch stats hook — single source of truth for all federated data
@@ -209,6 +242,27 @@ const AppContent: React.FC = () => {
     fetchSecrets(SPROUTIFY_ORG_ID).then(setApiKeys);
   }, []);
 
+  // Poll for social signals (fails silently if Supabase table doesn't exist yet)
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const signals = await fetchSocialSignals({ status: ['new', 'reviewed'] });
+        if (signals.length > 0) {
+          setSocialSignals(prev => {
+            const map = new Map<string, SocialActivity>(prev.map(s => [s.id, s]));
+            signals.forEach(s => map.set(s.id, s));
+            return Array.from(map.values()).sort((a, b) =>
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+          });
+        }
+      } catch { /* fail silently */ }
+    };
+    poll();
+    const interval = setInterval(poll, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Derive currentUser from Supabase auth user + profile
   const currentUser: User = {
     id: user?.id || 'u_1',
@@ -229,6 +283,14 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('trellis_spoke_connections', JSON.stringify(spokeConnections));
   }, [spokeConnections]);
+
+  useEffect(() => {
+    localStorage.setItem('trellis_branch_social_accounts', JSON.stringify(branchSocialAccounts));
+  }, [branchSocialAccounts]);
+
+  useEffect(() => {
+    localStorage.setItem('trellis_social_signals', JSON.stringify(socialSignals));
+  }, [socialSignals]);
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -265,20 +327,30 @@ const AppContent: React.FC = () => {
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
-      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} />;
-      case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} />;
+      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} />;
+      case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} />;
       case 'knowledge-base': return <KnowledgeBase />;
       case 'help-center': return <HelpCenter />;
-      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} branchContext={branchContext} />;
+      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} />;
       case 'automations': return <Automations />;
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} branchContext={branchContext} />;
       case 'dev-tools': return <DevTools profiles={profiles} branchContext={branchContext} />;
-      case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
+      case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} apiKeys={apiKeys} />;
       case 'team': return <TeamMembers />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
+      case 'platform-wizard': return (
+        <PlatformSetupWizard
+          supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
+          onComplete={(platform, credentials) => {
+            addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} credentials saved successfully.`);
+            setActiveView('social-hub');
+          }}
+          onClose={() => setActiveView('social-hub')}
+        />
+      );
       case 'settings': return (
         <Settings
           apiKeys={apiKeys}
@@ -316,7 +388,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext}>
+    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys}>
       {renderView()}
 
       {/* Global Toast Notification Engine */}

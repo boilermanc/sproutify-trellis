@@ -189,6 +189,7 @@ export interface ProfileOrderStats {
 
 export interface EnrichedProfile extends NormalizedSpokeProfile {
   order_stats?: ProfileOrderStats;
+  metadata?: Record<string, any>;
   _predicted_demographics?: {
     gender: {
       gender: 'male' | 'female' | 'unknown';
@@ -250,7 +251,7 @@ export interface ApiKeyConfig {
 
 export type TicketStatus = 'open' | 'pending' | 'resolved' | 'closed';
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TicketSource = 'email' | 'voice' | 'chat' | 'web' | 'app';
+export type TicketSource = 'email' | 'voice' | 'chat' | 'web' | 'app' | 'instagram' | 'x' | 'linkedin';
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'frustrated';
 
 export interface Ticket {
@@ -354,7 +355,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard';
 
 export interface TrellisReport {
   id: string;
@@ -372,28 +373,162 @@ export type EmailModule = 'hero' | 'intro' | 'events' | 'products' | 'app_promo'
 export interface FooterConfig {
   style: 'minimal' | 'corporate' | 'social' | 'marketing';
   showSocial: boolean;
-  platforms: ('instagram' | 'twitter' | 'facebook' | 'tiktok')[];
+  platforms: ('instagram' | 'x' | 'facebook' | 'tiktok')[];
   address: string;
   legalDisclaimer: string;
 }
 
 export interface DraftPost {
   id: string;
+  branch_id?: string;
   base_content: string;
   versions: Record<string, string>;
-  status: 'drafting' | 'scheduled' | 'archived';
+  status: 'drafting' | 'approved' | 'scheduled' | 'published' | 'archived';
   created_at: string;
   scheduled_for?: string;
+  published_at?: string;
+  publish_results?: PlatformPublishResult[];
+  approval_status?: ApprovalStatus;
+  approval_note?: string;
+  approved_by?: string;
+  compliance_score?: number;
 }
+
+export type SignalStatus = 'new' | 'reviewed' | 'actioned' | 'dismissed';
+export type IntentType = 'buying_intent' | 'support_request' | 'brand_mention' | 'engagement' | 'complaint' | 'partnership' | 'spam';
 
 export interface SocialActivity {
   id: string;
-  platform: 'instagram' | 'x' | 'linkedin';
+  platform: SocialPlatform;
   username: string;
   content: string;
-  intent_type: string;
+  intent_type: IntentType;
+  confidence: number;
+  branch_id?: string;
+  matched_profile_id?: string;
   profile_matched: boolean;
+  source_post_id?: string;
+  source_post_url?: string;
+  status: SignalStatus;
   created_at: string;
+  actioned_at?: string;
+}
+
+// Profile.metadata.social_handles convention:
+// { instagram: 'garden_guru_99', x: 'gardenguruX', linkedin: 'jane-gardener-123' }
+
+// ═══════════════════════════════════════════════════════════════
+// SOCIAL DISTRIBUTION ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+export type SocialPlatform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube';
+
+export interface SocialAccount {
+  platform: SocialPlatform;
+  handle: string;
+  profile_url?: string;
+  is_connected: boolean;
+}
+
+/** localStorage sidecar shape: branchId → social accounts */
+export type BranchSocialAccountsMap = Record<string, SocialAccount[]>;
+
+/** Non-sensitive connection status returned by Supabase RPC */
+export interface SocialConnectionStatus {
+  platform: SocialPlatform;
+  is_connected: boolean;
+  platform_username?: string;
+  connected_at?: string;
+}
+
+/** Per-platform result after a publish attempt */
+export interface PlatformPublishResult {
+  platform: SocialPlatform;
+  success: boolean;
+  post_id?: string;
+  post_url?: string;
+  error?: string;
+}
+
+/** Aggregate result from publishToSocial */
+export interface PublishResult {
+  success: boolean;
+  results: PlatformPublishResult[];
+  error?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CROSS-CHANNEL CAMPAIGN ORCHESTRATION (Phase 5)
+// ═══════════════════════════════════════════════════════════════
+
+export type CampaignChannel = 'email' | 'instagram' | 'x' | 'linkedin' | 'sms';
+
+export interface ChannelContent {
+  channel: CampaignChannel;
+  enabled: boolean;
+  content: string;
+  template?: string;
+  media_urls?: string[];
+  char_limit?: number;
+}
+
+export interface CampaignTimingRule {
+  channel: CampaignChannel;
+  delay_hours: number;
+  condition?: {
+    type: 'no_open' | 'no_click' | 'no_purchase' | 'always';
+    reference_channel: CampaignChannel;
+    window_hours: number;
+  };
+}
+
+export interface ChannelDeployResult {
+  channel: CampaignChannel;
+  status: 'success' | 'failed' | 'skipped' | 'pending';
+  post_id?: string;
+  error?: string;
+  recipients?: number;
+}
+
+export interface DeployedCampaign {
+  id: string;
+  name: string;
+  date: string;
+  reach: number;
+  channels: ChannelDeployResult[];
+}
+
+// === CONTENT CALENDAR & BRAND GOVERNANCE ===
+
+export type ApprovalStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
+
+export interface CalendarEvent {
+  id: string;
+  type: 'social_post' | 'campaign_channel' | 'email_blast';
+  branch_id: string;
+  branch_name: string;
+  branch_color: string;
+  channel: CampaignChannel;
+  title: string;
+  content_preview?: string;
+  scheduled_for: string;
+  status: ApprovalStatus | 'scheduled' | 'published' | 'failed';
+  source: 'social_hub' | 'campaign_builder';
+  source_id: string;
+}
+
+export interface ComplianceCheck {
+  category: 'tone' | 'competitor_mentions' | 'compliance_disclaimers' | 'sensitivity' | 'brand_consistency';
+  status: 'pass' | 'warning' | 'fail';
+  message: string;
+  suggestion?: string;
+}
+
+export interface ComplianceResult {
+  overall_score: number;
+  status: 'approved' | 'warning' | 'blocked';
+  checks: ComplianceCheck[];
+  audited_at: string;
 }
 
 export interface KnowledgeDoc {

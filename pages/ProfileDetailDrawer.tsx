@@ -1,14 +1,28 @@
 import React from 'react';
-import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain } from 'lucide-react';
-import { EnrichedProfile } from '../types';
+import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain, Link2, ExternalLink } from 'lucide-react';
+import { EnrichedProfile, SocialActivity } from '../types';
+import { PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META, getSocialUrl } from '../utils';
 
 interface ProfileDetailDrawerProps {
   profile: EnrichedProfile | null;
   onClose: () => void;
+  socialSignals?: SocialActivity[];
 }
 
-export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profile, onClose }) => {
+export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profile, onClose, socialSignals }) => {
   if (!profile) return null;
+
+  // Check for social handles in metadata (convention: metadata.social_handles)
+  const socialHandles: Record<string, string> = profile.metadata?.social_handles || {};
+  const handleEntries = Object.entries(socialHandles).filter(([_, handle]) => handle);
+
+  // Count signals from this profile's social usernames
+  const signalCountByHandle = (platform: string, username: string): number => {
+    if (!socialSignals) return 0;
+    return socialSignals.filter(s => s.platform === platform && s.username === username).length;
+  };
+
+  const totalLinkedSignals = handleEntries.reduce((sum, [platform, username]) => sum + signalCountByHandle(platform, username), 0);
 
   return (
     <>
@@ -73,6 +87,53 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
               )}
             </div>
           </div>
+
+          {/* Social Presence */}
+          {handleEntries.length > 0 && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-purple-600" />
+                Social Presence
+              </h3>
+              <div className="space-y-2">
+                {handleEntries.map(([platform, handle]) => {
+                  const Icon = PLATFORM_ICONS[platform] || Link2;
+                  const colorClass = PLATFORM_COLORS[platform] || 'text-gray-500';
+                  const profileUrl = getSocialUrl({ platform, handle });
+                  const signalCount = signalCountByHandle(platform, handle);
+
+                  return (
+                    <div key={platform} className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <Icon className={`w-4 h-4 ${colorClass}`} />
+                        <span className="text-sm font-medium text-gray-900">@{handle}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {signalCount > 0 && (
+                          <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                            {signalCount} signal{signalCount !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        <a
+                          href={profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {totalLinkedSignals > 0 && (
+                <p className="text-xs text-gray-500">
+                  Linked from {totalLinkedSignals} social signal{totalLinkedSignals !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Address Info */}
           {(profile.billing_address?.city || profile.shipping_address?.city) && (

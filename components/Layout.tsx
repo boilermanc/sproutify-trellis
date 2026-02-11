@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ViewState, User, Brand, Profile, BranchContext } from '../types';
+import { ViewState, User, Brand, Profile, BranchContext, ApiKeyConfig } from '../types';
 import SageChat from './SageChat';
 import ContextAwareHelp from './ContextAwareHelp';
 import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown
+  ChevronDown, Plug
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -19,9 +19,10 @@ interface LayoutProps {
   profiles?: Profile[];
   onLogout?: () => void;
   branchContext: BranchContext;
+  apiKeys?: ApiKeyConfig;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys }) => {
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const branchPickerRef = useRef<HTMLDivElement>(null);
 
@@ -46,6 +47,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'intelligence', label: 'Intelligence', icon: BarChart3 },
     { id: 'branches', label: 'Branches', icon: GitBranch },
     { id: 'social-hub', label: 'Social Hub', icon: Share2 },
+    { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },
     { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
     { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },
     { id: 'automations', label: 'n8n Flows', icon: Workflow },
@@ -260,7 +262,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
         {/* Global Overlays */}
         <ContextAwareHelp activeView={activeView} />
-        <SageChat brand={brand} profiles={profiles} />
+        <SageChat brand={brand} profiles={profiles} apiKeys={apiKeys} />
       </main>
     </div>
   );

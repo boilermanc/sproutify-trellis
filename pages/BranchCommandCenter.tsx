@@ -4,14 +4,16 @@ import {
   Unplug, PlugZap, Loader2, Settings2, AlertTriangle, AlertCircle,
   Package, Layers, CreditCard, Link2, Unlink, Palette, Type, Mail,
   Building2, ExternalLink, Plus, X, ArrowLeft, Archive, ChevronDown,
-  Crown, Repeat, Activity, Clock, Pause
+  Crown, Repeat, Activity, Clock, Pause, Share2, Trash2,
 } from 'lucide-react';
-import { SpokeConnection, Branch, BrandIdentity, BranchStatsResult, MergedBranch } from '../types';
+import { SpokeConnection, Branch, BrandIdentity, BranchStatsResult, MergedBranch, SocialAccount, SocialPlatform, BranchSocialAccountsMap, SocialConnectionStatus } from '../types';
 import { getSpokeClient } from '../spokeConnector';
 import { fetchAllBranches, createBranch, updateBranch, deleteBranch } from '../lib/supabaseService';
 import { fetchAllBrands } from '../brandRepository';
 import { mergeBranchData, linkConnectionToBranch, unlinkConnectionFromBranch } from '../services/branchLinker';
 import { generateSnapshot, saveSnapshot } from '../services/branchSnapshotService';
+import { checkConnections, disconnectPlatform } from '../services/socialService';
+import { SOCIAL_PLATFORM_META, getSocialUrl, PLATFORM_ICONS, PLATFORM_COLORS } from '../utils';
 
 const FONT_OPTIONS = ['Inter', 'Poppins', 'Roboto', 'System'];
 const TONE_OPTIONS = ['friendly', 'professional', 'playful', 'authoritative'];
@@ -20,9 +22,11 @@ interface BranchCommandCenterProps {
   branchStats: BranchStatsResult;
   spokeConnections: SpokeConnection[];
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
+  branchSocialAccounts?: BranchSocialAccountsMap;
+  onBranchSocialAccountsChange?: (accounts: BranchSocialAccountsMap) => void;
 }
 
-export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange }: BranchCommandCenterProps) {
+export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange, branchSocialAccounts, onBranchSocialAccountsChange }: BranchCommandCenterProps) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [brands, setBrands] = useState<BrandIdentity[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
@@ -34,6 +38,16 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   const [editingBranch, setEditingBranch] = useState<MergedBranch | null>(null);
   const [editedBranch, setEditedBranch] = useState<Partial<Branch>>({});
   const [isSaving, setIsSaving] = useState(false);
+
+  // Social accounts editing state
+  const [editedSocialAccounts, setEditedSocialAccounts] = useState<SocialAccount[]>([]);
+  const [newSocialPlatform, setNewSocialPlatform] = useState<SocialPlatform>('instagram');
+  const [newSocialHandle, setNewSocialHandle] = useState('');
+
+  // Social connection state (Phase 3)
+  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, SocialConnectionStatus[]>>({});
+  const [isCheckingConnection, setIsCheckingConnection] = useState(false);
+  const [disconnectingPlatform, setDisconnectingPlatform] = useState<string | null>(null);
 
   // Create modal state
   const [isCreating, setIsCreating] = useState(false);
@@ -71,7 +85,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       setBranches(branchData);
       setBrands(brandData);
     } catch (err) {
-      console.error('Failed to load branch data:', err);
+      // Branch data load failed — graceful degradation
     } finally {
       setIsLoadingBranches(false);
     }
@@ -200,6 +214,30 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     }
   };
 
+  // Helper: update is_connected flags from real credential data
+  const updateAccountConnectionFlags = (accounts: SocialAccount[], statuses: SocialConnectionStatus[]): SocialAccount[] => {
+    return accounts.map(acc => {
+      const match = statuses.find(s => s.platform === acc.platform);
+      return { ...acc, is_connected: match?.is_connected || false };
+    });
+  };
+
+  // Fetch real connection statuses for a branch
+  const fetchConnectionStatuses = async (branchId: string) => {
+    setIsCheckingConnection(true);
+    try {
+      const result = await checkConnections(branchId);
+      if (result.success) {
+        setConnectionStatuses(prev => ({ ...prev, [branchId]: result.connections }));
+        setEditedSocialAccounts(prev => updateAccountConnectionFlags(prev, result.connections));
+      }
+    } catch {
+      // Graceful degradation — keep is_connected as-is
+    } finally {
+      setIsCheckingConnection(false);
+    }
+  };
+
   // Edit drawer handlers
   const openEditDrawer = (mb: MergedBranch) => {
     setEditingBranch(mb);
@@ -217,6 +255,23 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
         is_active: true,
       });
     }
+    // Initialize social accounts from sidecar
+    const branchId = mb.branchId;
+    const accounts = branchId && branchSocialAccounts?.[branchId] ? [...branchSocialAccounts[branchId]] : [];
+    setEditedSocialAccounts(accounts);
+    setNewSocialPlatform('instagram');
+    setNewSocialHandle('');
+
+    // Check real connection statuses
+    if (branchId) {
+      if (connectionStatuses[branchId]) {
+        // Use cached statuses
+        setEditedSocialAccounts(updateAccountConnectionFlags(accounts, connectionStatuses[branchId]));
+      } else {
+        // Fetch from Supabase
+        fetchConnectionStatuses(branchId);
+      }
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -224,6 +279,11 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     setIsSaving(true);
     try {
       await updateBranch(editingBranch.branchId, editedBranch);
+      // Save social accounts to localStorage sidecar
+      onBranchSocialAccountsChange?.({
+        ...branchSocialAccounts,
+        [editingBranch.branchId]: editedSocialAccounts,
+      });
       showToast('Branch updated', 'success');
       await loadBranchData();
       setEditingBranch(null);
@@ -270,6 +330,85 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAddSocialAccount = () => {
+    if (!newSocialHandle.trim()) return;
+    const trimmedHandle = newSocialHandle.trim();
+    // Check for duplicate platform+handle
+    const isDuplicate = editedSocialAccounts.some(
+      acc => acc.platform === newSocialPlatform && acc.handle.toLowerCase() === trimmedHandle.toLowerCase()
+    );
+    if (isDuplicate) {
+      showToast(`${SOCIAL_PLATFORM_META[newSocialPlatform]?.label || newSocialPlatform} account "${trimmedHandle}" already exists`, 'error');
+      return;
+    }
+    const newAccount: SocialAccount = {
+      platform: newSocialPlatform,
+      handle: trimmedHandle,
+      profile_url: getSocialUrl({ platform: newSocialPlatform, handle: trimmedHandle }),
+      is_connected: false,
+    };
+    setEditedSocialAccounts(prev => [...prev, newAccount]);
+    setNewSocialHandle('');
+    setNewSocialPlatform('instagram');
+  };
+
+  const handleRemoveSocialAccount = (index: number) => {
+    setEditedSocialAccounts(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateSocialHandle = (index: number, handle: string) => {
+    setEditedSocialAccounts(prev => prev.map((acc, i) => i === index ? { ...acc, handle, profile_url: getSocialUrl({ platform: acc.platform, handle }) } : acc));
+  };
+
+  // Phase 3: Connect platform (opens OAuth popup)
+  const handleConnectPlatform = (platform: SocialPlatform) => {
+    if (!editingBranch?.branchId) return;
+    const branchId = editingBranch.branchId;
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    // CSRF protection: generate random state nonce and verify on return
+    const oauthState = crypto.randomUUID();
+    sessionStorage.setItem('oauth_state', oauthState);
+    const oauthUrl = `${supabaseUrl}/functions/v1/social-oauth?branch_id=${encodeURIComponent(branchId)}&platform=${encodeURIComponent(platform)}&state=${encodeURIComponent(oauthState)}`;
+    const popup = window.open(oauthUrl, `connect_${platform}`, 'width=600,height=700');
+
+    // Poll for popup close, then recheck connections
+    const interval = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(interval);
+        sessionStorage.removeItem('oauth_state');
+        fetchConnectionStatuses(branchId);
+      }
+    }, 1000);
+  };
+
+  // Phase 3: Disconnect platform (deletes credential via RPC)
+  const handleDisconnectSocialPlatform = async (platform: SocialPlatform) => {
+    if (!editingBranch?.branchId) return;
+    const label = SOCIAL_PLATFORM_META[platform]?.label || platform;
+    if (!confirm(`Disconnect ${label}? This will revoke API access.`)) return;
+
+    setDisconnectingPlatform(platform);
+    const result = await disconnectPlatform(editingBranch.branchId, platform);
+    if (result.success) {
+      // Update cached statuses
+      setConnectionStatuses(prev => {
+        const updated = { ...prev };
+        if (updated[editingBranch.branchId!]) {
+          updated[editingBranch.branchId!] = updated[editingBranch.branchId!].filter(s => s.platform !== platform);
+        }
+        return updated;
+      });
+      // Update local account flags
+      setEditedSocialAccounts(prev =>
+        prev.map(acc => acc.platform === platform ? { ...acc, is_connected: false } : acc)
+      );
+      showToast(`${label} disconnected`, 'success');
+    } else {
+      showToast(result.error || 'Failed to disconnect', 'error');
+    }
+    setDisconnectingPlatform(null);
   };
 
   const formatTimestamp = (ts?: string) => {
@@ -405,6 +544,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           const testing = conn ? isTesting[conn.id] : false;
           const reconnectError = conn ? reconnectErrors[conn.id] : undefined;
           const cardKey = mb.spokeConnectionId || mb.branchId || mb.name;
+          const socialAccounts = mb.branchId && branchSocialAccounts?.[mb.branchId] ? branchSocialAccounts[mb.branchId] : [];
 
           return (
             <div key={cardKey} className="bg-white rounded-2xl border border-slate-200 shadow-sm">
@@ -452,6 +592,24 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   )}
                 </div>
               </div>
+
+              {/* Social accounts badges on card */}
+              {socialAccounts.length > 0 && (
+                <div className="px-5 pt-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {socialAccounts.map((acc) => {
+                      const Icon = PLATFORM_ICONS[acc.platform] || Globe;
+                      return (
+                        <span key={`${acc.platform}-${acc.handle}`} className="inline-flex items-center gap-1 text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                          <Icon className={`w-3 h-3 ${PLATFORM_COLORS[acc.platform] || 'text-slate-500'}`} />
+                          {acc.handle}
+                          {acc.is_connected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5" />}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Connection section */}
               {conn && (isActive || isError) && (
@@ -883,6 +1041,111 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                       placeholder="reply@example.com" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
                 </div>
+              </div>
+
+              {/* Social Accounts */}
+              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+                  <Share2 className="w-4 h-4" /> Social Accounts
+                </h3>
+
+                {/* Connection check loading */}
+                {isCheckingConnection && (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Checking connections...
+                  </div>
+                )}
+
+                {/* Existing accounts */}
+                {editedSocialAccounts.length > 0 && (
+                  <div className="space-y-3 mb-4">
+                    {editedSocialAccounts.map((acc, idx) => {
+                      const Icon = PLATFORM_ICONS[acc.platform] || Globe;
+                      return (
+                        <div key={`${acc.platform}-${acc.handle}`} className="flex items-center gap-2">
+                          <div className={`p-2 rounded-lg bg-white border border-slate-200 ${PLATFORM_COLORS[acc.platform] || 'text-slate-500'}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <input
+                            type="text"
+                            value={acc.handle}
+                            onChange={(e) => handleUpdateSocialHandle(idx, e.target.value)}
+                            className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500"
+                          />
+                          {/* Connection status button */}
+                          {acc.is_connected ? (
+                            <button
+                              onClick={() => handleDisconnectSocialPlatform(acc.platform)}
+                              disabled={disconnectingPlatform === acc.platform}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black uppercase tracking-wider hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
+                              title="Click to disconnect"
+                            >
+                              {disconnectingPlatform === acc.platform ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <PlugZap className="w-3 h-3" />
+                              )}
+                              Connected
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleConnectPlatform(acc.platform)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors"
+                              title="Connect via OAuth"
+                            >
+                              <Unplug className="w-3 h-3" />
+                              Connect
+                            </button>
+                          )}
+                          {acc.profile_url && (
+                            <a href={acc.profile_url} target="_blank" rel="noopener noreferrer"
+                              className="p-2 text-slate-400 hover:text-emerald-600 transition-colors">
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
+                          <button onClick={() => handleRemoveSocialAccount(idx)}
+                            className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add new account */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newSocialPlatform}
+                    onChange={(e) => setNewSocialPlatform(e.target.value as SocialPlatform)}
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500"
+                  >
+                    {Object.entries(SOCIAL_PLATFORM_META).map(([key, meta]) => (
+                      <option key={key} value={key}>{meta.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={newSocialHandle}
+                    onChange={(e) => setNewSocialHandle(e.target.value)}
+                    placeholder="@handle"
+                    className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-bold text-sm focus:outline-none focus:border-emerald-500"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddSocialAccount(); }}
+                  />
+                  <button
+                    onClick={handleAddSocialAccount}
+                    disabled={!newSocialHandle.trim()}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm transition-colors disabled:opacity-30 flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add
+                  </button>
+                </div>
+
+                {editedSocialAccounts.length === 0 && (
+                  <p className="text-xs text-slate-400 mt-3">No social accounts configured. Add handles for Instagram, X, LinkedIn, and more.</p>
+                )}
               </div>
 
               {/* Footer Actions */}

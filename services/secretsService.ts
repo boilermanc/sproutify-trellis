@@ -23,7 +23,7 @@ export async function fetchSecrets(organizationId: string): Promise<ApiKeyConfig
     .single();
 
   if (error) {
-    console.warn('No secrets found, returning defaults:', error.message);
+    console.warn('No secrets found, returning defaults');
     return DEFAULT_SECRETS;
   }
 
@@ -59,7 +59,7 @@ export async function saveSecrets(organizationId: string, secrets: ApiKeyConfig)
     }, { onConflict: 'organization_id' });
 
   if (error) {
-    console.error('Failed to save secrets:', error.message);
+    console.error('Failed to save secrets');
     return false;
   }
   return true;
