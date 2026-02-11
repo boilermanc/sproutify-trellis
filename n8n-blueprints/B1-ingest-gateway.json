@@ -1,0 +1,54 @@
+{
+  "name": "Trellis: Atomic Identity Ingest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-ingest-gateway",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Webhook Ingest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/upsert_profile",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_email: $json.email, p_first_name: $json.first_name, p_branches: $json.branches }) }}"
+      },
+      "name": "Upsert Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Atomic Identity Ingest\n\n**What it does:** Receives profile data via webhook and upserts into the Hub Supabase `profiles` table. New branches are APPENDED (not replaced) via the `upsert_profile` RPC.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-ingest-gateway`\n\n**Expected POST body:**\n```json\n{ \"email\": \"user@example.com\", \"first_name\": \"Jane\", \"branches\": [\"atl-urban-farms\"] }\n```\n\n---\n\n### SETUP REQUIRED\n\n**Upsert Profile node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in BOTH the `apikey` and `Authorization` headers\n- Get the key from: Supabase Dashboard → Settings → API → service_role (secret)\n\n**Prerequisite SQL (run in Hub Supabase SQL Editor):**\n```sql\nCREATE OR REPLACE FUNCTION upsert_profile(\n  p_email TEXT,\n  p_first_name TEXT DEFAULT NULL,\n  p_branches TEXT[] DEFAULT '{}'\n) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nBEGIN\n  INSERT INTO profiles (email, first_name, branches)\n  VALUES (p_email, p_first_name, p_branches)\n  ON CONFLICT (email) DO UPDATE SET\n    first_name = COALESCE(NULLIF(p_first_name, ''), profiles.first_name),\n    branches = array(SELECT DISTINCT unnest(profiles.branches || p_branches));\nEND;\n$$;\n```",
+        "width": 480,
+        "height": 580
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -200]
+    }
+  ],
+  "connections": {
+    "Webhook Ingest": {
+      "main": [[{ "node": "Upsert Profile", "type": "main", "index": 0 }]]
+    }
+  }
+}

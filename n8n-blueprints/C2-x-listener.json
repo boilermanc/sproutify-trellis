@@ -1,0 +1,141 @@
+{
+  "name": "Trellis: X Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_active_social_tokens",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"p_platform\": \"x\" }"
+      },
+      "name": "Fetch Tokens",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.twitter.com/2/users/{{ $json.platform_user_id }}/mentions?tweet.fields=author_id,created_at,text&expansions=author_id&user.fields=username&max_results=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" }
+          ]
+        }
+      },
+      "name": "Get Mentions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-goog-api-key", "value": "YOUR_GEMINI_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Classify the intent of this X/Twitter mention. Return JSON: { \"intent\": \"purchase|support|complaint|praise|question|spam\", \"confidence\": 0.0-1.0, \"summary\": \"one line\" }\\n\\nTweet: ' + $json.text }] }] }) }}"
+      },
+      "name": "Classify Intent (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/match_profile_by_social_handle",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_platform: 'x', p_handle: $json.username }) }}"
+      },
+      "name": "Match Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/social-signal-ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ platform: 'x', branch_id: $node['Fetch Tokens'].json.branch_id, author_handle: $json.username, content: $json.text, intent: $json.intent, confidence: $json.confidence, matched_profile_id: $json.profile_id || null, source_url: 'https://x.com/' + $json.username }) }}"
+      },
+      "name": "Ingest Signal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: X (Twitter) Listener\n\n**What it does:** Polls X mentions every 5 minutes via Twitter API v2, classifies intent with Gemini, matches authors to existing profiles, and ingests signals into the Trellis social listening queue.\n\n**Trigger:** Schedule — every 5 minutes\n\n**Flow:** Fetch tokens → Get X mentions → Classify intent (Gemini) → Match profile → Ingest signal\n\n---\n\n### SETUP REQUIRED\n\n**Fetch Tokens node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Uses same `get_active_social_tokens` RPC as Instagram listener\n\n**Get Mentions node:**\n- No setup needed — uses token from Fetch Tokens dynamically\n- Requires X API v2 access (Basic tier minimum)\n\n**Classify Intent node:**\n- Replace `YOUR_GEMINI_API_KEY` in the `x-goog-api-key` header\n\n**Match Profile node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Uses same `match_profile_by_social_handle` RPC as Instagram listener\n\n**BLOCKED UNTIL:** X OAuth tokens are stored via Platform Setup Wizard + social-oauth Edge Function.\n\n**Prerequisite SQL:** Same as Instagram Listener — `get_active_social_tokens` and `match_profile_by_social_handle` RPCs. Only need to create them once.",
+        "width": 520,
+        "height": 580
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -280]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Fetch Tokens", "type": "main", "index": 0 }]]
+    },
+    "Fetch Tokens": {
+      "main": [[{ "node": "Get Mentions", "type": "main", "index": 0 }]]
+    },
+    "Get Mentions": {
+      "main": [[{ "node": "Classify Intent (Gemini)", "type": "main", "index": 0 }]]
+    },
+    "Classify Intent (Gemini)": {
+      "main": [[{ "node": "Match Profile", "type": "main", "index": 0 }]]
+    },
+    "Match Profile": {
+      "main": [[{ "node": "Ingest Signal", "type": "main", "index": 0 }]]
+    }
+  }
+}

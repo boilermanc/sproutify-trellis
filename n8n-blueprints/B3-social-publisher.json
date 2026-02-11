@@ -1,0 +1,112 @@
+{
+  "name": "Trellis: Social Publisher Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-social-publish",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Publish Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential_for_publish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_branch_id: $json.branch_id, p_platform: $json.platform }) }}"
+      },
+      "name": "Fetch Credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.access_token }}", "operation": "isNotEmpty" }]
+        }
+      },
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Publish Webhook'].json.platform_api_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $node['Publish Webhook'].json.content }) }}"
+      },
+      "name": "Platform API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "values": { "string": [{ "name": "error", "value": "No credential found for this branch/platform" }] }
+      },
+      "name": "No Credential Error",
+      "type": "n8n-nodes-base.set",
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id || $json.data?.id, platform: $node['Publish Webhook'].json.platform }) }}"
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Social Publisher Gateway\n\n**What it does:** Receives a publish request via webhook, decrypts the platform OAuth token from `social_credentials`, posts to the platform API, and returns the result.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-social-publish`\n\n**Expected POST body:**\n```json\n{\n  \"branch_id\": \"uuid\",\n  \"platform\": \"instagram\",\n  \"platform_api_url\": \"https://graph.facebook.com/v21.0/...\",\n  \"content\": \"Check out our new spring collection!\"\n}\n```\n\n---\n\n### SETUP REQUIRED\n\n**Fetch Credential node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Requires the `get_social_credential_for_publish` RPC (see SQL below)\n\n**Platform API Call node:**\n- No setup needed — dynamically uses the token from Fetch Credential\n- The `platform_api_url` is sent by the Trellis frontend (SocialHub)\n\n**BLOCKED UNTIL:** Social OAuth Edge Function is deployed and at least one platform has tokens stored via the Platform Setup Wizard.\n\n**Prerequisite SQL (run in Hub Supabase SQL Editor):**\n```sql\nCREATE OR REPLACE FUNCTION get_social_credential_for_publish(\n  p_branch_id TEXT,\n  p_platform TEXT\n) RETURNS JSON LANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nDECLARE\n  result JSON;\nBEGIN\n  SELECT json_build_object(\n    'access_token', pgp_sym_decrypt(access_token_encrypted, get_encryption_key()),\n    'platform_user_id', platform_user_id,\n    'platform_username', platform_username\n  ) INTO result\n  FROM social_credentials\n  WHERE branch_id = p_branch_id\n    AND platform = p_platform\n    AND is_valid = true\n  LIMIT 1;\n\n  IF result IS NULL THEN\n    RETURN json_build_object('access_token', null);\n  END IF;\n\n  RETURN result;\nEND;\n$$;\n```",
+        "width": 520,
+        "height": 700
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -340]
+    }
+  ],
+  "connections": {
+    "Publish Webhook": {
+      "main": [[{ "node": "Fetch Credential", "type": "main", "index": 0 }]]
+    },
+    "Fetch Credential": {
+      "main": [[{ "node": "Has Token?", "type": "main", "index": 0 }]]
+    },
+    "Has Token?": {
+      "main": [
+        [{ "node": "Platform API Call", "type": "main", "index": 0 }],
+        [{ "node": "No Credential Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Platform API Call": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    }
+  }
+}

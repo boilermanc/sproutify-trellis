@@ -1,0 +1,142 @@
+{
+  "name": "Trellis: LinkedIn Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 15 }]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_active_social_tokens",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"p_platform\": \"linkedin\" }"
+      },
+      "name": "Fetch Tokens",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.linkedin.com/v2/socialActions/{{ $json.platform_user_id }}/comments?count=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" },
+            { "name": "LinkedIn-Version", "value": "202401" }
+          ]
+        }
+      },
+      "name": "Get Post Comments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-goog-api-key", "value": "YOUR_GEMINI_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Classify the intent of this LinkedIn comment. Return JSON: { \"intent\": \"purchase|support|complaint|praise|question|spam\", \"confidence\": 0.0-1.0, \"summary\": \"one line\" }\\n\\nComment: ' + $json.text }] }] }) }}"
+      },
+      "name": "Classify Intent (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/match_profile_by_social_handle",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_platform: 'linkedin', p_handle: $json.username }) }}"
+      },
+      "name": "Match Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/social-signal-ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ platform: 'linkedin', branch_id: $node['Fetch Tokens'].json.branch_id, author_handle: $json.username, content: $json.text, intent: $json.intent, confidence: $json.confidence, matched_profile_id: $json.profile_id || null, source_url: 'https://linkedin.com/in/' + $json.username }) }}"
+      },
+      "name": "Ingest Signal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: LinkedIn Listener\n\n**What it does:** Polls LinkedIn post comments every 15 minutes via LinkedIn Marketing API, classifies intent with Gemini, matches authors to existing profiles, and ingests signals into the Trellis social listening queue.\n\n**Trigger:** Schedule — every 15 minutes (LinkedIn rate limits are stricter)\n\n**Flow:** Fetch tokens → Get LI comments → Classify intent (Gemini) → Match profile → Ingest signal\n\n---\n\n### SETUP REQUIRED\n\n**Fetch Tokens node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Uses same `get_active_social_tokens` RPC as other listeners\n\n**Get Post Comments node:**\n- No setup needed — uses token from Fetch Tokens dynamically\n- Requires LinkedIn Marketing API access (Community Management API)\n- `LinkedIn-Version` header is required by LinkedIn API\n\n**Classify Intent node:**\n- Replace `YOUR_GEMINI_API_KEY` in the `x-goog-api-key` header\n\n**Match Profile node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Uses same `match_profile_by_social_handle` RPC as other listeners\n\n**BLOCKED UNTIL:** LinkedIn OAuth tokens are stored via Platform Setup Wizard + social-oauth Edge Function.\n\n**Prerequisite SQL:** Same as Instagram Listener — `get_active_social_tokens` and `match_profile_by_social_handle` RPCs. Only need to create them once.",
+        "width": 520,
+        "height": 600
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Fetch Tokens", "type": "main", "index": 0 }]]
+    },
+    "Fetch Tokens": {
+      "main": [[{ "node": "Get Post Comments", "type": "main", "index": 0 }]]
+    },
+    "Get Post Comments": {
+      "main": [[{ "node": "Classify Intent (Gemini)", "type": "main", "index": 0 }]]
+    },
+    "Classify Intent (Gemini)": {
+      "main": [[{ "node": "Match Profile", "type": "main", "index": 0 }]]
+    },
+    "Match Profile": {
+      "main": [[{ "node": "Ingest Signal", "type": "main", "index": 0 }]]
+    }
+  }
+}

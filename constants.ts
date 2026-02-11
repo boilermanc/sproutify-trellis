@@ -164,7 +164,7 @@ export const MOCK_TICKETS: Ticket[] = [
     id: 'tic_low_conf',
     profile_id: 'p_uuid_1',
     subject: 'Complex Account Merging Request',
-    description: 'I have two accounts under different emails and I want to merge my loyalty points while keeping my history from 4242 4242 4242 4242.',
+    description: 'I have two accounts under different emails and I want to merge my loyalty points while keeping my order history.',
     status: 'open',
     priority: 'medium',
     source: 'web',
@@ -320,16 +320,180 @@ CREATE POLICY "Service Role Only" ON marketing_events FOR ALL TO service_role US
 CREATE POLICY "Service Role Only" ON processed_events FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Service Role Only" ON failed_syncs FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Service Role Only" ON marketing_task_queue FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- ═══════════════════════════════════════════════════════════
+-- 10. SOCIAL CREDENTIAL VAULT (Phase 3 — API Publish)
+-- ═══════════════════════════════════════════════════════════
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+CREATE TABLE IF NOT EXISTS social_credentials (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch_id TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('instagram', 'x', 'linkedin', 'facebook', 'tiktok', 'youtube')),
+  access_token_encrypted BYTEA NOT NULL,
+  refresh_token_encrypted BYTEA,
+  platform_user_id TEXT,
+  platform_username TEXT,
+  scopes TEXT[],
+  expires_at TIMESTAMPTZ,
+  last_refreshed_at TIMESTAMPTZ,
+  is_valid BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(branch_id, platform)
+);
+
+ALTER TABLE social_credentials ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Only" ON social_credentials FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_social_creds_branch ON social_credentials (branch_id);
+CREATE INDEX IF NOT EXISTS idx_social_creds_branch_platform ON social_credentials (branch_id, platform);
+
+-- 10a. RPC: Check which platforms have live credentials (non-sensitive return)
+-- Ownership guard: only returns credentials for branches the caller owns.
+CREATE OR REPLACE FUNCTION check_social_connections(p_branch_id TEXT)
+RETURNS TABLE(platform TEXT, is_connected BOOLEAN, platform_username TEXT, connected_at TIMESTAMPTZ)
+LANGUAGE sql SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT sc.platform, true AS is_connected, sc.platform_username, sc.created_at AS connected_at
+  FROM social_credentials sc
+  INNER JOIN branches b ON b.id = sc.branch_id::uuid
+  WHERE sc.branch_id = p_branch_id
+    AND sc.is_valid = true
+    AND b.owner_id = auth.uid();
+$$;
+
+-- 10b. RPC: Disconnect a platform (delete credential row)
+-- Ownership guard: only disconnects if caller owns the branch.
+CREATE OR REPLACE FUNCTION disconnect_social_platform(p_branch_id TEXT, p_platform TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM social_credentials
+  WHERE branch_id = p_branch_id
+    AND platform = p_platform
+    AND EXISTS (
+      SELECT 1 FROM branches b WHERE b.id = p_branch_id::uuid AND b.owner_id = auth.uid()
+    );
+  RETURN FOUND;
+END;
+$$;
+
+-- 10c. RPC: Upsert credential (called by Edge Function / service role)
+-- No JWT ownership check — called by Edge Function with service_role key.
+CREATE OR REPLACE FUNCTION upsert_social_credential(
+  p_branch_id TEXT, p_platform TEXT, p_access_token TEXT,
+  p_refresh_token TEXT DEFAULT NULL, p_platform_user_id TEXT DEFAULT NULL,
+  p_platform_username TEXT DEFAULT NULL, p_scopes TEXT[] DEFAULT '{}',
+  p_expires_at TIMESTAMPTZ DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO social_credentials (
+    branch_id, platform, access_token_encrypted, refresh_token_encrypted,
+    platform_user_id, platform_username, scopes, expires_at, is_valid, updated_at
+  ) VALUES (
+    p_branch_id, p_platform,
+    pgp_sym_encrypt(p_access_token, get_encryption_key()),
+    CASE WHEN p_refresh_token IS NOT NULL
+      THEN pgp_sym_encrypt(p_refresh_token, get_encryption_key())
+      ELSE NULL END,
+    p_platform_user_id, p_platform_username, p_scopes, p_expires_at, true, now()
+  )
+  ON CONFLICT (branch_id, platform) DO UPDATE SET
+    access_token_encrypted = pgp_sym_encrypt(p_access_token, get_encryption_key()),
+    refresh_token_encrypted = CASE WHEN p_refresh_token IS NOT NULL
+      THEN pgp_sym_encrypt(p_refresh_token, get_encryption_key())
+      ELSE social_credentials.refresh_token_encrypted END,
+    platform_user_id = COALESCE(p_platform_user_id, social_credentials.platform_user_id),
+    platform_username = COALESCE(p_platform_username, social_credentials.platform_username),
+    scopes = p_scopes, expires_at = p_expires_at, is_valid = true, updated_at = now();
+END;
+$$;
+
+-- ═══════════════════════════════════════════════════════════
+-- 11. SOCIAL SIGNALS (Inbound Intent Queue — Phase 4)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS social_signals (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  platform TEXT NOT NULL CHECK (platform IN ('instagram', 'x', 'linkedin', 'facebook', 'tiktok', 'youtube')),
+  username TEXT NOT NULL,
+  content TEXT NOT NULL,
+  intent_type TEXT NOT NULL CHECK (intent_type IN ('buying_intent', 'support_request', 'brand_mention', 'engagement', 'complaint', 'partnership', 'spam')),
+  confidence INTEGER NOT NULL DEFAULT 50 CHECK (confidence BETWEEN 0 AND 100),
+  branch_id TEXT,
+  matched_profile_id UUID REFERENCES profiles(id),
+  source_post_id TEXT,
+  source_post_url TEXT,
+  status TEXT DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'actioned', 'dismissed')),
+  actioned_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE social_signals ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Only" ON social_signals
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE INDEX idx_social_signals_status_created
+  ON social_signals (status, created_at DESC);
+
+CREATE INDEX idx_social_signals_matched_profile
+  ON social_signals (matched_profile_id) WHERE matched_profile_id IS NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════
+-- 12. CAMPAIGN RUNS (Cross-Channel Deployment Tracking)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS campaign_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  campaign_name TEXT NOT NULL,
+  branch_id TEXT,
+  audience_size INTEGER DEFAULT 0,
+  channels JSONB DEFAULT '[]'::jsonb,
+  timing_rules JSONB DEFAULT '[]'::jsonb,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'partial_failure', 'failed')),
+  launched_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+ALTER TABLE campaign_runs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Only" ON campaign_runs FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS idx_campaign_runs_status ON campaign_runs (status, created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════
+-- 13. CONTENT CALENDAR EVENTS (Unified Calendar View)
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS content_calendar_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_type TEXT NOT NULL CHECK (event_type IN ('social_post', 'campaign_channel', 'email_blast')),
+  branch_id TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content_preview TEXT,
+  scheduled_for TIMESTAMPTZ NOT NULL,
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'pending_review', 'approved', 'rejected', 'scheduled', 'published', 'failed')),
+  source TEXT NOT NULL CHECK (source IN ('social_hub', 'campaign_builder')),
+  source_id TEXT,
+  approval_note TEXT,
+  compliance_score INTEGER,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE content_calendar_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Only" ON content_calendar_events FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS idx_calendar_scheduled ON content_calendar_events (scheduled_for, branch_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_status ON content_calendar_events (status, channel);
 `;
 
-export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.io/webhook/trellis-campaign-dispatch";
+export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
 
 export const WEBHOOK_SPECS = {
-  ingest: "https://n8n.sproutify.io/webhook/trellis-ingest-gateway",
-  campaign_dispatch: "https://n8n.sproutify.io/webhook/trellis-campaign-dispatch",
-  social_intent: "https://n8n.sproutify.io/webhook/ig-intent-loop",
-  compliance: "https://n8n.sproutify.io/webhook/resend-compliance",
-  voice: "https://n8n.sproutify.io/webhook/twilio-whisper-sync"
+  ingest: "https://n8n.sproutify.app/webhook/trellis-ingest-gateway",
+  campaign_dispatch: "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch",
+  social_intent: "https://n8n.sproutify.app/webhook/ig-intent-loop",
+  compliance: "https://n8n.sproutify.app/webhook/resend-compliance",
+  voice: "https://n8n.sproutify.app/webhook/twilio-whisper-sync",
+  social_publish: "https://n8n.sproutify.app/webhook/trellis-social-publish",
+  social_ingest: "https://n8n.sproutify.app/webhook/social-signal-ingest",
+  sms_dispatch: "https://n8n.sproutify.app/webhook/twilio-sms-dispatch"
 };
 
 export const MOCK_BRIEFING: DailyBriefing = {
@@ -362,7 +526,7 @@ export const N8N_BLUEPRINTS = {
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO profiles (email, first_name, branches) VALUES (:email, :name, :site) ON CONFLICT (email) DO UPDATE SET branches = profiles.branches || excluded.branches;"
+        "query": "INSERT INTO profiles (email, first_name, branches) VALUES ($1, $2, $3) ON CONFLICT (email) DO UPDATE SET branches = profiles.branches || excluded.branches;"
       },
       "name": "Supabase Upsert",
       "type": "n8n-nodes-base.supabase",
@@ -474,5 +638,110 @@ export const N8N_BLUEPRINTS = {
       "position": [350, 500]
     }
   ]
-}`
+}`,
+  social_publisher: `{
+  "name": "Trellis: Social Publisher Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-social-publish",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Publish Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT pgp_sym_decrypt(access_token_encrypted, get_encryption_key()) as access_token, platform_user_id, platform_username FROM social_credentials WHERE branch_id = '{{ $json.branch_id }}' AND platform = '{{ $json.platform }}' AND is_valid = true LIMIT 1"
+      },
+      "name": "Fetch Credential",
+      "type": "n8n-nodes-base.supabase",
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.access_token }}", "operation": "isNotEmpty" }]
+        }
+      },
+      "name": "Has Token?",
+      "type": "n8n-nodes-base.if",
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Publish Webhook'].json.platform_api_url }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" }] },
+        "sendBody": true,
+        "bodyParameters": { "parameters": [{ "name": "content", "value": "={{ $node['Publish Webhook'].json.content }}" }] }
+      },
+      "name": "Platform API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "values": { "string": [{ "name": "error", "value": "No credential found for this branch/platform" }] }
+      },
+      "name": "No Credential Error",
+      "type": "n8n-nodes-base.set",
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id || $json.data?.id, platform: $node['Publish Webhook'].json.platform }) }}"
+      },
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1250, 300]
+    }
+  ]
+}`,
+  instagram_listener: `{
+  "name": "Trellis: Instagram Listener",
+  "description": "Polls Instagram comments/mentions via Meta Graph API, classifies intent via Gemini, matches profiles, ingests to Trellis",
+  "trigger": "Schedule (every 5 min)",
+  "nodes": [
+    { "name": "Schedule Trigger", "type": "n8n-nodes-base.scheduleTrigger", "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] } }, "position": [250, 300] },
+    { "name": "Fetch Token", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT branch_id, pgp_sym_decrypt(access_token_encrypted, get_encryption_key()) as access_token, platform_user_id FROM social_credentials WHERE platform = 'instagram' AND is_valid = true" }, "position": [450, 300] },
+    { "name": "Get Recent Comments", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "GET", "url": "https://graph.instagram.com/v18.0/{{ $json.platform_user_id }}/media?fields=id,comments{text,username,timestamp}&access_token={{ $json.access_token }}&limit=10" }, "position": [650, 300] },
+    { "name": "Classify Intent (Gemini)", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent" }, "position": [850, 300] },
+    { "name": "Match Profile", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT id FROM profiles WHERE metadata->'social_handles'->>'instagram' = '{{ $json.username }}' LIMIT 1" }, "position": [1050, 300] },
+    { "name": "Ingest Signal", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://n8n.sproutify.app/webhook/social-signal-ingest" }, "position": [1250, 300] }
+  ]
+}`,
+  x_listener: `{
+  "name": "Trellis: X Listener",
+  "description": "Monitors X mentions/replies via X API v2, classifies intent, ingests to Trellis",
+  "trigger": "Schedule (every 5 min)",
+  "nodes": [
+    { "name": "Schedule Trigger", "type": "n8n-nodes-base.scheduleTrigger", "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] } }, "position": [250, 300] },
+    { "name": "Fetch Token", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT branch_id, pgp_sym_decrypt(access_token_encrypted, get_encryption_key()) as access_token, platform_user_id FROM social_credentials WHERE platform = 'x' AND is_valid = true" }, "position": [450, 300] },
+    { "name": "Get Mentions", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "GET", "url": "https://api.twitter.com/2/users/{{ $json.platform_user_id }}/mentions" }, "position": [650, 300] },
+    { "name": "Classify Intent (Gemini)", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent" }, "position": [850, 300] },
+    { "name": "Match Profile", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT id FROM profiles WHERE metadata->'social_handles'->>'x' = '{{ $json.username }}' LIMIT 1" }, "position": [1050, 300] },
+    { "name": "Ingest Signal", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://n8n.sproutify.app/webhook/social-signal-ingest" }, "position": [1250, 300] }
+  ]
+}`,
+  linkedin_listener: `{
+  "name": "Trellis: LinkedIn Listener",
+  "description": "Monitors LinkedIn post comments via Marketing API, classifies intent, ingests to Trellis",
+  "trigger": "Schedule (every 15 min)",
+  "nodes": [
+    { "name": "Schedule Trigger", "type": "n8n-nodes-base.scheduleTrigger", "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] } }, "position": [250, 300] },
+    { "name": "Fetch Token", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT branch_id, pgp_sym_decrypt(access_token_encrypted, get_encryption_key()) as access_token, platform_user_id FROM social_credentials WHERE platform = 'linkedin' AND is_valid = true" }, "position": [450, 300] },
+    { "name": "Get Post Comments", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "GET", "url": "https://api.linkedin.com/v2/socialActions/{{ $json.platform_user_id }}/comments" }, "position": [650, 300] },
+    { "name": "Classify Intent (Gemini)", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent" }, "position": [850, 300] },
+    { "name": "Match Profile", "type": "n8n-nodes-base.supabase", "parameters": { "operation": "executeQuery", "query": "SELECT id FROM profiles WHERE metadata->'social_handles'->>'linkedin' = '{{ $json.username }}' LIMIT 1" }, "position": [1050, 300] },
+    { "name": "Ingest Signal", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://n8n.sproutify.app/webhook/social-signal-ingest" }, "position": [1250, 300] }
+  ]
+}`,
 };

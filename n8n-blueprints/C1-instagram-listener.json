@@ -1,0 +1,135 @@
+{
+  "name": "Trellis: Instagram Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_active_social_tokens",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"p_platform\": \"instagram\" }"
+      },
+      "name": "Fetch Tokens",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.instagram.com/v21.0/{{ $json.platform_user_id }}/media?fields=id,comments{text,username,timestamp}&access_token={{ $json.access_token }}&limit=10"
+      },
+      "name": "Get Recent Comments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-goog-api-key", "value": "YOUR_GEMINI_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Classify the intent of this Instagram comment. Return JSON: { \"intent\": \"purchase|support|complaint|praise|question|spam\", \"confidence\": 0.0-1.0, \"summary\": \"one line\" }\\n\\nComment: ' + $json.text }] }] }) }}"
+      },
+      "name": "Classify Intent (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/match_profile_by_social_handle",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_platform: 'instagram', p_handle: $json.username }) }}"
+      },
+      "name": "Match Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/social-signal-ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ platform: 'instagram', branch_id: $node['Fetch Tokens'].json.branch_id, author_handle: $json.username, content: $json.text, intent: $json.intent, confidence: $json.confidence, matched_profile_id: $json.profile_id || null, source_url: 'https://instagram.com/' + $json.username }) }}"
+      },
+      "name": "Ingest Signal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Instagram Listener\n\n**What it does:** Polls Instagram comments every 5 minutes via Meta Graph API, classifies intent with Gemini, matches authors to existing profiles, and ingests signals into the Trellis social listening queue.\n\n**Trigger:** Schedule — every 5 minutes\n\n**Flow:** Fetch tokens → Get IG comments → Classify intent (Gemini) → Match profile → Ingest signal\n\n---\n\n### SETUP REQUIRED\n\n**Fetch Tokens node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Requires `get_active_social_tokens` RPC (see SQL below)\n\n**Classify Intent node:**\n- Replace `YOUR_GEMINI_API_KEY` in the `x-goog-api-key` header\n- Get from: Google AI Studio or your tenant_secrets\n\n**Match Profile node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Requires `match_profile_by_social_handle` RPC (see SQL below)\n\n**BLOCKED UNTIL:** Instagram OAuth tokens are stored via Platform Setup Wizard + social-oauth Edge Function.\n\n**Prerequisite SQL:**\n```sql\n-- Returns decrypted tokens for all active accounts on a platform\nCREATE OR REPLACE FUNCTION get_active_social_tokens(\n  p_platform TEXT\n) RETURNS TABLE(branch_id TEXT, access_token TEXT, platform_user_id TEXT)\nLANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT sc.branch_id::TEXT,\n    pgp_sym_decrypt(sc.access_token_encrypted, get_encryption_key()),\n    sc.platform_user_id\n  FROM social_credentials sc\n  WHERE sc.platform = p_platform AND sc.is_valid = true;\nEND;\n$$;\n\n-- Matches a social handle to an existing profile\nCREATE OR REPLACE FUNCTION match_profile_by_social_handle(\n  p_platform TEXT,\n  p_handle TEXT\n) RETURNS JSON LANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nDECLARE\n  result JSON;\nBEGIN\n  SELECT json_build_object('profile_id', id)\n  INTO result\n  FROM profiles\n  WHERE metadata->'social_handles'->>p_platform = p_handle\n  LIMIT 1;\n  RETURN COALESCE(result, json_build_object('profile_id', null));\nEND;\n$$;\n```\n\nNote: Both RPCs are shared across all 3 listener workflows (Instagram, X, LinkedIn).",
+        "width": 560,
+        "height": 820
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -460]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Fetch Tokens", "type": "main", "index": 0 }]]
+    },
+    "Fetch Tokens": {
+      "main": [[{ "node": "Get Recent Comments", "type": "main", "index": 0 }]]
+    },
+    "Get Recent Comments": {
+      "main": [[{ "node": "Classify Intent (Gemini)", "type": "main", "index": 0 }]]
+    },
+    "Classify Intent (Gemini)": {
+      "main": [[{ "node": "Match Profile", "type": "main", "index": 0 }]]
+    },
+    "Match Profile": {
+      "main": [[{ "node": "Ingest Signal", "type": "main", "index": 0 }]]
+    }
+  }
+}
