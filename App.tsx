@@ -347,7 +347,6 @@ const AppContent: React.FC = () => {
       case 'marketing-wizard': return (
         <MarketingWizard
           branchContext={branchContext}
-          profiles={profiles}
           addToast={addToast}
           apiKeys={apiKeys}
         />
