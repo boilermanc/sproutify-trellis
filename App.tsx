@@ -245,21 +245,21 @@ const AppContent: React.FC = () => {
     fetchSecrets(SPROUTIFY_ORG_ID).then(setApiKeys);
   }, []);
 
-  // Poll for social signals (fails silently if Supabase table doesn't exist yet)
+  // Poll for social signals (30s interval).
+  // fetchSocialSignals internally gates on table existence — if social_signals
+  // doesn't exist yet, it returns [] after a single probe and never retries.
   useEffect(() => {
     const poll = async () => {
-      try {
-        const signals = await fetchSocialSignals({ status: ['new', 'reviewed'] });
-        if (signals.length > 0) {
-          setSocialSignals(prev => {
-            const map = new Map<string, SocialActivity>(prev.map(s => [s.id, s]));
-            signals.forEach(s => map.set(s.id, s));
-            return Array.from(map.values()).sort((a, b) =>
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-          });
-        }
-      } catch { /* fail silently */ }
+      const signals = await fetchSocialSignals({ status: ['new', 'reviewed'] });
+      if (signals.length > 0) {
+        setSocialSignals(prev => {
+          const map = new Map<string, SocialActivity>(prev.map(s => [s.id, s]));
+          signals.forEach(s => map.set(s.id, s));
+          return Array.from(map.values()).sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+      }
     };
     poll();
     const interval = setInterval(poll, 30000);

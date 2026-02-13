@@ -154,11 +154,18 @@ export async function publishToSocial(
   }
 }
 
+// ─── social_signals table gate ──────────────────────────────────────
+// Checked once per page load via a HEAD probe in fetchSocialSignals().
+// If the table doesn't exist, all social_signals functions no-op.
+let _tableCheckDone = false;
+let _tableExists = false;
+
 // ─── 5. ingestSocialSignal ──────────────────────────────────────────
 // Called by n8n webhook (or directly for testing). Writes to social_signals.
 export async function ingestSocialSignal(
   signal: Omit<SocialActivity, 'id' | 'profile_matched' | 'status'>
 ): Promise<string | null> {
+  if (_tableCheckDone && !_tableExists) return null;
   const { data, error } = await supabase
     .from('social_signals')
     .insert({
@@ -182,6 +189,8 @@ export async function ingestSocialSignal(
 
 // ─── 6. fetchSocialSignals ──────────────────────────────────────────
 // Fetches signals for the Queue tab.
+// NOTE: social_signals table must be created in Supabase before enabling.
+// See SQL_SCHEMA in constants.ts for the CREATE TABLE statement.
 interface SignalFilters {
   status?: SignalStatus | SignalStatus[];
   platform?: SocialPlatform;
@@ -190,6 +199,16 @@ interface SignalFilters {
 }
 
 export async function fetchSocialSignals(filters?: SignalFilters): Promise<SocialActivity[]> {
+  if (!_tableCheckDone) {
+    _tableCheckDone = true;
+    const { error } = await supabase
+      .from('social_signals')
+      .select('id', { count: 'exact', head: true })
+      .limit(0);
+    _tableExists = !error;
+  }
+  if (!_tableExists) return [];
+
   let query = supabase
     .from('social_signals')
     .select('*')
@@ -230,6 +249,7 @@ export async function updateSignalStatus(
   signalId: string,
   status: SignalStatus
 ): Promise<boolean> {
+  if (_tableCheckDone && !_tableExists) return false;
   const { error } = await supabase
     .from('social_signals')
     .update({
