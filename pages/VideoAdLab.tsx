@@ -166,8 +166,6 @@ Return ONLY the spoken script text — no stage directions, no scene description
   const estimatedSeconds = Math.round(wordCount / 2.5);
   const costEstimate = (variants * VIDEO_AD_COST_PER_VARIANT).toFixed(2);
 
-  const stageIndex = (status: VideoAdStatus) => VIDEO_AD_STAGES.findIndex(s => s.key === status);
-
   // ═══════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════
@@ -409,60 +407,93 @@ Return ONLY the spoken script text — no stage directions, no scene description
               </div>
             )}
 
-            {jobs.map(job => (
-              <div key={job.id} className="bg-slate-50 rounded-[2rem] p-6 border border-slate-100">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono text-slate-400">{job.id.slice(0, 12)}…</span>
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-200 text-slate-600">
-                      {formatBranchName(job.config.branch)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {job.status === 'completed' && job.video_url && (
-                      <>
-                        <a href={job.video_url} target="_blank" rel="noopener noreferrer" className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition"><Play size={16} /></a>
-                        <a href={job.video_url} download className="p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition"><Download size={16} /></a>
-                      </>
-                    )}
-                    {!TERMINAL_STATUSES.includes(job.status) && (
-                      <button onClick={() => handleCancel(job.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition"><Trash2 size={16} /></button>
-                    )}
-                  </div>
-                </div>
+            {jobs.map(job => {
+              const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
+              const thumbnailSrc = job.thumbnail_url || job.face_image_url;
 
-                {/* Pipeline Progress */}
-                <div className="flex items-center gap-1">
-                  {VIDEO_AD_STAGES.map((stage, idx) => {
-                    const currentIdx = stageIndex(job.status);
-                    const isFailed = job.status === 'failed';
-                    const isCancelled = job.status === 'cancelled';
-                    const isComplete = idx <= currentIdx && !isFailed && !isCancelled;
-                    const isCurrent = idx === currentIdx && !isFailed && !isCancelled;
+              return (
+                <div key={job.id} className="bg-slate-50 rounded-[2rem] p-6 border border-slate-100">
+                  <div className="flex items-start gap-4">
+                    {/* Thumbnail / Face Image */}
+                    {thumbnailSrc && (
+                      <img src={thumbnailSrc} alt="Video thumbnail" className="w-20 h-20 rounded-xl object-cover border border-slate-200 shrink-0" />
+                    )}
 
-                    return (
-                      <div key={stage.key} className="flex-1">
-                        <div className={`h-2 rounded-full transition-all ${
-                          isFailed ? (idx <= currentIdx ? 'bg-rose-400' : 'bg-slate-200') :
-                          isCancelled ? 'bg-slate-300' :
-                          isComplete ? 'bg-emerald-500' : 'bg-slate-200'
-                        } ${isCurrent ? 'animate-pulse' : ''}`} />
-                        <span className={`text-[9px] font-bold mt-1 block text-center ${
-                          isComplete ? 'text-emerald-600' :
-                          isFailed && idx === currentIdx ? 'text-rose-500' :
-                          'text-slate-300'
-                        }`}>{stage.label}</span>
+                    <div className="flex-1 min-w-0">
+                      {/* Header row */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-mono text-slate-400">{job.id.slice(0, 12)}…</span>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-200 text-slate-600">
+                            {formatBranchName(job.branch)}
+                          </span>
+                          {job.target_segment && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                              <Target size={10} />{job.target_segment}
+                            </span>
+                          )}
+                          {job.cost_estimate != null && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                              <DollarSign size={10} />${job.cost_estimate.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {job.status === 'completed' && job.video_url && (
+                            <>
+                              <a href={job.video_url} target="_blank" rel="noopener noreferrer" className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition"><Play size={16} /></a>
+                              <a href={job.video_url} download className="p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition"><Download size={16} /></a>
+                            </>
+                          )}
+                          {!TERMINAL_STATUSES.includes(job.status) && (
+                            <button onClick={() => handleCancel(job.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition"><Trash2 size={16} /></button>
+                          )}
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
 
-                {/* Error message */}
-                {job.status === 'failed' && job.error_message && (
-                  <p className="text-xs text-rose-500 font-medium mt-3 bg-rose-50 rounded-xl px-4 py-2">{job.error_message}</p>
-                )}
-              </div>
-            ))}
+                      {/* Script preview */}
+                      {job.script && (
+                        <p className="text-xs text-slate-500 mb-3 truncate">
+                          <FileText size={10} className="inline mr-1" />
+                          {job.script.length > 80 ? `${job.script.slice(0, 80)}…` : job.script}
+                        </p>
+                      )}
+
+                      {/* Progress bar + stage label */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-[10px] font-black uppercase tracking-wider ${
+                            job.status === 'failed' ? 'text-rose-500' :
+                            job.status === 'cancelled' ? 'text-slate-400' :
+                            job.status === 'completed' ? 'text-emerald-600' :
+                            'text-slate-500'
+                          }`}>
+                            {currentStage?.label || job.status}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400">{job.progress}%</span>
+                        </div>
+                        <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              job.status === 'failed' ? 'bg-rose-400' :
+                              job.status === 'cancelled' ? 'bg-slate-300' :
+                              job.status === 'completed' ? 'bg-emerald-500' :
+                              'bg-emerald-400 animate-pulse'
+                            }`}
+                            style={{ width: `${job.progress}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Error message */}
+                      {job.status === 'failed' && job.error_message && (
+                        <p className="text-xs text-rose-500 font-medium mt-3 bg-rose-50 rounded-xl px-4 py-2">{job.error_message}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

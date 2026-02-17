@@ -846,7 +846,7 @@ export interface MarketingGenerationLog {
 
 // ─── Video Ad Lab ───
 
-export type VideoAdStatus = 'queued' | 'script' | 'face' | 'audio' | 'video' | 'completed' | 'failed' | 'cancelled';
+export type VideoAdStatus = 'queued' | 'generating_face' | 'generating_audio' | 'generating_video' | 'completed' | 'failed' | 'cancelled';
 
 export interface VideoAdConfig {
   branch: string;
@@ -862,13 +862,26 @@ export interface VideoAdConfig {
 
 export interface VideoAdJob {
   id: string;
-  config: VideoAdConfig;
+  campaign_id: string | null;
+  branch: string;
+  script: string | null;
+  actor_prompt: string | null;
+  voice_id: string | null;
+  voice_style: string | null;
+  target_segment: string | null;
   status: VideoAdStatus;
-  video_url?: string;
-  thumbnail_url?: string;
-  error_message?: string;
+  progress: number;
+  face_image_url: string | null;
+  audio_url: string | null;
+  video_url: string | null;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  cost_estimate: number | null;
+  error_message: string | null;
+  retry_count: number;
   created_at: string;
-  completed_at?: string;
+  completed_at: string | null;
+  created_by: string | null;
 }
 
 export interface VideoAdBatchRequest {

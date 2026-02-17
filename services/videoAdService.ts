@@ -82,7 +82,7 @@ export async function getVideoAdJobs(
   try {
     let url = `${SUPABASE_URL}/rest/v1/video_ad_jobs?select=*&order=created_at.desc&limit=${limit}`;
     if (branch) {
-      url += `&config->>branch=eq.${branch}`;
+      url += `&branch=eq.${branch}`;
     }
 
     const response = await fetch(url, { headers: supabaseHeaders() });

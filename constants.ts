@@ -860,9 +860,8 @@ export const VIDEO_AD_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-video
 
 export const VIDEO_AD_STAGES = [
   { key: 'queued', label: 'Queued' },
-  { key: 'script', label: 'Script' },
-  { key: 'face', label: 'Face Gen' },
-  { key: 'audio', label: 'Audio' },
-  { key: 'video', label: 'Lipsync' },
+  { key: 'generating_face', label: 'Face Gen' },
+  { key: 'generating_audio', label: 'Audio' },
+  { key: 'generating_video', label: 'Lipsync' },
   { key: 'completed', label: 'Complete' },
 ] as const;
