@@ -12,7 +12,7 @@ import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, Target, FileText, Zap, DollarSign,
-  Palette, Eye, Check, BookTemplate,
+  Palette, Eye, Check, BookTemplate, RefreshCw, Clock,
 } from 'lucide-react';
 
 // ─── Supabase REST helpers for templates ─────────────────────────────
@@ -81,6 +81,8 @@ const STEPS = [
   { num: 3, label: 'Review', icon: Eye },
 ] as const;
 
+type StatusFilter = 'all' | 'active' | 'completed' | 'failed';
+
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast }) => {
   // ── Derive spoke credentials from first active connection ──
@@ -122,7 +124,10 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [jobs, setJobs] = useState<VideoAdJob[]>([]);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showGallery, setShowGallery] = useState(true);
+
+  // ── Video Library state ──
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // ── Load jobs on mount (and when creds become available) ──
   useEffect(() => {
@@ -132,8 +137,9 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
         const fetched = await getVideoAdJobs(spokeCreds);
         setJobs(fetched);
         setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
-      } catch {
-        // silent
+      } catch (err: any) {
+        console.error('[VideoAdLab] Failed to load jobs:', err);
+        addToast(`Failed to load video jobs: ${err.message}`, 'error');
       }
     })();
   }, [spokeCreds]);
@@ -158,6 +164,39 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   }, [addToast]);
 
   const { activeCount } = useVideoAdPoller(activeJobIds, handleStatusChange, activeJobIds.length > 0, spokeCreds ?? undefined);
+
+  // ── Refresh handler ──
+  const handleRefresh = useCallback(async () => {
+    if (!spokeCreds) return;
+    setIsRefreshing(true);
+    try {
+      const fetched = await getVideoAdJobs(spokeCreds);
+      setJobs(fetched);
+      setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
+      addToast('Video library refreshed', 'info');
+    } catch (err: any) {
+      console.error('[VideoAdLab] Failed to refresh jobs:', err);
+      addToast(`Failed to refresh: ${err.message}`, 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [spokeCreds, addToast]);
+
+  // ── Filtered jobs ──
+  const filteredJobs = useMemo(() => {
+    if (statusFilter === 'all') return jobs;
+    if (statusFilter === 'active') return jobs.filter(j => !TERMINAL_STATUSES.includes(j.status));
+    if (statusFilter === 'completed') return jobs.filter(j => j.status === 'completed');
+    return jobs.filter(j => j.status === 'failed' || j.status === 'cancelled');
+  }, [jobs, statusFilter]);
+
+  // ── Filter counts ──
+  const filterCounts = useMemo(() => ({
+    all: jobs.length,
+    active: jobs.filter(j => !TERMINAL_STATUSES.includes(j.status)).length,
+    completed: jobs.filter(j => j.status === 'completed').length,
+    failed: jobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length,
+  }), [jobs]);
 
   // ── Apply template ──
   const applyTemplate = (templateId: string | null) => {
@@ -758,117 +797,203 @@ STRICT RULES:
         </div>
       )}
 
-      {/* ── Job Queue ── */}
+      {/* ── Video Library ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <button
-          onClick={() => setShowGallery(!showGallery)}
-          className="w-full flex items-center justify-between p-6 hover:bg-slate-50 transition"
-        >
-          <div className="flex items-center gap-3">
-            <Video size={20} className="text-emerald-600" />
-            <span className="text-sm font-black text-slate-800">Generation Queue</span>
-            {activeCount > 0 && (
-              <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase tracking-wider">
-                {activeCount} active
-              </span>
-            )}
-            <span className="text-xs text-slate-400">{jobs.length} total</span>
+        {/* Header */}
+        <div className="p-6 border-b border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Video size={20} className="text-emerald-600" />
+              <span className="text-sm font-black text-slate-800 uppercase tracking-tight">Video Library</span>
+              {activeCount > 0 && (
+                <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase tracking-wider animate-pulse">
+                  {activeCount} processing
+                </span>
+              )}
+              <span className="text-xs text-slate-400">{jobs.length} total</span>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing || !spokeCreds}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition disabled:opacity-30"
+            >
+              <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
           </div>
-          {showGallery ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
 
-        {showGallery && (
-          <div className="px-6 pb-6 space-y-3">
-            {jobs.length === 0 && (
-              <div className="text-center py-12 text-slate-400">
-                <Film size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="font-bold text-sm">No video ad jobs yet</p>
-                <p className="text-xs mt-1">Configure and submit your first job above</p>
-              </div>
-            )}
+          {/* Filter pills */}
+          <div className="flex gap-2">
+            {(['all', 'active', 'completed', 'failed'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setStatusFilter(f)}
+                className={`px-3 py-1 text-xs font-bold rounded-full transition ${
+                  statusFilter === f
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)} ({filterCounts[f]})
+              </button>
+            ))}
+          </div>
+        </div>
 
-            {jobs.map(job => {
-              const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
-              const thumbnailSrc = job.thumbnail_url || job.face_image_url;
+        {/* Table or empty state */}
+        {filteredJobs.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <Film size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="font-bold text-sm">
+              {jobs.length === 0 ? 'No video ads yet' : 'No videos match this filter'}
+            </p>
+            <p className="text-xs mt-1">
+              {jobs.length === 0
+                ? 'Configure and submit your first job above'
+                : 'Try a different filter or refresh'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-20">Preview</th>
+                  <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3">Details</th>
+                  <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-36">Status</th>
+                  <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-28">Created</th>
+                  <th className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-20">Cost</th>
+                  <th className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-28">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredJobs.map(job => {
+                  const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
+                  const thumbnailSrc = job.thumbnail_url || job.face_image_url;
+                  const createdDate = new Date(job.created_at);
 
-              return (
-                <div key={job.id} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <div className="flex items-start gap-3">
-                    {thumbnailSrc && (
-                      <img src={thumbnailSrc} alt="Video thumbnail" className="w-16 h-16 rounded-lg object-cover border border-slate-200 shrink-0" />
-                    )}
+                  return (
+                    <tr key={job.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition group">
+                      {/* Thumbnail */}
+                      <td className="px-6 py-3">
+                        {thumbnailSrc ? (
+                          <img src={thumbnailSrc} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center">
+                            <Film size={18} className="text-slate-300" />
+                          </div>
+                        )}
+                      </td>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono text-slate-400">{job.id.slice(0, 12)}...</span>
+                      {/* Details */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 mb-1">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600">
                             {formatBranchName(job.branch)}
                           </span>
                           {job.target_segment && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                            <span className="flex items-center gap-1 text-[10px] text-slate-400">
                               <Target size={10} />{job.target_segment}
                             </span>
                           )}
-                          {job.cost_estimate != null && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                              <DollarSign size={10} />${job.cost_estimate.toFixed(2)}
-                            </span>
-                          )}
                         </div>
-                        <div className="flex items-center gap-1">
+                        {job.script && (
+                          <p className="text-xs text-slate-500 truncate max-w-xs" title={job.script}>
+                            {job.script.length > 80 ? `${job.script.slice(0, 80)}...` : job.script}
+                          </p>
+                        )}
+                        <span className="text-[10px] font-mono text-slate-300">{job.id.slice(0, 12)}</span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          job.status === 'failed' ? 'bg-rose-50 text-rose-500' :
+                          job.status === 'cancelled' ? 'bg-slate-100 text-slate-400' :
+                          job.status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
+                          'bg-amber-50 text-amber-600'
+                        }`}>
+                          {job.status === 'completed' && <Check size={10} />}
+                          {currentStage?.label || job.status}
+                        </span>
+                        {!TERMINAL_STATUSES.includes(job.status) && (
+                          <div className="mt-1.5">
+                            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden w-24">
+                              <div
+                                className="h-full bg-emerald-400 rounded-full animate-pulse transition-all duration-500"
+                                style={{ width: `${job.progress}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-400 mt-0.5 block">{job.progress}%</span>
+                          </div>
+                        )}
+                        {job.status === 'failed' && job.error_message && (
+                          <p className="text-[10px] text-rose-400 mt-1 truncate max-w-[180px]" title={job.error_message}>
+                            {job.error_message}
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Created */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                          <Clock size={12} className="text-slate-400" />
+                          <span>{createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {createdDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </span>
+                      </td>
+
+                      {/* Cost */}
+                      <td className="px-4 py-3 text-right">
+                        {job.cost_estimate != null ? (
+                          <span className="text-xs font-bold text-slate-600">${job.cost_estimate.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-6 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
                           {job.status === 'completed' && job.video_url && (
                             <>
-                              <a href={job.video_url} target="_blank" rel="noopener noreferrer" className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"><Play size={14} /></a>
-                              <a href={job.video_url} download className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition"><Download size={14} /></a>
+                              <a
+                                href={job.video_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                                title="Play video"
+                              >
+                                <Play size={14} />
+                              </a>
+                              <a
+                                href={job.video_url}
+                                download
+                                className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition"
+                                title="Download video"
+                              >
+                                <Download size={14} />
+                              </a>
                             </>
                           )}
                           {!TERMINAL_STATUSES.includes(job.status) && (
-                            <button onClick={() => handleCancel(job.id)} className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"><Trash2 size={14} /></button>
+                            <button
+                              onClick={() => handleCancel(job.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                              title="Cancel job"
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           )}
                         </div>
-                      </div>
-
-                      {job.script && (
-                        <p className="text-xs text-slate-500 mb-2 truncate">
-                          <FileText size={10} className="inline mr-1" />
-                          {job.script.length > 80 ? `${job.script.slice(0, 80)}...` : job.script}
-                        </p>
-                      )}
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`text-[10px] font-black uppercase tracking-wider ${
-                            job.status === 'failed' ? 'text-rose-500' :
-                            job.status === 'cancelled' ? 'text-slate-400' :
-                            job.status === 'completed' ? 'text-emerald-600' :
-                            'text-slate-500'
-                          }`}>
-                            {currentStage?.label || job.status}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400">{job.progress}%</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              job.status === 'failed' ? 'bg-rose-400' :
-                              job.status === 'cancelled' ? 'bg-slate-300' :
-                              job.status === 'completed' ? 'bg-emerald-500' :
-                              'bg-emerald-400 animate-pulse'
-                            }`}
-                            style={{ width: `${job.progress}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {job.status === 'failed' && job.error_message && (
-                        <p className="text-xs text-rose-500 font-medium mt-2 bg-rose-50 rounded-lg px-3 py-1.5">{job.error_message}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
