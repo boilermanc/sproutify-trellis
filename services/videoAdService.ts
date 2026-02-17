@@ -4,15 +4,20 @@ import { VIDEO_AD_WEBHOOK } from '../constants';
 // ─── Video Ad Lab Service ──────────────────────────────────────────
 // Communicates with n8n (job submission) and ATL Supabase REST API
 // (job polling, listing, cancellation). Uses plain fetch throughout.
+//
+// Spoke credentials are passed in at call time — they come from the
+// SpokeConnection objects stored in the app, not from env vars.
 // ────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL = 'https://povudgtvzggnxwgtjexa.supabase.co';
-const SUPABASE_KEY = import.meta.env.VITE_ATL_SUPABASE_KEY || '';
+export interface SpokeCredentials {
+  url: string;
+  key: string;
+}
 
-function supabaseHeaders(): Record<string, string> {
+function supabaseHeaders(key: string): Record<string, string> {
   return {
-    'apikey': SUPABASE_KEY,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'apikey': key,
+    'Authorization': `Bearer ${key}`,
     'Content-Type': 'application/json',
   };
 }
@@ -55,11 +60,13 @@ export async function submitVideoAdJob(
 // Fetch a single job by ID from the Supabase REST API.
 export async function pollVideoAdJob(
   jobId: string,
+  creds?: SpokeCredentials,
 ): Promise<VideoAdJob | null> {
+  if (!creds?.url || !creds?.key) return null;
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/video_ad_jobs?id=eq.${jobId}&select=*`,
-      { headers: supabaseHeaders() },
+      `${creds.url}/rest/v1/video_ad_jobs?id=eq.${jobId}&select=*`,
+      { headers: supabaseHeaders(creds.key) },
     );
 
     if (!response.ok) {
@@ -77,16 +84,18 @@ export async function pollVideoAdJob(
 // ─── 3. getVideoAdJobs ───────────────────────────────────────────
 // List recent jobs, optionally filtered by branch.
 export async function getVideoAdJobs(
+  creds?: SpokeCredentials,
   branch?: string,
   limit: number = 20,
 ): Promise<VideoAdJob[]> {
+  if (!creds?.url || !creds?.key) return [];
   try {
-    let url = `${SUPABASE_URL}/rest/v1/video_ad_jobs?select=*&order=created_at.desc&limit=${limit}`;
+    let url = `${creds.url}/rest/v1/video_ad_jobs?select=*&order=created_at.desc&limit=${limit}`;
     if (branch) {
       url += `&branch=eq.${branch}`;
     }
 
-    const response = await fetch(url, { headers: supabaseHeaders() });
+    const response = await fetch(url, { headers: supabaseHeaders(creds.key) });
 
     if (!response.ok) {
       const text = await response.text();
@@ -101,14 +110,18 @@ export async function getVideoAdJobs(
 
 // ─── 4. cancelVideoAdJob ─────────────────────────────────────────
 // PATCH the job status to 'cancelled'.
-export async function cancelVideoAdJob(jobId: string): Promise<void> {
+export async function cancelVideoAdJob(
+  jobId: string,
+  creds?: SpokeCredentials,
+): Promise<void> {
+  if (!creds?.url || !creds?.key) return;
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/video_ad_jobs?id=eq.${jobId}`,
+      `${creds.url}/rest/v1/video_ad_jobs?id=eq.${jobId}`,
       {
         method: 'PATCH',
         headers: {
-          ...supabaseHeaders(),
+          ...supabaseHeaders(creds.key),
           'Prefer': 'return=minimal',
         },
         body: JSON.stringify({ status: 'cancelled' }),

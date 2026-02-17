@@ -1,13 +1,13 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Profile, VideoAdConfig, VideoAdJob, VideoAdStatus } from '../types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
 import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
 } from '../constants';
-import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob } from '../services/videoAdService';
+import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob, SpokeCredentials } from '../services/videoAdService';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
@@ -16,16 +16,6 @@ import {
 } from 'lucide-react';
 
 // ─── Supabase REST helpers for templates ─────────────────────────────
-const SUPABASE_URL = 'https://povudgtvzggnxwgtjexa.supabase.co';
-const SUPABASE_KEY = import.meta.env.VITE_ATL_SUPABASE_KEY || '';
-
-function supabaseHeaders(): Record<string, string> {
-  return {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${SUPABASE_KEY}`,
-    'Content-Type': 'application/json',
-  };
-}
 
 interface VideoAdTemplate {
   id: string;
@@ -35,33 +25,49 @@ interface VideoAdTemplate {
   created_at: string;
 }
 
-async function fetchTemplates(branch: string): Promise<VideoAdTemplate[]> {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/video_ad_templates?branch=eq.${branch}&order=created_at.desc&select=*`,
-    { headers: supabaseHeaders() },
-  );
-  if (!res.ok) return [];
-  return res.json();
+function supabaseHeaders(key: string): Record<string, string> {
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+  };
 }
 
-async function saveTemplate(branch: string, name: string, settings: Record<string, any>): Promise<void> {
-  await fetch(`${SUPABASE_URL}/rest/v1/video_ad_templates`, {
+async function fetchTemplates(creds: SpokeCredentials | null, branch: string): Promise<VideoAdTemplate[]> {
+  if (!creds?.url || !creds?.key) return [];
+  try {
+    const res = await fetch(
+      `${creds.url}/rest/v1/video_ad_templates?branch=eq.${branch}&order=created_at.desc&select=*`,
+      { headers: supabaseHeaders(creds.key) },
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+async function saveTemplate(creds: SpokeCredentials | null, branch: string, name: string, settings: Record<string, any>): Promise<void> {
+  if (!creds?.url || !creds?.key) return;
+  await fetch(`${creds.url}/rest/v1/video_ad_templates`, {
     method: 'POST',
-    headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+    headers: { ...supabaseHeaders(creds.key), Prefer: 'return=minimal' },
     body: JSON.stringify({ branch, template_name: name, settings }),
   });
 }
 
-async function deleteTemplate(id: string): Promise<void> {
-  await fetch(`${SUPABASE_URL}/rest/v1/video_ad_templates?id=eq.${id}`, {
+async function deleteTemplate(creds: SpokeCredentials | null, id: string): Promise<void> {
+  if (!creds?.url || !creds?.key) return;
+  await fetch(`${creds.url}/rest/v1/video_ad_templates?id=eq.${id}`, {
     method: 'DELETE',
-    headers: { ...supabaseHeaders(), Prefer: 'return=minimal' },
+    headers: { ...supabaseHeaders(creds.key), Prefer: 'return=minimal' },
   });
 }
 
 // ─── Constants ───────────────────────────────────────────────────────
 interface VideoAdLabProps {
   profiles: Profile[];
+  spokeConnections: SpokeConnection[];
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -75,7 +81,14 @@ const STEPS = [
 ] as const;
 
 // ─── Component ───────────────────────────────────────────────────────
-const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, addToast }) => {
+const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, addToast }) => {
+  // ── Derive spoke credentials from first active connection ──
+  const spokeCreds = useMemo<SpokeCredentials | null>(() => {
+    const active = spokeConnections.find(c => c.status === 'active');
+    if (!active?.supabase_url || !active?.supabase_key) return null;
+    return { url: active.supabase_url, key: active.supabase_key };
+  }, [spokeConnections]);
+
   // ── Wizard step ──
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -110,24 +123,25 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, addToast }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showGallery, setShowGallery] = useState(true);
 
-  // ── Load jobs on mount ──
+  // ── Load jobs on mount (and when creds become available) ──
   useEffect(() => {
+    if (!spokeCreds) return;
     (async () => {
       try {
-        const fetched = await getVideoAdJobs();
+        const fetched = await getVideoAdJobs(spokeCreds);
         setJobs(fetched);
         setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
       } catch {
         // silent
       }
     })();
-  }, []);
+  }, [spokeCreds]);
 
   // ── Load templates when branch changes ──
   useEffect(() => {
     if (!branch) return;
-    fetchTemplates(branch).then(setTemplates).catch(() => setTemplates([]));
-  }, [branch]);
+    fetchTemplates(spokeCreds, branch).then(setTemplates).catch(() => setTemplates([]));
+  }, [branch, spokeCreds]);
 
   // ── Poller ──
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
@@ -142,7 +156,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, addToast }) => {
     }
   }, [addToast]);
 
-  const { activeCount } = useVideoAdPoller(activeJobIds, handleStatusChange, activeJobIds.length > 0);
+  const { activeCount } = useVideoAdPoller(activeJobIds, handleStatusChange, activeJobIds.length > 0, spokeCreds ?? undefined);
 
   // ── Apply template ──
   const applyTemplate = (templateId: string | null) => {
@@ -207,16 +221,14 @@ STRICT RULES:
     try {
       // Save template if requested
       if (saveAsTemplate && newTemplateName.trim()) {
-        await saveTemplate(branch, newTemplateName.trim(), {
+        await saveTemplate(spokeCreds, branch, newTemplateName.trim(), {
           pipeline, actorGender, actorStyle, aspectRatio, tone,
           setting, lighting, mood, customVisualNotes,
         });
-        const refreshed = await fetchTemplates(branch);
+        const refreshed = await fetchTemplates(spokeCreds, branch);
         setTemplates(refreshed);
         addToast(`Template "${newTemplateName}" saved`, 'success');
       }
-
-      const visualPrompt = `${setting} setting. ${lighting} lighting. ${mood} mood.${customVisualNotes ? ` ${customVisualNotes}` : ''}`;
 
       const config: VideoAdConfig = {
         branch,
@@ -235,7 +247,7 @@ STRICT RULES:
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Video generation started!', 'success');
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(spokeCreds);
       setJobs(fetched);
 
       // Reset
@@ -256,7 +268,7 @@ STRICT RULES:
   // ── Cancel job ──
   const handleCancel = async (jobId: string) => {
     try {
-      await cancelVideoAdJob(jobId);
+      await cancelVideoAdJob(jobId, spokeCreds ?? undefined);
       setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'cancelled' as VideoAdStatus } : j));
       setActiveJobIds(prev => prev.filter(id => id !== jobId));
       addToast('Job cancelled.', 'info');

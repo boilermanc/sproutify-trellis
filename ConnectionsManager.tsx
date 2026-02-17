@@ -4,6 +4,10 @@ import { testSpokeConnection, discoverTables, autoMapFields, disconnectSpoke } f
 import { generateSnapshot, saveSnapshot } from './services/branchSnapshotService';
 import { fetchAllBranches } from './lib/supabaseService';
 import { linkConnectionToBranch } from './services/branchLinker';
+import { upsertSpokeConnection, deleteSpokeConnection } from './services/spokeConnectionsService';
+
+const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
+
 import {
   Database,
   Plus,
@@ -347,6 +351,8 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     });
 
     onConnectionsChange(updatedConnections);
+    const persistConn = updatedConnections.find(c => c.id === connection.id);
+    if (persistConn) upsertSpokeConnection(SPROUTIFY_ORG_ID, persistConn);
     setTestingConnectionId(null);
   };
 
@@ -364,6 +370,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       last_tested_at: new Date().toISOString(),
     };
     onConnectionsChange([...connections, connection]);
+    upsertSpokeConnection(SPROUTIFY_ORG_ID, connection);
 
     // Link to branch if one was selected
     const savedBranchId = selectedBranchId;
@@ -418,6 +425,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     const conn = connections.find((c) => c.id === id);
     if (conn) disconnectSpoke(conn.supabase_url, conn.supabase_key);
     onConnectionsChange(connections.filter((c) => c.id !== id));
+    deleteSpokeConnection(id);
     setDeleteConfirm(null);
   };
 

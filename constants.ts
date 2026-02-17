@@ -534,6 +534,27 @@ CREATE INDEX IF NOT EXISTS idx_marketing_gen_type ON marketing_generations (gene
 CREATE INDEX IF NOT EXISTS idx_marketing_gen_created ON marketing_generations (created_at DESC);
 ALTER TABLE marketing_generations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Service Role Full Access" ON marketing_generations FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- 14. SPOKE CONNECTIONS (Federated Data Sources)
+CREATE TABLE IF NOT EXISTS spoke_connections (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+  name TEXT NOT NULL,
+  supabase_url TEXT NOT NULL,
+  supabase_key TEXT NOT NULL,
+  tables JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disconnected', 'error')),
+  last_tested_at TIMESTAMPTZ,
+  last_error TEXT,
+  branch_skipped BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE spoke_connections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Full Access" ON spoke_connections FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_spoke_connections_org ON spoke_connections (organization_id);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";

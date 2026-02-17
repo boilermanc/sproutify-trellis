@@ -32,6 +32,7 @@ import { getProfileByEmail, fetchAllBranches } from './lib/supabaseService';
 import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
+import { fetchSpokeConnections, migrateLocalStorageToSupabase } from './services/spokeConnectionsService';
 import { fetchSocialSignals } from './services/socialService';
 import { mapFederatedConsent } from './utils/profileMapper';
 import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch, BranchInfo, BranchContext, BranchSocialAccountsMap, SocialActivity, DraftPost, DeployedCampaign } from './types';
@@ -246,6 +247,18 @@ const AppContent: React.FC = () => {
     fetchSecrets(SPROUTIFY_ORG_ID).then(setApiKeys);
   }, []);
 
+  // Fetch spoke connections from Supabase on mount (localStorage is instant cache)
+  useEffect(() => {
+    const loadConnections = async () => {
+      await migrateLocalStorageToSupabase(SPROUTIFY_ORG_ID);
+      const connections = await fetchSpokeConnections(SPROUTIFY_ORG_ID);
+      if (connections.length > 0 || spokeConnections.length === 0) {
+        setSpokeConnections(connections);
+      }
+    };
+    loadConnections();
+  }, []);
+
   // Poll for social signals (30s interval).
   // fetchSocialSignals internally gates on table existence — if social_signals
   // doesn't exist yet, it returns [] after a single probe and never retries.
@@ -333,7 +346,7 @@ const AppContent: React.FC = () => {
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} />;
-      case 'video-ad-lab': return <VideoAdLab profiles={profiles} addToast={addToast} />;
+      case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} addToast={addToast} />;
       case 'reddit-growth': return <RedditGrowth setEvents={setEvents} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} />;

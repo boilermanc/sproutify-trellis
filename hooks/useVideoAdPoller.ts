@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { VideoAdJob } from '../types';
-import { pollVideoAdJob } from '../services/videoAdService';
+import { pollVideoAdJob, SpokeCredentials } from '../services/videoAdService';
 
 const POLL_INTERVAL_MS = 5_000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -9,6 +9,7 @@ export function useVideoAdPoller(
   jobIds: string[],
   onStatusChange: (job: VideoAdJob) => void,
   enabled: boolean = true,
+  creds?: SpokeCredentials,
 ): { activeCount: number } {
   const lastKnownRef = useRef<Map<string, VideoAdJob>>(new Map());
   const onStatusChangeRef = useRef(onStatusChange);
@@ -26,7 +27,7 @@ export function useVideoAdPoller(
     }
 
     const results = await Promise.allSettled(
-      idsToPoll.map((id) => pollVideoAdJob(id)),
+      idsToPoll.map((id) => pollVideoAdJob(id, creds)),
     );
 
     for (let i = 0; i < results.length; i++) {
@@ -48,7 +49,7 @@ export function useVideoAdPoller(
     }
 
     setActiveCount(map.size);
-  }, [jobIds]);
+  }, [jobIds, creds]);
 
   useEffect(() => {
     if (!enabled || jobIds.length === 0) {

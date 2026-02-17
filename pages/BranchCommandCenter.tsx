@@ -14,7 +14,9 @@ import { mergeBranchData, linkConnectionToBranch, unlinkConnectionFromBranch } f
 import { generateSnapshot, saveSnapshot } from '../services/branchSnapshotService';
 import { checkConnections, disconnectPlatform } from '../services/socialService';
 import { SOCIAL_PLATFORM_META, getSocialUrl, PLATFORM_ICONS, PLATFORM_COLORS } from '../utils';
+import { upsertSpokeConnection, deleteSpokeConnection } from '../services/spokeConnectionsService';
 
+const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 const FONT_OPTIONS = ['Inter', 'Poppins', 'Roboto', 'System'];
 const TONE_OPTIONS = ['friendly', 'professional', 'playful', 'authoritative'];
 
@@ -130,6 +132,8 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       conn.name === connectionName ? { ...conn, status: 'disconnected' as const } : conn
     );
     onSpokeConnectionsChange(updated);
+    const persistConn = updated.find(c => c.name === connectionName);
+    if (persistConn) upsertSpokeConnection(SPROUTIFY_ORG_ID, persistConn);
   };
 
   const handleRetest = async (connection: SpokeConnection) => {
@@ -144,11 +148,15 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           c.id === connection.id ? { ...c, status: 'error' as const, last_error: error.message, last_tested_at: new Date().toISOString() } : c
         );
         onSpokeConnectionsChange(updated);
+        const persistConn = updated.find(c => c.id === connection.id);
+        if (persistConn) upsertSpokeConnection(SPROUTIFY_ORG_ID, persistConn);
       } else {
         const updated = spokeConnections.map(c =>
           c.id === connection.id ? { ...c, status: 'active' as const, last_error: undefined, last_tested_at: new Date().toISOString() } : c
         );
         onSpokeConnectionsChange(updated);
+        const persistConn = updated.find(c => c.id === connection.id);
+        if (persistConn) upsertSpokeConnection(SPROUTIFY_ORG_ID, persistConn);
         // Fire-and-forget snapshot on successful retest
         fireSnapshotForConnection(connection);
       }
@@ -157,6 +165,8 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
         c.id === connection.id ? { ...c, status: 'error' as const, last_error: err.message, last_tested_at: new Date().toISOString() } : c
       );
       onSpokeConnectionsChange(updated);
+      const persistConn = updated.find(c => c.id === connection.id);
+      if (persistConn) upsertSpokeConnection(SPROUTIFY_ORG_ID, persistConn);
     } finally {
       setIsTesting(prev => ({ ...prev, [connection.id]: false }));
     }
@@ -177,6 +187,8 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           c.id === connection.id ? { ...c, status: 'active' as const, last_error: undefined, last_tested_at: new Date().toISOString() } : c
         );
         onSpokeConnectionsChange(updated);
+        const persistConn = updated.find(c => c.id === connection.id);
+        if (persistConn) upsertSpokeConnection(SPROUTIFY_ORG_ID, persistConn);
         // Fire-and-forget snapshot on successful reconnect
         fireSnapshotForConnection(connection);
       }
@@ -188,8 +200,10 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   };
 
   const handleForgetConnection = (connectionName: string) => {
+    const conn = spokeConnections.find(c => c.name === connectionName);
     const filtered = spokeConnections.filter(c => c.name !== connectionName);
     onSpokeConnectionsChange(filtered);
+    if (conn) deleteSpokeConnection(conn.id);
   };
 
   // Link/unlink handlers
