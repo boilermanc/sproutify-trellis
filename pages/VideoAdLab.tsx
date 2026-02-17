@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Profile, VideoAdConfig, VideoAdJob, VideoAdStatus } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
-import { VOICE_OPTIONS, TONE_PRESETS, ACTOR_STYLES, DURATION_OPTIONS, VIDEO_AD_COST_PER_VARIANT, VIDEO_AD_STAGES } from '../constants';
+import { VOICE_OPTIONS, TONE_PRESETS, ACTOR_STYLES, ACTOR_GENDERS, PIPELINE_OPTIONS, DURATION_OPTIONS, VIDEO_AD_STAGES } from '../constants';
 import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob } from '../services/videoAdService';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
@@ -20,6 +20,9 @@ interface VideoAdLabProps {
 const TERMINAL_STATUSES: VideoAdStatus[] = ['completed', 'failed', 'cancelled'];
 const BRANCH_KEYS = Object.keys(BRANCH_DISPLAY_NAMES);
 
+const PIPELINE_ICON_MAP: Record<string, React.ElementType> = { User, Film };
+const PIPELINE_COST: Record<string, number> = { talking_head: 0.12, full_scene: 0.70 };
+
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, addToast }) => {
 
   // ═══════════════════════════════════════════════════════════════
@@ -35,6 +38,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, addToast }) => {
   const [selectedVoice, setSelectedVoice] = useState(VOICE_OPTIONS[0].id);
   const [duration, setDuration] = useState<15 | 30 | 60>(30);
   const [variants, setVariants] = useState(1);
+  const [pipeline, setPipeline] = useState<'talking_head' | 'full_scene'>('full_scene');
   const [generatedScript, setGeneratedScript] = useState('');
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
 
@@ -86,14 +90,24 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, addToast }) => {
     setIsGeneratingScript(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Write a ${duration}-second video ad script for "${formatBranchName(branch)}".
-Product: ${productDescription}
-Target audience: ${targetSegment}
-Tone: ${tone}
-CTA: ${cta || 'Visit our website'}
-Actor style: ${actorStyle}, ${actorGender}
+      const wl = Math.floor(duration * 2.5);
+      const prompt = `You are a video ad scriptwriter for Sproutify. Write a spoken-word script for a talking-head video ad.
 
-Return ONLY the spoken script text — no stage directions, no scene descriptions, no formatting. Just the words the actor will say on camera. Keep it punchy and within ${duration} seconds when read aloud (~${Math.round(duration * 2.5)} words).`;
+PRODUCT: ${productDescription}
+BRAND: ${formatBranchName(branch)}
+TARGET AUDIENCE: ${targetSegment}
+TONE: ${tone}
+CTA: ${cta || 'Visit our website'}
+DURATION: ${duration} seconds
+
+STRICT RULES:
+1. Write ONLY spoken dialogue — words the actor will say out loud.
+2. Do NOT include stage directions, actions, gestures, or parenthetical notes like "(smiling)", "(holds up product)", "(nods)". The video is a face-only talking head — no body or props are visible.
+3. Maximum ${wl} words. This is a hard limit. The audio must fit in ${duration} seconds.
+4. Start with a hook in the first sentence to grab attention.
+5. End with the CTA naturally woven into the last sentence.
+6. Match the ${tone} tone throughout.
+7. Return ONLY the script text. No labels, no formatting, no markdown.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -124,6 +138,7 @@ Return ONLY the spoken script text — no stage directions, no scene description
         actor_gender: actorGender,
         voice_style: selectedVoice,
         video_duration: duration,
+        pipeline,
       };
 
       const newJobIds: string[] = [];
@@ -162,9 +177,11 @@ Return ONLY the spoken script text — no stage directions, no scene description
   // ═══════════════════════════════════════════════════════════════
   // DERIVED
   // ═══════════════════════════════════════════════════════════════
+  const wordLimit = Math.floor(duration * 2.5);
   const wordCount = generatedScript.trim().split(/\s+/).filter(Boolean).length;
   const estimatedSeconds = Math.round(wordCount / 2.5);
-  const costEstimate = (variants * VIDEO_AD_COST_PER_VARIANT).toFixed(2);
+  const costPerVariant = PIPELINE_COST[pipeline] ?? 0.12;
+  const costEstimate = (variants * costPerVariant).toFixed(2);
 
   // ═══════════════════════════════════════════════════════════════
   // RENDER
@@ -219,18 +236,18 @@ Return ONLY the spoken script text — no stage directions, no scene description
                 />
               </div>
 
-              {/* Tone Pills */}
+              {/* Tone — select dropdown */}
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Tone</label>
-                <div className="flex flex-wrap gap-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tone</label>
+                <select
+                  value={tone}
+                  onChange={e => setTone(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500 transition"
+                >
                   {TONE_PRESETS.map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setTone(t)}
-                      className={`px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-wider transition ${tone === t ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >{t}</button>
+                    <option key={t} value={t}>{t}</option>
                   ))}
-                </div>
+                </select>
               </div>
 
               {/* CTA */}
@@ -265,10 +282,10 @@ Return ONLY the spoken script text — no stage directions, no scene description
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-5 text-sm font-medium outline-none focus:bg-white focus:border-emerald-500 transition min-h-[160px]"
                   />
                   <div className="flex items-center gap-4 mt-2 text-[10px] font-bold text-slate-400">
-                    <span>{wordCount} words</span>
+                    <span className={wordCount > wordLimit ? 'text-amber-500' : ''}>{wordCount} / {wordLimit} words</span>
                     <span>~{estimatedSeconds}s spoken</span>
-                    {estimatedSeconds > duration && (
-                      <span className="text-amber-500">Exceeds {duration}s target</span>
+                    {wordCount > wordLimit && (
+                      <span className="text-amber-500">Over limit — trim to fit {duration}s</span>
                     )}
                   </div>
                 </div>
@@ -285,30 +302,54 @@ Return ONLY the spoken script text — no stage directions, no scene description
             </h3>
 
             <div className="space-y-6">
-              {/* Actor Style Grid */}
+              {/* Pipeline Selector — radio cards */}
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Style</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Pipeline</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {ACTOR_STYLES.map(s => (
-                    <button
-                      key={s}
-                      onClick={() => setActorStyle(s)}
-                      className={`p-4 rounded-2xl text-xs font-black uppercase tracking-wider text-center transition border-2 ${actorStyle === s ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md' : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200'}`}
-                    >{s}</button>
-                  ))}
+                  {PIPELINE_OPTIONS.map(opt => {
+                    const Icon = PIPELINE_ICON_MAP[opt.icon] ?? Film;
+                    const selected = pipeline === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setPipeline(opt.value)}
+                        className={`p-4 rounded-2xl text-left transition border-2 ${selected ? 'border-emerald-500 bg-emerald-500/10 shadow-md' : 'border-slate-100 bg-slate-50 hover:border-slate-200'}`}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <Icon size={16} className={selected ? 'text-emerald-600' : 'text-slate-400'} />
+                          <span className={`text-xs font-black uppercase tracking-wider ${selected ? 'text-emerald-700' : 'text-slate-500'}`}>{opt.label}</span>
+                        </div>
+                        <p className={`text-[10px] font-medium ${selected ? 'text-emerald-600' : 'text-slate-400'}`}>{opt.description}</p>
+                      </button>
+                    );
+                  })}
                 </div>
+              </div>
+
+              {/* Actor Style — select dropdown */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Style</label>
+                <select
+                  value={actorStyle}
+                  onChange={e => setActorStyle(e.target.value)}
+                  className="w-full px-5 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500 transition"
+                >
+                  {ACTOR_STYLES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Gender Pills */}
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Gender</label>
                 <div className="flex gap-2">
-                  {(['female', 'male'] as const).map(g => (
+                  {ACTOR_GENDERS.map(g => (
                     <button
-                      key={g}
-                      onClick={() => setActorGender(g)}
-                      className={`flex-1 py-3 rounded-full text-xs font-black uppercase tracking-wider transition ${actorGender === g ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                    >{g === 'female' ? 'Female' : 'Male'}</button>
+                      key={g.value}
+                      onClick={() => setActorGender(g.value)}
+                      className={`flex-1 py-3 rounded-full text-xs font-black uppercase tracking-wider transition ${actorGender === g.value ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                    >{g.label}</button>
                   ))}
                 </div>
               </div>

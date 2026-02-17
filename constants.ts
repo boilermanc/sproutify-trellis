@@ -848,9 +848,31 @@ export const VOICE_OPTIONS = [
   { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', style: 'Energetic female' },
 ] as const;
 
-export const TONE_PRESETS = ['Friendly', 'Professional', 'Energetic', 'Educational'] as const;
+export const TONE_PRESETS = [
+  'Friendly',
+  'Professional',
+  'Bold',
+  'Playful',
+  'Educational',
+] as const;
 
-export const ACTOR_STYLES = ['Professional', 'Casual', 'Youthful', 'Authoritative'] as const;
+export const ACTOR_STYLES = [
+  'Professional',
+  'Casual',
+  'Youthful',
+  'Authoritative',
+  'Influencer',
+] as const;
+
+export const ACTOR_GENDERS = [
+  { value: 'female', label: 'Female' },
+  { value: 'male', label: 'Male' },
+] as const;
+
+export const PIPELINE_OPTIONS = [
+  { value: 'talking_head', label: 'Talking Head', description: 'AI face + lipsync (~$0.12)', icon: 'User' },
+  { value: 'full_scene', label: 'Full Scene', description: 'Kling AI full video (~$0.70)', icon: 'Film' },
+] as const;
 
 export const DURATION_OPTIONS: (15 | 30 | 60)[] = [15, 30, 60];
 

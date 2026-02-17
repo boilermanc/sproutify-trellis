@@ -36,6 +36,7 @@ export async function submitVideoAdJob(
         actor_gender: config.actor_gender,
         voice_style: config.voice_style,
         video_duration: config.video_duration,
+        pipeline: config.pipeline,
       }),
     });
 

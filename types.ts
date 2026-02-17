@@ -858,6 +858,7 @@ export interface VideoAdConfig {
   actor_gender: 'male' | 'female';
   voice_style: string;
   video_duration: 15 | 30 | 60;
+  pipeline: 'talking_head' | 'full_scene';
 }
 
 export interface VideoAdJob {
