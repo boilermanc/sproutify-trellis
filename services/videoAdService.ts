@@ -23,37 +23,40 @@ function supabaseHeaders(key: string): Record<string, string> {
 }
 
 // ─── 1. submitVideoAdJob ───────────────────────────────────────────
-// POST flat config fields to the n8n webhook; returns { job_id }.
+// Generate a job_id client-side, fire the webhook (don't await the
+// response — n8n processing takes minutes, Cloudflare will 524), and
+// return the job_id immediately so the poller can start tracking it.
+// n8n must use the provided job_id as the row's id in video_ad_jobs.
 export async function submitVideoAdJob(
   config: VideoAdConfig,
 ): Promise<{ job_id: string }> {
-  try {
-    const response = await fetch(VIDEO_AD_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        branch: config.branch,
-        product_description: config.product_description,
-        target_segment: config.target_segment,
-        tone: config.tone,
-        cta: config.cta,
-        actor_style: config.actor_style,
-        actor_gender: config.actor_gender,
-        voice_style: config.voice_style,
-        video_duration: config.video_duration,
-        pipeline: config.pipeline,
-      }),
-    });
+  const job_id = crypto.randomUUID();
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Video ad webhook error (${response.status}): ${text}`);
-    }
+  // Fire-and-forget — don't await. n8n receives and processes the
+  // request even if the browser can't read the response (CORS / 524).
+  fetch(VIDEO_AD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      job_id,
+      branch: config.branch,
+      product_description: config.product_description,
+      target_segment: config.target_segment,
+      tone: config.tone,
+      cta: config.cta,
+      actor_style: config.actor_style,
+      actor_gender: config.actor_gender,
+      voice_style: config.voice_style,
+      video_duration: config.video_duration,
+      pipeline: config.pipeline,
+    }),
+  }).catch(() => {
+    // Expected — Cloudflare 524 timeout or CORS block on the response.
+    // The request still reaches n8n and the job will appear in Supabase.
+    console.log('[videoAd] Webhook fire-and-forget completed (response unreadable, expected)');
+  });
 
-    return await response.json();
-  } catch (err: any) {
-    throw new Error(`Failed to submit video ad job: ${err.message}`);
-  }
+  return { job_id };
 }
 
 // ─── 2. pollVideoAdJob ────────────────────────────────────────────
