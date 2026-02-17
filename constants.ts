@@ -838,3 +838,31 @@ export const N8N_BLUEPRINTS = {
   "setup": ["Same Reddit OAuth credentials as D1 scanner", "Reddit app must have 'submit' scope"]
 }`,
 };
+
+// ─── Video Ad Lab ───
+
+export const VOICE_OPTIONS = [
+  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', style: 'Friendly female' },
+  { id: '29vD33N1CtxCmqQRPOHJ', name: 'Drew', style: 'Casual male' },
+  { id: '2EiwWnXFnvU5JabPnv8n', name: 'Clyde', style: 'Authoritative male' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', style: 'Energetic female' },
+] as const;
+
+export const TONE_PRESETS = ['Friendly', 'Professional', 'Energetic', 'Educational'] as const;
+
+export const ACTOR_STYLES = ['Professional', 'Casual', 'Youthful', 'Authoritative'] as const;
+
+export const DURATION_OPTIONS: (15 | 30 | 60)[] = [15, 30, 60];
+
+export const VIDEO_AD_COST_PER_VARIANT = 0.12;
+
+export const VIDEO_AD_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-video-ad-generate';
+
+export const VIDEO_AD_STAGES = [
+  { key: 'queued', label: 'Queued' },
+  { key: 'script', label: 'Script' },
+  { key: 'face', label: 'Face Gen' },
+  { key: 'audio', label: 'Audio' },
+  { key: 'video', label: 'Lipsync' },
+  { key: 'completed', label: 'Complete' },
+] as const;

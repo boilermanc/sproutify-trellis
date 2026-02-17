@@ -355,7 +355,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab';
 
 export interface TrellisReport {
   id: string;
@@ -842,4 +842,36 @@ export interface MarketingGenerationLog {
   output: Record<string, any>;
   error?: string;
   created_at: string;
+}
+
+// ─── Video Ad Lab ───
+
+export type VideoAdStatus = 'queued' | 'script' | 'face' | 'audio' | 'video' | 'completed' | 'failed' | 'cancelled';
+
+export interface VideoAdConfig {
+  branch: string;
+  product_description: string;
+  target_segment: string;
+  tone: string;
+  cta: string;
+  actor_style: string;
+  actor_gender: 'male' | 'female';
+  voice_style: string;
+  video_duration: 15 | 30 | 60;
+}
+
+export interface VideoAdJob {
+  id: string;
+  config: VideoAdConfig;
+  status: VideoAdStatus;
+  video_url?: string;
+  thumbnail_url?: string;
+  error_message?: string;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface VideoAdBatchRequest {
+  configs: VideoAdConfig[];
+  variants: number;
 }
