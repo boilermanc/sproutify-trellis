@@ -1,26 +1,12 @@
 import { VideoAdConfig, VideoAdJob } from '../types';
 import { VIDEO_AD_WEBHOOK } from '../constants';
+import { supabase } from '../lib/supabase';
 
 // ─── Video Ad Lab Service ──────────────────────────────────────────
-// Communicates with n8n (job submission) and ATL Supabase REST API
-// (job polling, listing, cancellation). Uses plain fetch throughout.
-//
-// Spoke credentials are passed in at call time — they come from the
-// SpokeConnection objects stored in the app, not from env vars.
+// Job submission goes to n8n via webhook (fire-and-forget).
+// Job polling, listing, and cancellation use the Hub Supabase client
+// since video_ad_jobs is orchestration data stored on Hub.
 // ────────────────────────────────────────────────────────────────────
-
-export interface SpokeCredentials {
-  url: string;
-  key: string;
-}
-
-function supabaseHeaders(key: string): Record<string, string> {
-  return {
-    'apikey': key,
-    'Authorization': `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  };
-}
 
 // ─── 1. submitVideoAdJob ───────────────────────────────────────────
 // Generate a job_id client-side, fire the webhook (don't await the
@@ -60,82 +46,59 @@ export async function submitVideoAdJob(
 }
 
 // ─── 2. pollVideoAdJob ────────────────────────────────────────────
-// Fetch a single job by ID from the Supabase REST API.
+// Fetch a single job by ID from Hub Supabase.
 export async function pollVideoAdJob(
   jobId: string,
-  creds?: SpokeCredentials,
 ): Promise<VideoAdJob | null> {
-  if (!creds?.url || !creds?.key) return null;
-  try {
-    const response = await fetch(
-      `${creds.url}/rest/v1/video_ad_jobs?id=eq.${jobId}&select=*`,
-      { headers: supabaseHeaders(creds.key) },
-    );
+  const { data, error } = await supabase
+    .from('video_ad_jobs')
+    .select('*')
+    .eq('id', jobId)
+    .maybeSingle();
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Supabase poll error (${response.status}): ${text}`);
-    }
-
-    const rows: VideoAdJob[] = await response.json();
-    return rows[0] ?? null;
-  } catch (err: any) {
-    throw new Error(`Failed to poll video ad job ${jobId}: ${err.message}`);
+  if (error) {
+    throw new Error(`Failed to poll video ad job ${jobId}: ${error.message}`);
   }
+
+  return data as VideoAdJob | null;
 }
 
 // ─── 3. getVideoAdJobs ───────────────────────────────────────────
-// List recent jobs, optionally filtered by branch.
+// List recent jobs from Hub Supabase, optionally filtered by branch.
 export async function getVideoAdJobs(
-  creds?: SpokeCredentials,
   branch?: string,
-  limit: number = 20,
+  limit: number = 50,
 ): Promise<VideoAdJob[]> {
-  if (!creds?.url || !creds?.key) return [];
-  try {
-    let url = `${creds.url}/rest/v1/video_ad_jobs?select=*&order=created_at.desc&limit=${limit}`;
-    if (branch) {
-      url += `&branch=eq.${branch}`;
-    }
+  let query = supabase
+    .from('video_ad_jobs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
-    const response = await fetch(url, { headers: supabaseHeaders(creds.key) });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Supabase list error (${response.status}): ${text}`);
-    }
-
-    return await response.json();
-  } catch (err: any) {
-    throw new Error(`Failed to list video ad jobs: ${err.message}`);
+  if (branch) {
+    query = query.eq('branch', branch);
   }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to list video ad jobs: ${error.message}`);
+  }
+
+  return (data as VideoAdJob[]) ?? [];
 }
 
 // ─── 4. cancelVideoAdJob ─────────────────────────────────────────
-// PATCH the job status to 'cancelled'.
+// PATCH the job status to 'cancelled' on Hub Supabase.
 export async function cancelVideoAdJob(
   jobId: string,
-  creds?: SpokeCredentials,
 ): Promise<void> {
-  if (!creds?.url || !creds?.key) return;
-  try {
-    const response = await fetch(
-      `${creds.url}/rest/v1/video_ad_jobs?id=eq.${jobId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          ...supabaseHeaders(creds.key),
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({ status: 'cancelled' }),
-      },
-    );
+  const { error } = await supabase
+    .from('video_ad_jobs')
+    .update({ status: 'cancelled' })
+    .eq('id', jobId);
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Supabase cancel error (${response.status}): ${text}`);
-    }
-  } catch (err: any) {
-    throw new Error(`Failed to cancel video ad job ${jobId}: ${err.message}`);
+  if (error) {
+    throw new Error(`Failed to cancel video ad job ${jobId}: ${error.message}`);
   }
 }

@@ -7,7 +7,7 @@ import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
 } from '../constants';
-import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob, SpokeCredentials } from '../services/videoAdService';
+import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob } from '../services/videoAdService';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
@@ -15,7 +15,12 @@ import {
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock,
 } from 'lucide-react';
 
-// ─── Supabase REST helpers for templates ─────────────────────────────
+// ─── Supabase REST helpers for templates (spoke-side) ────────────────
+
+interface TemplateCreds {
+  url: string;
+  key: string;
+}
 
 interface VideoAdTemplate {
   id: string;
@@ -33,7 +38,7 @@ function supabaseHeaders(key: string): Record<string, string> {
   };
 }
 
-async function fetchTemplates(creds: SpokeCredentials | null, branch: string): Promise<VideoAdTemplate[]> {
+async function fetchTemplates(creds: TemplateCreds | null, branch: string): Promise<VideoAdTemplate[]> {
   if (!creds?.url || !creds?.key) return [];
   try {
     const res = await fetch(
@@ -47,7 +52,7 @@ async function fetchTemplates(creds: SpokeCredentials | null, branch: string): P
   }
 }
 
-async function saveTemplate(creds: SpokeCredentials | null, branch: string, name: string, settings: Record<string, any>): Promise<void> {
+async function saveTemplate(creds: TemplateCreds | null, branch: string, name: string, settings: Record<string, any>): Promise<void> {
   if (!creds?.url || !creds?.key) return;
   await fetch(`${creds.url}/rest/v1/video_ad_templates`, {
     method: 'POST',
@@ -56,7 +61,7 @@ async function saveTemplate(creds: SpokeCredentials | null, branch: string, name
   });
 }
 
-async function deleteTemplate(creds: SpokeCredentials | null, id: string): Promise<void> {
+async function deleteTemplate(creds: TemplateCreds | null, id: string): Promise<void> {
   if (!creds?.url || !creds?.key) return;
   await fetch(`${creds.url}/rest/v1/video_ad_templates?id=eq.${id}`, {
     method: 'DELETE',
@@ -85,8 +90,8 @@ type StatusFilter = 'all' | 'active' | 'completed' | 'failed';
 
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast }) => {
-  // ── Derive spoke credentials from first active connection ──
-  const spokeCreds = useMemo<SpokeCredentials | null>(() => {
+  // ── Derive spoke credentials for templates only ──
+  const spokeCreds = useMemo<TemplateCreds | null>(() => {
     const active = spokeConnections.find(c => c.status === 'active');
     if (!active?.supabase_url || !active?.supabase_key) return null;
     return { url: active.supabase_url, key: active.supabase_key };
@@ -129,12 +134,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // ── Load jobs on mount (and when creds become available) ──
+  // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
-    if (!spokeCreds) return;
     (async () => {
       try {
-        const fetched = await getVideoAdJobs(spokeCreds);
+        const fetched = await getVideoAdJobs();
         setJobs(fetched);
         setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
       } catch (err: any) {
@@ -142,9 +146,9 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
         addToast(`Failed to load video jobs: ${err.message}`, 'error');
       }
     })();
-  }, [spokeCreds]);
+  }, []);
 
-  // ── Load templates when branch changes ──
+  // ── Load templates when branch changes (spoke-side) ──
   useEffect(() => {
     if (!branch) return;
     fetchTemplates(spokeCreds, branch).then(setTemplates).catch(() => setTemplates([]));
@@ -163,14 +167,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     }
   }, [addToast]);
 
-  const { activeCount } = useVideoAdPoller(activeJobIds, handleStatusChange, activeJobIds.length > 0, spokeCreds ?? undefined);
+  const { activeCount } = useVideoAdPoller(activeJobIds, handleStatusChange, activeJobIds.length > 0);
 
   // ── Refresh handler ──
   const handleRefresh = useCallback(async () => {
-    if (!spokeCreds) return;
     setIsRefreshing(true);
     try {
-      const fetched = await getVideoAdJobs(spokeCreds);
+      const fetched = await getVideoAdJobs();
       setJobs(fetched);
       setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
       addToast('Video library refreshed', 'info');
@@ -180,7 +183,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     } finally {
       setIsRefreshing(false);
     }
-  }, [spokeCreds, addToast]);
+  }, [addToast]);
 
   // ── Filtered jobs ──
   const filteredJobs = useMemo(() => {
@@ -288,7 +291,7 @@ STRICT RULES:
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Video generation started!', 'success');
 
-      const fetched = await getVideoAdJobs(spokeCreds);
+      const fetched = await getVideoAdJobs();
       setJobs(fetched);
 
       // Reset
@@ -309,7 +312,7 @@ STRICT RULES:
   // ── Cancel job ──
   const handleCancel = async (jobId: string) => {
     try {
-      await cancelVideoAdJob(jobId, spokeCreds ?? undefined);
+      await cancelVideoAdJob(jobId);
       setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'cancelled' as VideoAdStatus } : j));
       setActiveJobIds(prev => prev.filter(id => id !== jobId));
       addToast('Job cancelled.', 'info');
@@ -814,7 +817,7 @@ STRICT RULES:
             </div>
             <button
               onClick={handleRefresh}
-              disabled={isRefreshing || !spokeCreds}
+              disabled={isRefreshing}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition disabled:opacity-30"
             >
               <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
@@ -948,7 +951,7 @@ STRICT RULES:
                       {/* Cost */}
                       <td className="px-4 py-3 text-right">
                         {job.cost_estimate != null ? (
-                          <span className="text-xs font-bold text-slate-600">${job.cost_estimate.toFixed(2)}</span>
+                          <span className="text-xs font-bold text-slate-600">${Number(job.cost_estimate).toFixed(2)}</span>
                         ) : (
                           <span className="text-xs text-slate-300">—</span>
                         )}
