@@ -68,6 +68,7 @@ async function deleteTemplate(creds: SpokeCredentials | null, id: string): Promi
 interface VideoAdLabProps {
   profiles: Profile[];
   spokeConnections: SpokeConnection[];
+  geminiApiKey: string;
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -81,7 +82,7 @@ const STEPS = [
 ] as const;
 
 // ─── Component ───────────────────────────────────────────────────────
-const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, addToast }) => {
+const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast }) => {
   // ── Derive spoke credentials from first active connection ──
   const spokeCreds = useMemo<SpokeCredentials | null>(() => {
     const active = spokeConnections.find(c => c.status === 'active');
@@ -182,7 +183,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, add
     if (!productDescription) return;
     setIsGeneratingScript(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      if (!geminiApiKey) { addToast('No Gemini API key configured. Add one in Settings.', 'error'); return; }
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       const wl = Math.floor(duration * 2.5);
       const prompt = `You are a video ad scriptwriter for Sproutify. Write a spoken-word script for a ${pipeline === 'talking_head' ? 'talking-head' : 'full scene'} video ad.
 

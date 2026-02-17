@@ -553,6 +553,7 @@ CREATE TABLE IF NOT EXISTS spoke_connections (
 
 ALTER TABLE spoke_connections ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Service Role Full Access" ON spoke_connections FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON spoke_connections FOR ALL TO anon USING (true) WITH CHECK (true);
 
 CREATE INDEX IF NOT EXISTS idx_spoke_connections_org ON spoke_connections (organization_id);
 `;
