@@ -11,7 +11,7 @@ import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob } from '../services/
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
-  ChevronDown, ChevronUp, Target, FileText, Zap, DollarSign,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock,
 } from 'lucide-react';
 
@@ -133,6 +133,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // ── Video Library state ──
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
@@ -200,6 +202,16 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     completed: jobs.filter(j => j.status === 'completed').length,
     failed: jobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length,
   }), [jobs]);
+
+  // ── Pagination ──
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE));
+  const paginatedJobs = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredJobs.slice(start, start + PAGE_SIZE);
+  }, [filteredJobs, currentPage]);
+
+  // Reset to page 1 when filter changes
+  useEffect(() => { setCurrentPage(1); }, [statusFilter]);
 
   // ── Apply template ──
   const applyTemplate = (templateId: string | null) => {
@@ -870,7 +882,7 @@ STRICT RULES:
                 </tr>
               </thead>
               <tbody>
-                {filteredJobs.map(job => {
+                {paginatedJobs.map(job => {
                   const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
                   const thumbnailSrc = job.thumbnail_url || job.face_image_url;
                   const createdDate = new Date(job.created_at);
@@ -997,6 +1009,44 @@ STRICT RULES:
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {filteredJobs.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100">
+            <span className="text-xs text-slate-400">
+              {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredJobs.length)} of {filteredJobs.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold transition ${
+                    page === currentPage
+                      ? 'bg-emerald-500 text-white'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
         )}
       </div>

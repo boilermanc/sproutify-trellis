@@ -69,9 +69,6 @@ export async function getVideoAdJobs(
   branch?: string,
   limit: number = 50,
 ): Promise<VideoAdJob[]> {
-  // Diagnostic: confirm which Supabase we're hitting
-  console.log('[videoAd] getVideoAdJobs — supabase URL:', (supabase as any).supabaseUrl || 'unknown');
-
   let query = supabase
     .from('video_ad_jobs')
     .select('*')
@@ -82,10 +79,7 @@ export async function getVideoAdJobs(
     query = query.eq('branch', branch);
   }
 
-  const { data, error, status, statusText } = await query;
-
-  // Diagnostic: log raw response
-  console.log('[videoAd] getVideoAdJobs response:', { rowCount: data?.length, error, status, statusText });
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Failed to list video ad jobs: ${error.message}`);
