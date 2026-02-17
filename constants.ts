@@ -870,9 +870,19 @@ export const ACTOR_GENDERS = [
 ] as const;
 
 export const PIPELINE_OPTIONS = [
-  { value: 'talking_head', label: 'Talking Head', description: 'AI face + lipsync (~$0.12)', icon: 'User' },
-  { value: 'full_scene', label: 'Full Scene', description: 'Kling AI full video (~$0.70)', icon: 'Film' },
+  { value: 'talking_head', label: 'Talking Head', description: 'AI face with lipsync', cost: 0.12 },
+  { value: 'full_scene', label: 'Full Scene', description: 'Full AI-generated video', cost: 0.70 },
 ] as const;
+
+export const ASPECT_RATIOS = [
+  { value: '9:16', label: '9:16 Vertical (Reels/TikTok)' },
+  { value: '16:9', label: '16:9 Horizontal (YouTube)' },
+  { value: '1:1', label: '1:1 Square (Instagram)' },
+] as const;
+
+export const VIDEO_SETTINGS = ['Studio', 'Outdoor', 'Kitchen', 'Garden', 'Office', 'Gym', 'Cafe', 'Market', 'Rooftop'] as const;
+export const VIDEO_LIGHTING = ['Natural', 'Studio', 'Golden hour', 'Dramatic', 'Soft & warm'] as const;
+export const VIDEO_MOODS = ['Energetic', 'Calm', 'Luxurious', 'Fun', 'Inspirational', 'Cozy'] as const;
 
 export const DURATION_OPTIONS: (15 | 30 | 60)[] = [15, 30, 60];
 
