@@ -442,7 +442,9 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         schemaProperties[p] = { type: Type.STRING };
       });
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const geminiKey = apiKeys?.gemini_api_key;
+      if (!geminiKey) { addToast?.('Gemini API key not configured. Set it in Settings.', 'error'); setIsGenerating(false); return; }
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,

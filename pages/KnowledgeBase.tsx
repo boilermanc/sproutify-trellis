@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { FAQ, KnowledgeDoc } from '../types';
+import { FAQ, KnowledgeDoc, ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import CustomerSitesTag from '../components/CustomerSitesTag';
 import { GoogleGenAI } from "@google/genai";
@@ -25,10 +25,11 @@ const MOCK_FAQS: FAQ[] = [
 ];
 
 interface KnowledgeBaseProps {
+  apiKeys?: ApiKeyConfig;
   onOpenArticle?: (article: Article) => void;
 }
 
-const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ onOpenArticle }) => {
+const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'faqs'>('docs');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -62,7 +63,9 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ onOpenArticle }) => {
     setIsAuditing(true);
     setAuditInsight(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const geminiKey = apiKeys?.gemini_api_key;
+      if (!geminiKey) { setIsAuditing(false); return; }
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Analyze this knowledge base summary: ${MOCK_DOCS.length} docs, ${MOCK_FAQS.length} FAQs. Top categories: troubleshooting, onboarding.

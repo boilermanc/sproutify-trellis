@@ -357,7 +357,7 @@ const AppContent: React.FC = () => {
       case 'reddit-growth': return <RedditGrowth setEvents={setEvents} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
-      case 'knowledge-base': return <KnowledgeBase onOpenArticle={handleOpenHelpArticle} />;
+      case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'help-center': return <HelpCenter initialArticle={helpArticle} />;
       case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} />;
       case 'marketing-brands': return (
@@ -373,7 +373,7 @@ const AppContent: React.FC = () => {
           apiKeys={apiKeys}
         />
       );
-      case 'automations': return <Automations onOpenArticle={handleOpenHelpArticle} />;
+      case 'automations': return <Automations apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} branchContext={branchContext} />;
       case 'dev-tools': return <DevTools profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;

@@ -10,6 +10,7 @@ import {
   PlusCircle, Save, X, RefreshCw, FileCode
 } from 'lucide-react';
 import { N8N_BLUEPRINTS, CAMPAIGN_WEBHOOK } from '../constants';
+import { ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
 
@@ -40,10 +41,11 @@ const BLUEPRINT_META: Record<string, { title: string; desc: string; icon: any; c
 };
 
 interface AutomationsProps {
+  apiKeys?: ApiKeyConfig;
   onOpenArticle?: (article: Article) => void;
 }
 
-const Automations: React.FC<AutomationsProps> = ({ onOpenArticle }) => {
+const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => {
   const [activeMode, setActiveMode] = useState<'builder' | 'blueprints'>('builder');
   const [flowName, setFlowName] = useState('New Onboarding Flow');
   const [nodes, setNodes] = useState<FlowNode[]>([
@@ -79,7 +81,9 @@ const Automations: React.FC<AutomationsProps> = ({ onOpenArticle }) => {
   const handleAiBuild = async () => {
     setIsGenerating(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const geminiKey = apiKeys?.gemini_api_key;
+      if (!geminiKey) { setIsGenerating(false); return; }
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: "Suggest an automation flow for 'Recovering Abandoned Carts for Garden Tools'. Provide exactly 4 steps. Just the step names.",
