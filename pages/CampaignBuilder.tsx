@@ -134,6 +134,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
 }) => {
   // Ref for launch interval cleanup on unmount
   const launchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const stepContentRef = useRef<HTMLDivElement>(null);
 
   // Step state
   const [currentStep, setCurrentStep] = useState(0);
@@ -241,6 +243,26 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       }
     };
   }, []);
+
+  // Scroll to subject field and highlight it when entering Compose step
+  useEffect(() => {
+    if (currentStep === 1) {
+      // Small delay to let the step content render
+      const timeout = setTimeout(() => {
+        if (stepContentRef.current) {
+          stepContentRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        if (subjectRef.current) {
+          subjectRef.current.focus();
+          subjectRef.current.classList.add('ring-4', 'ring-emerald-400', 'ring-offset-2');
+          setTimeout(() => {
+            subjectRef.current?.classList.remove('ring-4', 'ring-emerald-400', 'ring-offset-2');
+          }, 2000);
+        }
+      }, 150);
+      return () => clearTimeout(timeout);
+    }
+  }, [currentStep]);
 
   // Resolve spoke connection id → branch slug
   const slugByConnectionId = useMemo(() => {
@@ -528,7 +550,6 @@ Return ONLY the post content, no explanations or labels.`,
         WEBHOOK_SPECS.campaign_dispatch,
         {
           campaign_id: newCampaign.id,
-          branches: selectedBranches,
           tags: null, // All active subscribers — tag filtering added later
           subject: emailSubject,
           html_body: dispatchHtml,
@@ -1069,9 +1090,10 @@ Return ONLY the post content, no explanations or labels.`,
                     </div>
                   </div>
                   <input
+                    ref={subjectRef}
                     type="text"
                     placeholder="e.g. A specialized update for you, {{first_name}}!"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 text-xl font-bold focus:bg-white focus:border-emerald-500 outline-none transition shadow-inner"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 text-xl font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all duration-300 shadow-inner"
                     value={emailSubject}
                     onChange={e => setEmailSubject(e.target.value)}
                   />
@@ -1630,7 +1652,7 @@ Return ONLY the post content, no explanations or labels.`,
           })}
         </div>
 
-        <div className="min-h-[500px]">
+        <div ref={stepContentRef} className="min-h-[500px]">
           {renderStep()}
         </div>
 
