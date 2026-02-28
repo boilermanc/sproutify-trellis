@@ -249,9 +249,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     if (currentStep === 1) {
       // Small delay to let the step content render
       const timeout = setTimeout(() => {
-        if (stepContentRef.current) {
-          stepContentRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         if (subjectRef.current) {
           subjectRef.current.focus();
           subjectRef.current.classList.add('ring-4', 'ring-emerald-400', 'ring-offset-2');
