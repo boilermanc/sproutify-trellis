@@ -885,6 +885,8 @@ export interface VideoAdJob {
   created_at: string;
   completed_at: string | null;
   created_by: string | null;
+  publish_status: string | null;
+  scheduled_for: string | null;
 }
 
 export interface VideoAdBatchRequest {

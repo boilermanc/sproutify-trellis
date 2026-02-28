@@ -8,11 +8,12 @@ import {
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
 } from '../constants';
 import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob } from '../services/videoAdService';
+import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
-  Palette, Eye, Check, BookTemplate, RefreshCw, Clock,
+  Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
 } from 'lucide-react';
 
 // ─── Supabase REST helpers for templates (spoke-side) ────────────────
@@ -136,6 +137,61 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
+
+  // ── Schedule state ──
+  const [schedulingJobId, setSchedulingJobId] = useState<string | null>(null);
+  const [scheduleDateTime, setScheduleDateTime] = useState('');
+  const [isScheduling, setIsScheduling] = useState(false);
+
+  // ── Schedule handler ──
+  const handleSchedule = useCallback(async (job: VideoAdJob) => {
+    if (!scheduleDateTime) return;
+    setIsScheduling(true);
+    try {
+      const scheduledDate = new Date(scheduleDateTime);
+
+      // Insert into content_calendar_events
+      const { error: calError } = await supabase
+        .from('content_calendar_events')
+        .insert({
+          branch_id: job.branch,
+          channel: job.platform ?? 'general',
+          event_type: 'social_post',
+          title: `Video Ad - ${formatBranchName(job.branch)}`,
+          content_preview: job.script,
+          scheduled_for: scheduledDate.toISOString(),
+          status: 'scheduled',
+          source: 'social_hub',
+          source_id: job.id,
+        });
+      if (calError) throw new Error(calError.message);
+
+      // Update video_ad_jobs row
+      const { error: jobError } = await supabase
+        .from('video_ad_jobs')
+        .update({ publish_status: 'scheduled', scheduled_for: scheduledDate.toISOString() })
+        .eq('id', job.id);
+      if (jobError) throw new Error(jobError.message);
+
+      // Update local state
+      setJobs(prev => prev.map(j =>
+        j.id === job.id
+          ? { ...j, publish_status: 'scheduled', scheduled_for: scheduledDate.toISOString() }
+          : j,
+      ));
+
+      const label = scheduledDate.toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+      addToast(`Video scheduled for ${label}`, 'success');
+      setSchedulingJobId(null);
+      setScheduleDateTime('');
+    } catch (err: any) {
+      addToast(`Failed to schedule: ${err.message}`, 'error');
+    } finally {
+      setIsScheduling(false);
+    }
+  }, [scheduleDateTime, addToast]);
 
   // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
@@ -1035,6 +1091,23 @@ STRICT RULES:
                               >
                                 <Download size={14} />
                               </a>
+                              {job.publish_status === 'scheduled' && job.scheduled_for ? (
+                                <span
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold"
+                                  title={`Scheduled for ${new Date(job.scheduled_for).toLocaleString()}`}
+                                >
+                                  <CalendarClock size={12} />
+                                  {new Date(job.scheduled_for).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => { setSchedulingJobId(job.id); setScheduleDateTime(''); }}
+                                  className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                                  title="Schedule video"
+                                >
+                                  <CalendarClock size={14} />
+                                </button>
+                              )}
                             </>
                           )}
                           {!TERMINAL_STATUSES.includes(job.status) && (
@@ -1047,6 +1120,31 @@ STRICT RULES:
                             </button>
                           )}
                         </div>
+                        {/* Inline schedule form */}
+                        {schedulingJobId === job.id && (
+                          <div className="mt-2 flex items-center gap-2 justify-end">
+                            <input
+                              type="datetime-local"
+                              value={scheduleDateTime}
+                              onChange={e => setScheduleDateTime(e.target.value)}
+                              className="px-2 py-1 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 outline-none"
+                              min={new Date().toISOString().slice(0, 16)}
+                            />
+                            <button
+                              onClick={() => handleSchedule(job)}
+                              disabled={!scheduleDateTime || isScheduling}
+                              className="px-2.5 py-1 text-[11px] font-bold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {isScheduling ? 'Scheduling…' : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={() => { setSchedulingJobId(null); setScheduleDateTime(''); }}
+                              className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
