@@ -8,3 +8,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Service-role client for privileged operations (tenant_secrets, etc.)
+const hubKey = import.meta.env.VITE_TRELLIS_HUB_KEY;
+export const supabaseHub = hubKey
+  ? createClient(supabaseUrl, hubKey)
+  : null;

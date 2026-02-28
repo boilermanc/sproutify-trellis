@@ -1,4 +1,5 @@
 import type { Profile } from '../../types';
+import { supabaseHub } from '../../lib/supabase';
 
 // ─── Types ───────────────────────────────────────
 export interface SendEmailParams {
@@ -23,8 +24,6 @@ export interface ResendError {
 // ─── Token Fetcher ───────────────────────────────
 // Reads resend_token from Hub Supabase tenant_secrets table
 
-const HUB_URL = 'https://horvjqqifgrzxesuxtfm.supabase.co';
-
 let cachedToken: string | null = null;
 let tokenFetchedAt: number = 0;
 const TOKEN_TTL = 5 * 60 * 1000; // Cache token for 5 minutes
@@ -35,31 +34,23 @@ export async function fetchResendToken(): Promise<string> {
     return cachedToken;
   }
 
-  const hubKey = import.meta.env.VITE_TRELLIS_HUB_KEY;
-  if (!hubKey) {
+  if (!supabaseHub) {
     throw new Error(
       'VITE_TRELLIS_HUB_KEY not set in .env.local. Cannot fetch Resend token.',
     );
   }
 
-  const res = await fetch(
-    `${HUB_URL}/rest/v1/tenant_secrets?select=resend_token&limit=1`,
-    {
-      headers: {
-        apikey: hubKey,
-        Authorization: `Bearer ${hubKey}`,
-      },
-    },
-  );
+  const { data, error } = await supabaseHub
+    .from('tenant_secrets')
+    .select('resend_token')
+    .limit(1)
+    .single();
 
-  if (!res.ok) {
-    throw new Error(
-      `Failed to fetch tenant_secrets: ${res.status} ${res.statusText}`,
-    );
+  if (error) {
+    throw new Error(`Failed to fetch tenant_secrets: ${error.message}`);
   }
 
-  const data = await res.json();
-  const token = data?.[0]?.resend_token;
+  const token = data?.resend_token;
 
   if (!token) {
     throw new Error(
@@ -195,6 +186,10 @@ export function renderCampaignHtml(params: {
       </td>
     </tr>
   </table>
+  <p style="text-align:center; font-size:11px; color:#999; margin-top:40px;">
+    You're receiving this because you subscribed to ATL Urban Farms updates.<br>
+    <a href="{{unsubscribe_url}}" style="color:#999;">Unsubscribe</a>
+  </p>
 </body>
 </html>`;
 }
