@@ -1,5 +1,5 @@
 import type { Profile } from '../../types';
-import { supabaseHub } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 
 // ─── Types ───────────────────────────────────────
 export interface SendEmailParams {
@@ -34,23 +34,13 @@ export async function fetchResendToken(): Promise<string> {
     return cachedToken;
   }
 
-  if (!supabaseHub) {
-    throw new Error(
-      'VITE_TRELLIS_HUB_KEY not set in .env.local. Cannot fetch Resend token.',
-    );
-  }
-
-  const { data, error } = await supabaseHub
-    .from('tenant_secrets')
-    .select('resend_token')
-    .limit(1)
-    .single();
+  const { data, error } = await supabase.rpc('get_resend_token');
 
   if (error) {
-    throw new Error(`Failed to fetch tenant_secrets: ${error.message}`);
+    throw new Error(`Failed to fetch resend token: ${error.message}`);
   }
 
-  const token = data?.resend_token;
+  const token = data as string | null;
 
   if (!token) {
     throw new Error(
