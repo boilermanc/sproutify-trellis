@@ -572,6 +572,7 @@ export interface Branch {
   is_active: boolean;
   default_from_name?: string;
   default_reply_to?: string;
+  resend_from_address?: string;
   spoke_connection_id?: string | null;
   created_at: string;
   updated_at: string;

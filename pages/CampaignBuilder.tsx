@@ -462,10 +462,14 @@ Return ONLY the post content, no explanations or labels.`,
         campaignName: campaignName,
       });
 
+      // Use the first selected branch's from address if available
+      const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
+
       const result = await sendEmail({
         to: testEmailAddress,
         subject: `[TEST] ${emailSubject || 'Campaign Preview'}`,
         html,
+        from: activeBranch?.resend_from_address || undefined,
         tags: [
           { name: 'type', value: 'test' },
           { name: 'campaign', value: campaignName || 'untitled' },

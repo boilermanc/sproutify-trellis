@@ -1054,6 +1054,11 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                     <input type="email" value={editedBranch.default_reply_to || ''} onChange={(e) => setEditedBranch({ ...editedBranch, default_reply_to: e.target.value })}
                       placeholder="reply@example.com" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Resend From Address</label>
+                    <input type="text" value={editedBranch.resend_from_address || ''} onChange={(e) => setEditedBranch({ ...editedBranch, resend_from_address: e.target.value })}
+                      placeholder="Brand Name <email@domain.com>" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+                  </div>
                 </div>
               </div>
 
