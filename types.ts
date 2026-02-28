@@ -859,6 +859,7 @@ export interface VideoAdConfig {
   voice_style: string;
   video_duration: 15 | 30 | 60;
   pipeline: 'talking_head' | 'full_scene';
+  platform: 'general' | 'tiktok' | 'instagram_reels' | 'youtube_shorts';
 }
 
 export interface VideoAdJob {
@@ -870,6 +871,7 @@ export interface VideoAdJob {
   voice_id: string | null;
   voice_style: string | null;
   target_segment: string | null;
+  platform: string | null;
   status: VideoAdStatus;
   progress: number;
   face_image_url: string | null;

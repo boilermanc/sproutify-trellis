@@ -35,6 +35,7 @@ export async function submitVideoAdJob(
       voice_style: config.voice_style,
       video_duration: config.video_duration,
       pipeline: config.pipeline,
+      platform: config.platform,
     }),
   }).catch(() => {
     // Expected — Cloudflare 524 timeout or CORS block on the response.

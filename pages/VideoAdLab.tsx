@@ -112,6 +112,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [actorStyle, setActorStyle] = useState<string>(ACTOR_STYLES[1]);
   const [aspectRatio, setAspectRatio] = useState('9:16');
   const [duration, setDuration] = useState(10);
+  const [platform, setPlatform] = useState<'general' | 'tiktok' | 'instagram_reels' | 'youtube_shorts'>('general');
   const [setting, setSetting] = useState<string>(VIDEO_SETTINGS[0]);
   const [lighting, setLighting] = useState<string>(VIDEO_LIGHTING[0]);
   const [mood, setMood] = useState<string>(VIDEO_MOODS[0]);
@@ -297,6 +298,7 @@ STRICT RULES:
         voice_style: 'friendly',
         video_duration: pipeline === 'full_scene' ? 15 : 30,
         pipeline,
+        platform,
       };
 
       const result = await submitVideoAdJob(config);
@@ -579,6 +581,35 @@ STRICT RULES:
                 ))}
               </div>
               <p className="text-xs text-slate-400 mt-1">Vertical for Reels & TikTok, horizontal for YouTube, square for Instagram feed.</p>
+            </div>
+
+            {/* Platform pills */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Platform</label>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'general', label: 'General' },
+                  { value: 'tiktok', label: 'TikTok' },
+                  { value: 'instagram_reels', label: 'IG Reels' },
+                  { value: 'youtube_shorts', label: 'YT Shorts' },
+                ] as const).map(p => (
+                  <button
+                    key={p.value}
+                    onClick={() => {
+                      setPlatform(p.value);
+                      if (p.value !== 'general' && duration === 60) setDuration(15);
+                    }}
+                    className={`border rounded-full px-4 py-1.5 text-sm transition ${
+                      platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {platform !== 'general' && (
+                <p className="text-xs text-emerald-500 mt-1">Optimized for vertical 9:16 format</p>
+              )}
             </div>
 
             {/* Advanced options toggle */}
@@ -902,10 +933,23 @@ STRICT RULES:
 
                       {/* Details */}
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600">
                             {formatBranchName(job.branch)}
                           </span>
+                          {job.platform && job.platform !== 'general' && (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              job.platform === 'tiktok' ? 'bg-pink-100 text-pink-600' :
+                              job.platform === 'instagram_reels' ? 'bg-purple-100 text-purple-600' :
+                              job.platform === 'youtube_shorts' ? 'bg-red-100 text-red-600' :
+                              'bg-slate-100 text-slate-500'
+                            }`}>
+                              {job.platform === 'tiktok' ? 'TikTok' :
+                               job.platform === 'instagram_reels' ? 'IG Reels' :
+                               job.platform === 'youtube_shorts' ? 'YT Shorts' :
+                               job.platform}
+                            </span>
+                          )}
                           {job.target_segment && (
                             <span className="flex items-center gap-1 text-[10px] text-slate-400">
                               <Target size={10} />{job.target_segment}
