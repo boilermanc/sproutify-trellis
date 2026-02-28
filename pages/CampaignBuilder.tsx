@@ -7,7 +7,7 @@ import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
 import { loadNameCache } from '../demographicsService';
 import { timeAgo, formatBranchName } from '../utils';
 import { isSubscribedForAnyBranch } from '../consentUtils';
-import { sendEmail, renderCampaignHtml } from '../src/services/resendService';
+import { sendEmail, renderCampaignHtml, SendEmailResult } from '../src/services/resendService';
 import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { triggerEmailCampaign } from '../services/n8nService';
@@ -183,6 +183,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSentStatus, setTestSentStatus] = useState<null | 'success'>(null);
   const [testSendError, setTestSendError] = useState<string | null>(null);
+  const [sendResult, setSendResult] = useState<SendEmailResult | null>(null);
   const [savedCampaigns, setSavedCampaigns] = useState<Campaign[]>([]);
   const [scheduledDate, setScheduledDate] = useState<string>('');
   const [scheduledTime, setScheduledTime] = useState<string>('09:00');
@@ -477,6 +478,7 @@ Return ONLY the post content, no explanations or labels.`,
       });
 
       console.log('Test email sent! Resend ID:', result.id);
+      setSendResult(result);
       setTestSentStatus('success');
       setTimeout(() => setTestSentStatus(null), 5000);
     } catch (err: any) {
@@ -1853,6 +1855,42 @@ Return ONLY the post content, no explanations or labels.`,
 
           <p className="text-sm font-black uppercase tracking-[0.4em] text-emerald-400 animate-pulse">{launchProgress}% Synchronized</p>
         </div>
+      )}
+
+      {/* Email Sent Confirmation Modal */}
+      {sendResult && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setSendResult(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-2xl z-50 overflow-hidden">
+            <div className="bg-emerald-600 px-6 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 size={22} className="text-white" />
+                <h3 className="text-white font-black text-sm uppercase tracking-wide">Email Sent</h3>
+              </div>
+              <button onClick={() => setSendResult(null)} className="text-white/70 hover:text-white transition">
+                <XCircle size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-[80px_1fr] gap-y-3 text-sm">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">Resend ID</span>
+                <span className="font-mono text-slate-800 text-xs break-all">{sendResult.id}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">From</span>
+                <span className="text-slate-800">{sendResult.from}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">To</span>
+                <span className="font-mono text-slate-800">{sendResult.to}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">Subject</span>
+                <span className="text-slate-800">{sendResult.subject}</span>
+              </div>
+              <button
+                onClick={() => setSendResult(null)}
+                className="w-full mt-2 py-3 bg-slate-900 text-white rounded-xl font-black text-sm hover:bg-slate-800 transition"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

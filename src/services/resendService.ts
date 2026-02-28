@@ -12,7 +12,11 @@ export interface SendEmailParams {
 }
 
 export interface SendEmailResult {
-  id: string; // Resend message ID
+  id: string;
+  from: string;
+  to: string;
+  subject: string;
+  created_at?: string;
 }
 
 export interface ResendError {
@@ -22,9 +26,9 @@ export interface ResendError {
 }
 
 // ─── Send Single Email ───────────────────────────
-// Routes through Supabase RPC (pg_net) to avoid CORS issues.
+// Routes through Supabase RPC (http extension) to avoid CORS issues.
 // The send_resend_email RPC reads the token from tenant_secrets
-// and calls Resend's API server-side via pg_net.
+// and calls Resend's API server-side, returning the full response.
 export async function sendEmail(
   params: SendEmailParams,
 ): Promise<SendEmailResult> {
@@ -39,8 +43,19 @@ export async function sendEmail(
     throw new Error(`Email send failed: ${error.message}`);
   }
 
-  // pg_net returns a request ID (async). The email is dispatched server-side.
-  return { id: String(data) };
+  const result = typeof data === 'string' ? JSON.parse(data) : data;
+
+  if (result?.statusCode && result.statusCode >= 400) {
+    throw new Error(`Resend error (${result.statusCode}): ${result.message || 'Unknown error'}`);
+  }
+
+  return {
+    id: result?.id || 'unknown',
+    from: params.from || 'default',
+    to: Array.isArray(params.to) ? params.to[0] : params.to,
+    subject: params.subject,
+    created_at: result?.created_at,
+  };
 }
 
 // ─── HTML Escaping ───────────────────────────────
