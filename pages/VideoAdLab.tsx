@@ -89,6 +89,13 @@ const STEPS = [
 
 type StatusFilter = 'all' | 'active' | 'completed' | 'failed';
 
+const VOICE_NAMES: Record<string, string> = {
+  '21m00Tcm4TlvDq8ikWAM': 'Rachel',
+  '29vD33N1CtxCmqQRPOHJ': 'Drew',
+  '2EiwWnXFnvU5JabPnv8n': 'Clyde',
+  'AZnzlk1XvdvUeBnXmlld': 'Domi',
+};
+
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast }) => {
   // ── Derive spoke credentials for templates only ──
@@ -137,6 +144,9 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
+
+  // ── Expanded row state ──
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   // ── Schedule state ──
   const [schedulingJobId, setSchedulingJobId] = useState<string | null>(null);
@@ -960,6 +970,7 @@ STRICT RULES:
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100">
+                  <th className="w-8 px-2 py-3" />
                   <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-20">Preview</th>
                   <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3">Details</th>
                   <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-36">Status</th>
@@ -973,9 +984,24 @@ STRICT RULES:
                   const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
                   const thumbnailSrc = job.thumbnail_url || job.face_image_url;
                   const createdDate = new Date(job.created_at);
+                  const isExpanded = expandedJobId === job.id;
+                  const completedDate = job.completed_at ? new Date(job.completed_at) : null;
+                  const voiceLabel = job.voice_id ? (VOICE_NAMES[job.voice_id] || job.voice_id) : null;
 
                   return (
-                    <tr key={job.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition group">
+                    <React.Fragment key={job.id}>
+                    <tr
+                      className="border-b border-slate-50 hover:bg-slate-50/50 transition group cursor-pointer"
+                      onClick={() => setExpandedJobId(prev => prev === job.id ? null : job.id)}
+                    >
+                      {/* Expand toggle */}
+                      <td className="px-2 py-3 text-center">
+                        {isExpanded
+                          ? <ChevronUp size={14} className="text-emerald-500 mx-auto" />
+                          : <ChevronDown size={14} className="text-slate-300 group-hover:text-slate-500 mx-auto transition" />
+                        }
+                      </td>
+
                       {/* Thumbnail */}
                       <td className="px-6 py-3">
                         {thumbnailSrc ? (
@@ -1070,7 +1096,7 @@ STRICT RULES:
                       </td>
 
                       {/* Actions */}
-                      <td className="px-6 py-3 text-right">
+                      <td className="px-6 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           {job.status === 'completed' && job.video_url && (
                             <>
@@ -1147,6 +1173,146 @@ STRICT RULES:
                         )}
                       </td>
                     </tr>
+
+                    {/* ── Expanded detail panel ── */}
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={7} className="px-0 py-0 border-b border-slate-100">
+                          <div
+                            className="bg-slate-50 mx-4 mb-4 mt-1 rounded-xl p-5 border border-slate-200/60"
+                            style={{ animation: 'expandDown 200ms ease-out' }}
+                          >
+                            <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                              {/* Branch */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Branch</span>
+                                <span className="text-sm font-medium text-slate-700">{formatBranchName(job.branch)}</span>
+                              </div>
+
+                              {/* Platform */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Platform</span>
+                                {job.platform && job.platform !== 'general' ? (
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                    job.platform === 'tiktok' ? 'bg-pink-100 text-pink-600' :
+                                    job.platform === 'instagram_reels' ? 'bg-purple-100 text-purple-600' :
+                                    job.platform === 'youtube_shorts' ? 'bg-red-100 text-red-600' :
+                                    'bg-slate-100 text-slate-500'
+                                  }`}>
+                                    {job.platform === 'tiktok' ? 'TikTok' :
+                                     job.platform === 'instagram_reels' ? 'IG Reels' :
+                                     job.platform === 'youtube_shorts' ? 'YT Shorts' :
+                                     job.platform}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm font-medium text-slate-700">General</span>
+                                )}
+                              </div>
+
+                              {/* Pipeline */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Pipeline</span>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {(job as any).pipeline === 'talking_head' ? 'Talking Head' :
+                                   (job as any).pipeline === 'full_scene' ? 'Full Scene' :
+                                   (job as any).pipeline || '—'}
+                                </span>
+                              </div>
+
+                              {/* Segment */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Segment</span>
+                                <span className="text-sm font-medium text-slate-700">{job.target_segment || '—'}</span>
+                              </div>
+
+                              {/* Actor */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Actor</span>
+                                <span className="text-sm font-medium text-slate-700">{job.actor_prompt || '—'}</span>
+                              </div>
+
+                              {/* Voice */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Voice</span>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {job.voice_style || voiceLabel
+                                    ? [job.voice_style, voiceLabel].filter(Boolean).join(' · ')
+                                    : '—'}
+                                </span>
+                              </div>
+
+                              {/* Duration */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Duration</span>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {job.duration_seconds ? `${job.duration_seconds}s` : 'N/A'}
+                                </span>
+                              </div>
+
+                              {/* Cost */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Cost</span>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {job.cost_estimate != null ? `$${Number(job.cost_estimate).toFixed(2)}` : '—'}
+                                </span>
+                              </div>
+
+                              {/* Status */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Status</span>
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  job.status === 'failed' ? 'bg-rose-50 text-rose-500' :
+                                  job.status === 'cancelled' ? 'bg-slate-100 text-slate-400' :
+                                  job.status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
+                                  'bg-amber-50 text-amber-600'
+                                }`}>
+                                  {job.status === 'completed' && <Check size={10} />}
+                                  {currentStage?.label || job.status}
+                                </span>
+                              </div>
+
+                              {/* Created */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Created</span>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
+                                  {createdDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                </span>
+                              </div>
+
+                              {/* Completed */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Completed</span>
+                                <span className="text-sm font-medium text-slate-700">
+                                  {completedDate
+                                    ? `${completedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${completedDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                                    : '—'}
+                                </span>
+                              </div>
+
+                              {/* Face thumbnail */}
+                              {job.face_image_url && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Face</span>
+                                  <img src={job.face_image_url} alt="Generated face" className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                                </div>
+                              )}
+
+                              {/* Script — full width */}
+                              {job.script && (
+                                <div className="col-span-2 mt-1">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-1">Script</span>
+                                  <blockquote className="border-l-4 border-emerald-400 pl-4 py-2 bg-white/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
+                                    {job.script}
+                                  </blockquote>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
