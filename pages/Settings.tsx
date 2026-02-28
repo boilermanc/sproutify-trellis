@@ -7,7 +7,7 @@ import {
   Key, Globe, Save, RefreshCw,
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
   Phone, Cpu, Sparkles, Zap, Plug,
-  Trash2, Plus, X, Slack, Database
+  Trash2, Plus, X, Slack, Database, Mail
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
 import ConnectionsManager from '../ConnectionsManager';
@@ -436,6 +436,19 @@ const Settings: React.FC<SettingsProps> = ({
                        </button>
                     </div>
                   ))}
+                  <div>
+                    <label className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase mb-2 ml-1">
+                      <Mail size={14} className="text-sky-500" />
+                      Resend From Address
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-4 py-3 text-sm text-slate-800 outline-none transition focus:border-emerald-500"
+                      value={localApiKeys.resend_from_address}
+                      onChange={(e) => setLocalApiKeys({ ...localApiKeys, resend_from_address: e.target.value })}
+                      placeholder="Display Name <email@domain.com>"
+                    />
+                  </div>
                </div>
 
                <div className="space-y-6 pt-6 border-t border-slate-100">

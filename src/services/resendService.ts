@@ -32,7 +32,7 @@ export async function sendEmail(
     p_to: Array.isArray(params.to) ? params.to[0] : params.to,
     p_subject: params.subject,
     p_html: params.html,
-    p_from: params.from || 'Sproutify <marketing@sproutify.me>',
+    ...(params.from ? { p_from: params.from } : {}),
   });
 
   if (error) {

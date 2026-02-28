@@ -245,6 +245,7 @@ export interface ApiKeyConfig {
   woo_consumer_key: string;
   woo_consumer_secret: string;
   resend_token: string;
+  resend_from_address: string;
   twilio_sid: string;
   twilio_token: string;
 }
