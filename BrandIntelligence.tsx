@@ -17,7 +17,7 @@ import {
 } from './brandRepository';
 import {
   Dna, Globe, Palette, Type, Target, Megaphone, Sparkles,
-  ArrowRight, RefreshCw, Loader2, CheckCircle2, AlertCircle,
+  ArrowRight, ArrowLeft, RefreshCw, Loader2, CheckCircle2, AlertCircle,
   ChevronDown, Eye, Edit3, Save, X, Instagram, Linkedin,
   Facebook, Twitter, Video, Plus, ExternalLink, Copy, Upload,
   Image as ImageIcon, Settings, Archive, Trash2, RotateCcw,
@@ -75,6 +75,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [editingBrand, setEditingBrand] = useState<BrandIdentity | null>(null);
   const [brandAssets, setBrandAssets] = useState<Record<string, GeneratedBrandAsset[]>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [viewingBrand, setViewingBrand] = useState<BrandIdentity | null>(null);
   const [activeTab, setActiveTab] = useState<'create' | 'manage' | 'templates'>('create');
 
   // Email Templates state
@@ -392,6 +393,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       await updateBrand(editingBrand.id, editingBrand);
       const allBrands = await fetchAllBrands();
       setBrands(allBrands);
+      // Refresh detail view if viewing this brand
+      if (viewingBrand?.id === editingBrand.id) {
+        const updated = allBrands.find(b => b.id === editingBrand.id);
+        if (updated) setViewingBrand(updated);
+      }
       setEditingBrand(null);
     } catch (err) {
       console.error('Failed to update brand:', err);
@@ -605,7 +611,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {analysisState === 'idle' && (
         <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
           <button
-            onClick={() => setActiveTab('create')}
+            onClick={() => { setActiveTab('create'); setViewingBrand(null); }}
             className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
               activeTab === 'create'
                 ? 'bg-white text-violet-600 shadow-md'
@@ -616,7 +622,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             Create New
           </button>
           <button
-            onClick={() => setActiveTab('manage')}
+            onClick={() => { setActiveTab('manage'); setViewingBrand(null); }}
             className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
               activeTab === 'manage'
                 ? 'bg-white text-violet-600 shadow-md'
@@ -627,7 +633,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             Manage ({brands.filter(b => b.status === 'active').length})
           </button>
           <button
-            onClick={() => setActiveTab('templates')}
+            onClick={() => { setActiveTab('templates'); setViewingBrand(null); }}
             className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
               activeTab === 'templates'
                 ? 'bg-white text-violet-600 shadow-md'
@@ -1014,7 +1020,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* ══════════════════════════════════════════════════════════════ */}
       {/* IDLE STATE - MANAGE TAB */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      {analysisState === 'idle' && activeTab === 'manage' && (
+      {analysisState === 'idle' && activeTab === 'manage' && !viewingBrand && (
         <div className="space-y-8">
           {/* Active Brands */}
           <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8">
@@ -1039,7 +1045,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 {brands.filter(b => b.status === 'active').map(brand => (
                   <div
                     key={brand.id}
-                    className="p-6 bg-slate-50 rounded-2xl border border-slate-100 hover:border-violet-300 transition-all group"
+                    onClick={() => setViewingBrand(brand)}
+                    className="p-6 bg-slate-50 rounded-2xl border border-slate-100 hover:border-violet-300 transition-all group cursor-pointer"
                   >
                     <div className="flex items-start gap-4 mb-4">
                       <div
@@ -1058,13 +1065,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
                     <div className="flex items-center gap-2 pt-4 border-t border-slate-200">
                       <button
-                        onClick={() => handleEditBrand(brand)}
+                        onClick={(e) => { e.stopPropagation(); handleEditBrand(brand); }}
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:border-violet-300 hover:text-violet-600 transition-colors"
                       >
                         <Edit3 className="w-3 h-3" /> Edit
                       </button>
                       <button
-                        onClick={() => handleArchiveBrand(brand.id)}
+                        onClick={(e) => { e.stopPropagation(); handleArchiveBrand(brand.id); }}
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:border-amber-300 hover:text-amber-600 transition-colors"
                       >
                         <Archive className="w-3 h-3" /> Archive
@@ -1120,6 +1127,227 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* BRAND DETAIL VIEW */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {analysisState === 'idle' && activeTab === 'manage' && viewingBrand && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Actions Bar */}
+          <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+            <button
+              onClick={() => setViewingBrand(null)}
+              className="flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-slate-700 font-bold text-sm transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to Brands
+            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                {viewingBrand.branch_id}
+              </span>
+              <button
+                onClick={() => handleEditBrand(viewingBrand)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:border-violet-300 hover:text-violet-600 transition-colors"
+              >
+                <Edit3 className="w-4 h-4" /> Edit
+              </button>
+              <button
+                onClick={() => { handleArchiveBrand(viewingBrand.id); setViewingBrand(null); }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:border-amber-300 hover:text-amber-600 transition-colors"
+              >
+                <Archive className="w-4 h-4" /> Archive
+              </button>
+            </div>
+          </div>
+
+          {/* Brand DNA Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column */}
+            <div className="lg:col-span-7 space-y-6">
+              {/* Name & Tagline */}
+              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+                <div className="flex items-center gap-4 mb-3">
+                  <div
+                    className="w-14 h-14 rounded-2xl shadow-inner border border-white/20"
+                    style={{ backgroundColor: viewingBrand.color_palette.primary }}
+                  />
+                  <div>
+                    <h2 className="text-4xl font-black text-slate-800">{viewingBrand.name}</h2>
+                    {viewingBrand.tagline && (
+                      <p className="text-xl text-slate-500 italic mt-1">"{viewingBrand.tagline}"</p>
+                    )}
+                  </div>
+                </div>
+                {viewingBrand.website_url && (
+                  <a
+                    href={viewingBrand.website_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 mt-4 text-sm text-violet-600 hover:text-violet-700 font-medium"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {viewingBrand.website_url}
+                  </a>
+                )}
+              </div>
+
+              {/* Mission & Values */}
+              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Target className="w-4 h-4" /> Mission & Values
+                </h3>
+                {viewingBrand.mission ? (
+                  <p className="text-lg text-slate-700 leading-relaxed mb-6">{viewingBrand.mission}</p>
+                ) : (
+                  <p className="text-sm text-slate-400 italic mb-6">No mission statement set</p>
+                )}
+                {viewingBrand.values && viewingBrand.values.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {viewingBrand.values.map((value, i) => (
+                      <span
+                        key={i}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-full text-sm font-bold"
+                      >
+                        {value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Marketing Hooks */}
+              {viewingBrand.marketing_hooks && viewingBrand.marketing_hooks.length > 0 && (
+                <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Megaphone className="w-4 h-4" /> Marketing Hooks
+                  </h3>
+                  <div className="space-y-4">
+                    {viewingBrand.marketing_hooks.map((hook, i) => (
+                      <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <span className="text-[10px] font-mono text-violet-500 mb-1 block">HOOK_{String(i + 1).padStart(2, '0')}</span>
+                        <p className="text-slate-700 font-medium italic">"{hook}"</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Image Prompt */}
+              {viewingBrand.image_prompt && (
+                <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4" /> Image Generation Prompt
+                  </h3>
+                  <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100 font-mono">
+                    {viewingBrand.image_prompt}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* Screenshot */}
+              {viewingBrand.screenshot_url && (
+                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
+                  <img
+                    src={viewingBrand.screenshot_url}
+                    alt="Website screenshot"
+                    className="w-full aspect-video object-cover object-top"
+                  />
+                </div>
+              )}
+
+              {/* Color Palette */}
+              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Palette className="w-4 h-4" /> Color Palette
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <ColorSwatch color={viewingBrand.color_palette.primary} label="Primary" />
+                  <ColorSwatch color={viewingBrand.color_palette.secondary} label="Secondary" />
+                  <ColorSwatch color={viewingBrand.color_palette.accent} label="Accent" />
+                  <ColorSwatch color={viewingBrand.color_palette.neutral} label="Neutral" />
+                </div>
+              </div>
+
+              {/* Typography */}
+              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Type className="w-4 h-4" /> Typography
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Headings</p>
+                    <p className="text-2xl font-bold text-slate-800">{viewingBrand.typography.heading}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Body</p>
+                    <p className="text-lg text-slate-600">{viewingBrand.typography.body}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Voice & Audience */}
+              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4">Brand Voice</h3>
+                {viewingBrand.voice ? (
+                  <p className="text-sm text-slate-600 leading-relaxed mb-4">{viewingBrand.voice}</p>
+                ) : (
+                  <p className="text-sm text-slate-400 italic mb-4">No voice defined</p>
+                )}
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 mt-6">Target Audience</h3>
+                {viewingBrand.target_audience ? (
+                  <p className="text-sm text-slate-600 leading-relaxed">{viewingBrand.target_audience}</p>
+                ) : (
+                  <p className="text-sm text-slate-400 italic">No target audience defined</p>
+                )}
+              </div>
+
+              {/* Extracted Images */}
+              {viewingBrand.extracted_images && viewingBrand.extracted_images.length > 0 && (
+                <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4" /> Extracted Images
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {viewingBrand.extracted_images.map((img, i) => (
+                      <img
+                        key={i}
+                        src={img}
+                        alt={`Extracted ${i + 1}`}
+                        className="w-full h-24 object-cover rounded-xl border border-slate-100"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                <div className="grid grid-cols-2 gap-4 text-[10px] font-mono text-slate-400">
+                  <div>
+                    <span className="font-bold uppercase">Created</span>
+                    <p>{new Date(viewingBrand.created_at).toLocaleDateString()}</p>
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase">Updated</span>
+                    <p>{new Date(viewingBrand.updated_at).toLocaleDateString()}</p>
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase">Status</span>
+                    <p className="text-emerald-500 font-bold">{viewingBrand.status}</p>
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase">ID</span>
+                    <p className="truncate">{viewingBrand.id}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1302,7 +1530,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       srcDoc={previewHtml}
                       title="Template Preview"
                       className="w-full h-full min-h-[420px] border-0 pt-5"
-                      sandbox="allow-same-origin"
+                      sandbox="allow-same-origin allow-scripts"
                     />
                   </div>
                 </div>
