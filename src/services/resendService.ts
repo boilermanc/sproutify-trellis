@@ -21,73 +21,26 @@ export interface ResendError {
   name: string;
 }
 
-// ─── Token Fetcher ───────────────────────────────
-// Reads resend_token from Hub Supabase tenant_secrets table
-
-let cachedToken: string | null = null;
-let tokenFetchedAt: number = 0;
-const TOKEN_TTL = 5 * 60 * 1000; // Cache token for 5 minutes
-
-export async function fetchResendToken(): Promise<string> {
-  // Return cached token if fresh
-  if (cachedToken && Date.now() - tokenFetchedAt < TOKEN_TTL) {
-    return cachedToken;
-  }
-
-  const { data, error } = await supabase.rpc('get_resend_token');
-
-  if (error) {
-    throw new Error(`Failed to fetch resend token: ${error.message}`);
-  }
-
-  const token = data as string | null;
-
-  if (!token) {
-    throw new Error(
-      'resend_token is empty in tenant_secrets. Add your Resend API key via Supabase SQL Editor or Settings.',
-    );
-  }
-
-  cachedToken = token;
-  tokenFetchedAt = Date.now();
-  return token;
-}
-
 // ─── Send Single Email ───────────────────────────
+// Routes through Supabase RPC (pg_net) to avoid CORS issues.
+// The send_resend_email RPC reads the token from tenant_secrets
+// and calls Resend's API server-side via pg_net.
 export async function sendEmail(
   params: SendEmailParams,
 ): Promise<SendEmailResult> {
-  const token = await fetchResendToken();
-
-  const body: Record<string, any> = {
-    from: params.from || 'Sproutify <marketing@sproutify.me>',
-    to: Array.isArray(params.to) ? params.to : [params.to],
-    subject: params.subject,
-    html: params.html,
-  };
-
-  if (params.replyTo) body.reply_to = params.replyTo;
-  if (params.tags) body.tags = params.tags;
-
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+  const { data, error } = await supabase.rpc('send_resend_email', {
+    p_to: Array.isArray(params.to) ? params.to[0] : params.to,
+    p_subject: params.subject,
+    p_html: params.html,
+    p_from: params.from || 'Sproutify <marketing@sproutify.me>',
   });
 
-  const result = await res.json();
-
-  if (!res.ok) {
-    const err = result as ResendError;
-    throw new Error(
-      `Resend error (${err.statusCode || res.status}): ${err.message || 'Unknown error'}`,
-    );
+  if (error) {
+    throw new Error(`Email send failed: ${error.message}`);
   }
 
-  return result as SendEmailResult;
+  // pg_net returns a request ID (async). The email is dispatched server-side.
+  return { id: String(data) };
 }
 
 // ─── HTML Escaping ───────────────────────────────
