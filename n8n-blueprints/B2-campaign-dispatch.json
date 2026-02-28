@@ -16,18 +16,18 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/resolve_campaign_audience",
+        "url": "https://povudgtvzggnxwgtjexa.supabase.co/rest/v1/rpc/resolve_newsletter_audience",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
-            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "apikey", "value": "YOUR_ATL_SPOKE_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_ATL_SPOKE_SERVICE_ROLE_KEY" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_branches: $json.branches }) }}"
+        "jsonBody": "={{ JSON.stringify({ p_tags: $json.tags || null }) }}"
       },
       "name": "Resolve Audience",
       "type": "n8n-nodes-base.httpRequest",
@@ -70,8 +70,8 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
-            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "apikey", "value": "YOUR_HUB_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_HUB_SERVICE_ROLE_KEY" },
             { "name": "Content-Type", "value": "application/json" },
             { "name": "Prefer", "value": "return=minimal" }
           ]
@@ -87,9 +87,9 @@
     },
     {
       "parameters": {
-        "content": "## Trellis: Campaign Dispatch Gateway\n\n**What it does:** Receives a campaign payload via webhook, resolves the target audience from the `profiles` table (subscribed + not paused + matching branches), batches emails through Resend, then marks the campaign complete.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-campaign-dispatch`\n\n**Expected POST body:**\n```json\n{\n  \"campaign_id\": \"uuid\",\n  \"branches\": [\"atl-urban-farms\"],\n  \"subject\": \"Spring Sale!\",\n  \"html_body\": \"<html>...</html>\"\n}\n```\n\n---\n\n### SETUP REQUIRED\n\n**Resolve Audience node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Requires the `resolve_campaign_audience` RPC (see SQL below)\n\n**Resend Dispatch node:**\n- Replace `YOUR_RESEND_API_KEY` with your Resend token (starts with `re_`)\n\n**Mark Complete node:**\n- Replace `YOUR_SERVICE_ROLE_KEY` in both headers\n- Only needed if you have a `campaigns` table; skip if using localStorage only\n\n**Prerequisite SQL (run in Hub Supabase SQL Editor):**\n```sql\nCREATE OR REPLACE FUNCTION resolve_campaign_audience(\n  p_branches TEXT[]\n) RETURNS TABLE(email TEXT, first_name TEXT, branches TEXT[])\nLANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT p.email, p.first_name, p.branches\n  FROM profiles p\n  WHERE p.branches && p_branches\n    AND p.is_subscribed = true\n    AND p.marketing_pause = false;\nEND;\n$$;\n```",
+        "content": "## Trellis: Campaign Dispatch Gateway\n\n**What it does:** Receives a campaign payload via webhook, resolves the target audience from ATL spoke `newsletter_subscribers` table (active subscribers, optional tag filtering), batches emails through Resend, then marks the campaign complete on the Hub.\n\n> **TODO:** This queries ATL spoke `newsletter_subscribers` directly as a launch-phase shortcut. Once all spokes sync subscribers to the Hub `profiles` table, retarget the Resolve Audience node back to Hub Supabase with the unified profiles query.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-campaign-dispatch`\n\n**Expected POST body:**\n```json\n{\n  \"campaign_id\": \"uuid\",\n  \"branches\": [\"atl-urban-farms\"],\n  \"tags\": null,\n  \"subject\": \"Spring Sale!\",\n  \"html_body\": \"<html>...</html>\"\n}\n```\n\n`tags`: Pass `null` to send to all active subscribers, or an array like `[\"seedlings\", \"spring\"]` to filter by tag overlap.\n\n---\n\n### SETUP REQUIRED\n\n**Resolve Audience node:**\n- Replace `YOUR_ATL_SPOKE_SERVICE_ROLE_KEY` in both headers with the ATL spoke Supabase service role key\n- Requires the `resolve_newsletter_audience` RPC deployed to ATL spoke (see SQL below)\n\n**Resend Dispatch node:**\n- Replace `YOUR_RESEND_API_KEY` with your Resend token (starts with `re_`)\n\n**Mark Complete node:**\n- Replace `YOUR_HUB_SERVICE_ROLE_KEY` in both headers with the Hub Supabase service role key\n- Only needed if you have a `campaigns` table on the Hub; skip if using localStorage only\n\n**Prerequisite SQL (run in ATL Spoke Supabase SQL Editor — povudgtvzggnxwgtjexa.supabase.co):**\n```sql\nCREATE OR REPLACE FUNCTION resolve_newsletter_audience(\n  p_tags TEXT[] DEFAULT NULL\n) RETURNS TABLE(email TEXT, first_name TEXT, last_name TEXT, tags TEXT[], customer_id UUID)\nLANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT ns.email, ns.first_name, ns.last_name, ns.tags, ns.customer_id\n  FROM newsletter_subscribers ns\n  WHERE ns.status = 'active'\n    AND (p_tags IS NULL OR ns.tags && p_tags);\nEND;\n$$;\n```",
         "width": 520,
-        "height": 640
+        "height": 740
       },
       "name": "Setup Notes",
       "type": "n8n-nodes-base.stickyNote",

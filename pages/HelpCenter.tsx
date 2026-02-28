@@ -1,140 +1,29 @@
 
-import React, { useState, useMemo } from 'react';
-import { 
-  Search, Book, Zap, ShieldCheck, Database, Rocket, 
-  Workflow, Users, Mail, Terminal, ChevronRight, 
-  ArrowUpRight, ExternalLink, Play, Clock, Sparkles,
-  Info, Cpu, Layers, Split, Network, CheckCircle2, HelpCircle,
-  ArrowLeft, Share2, Printer, Bug, Fingerprint, History, Timer,
-  UserMinus, ShieldAlert, Recycle, Archive
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  Search, Book, ShieldCheck, ChevronRight,
+  Clock, Info, CheckCircle2,
+  ArrowLeft, History, Timer,
+  UserMinus, Recycle, Rocket, Layers
 } from 'lucide-react';
+import { CATEGORIES, ARTICLES, START_HERE_STEPS, isRecentlyAdded, Article, Category, StartHereStep } from '../src/data/helpContent';
 
-const CATEGORIES = [
-  { id: 'basics', title: 'Trellis Basics', icon: Book, color: 'text-blue-500', bg: 'bg-blue-50' },
-  { id: 'identity', title: 'Identity Resolution', icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-  { id: 'campaigns', title: 'Campaign Architecture', icon: Rocket, color: 'text-indigo-500', bg: 'bg-indigo-50' },
-  { id: 'orchestration', title: 'n8n & Logic Gates', icon: Workflow, color: 'text-amber-500', bg: 'bg-amber-50' },
-  { id: 'dispatch', title: 'Resend Lab', icon: Mail, color: 'text-rose-500', bg: 'bg-rose-50' },
-  { id: 'advanced', title: 'Developer Tools', icon: Terminal, color: 'text-slate-500', bg: 'bg-slate-50' },
-];
-
-interface Article {
-  id: string;
-  cat: string;
-  title: string;
-  desc: string;
-  time: string;
-  content: string;
+interface HelpCenterProps {
+  initialArticle?: Article | null;
 }
 
-const ARTICLES: Article[] = [
-  {
-    id: 'art_ttl_hygiene',
-    cat: 'advanced',
-    title: 'TTL Policy & Data Hygiene',
-    desc: 'Maintaining a lean Hub by purging noise and tiering event storage.',
-    time: '4m',
-    content: `
-      ## The Data Bloat Challenge
-      In a multi-spoke ecosystem, high-volume events like "Email Open" and "Link Click" can generate millions of rows monthly. Storing these indefinitely in the "Hot" production table slows down identity lookups and increases Postgres costs.
-
-      ## Trellis Solution: 90-Day TTL (Time To Live)
-      Trellis implements a multi-tier storage policy enforced via **pg_cron**.
-
-      ### 1. The 90-Day Gate
-      Events in the \`marketing_events\` table are checked daily. Any record older than 90 days is processed based on its value.
-
-      ### 2. Tiered Archival (Business Logic)
-      - **High-Value Events**: Signups, Purchases, and Support Resolutions are moved to the \`compressed_archive_events\` table. This allows for long-term LTV analysis without impacting production performance.
-      - **Noise Purge**: Purely behavioral logs (Opens, Clicks, heartbeats) are deleted entirely after 90 days.
-
-      ### 3. Master Profiles are Forever
-      The TTL policy **never** affects the \`profiles\` table. A customer's identity, total spend (LTV), and cross-site segments are preserved indefinitely.
-
-      ### Configuration Tip
-      You can manually trigger a purge cycle in the **DevTools > Data Hygiene** tab to see the current storage distribution.
-    `
-  },
-  { 
-    id: 'art_delete_lifecycle', 
-    cat: 'identity', 
-    title: 'Hardened Delete Lifecycle', 
-    desc: 'Preventing "Zombie" marketing via cross-site check logic.', 
-    time: '6m',
-    content: `
-      ## The Zombie Profile Problem
-      In a multi-site ecosystem, a user might delete their account on one site (e.g., micro.sproutify.app) but remain active on another (e.g., farm.sproutify.app). A naïve delete webhook would either erase their entire master history or leave them subscribed to global marketing they no longer want.
-
-      ## Trellis Solution: Global Check Logic
-      Trellis implements a **Harden Delete Lifecycle** that preserves identity while respecting privacy.
-
-      ### 1. Spoke-Specific Cleanup
-      When a DELETE webhook arrives, the Hub removes only that specific site from the user's \`branches\` array. 
-
-      ### 2. The Global Check
-      The orchestration engine immediately performs a check: "Does this user still exist on any other Sproutify sites?"
-
-      ### 3. Zombie Prevention
-      - **IF** \`branches.length > 0\`: The Hub keeps the profile active but marks that specific spoke as inactive.
-      - **IF** \`branches.length == 0\`: The Hub automatically sets \`is_subscribed = false\` and \`status = 'deleted'\`. 
-
-      This ensures that once a user has completely left the Sproutify ecosystem, no further marketing dispatches (Resend) or AI social intents (Gemini) are processed for that identity.
-    `
-  },
-  { 
-    id: 'art_queuing', 
-    cat: 'orchestration', 
-    title: 'Throttling & Worker Architecture', 
-    desc: 'Protecting downstream APIs from high-volume surges.', 
-    time: '8m',
-    content: `
-      ## The Rate Limit Problem
-      Downstream APIs like **Gemini** (LLM) and **Resend** (Email) have hard rate limits (e.g., 10 RPM or 100 requests/sec). If a Sproutify spoke sends 1,000 signups in one second, a direct ingest workflow will trigger 429 errors and drop data.
-
-      ## Trellis Solution: Producer-Consumer Pattern
-      Trellis implements a **Rate-Limit Queue** using Supabase and a separate Worker workflow.
-
-      ### 1. The Producer (Webhook Ingest)
-      Instead of executing marketing logic, the ingestion webhook merely writes the payload to the \`marketing_task_queue\` table. This operation is sub-10ms and extremely resilient.
-
-      ### 2. The Consumer (The Worker)
-      A separate n8n workflow is configured with a **Cron Trigger** (e.g., every 1 minute) or a **Recursive Loop**.
-      - It pulls a fixed batch (e.g., 50 records) from the queue.
-      - It processes them sequentially or with a delay (e.g., 100ms pause between items).
-      - It marks the record as \`completed\` or \`failed\`.
-    `
-  },
-  { 
-    id: 'art_versioning', 
-    cat: 'advanced', 
-    title: 'Version-Based Sync Protocol', 
-    desc: 'Preventing stale data from overwriting fresh Hub records.', 
-    time: '5m',
-    content: `
-      ## The Stale Data Problem
-      In a multi-site ecosystem, webhooks don't always arrive in chronological order. A "Signup" event from school.sproutify.app might be delayed by network latency, arriving *after* a more recent "Purchase" event from farm.sproutify.app.
-
-      ## Trellis Solution: Event Timestamps
-      To maintain absolute identity integrity, Trellis implements **Version-Based Upserts**.
-
-      ### How it Works
-      1. **Source Timestamp**: Every webhook sent by n8n *must* include the \`event_timestamp\` from the source database.
-      2. **Conditional Update**: When the Hub processes the payload, it compares the incoming timestamp with the existing \`last_event_timestamp\` in the master Hub.
-      3. **The Logic Gate**:
-         - **IF** \`incoming_timestamp > current_hub_timestamp\`: The Hub updates the profile and advances the version.
-         - **IF** \`incoming_timestamp <= current_hub_timestamp\`: The Hub rejects the update as "stale" and logs a Warning in the internal audit trail.
-    `
-  },
-];
-
-const HelpCenter: React.FC = () => {
+const HelpCenter: React.FC<HelpCenterProps> = ({ initialArticle }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
+  useEffect(() => {
+    if (initialArticle) setSelectedArticle(initialArticle);
+  }, [initialArticle]);
+
   const filteredArticles = useMemo(() => {
     return ARTICLES.filter(art => {
-      const matchesSearch = art.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      const matchesSearch = art.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            art.desc.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCat = !selectedCategory || art.cat === selectedCategory;
       return matchesSearch && matchesCat;
@@ -145,7 +34,7 @@ const HelpCenter: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-500 pb-24">
       <button onClick={() => setSelectedArticle(null)} className="flex items-center space-x-3 text-slate-500 hover:text-emerald-600 transition-colors group">
         <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
-        <span className="text-xs font-black uppercase tracking-widest">Back to Academy</span>
+        <span className="text-xs font-black uppercase tracking-widest">Back to Help Center</span>
       </button>
 
       <div className="space-y-6 border-b border-slate-100 pb-12">
@@ -158,23 +47,31 @@ const HelpCenter: React.FC = () => {
         <p className="text-xl text-slate-500 font-medium italic leading-relaxed max-w-2xl">{article.desc}</p>
       </div>
 
-      <div className="prose prose-slate prose-lg max-w-none">
-        {article.content.split('\n').map((line, i) => {
-          if (line.trim().startsWith('###')) {
-            return <h3 key={i} className="text-xl font-black text-slate-800 uppercase mt-12 mb-6">{line.replace('###', '').trim()}</h3>;
-          }
-          if (line.trim().startsWith('##')) {
-            return <h2 key={i} className="text-3xl font-black text-slate-800 uppercase mt-16 mb-8">{line.replace('##', '').trim()}</h2>;
-          }
-          if (line.trim().startsWith('-')) {
-            return <li key={i} className="text-slate-600 font-medium mb-2 ml-4 list-disc">{line.replace('-', '').trim()}</li>;
-          }
-          if (line.trim().match(/^\d\./)) {
-             return <li key={i} className="text-slate-600 font-medium mb-2 ml-4 list-decimal">{line.replace(/^\d\./, '').trim()}</li>;
-          }
-          return line.trim() ? <p key={i} className="text-slate-600 leading-relaxed mb-6 font-medium">{line.trim()}</p> : null;
-        })}
-      </div>
+      {article.content === 'COMING SOON' ? (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Clock size={32} className="text-slate-300" />
+          <p className="text-slate-400 text-sm mt-4">This guide is being written.</p>
+          <p className="text-slate-400 text-xs mt-2">Check back soon or ask Sage for help.</p>
+        </div>
+      ) : (
+        <div className="prose prose-slate prose-lg max-w-none">
+          {article.content.split('\n').map((line, i) => {
+            if (line.trim().startsWith('###')) {
+              return <h3 key={i} className="text-xl font-black text-slate-800 uppercase mt-12 mb-6">{line.replace('###', '').trim()}</h3>;
+            }
+            if (line.trim().startsWith('##')) {
+              return <h2 key={i} className="text-3xl font-black text-slate-800 uppercase mt-16 mb-8">{line.replace('##', '').trim()}</h2>;
+            }
+            if (line.trim().startsWith('-')) {
+              return <li key={i} className="text-slate-600 font-medium mb-2 ml-4 list-disc">{line.replace('-', '').trim()}</li>;
+            }
+            if (line.trim().match(/^\d\./)) {
+               return <li key={i} className="text-slate-600 font-medium mb-2 ml-4 list-decimal">{line.replace(/^\d\./, '').trim()}</li>;
+            }
+            return line.trim() ? <p key={i} className="text-slate-600 leading-relaxed mb-6 font-medium">{line.trim()}</p> : null;
+          })}
+        </div>
+      )}
 
       <div className="pt-12 border-t border-slate-100 flex items-center justify-between">
          <div className="flex items-center space-x-4">
@@ -191,70 +88,121 @@ const HelpCenter: React.FC = () => {
   if (selectedArticle) return renderArticle(selectedArticle);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12 pb-40 animate-in fade-in duration-500">
-      <div className="bg-slate-900 rounded-[4rem] p-16 text-center relative overflow-hidden shadow-2xl">
-         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #10b981 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-         <div className="relative z-10 max-w-2xl mx-auto">
-            <h1 className="text-5xl font-black text-white tracking-tighter uppercase mb-6">Orchestration Academy</h1>
-            <p className="text-slate-400 text-lg font-medium mb-10">Master the Sproutify Trellis Hub. Explore protocols, worker patterns, and identity logic.</p>
-            <div className="relative group">
-               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 transition-colors" size={24} />
-               <input className="w-full bg-white/5 border-2 border-white/10 rounded-3xl pl-16 pr-8 py-6 text-xl text-white outline-none focus:border-emerald-500 transition shadow-2xl" placeholder="Search protocol docs..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-            </div>
-         </div>
+    <div className="max-w-5xl mx-auto space-y-10 pb-40 animate-in fade-in duration-500">
+
+      {/* SECTION 1: Page Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Help Center</h1>
+          <p className="text-sm text-slate-500 mt-1">Find guides, technical references, and step-by-step walkthroughs.</p>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            className="w-80 bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm text-slate-800 outline-none focus:border-emerald-500 transition"
+            placeholder="Search guides..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-         {CATEGORIES.map(cat => (
-           <button key={cat.id} onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)} className={`p-8 rounded-[2.5rem] border-2 transition-all group flex flex-col items-center ${selectedCategory === cat.id ? 'bg-slate-900 border-emerald-500 shadow-xl scale-105' : 'bg-white border-slate-200 hover:border-emerald-400'}`}>
-              <div className={`p-4 rounded-2xl ${selectedCategory === cat.id ? 'bg-white/10 text-emerald-400' : `${cat.bg} ${cat.color}`} mb-6 shadow-inner`}><cat.icon size={28} /></div>
-              <h3 className={`text-[10px] font-black uppercase tracking-widest ${selectedCategory === cat.id ? 'text-white' : 'text-slate-800'}`}>{cat.title}</h3>
-           </button>
-         ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-         <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between mb-4">
-               <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{selectedCategory ? `${selectedCategory.replace('-', ' ')} Protocols` : 'Key Protocols'}</h2>
-            </div>
-            {filteredArticles.map((art) => (
-              <button key={art.id} onClick={() => setSelectedArticle(art)} className="group p-8 bg-white border border-slate-100 rounded-[2.5rem] hover:border-emerald-500 transition-all flex items-center justify-between cursor-pointer text-left w-full shadow-sm">
-                <div className="flex items-center space-x-8">
-                  <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 shadow-inner group-hover:bg-emerald-50 group-hover:text-emerald-600 transition">
-                    {art.id === 'art_ttl_hygiene' ? <Recycle size={32} /> : art.id === 'art_delete_lifecycle' ? <UserMinus size={32} /> : art.id === 'art_queuing' ? <Timer size={32} /> : art.id === 'art_versioning' ? <History size={32} /> : <Book size={32} />}
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-3 mb-1">
-                      <h4 className="text-lg font-black text-slate-800 uppercase">{art.title}</h4>
+      {/* SECTION 2: Start Here Track */}
+      {!searchTerm && !selectedCategory && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Rocket size={14} className="text-slate-400" />
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Start Here</span>
+          </div>
+          <div className="flex overflow-x-auto gap-4 pb-2">
+            {START_HERE_STEPS.map(step => {
+              const targetArticle = ARTICLES.find(a => a.id === step.articleId);
+              return (
+                <button
+                  key={step.step}
+                  onClick={() => targetArticle && setSelectedArticle(targetArticle)}
+                  className="min-w-[220px] bg-white border border-slate-200 rounded-2xl p-5 text-left cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all flex-shrink-0"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="w-7 h-7 bg-emerald-50 text-emerald-600 text-xs font-black rounded-full flex items-center justify-center">
+                      {step.step}
                     </div>
-                    <p className="text-sm text-slate-500 font-medium">{art.desc}</p>
+                    <step.icon size={18} className="text-slate-400" />
                   </div>
-                </div>
-                <ChevronRight size={24} className="text-slate-300 group-hover:text-emerald-500 transition" />
-              </button>
-            ))}
-         </div>
-         <div className="space-y-8">
-            <div className="bg-emerald-50 border border-emerald-100 p-10 rounded-[3rem] shadow-sm relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-4 opacity-10"><ShieldCheck size={120} className="text-emerald-600" /></div>
-               <h3 className="text-xs font-black text-emerald-900 uppercase tracking-widest mb-6">Status Overview</h3>
-               <div className="space-y-4 relative z-10">
-                  <div className="flex justify-between items-center text-[10px] font-black text-emerald-700 uppercase">
-                     <span>Queue Worker</span>
-                     <span className="flex items-center"><CheckCircle2 size={12} className="mr-2" /> Active</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] font-black text-emerald-700 uppercase">
-                     <span>Data Hygiene</span>
-                     <span className="flex items-center"><Recycle size={12} className="mr-2" /> Tiered TTL</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] font-black text-emerald-700 uppercase">
-                     <span>Zombie Protection</span>
-                     <span className="flex items-center"><ShieldCheck size={12} className="mr-2" /> Enforced</span>
-                  </div>
-               </div>
-            </div>
-         </div>
+                  <p className="text-sm font-black text-slate-800 mt-3">{step.title}</p>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">{step.description}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 3: Categories */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Layers size={14} className="text-slate-400" />
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Browse by Topic</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)}
+              className={`relative p-4 rounded-2xl border-2 flex flex-col items-center text-center gap-2 transition-all ${
+                selectedCategory === cat.id
+                  ? 'bg-slate-900 border-slate-900 text-white'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-400'
+              }`}
+            >
+              {cat.id === 'technical' && (
+                <span className="absolute top-2 right-2 bg-slate-800 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">DEV</span>
+              )}
+              <cat.icon size={20} />
+              <span className="text-[10px] font-black uppercase tracking-wider">{cat.title}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* SECTION 4: Articles */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            {selectedCategory
+              ? `${CATEGORIES.find(c => c.id === selectedCategory)?.title || selectedCategory} Guides`
+              : 'All Guides'}
+          </span>
+          {searchTerm && (
+            <span className="text-xs text-slate-400">
+              {filteredArticles.length} result{filteredArticles.length !== 1 ? 's' : ''} for &lsquo;{searchTerm}&rsquo;
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {filteredArticles.map(art => (
+            <button
+              key={art.id}
+              onClick={() => setSelectedArticle(art)}
+              className="bg-white border border-slate-200 rounded-2xl p-6 text-left cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">{art.cat}</span>
+                <span className="flex items-center text-[9px] text-slate-400"><Clock size={10} className="mr-1" />{art.time}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <h4 className="text-base font-black text-slate-800 uppercase">{art.title}</h4>
+                {art.content === 'COMING SOON' && (
+                  <span className="bg-amber-50 text-amber-600 border border-amber-200 text-[9px] font-black px-2 py-0.5 rounded-full whitespace-nowrap">Coming Soon</span>
+                )}
+                {(art.publishedAt ? isRecentlyAdded(art.publishedAt) : false) && (
+                  <span className="bg-emerald-50 text-emerald-600 border border-emerald-200 text-[9px] font-black px-2 py-0.5 rounded-full whitespace-nowrap">New</span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">{art.desc}</p>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

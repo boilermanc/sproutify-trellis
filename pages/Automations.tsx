@@ -10,6 +10,8 @@ import {
   PlusCircle, Save, X, RefreshCw, FileCode
 } from 'lucide-react';
 import { N8N_BLUEPRINTS, CAMPAIGN_WEBHOOK } from '../constants';
+import { Article } from '../src/data/helpContent';
+import HelpLink from '../src/components/HelpLink';
 
 interface FlowNode {
   id: string;
@@ -37,7 +39,11 @@ const BLUEPRINT_META: Record<string, { title: string; desc: string; icon: any; c
   campaign_dispatch: { title: 'Campaign Dispatch', desc: 'Full audience resolve → batch → send pipeline', icon: Rocket, color: 'text-emerald-600' },
 };
 
-const Automations: React.FC = () => {
+interface AutomationsProps {
+  onOpenArticle?: (article: Article) => void;
+}
+
+const Automations: React.FC<AutomationsProps> = ({ onOpenArticle }) => {
   const [activeMode, setActiveMode] = useState<'builder' | 'blueprints'>('builder');
   const [flowName, setFlowName] = useState('New Onboarding Flow');
   const [nodes, setNodes] = useState<FlowNode[]>([
@@ -225,6 +231,12 @@ const Automations: React.FC = () => {
                     <div className="flex items-center space-x-2 mt-1">
                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Live Orchestration Active</span>
+                       <HelpLink
+                         articleId="art_automations_logic_gates"
+                         label="How do logic gates work?"
+                         variant="badge"
+                         onOpenArticle={onOpenArticle!}
+                       />
                     </div>
                  </div>
                  <div className="px-4 py-2 bg-slate-50 rounded-xl text-[10px] font-black text-slate-400 uppercase border border-slate-100">{nodes.length} Blocks</div>

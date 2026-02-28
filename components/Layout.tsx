@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, User, Brand, Profile, BranchContext, ApiKeyConfig } from '../types';
+import { Article } from '../src/data/helpContent';
 import SageChat from './SageChat';
 import ContextAwareHelp from './ContextAwareHelp';
 import {
@@ -20,9 +21,11 @@ interface LayoutProps {
   onLogout?: () => void;
   branchContext: BranchContext;
   apiKeys?: ApiKeyConfig;
+  onOpenHelpArticle: (article: Article) => void;
+  onOpenHelpCenter: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, onOpenHelpArticle, onOpenHelpCenter }) => {
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const branchPickerRef = useRef<HTMLDivElement>(null);
 
@@ -264,7 +267,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
         </div>
 
         {/* Global Overlays */}
-        <ContextAwareHelp activeView={activeView} />
+        <ContextAwareHelp activeView={activeView} onOpenArticle={onOpenHelpArticle} onOpenHelpCenter={onOpenHelpCenter} />
         <SageChat brand={brand} profiles={profiles} apiKeys={apiKeys} />
       </main>
     </div>

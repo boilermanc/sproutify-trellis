@@ -1,6 +1,8 @@
 
 import React, { useState } from 'react';
 import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection, Branch, BranchContext } from '../types';
+import { Article } from '../src/data/helpContent';
+import HelpLink from '../src/components/HelpLink';
 import {
   Key, Globe, Save, RefreshCw,
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
@@ -17,6 +19,7 @@ interface SettingsProps {
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branches: Branch[];
   branchContext?: BranchContext;
+  onOpenArticle?: (article: Article) => void;
 }
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
@@ -37,7 +40,8 @@ const Settings: React.FC<SettingsProps> = ({
   onUpdateApiKeys,
   spokeConnections,
   onSpokeConnectionsChange,
-  branches
+  branches,
+  onOpenArticle,
 }) => {
   const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api'>('integrations');
   const [isSaving, setIsSaving] = useState(false);
@@ -294,16 +298,24 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {activeTab === 'spokes' && (
-            <ConnectionsManager
-              connections={spokeConnections}
-              onConnectionsChange={onSpokeConnectionsChange}
-            />
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="flex justify-end">
+                <HelpLink articleId="art_gs_connect_spokes" variant="badge" label="How to connect" onOpenArticle={onOpenArticle!} />
+              </div>
+              <ConnectionsManager
+                connections={spokeConnections}
+                onConnectionsChange={onSpokeConnectionsChange}
+              />
+            </div>
           )}
 
           {activeTab === 'api' && (
             <div className="space-y-10 animate-in fade-in duration-300">
                <div>
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Strategic AI Engine</h3>
+                  <div className="flex items-center space-x-3 mb-6">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Strategic AI Engine</h3>
+                    <HelpLink articleId="art_admin_api_keys" variant="badge" label="Key reference" onOpenArticle={onOpenArticle!} />
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     {LLM_PROVIDERS.map(provider => (
                       <button

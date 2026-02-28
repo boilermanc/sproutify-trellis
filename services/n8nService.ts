@@ -47,12 +47,21 @@ export async function triggerProfileSync(webhookUrl: string, profileId: string, 
   });
 }
 
-export async function triggerEmailCampaign(webhookUrl: string, campaignId: string, recipientIds: string[]): Promise<WebhookResult> {
+export async function triggerEmailCampaign(
+  webhookUrl: string,
+  payload: {
+    campaign_id: string;
+    branches: string[];
+    tags: string[] | null;
+    subject: string;
+    html_body: string;
+  }
+): Promise<WebhookResult> {
   return triggerWebhook(webhookUrl, {
     event_type: 'campaign.send',
     source: 'trellis',
     timestamp: new Date().toISOString(),
-    data: { campaign_id: campaignId, recipient_ids: recipientIds },
+    data: payload,
   });
 }
 

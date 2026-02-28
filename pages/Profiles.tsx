@@ -1,6 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, BranchConsentMap, BranchConsentEntry } from '../types';
+import { Article } from '../src/data/helpContent';
+import HelpLink from '../src/components/HelpLink';
 import { fetchBranches } from '../lib/supabaseService';
 import { supabase } from '../supabaseService';
 import { getConsentSummary, updateBranchConsent } from '../consentUtils';
@@ -21,6 +23,7 @@ interface ProfilesProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
   branchContext?: BranchContext;
+  onOpenArticle?: (article: Article) => void;
 }
 
 const SITE_ICONS: Record<string, any> = {
@@ -55,7 +58,7 @@ const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }>
   );
 };
 
-const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections, branchStats, branchContext }) => {
+const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections, branchStats, branchContext, onOpenArticle }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -513,7 +516,10 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             <tr className="border-b border-slate-100">
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Identity</th>
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
-                {dataSource === 'local' ? 'Spoke UUID' : 'Source'}
+                <span className="flex items-center justify-center space-x-1">
+                  <span>{dataSource === 'local' ? 'Spoke UUID' : 'Source'}</span>
+                  <HelpLink articleId="art_identity_golden_record" variant="icon-only" onOpenArticle={onOpenArticle!} />
+                </span>
               </th>
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 {dataSource === 'local' ? 'Presence' : 'Contact'}
@@ -736,7 +742,10 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-40" onClick={() => setSelectedProfileId(null)}></div>
           <div className="fixed top-0 right-0 h-full w-full max-w-xl bg-white shadow-2xl z-50 animate-in slide-in-from-right duration-300 flex flex-col">
             <div className="p-10 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs">Identity Intelligence Slide</h3>
+              <div className="flex items-center space-x-2">
+                <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs">Identity Intelligence Slide</h3>
+                <HelpLink articleId="art_federated_model" variant="icon-only" onOpenArticle={onOpenArticle!} />
+              </div>
               <button onClick={() => setSelectedProfileId(null)} className="p-2 text-slate-400 hover:text-slate-900 bg-slate-50 rounded-xl"><X size={24} /></button>
             </div>
             <div className="p-10 space-y-10 flex-1 overflow-y-auto custom-scrollbar">

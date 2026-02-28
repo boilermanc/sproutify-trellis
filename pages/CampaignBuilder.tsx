@@ -1,6 +1,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign } from '../types';
+import { Article } from '../src/data/helpContent';
+import HelpLink from '../src/components/HelpLink';
 import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
 import { loadNameCache } from '../demographicsService';
 import { timeAgo, formatBranchName } from '../utils';
@@ -8,6 +10,8 @@ import { isSubscribedForAnyBranch } from '../consentUtils';
 import { sendEmail, renderCampaignHtml } from '../src/services/resendService';
 import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
+import { triggerEmailCampaign } from '../services/n8nService';
+import { WEBHOOK_SPECS } from '../constants';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
   ChevronLeft, CheckCircle2, Target,
@@ -47,6 +51,7 @@ interface CampaignBuilderProps {
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   setEvents?: React.Dispatch<React.SetStateAction<MarketingEvent[]>>;
   onCampaignDeployed?: (campaign: DeployedCampaign) => void;
+  onOpenArticle?: (article: Article) => void;
 }
 
 interface ChannelConfig {
@@ -125,6 +130,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   addToast,
   setEvents,
   onCampaignDeployed,
+  onOpenArticle,
 }) => {
   // Ref for launch interval cleanup on unmount
   const launchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -509,6 +515,31 @@ Return ONLY the post content, no explanations or labels.`,
       setSavedCampaigns(prev => [newCampaign, ...prev]);
     }
 
+    // Fire n8n campaign dispatch webhook for immediate campaigns
+    if (newCampaign && triggerType === 'immediate') {
+      const dispatchHtml = renderCampaignHtml({
+        profile: { email: '', first_name: '' } as Profile,
+        subject: emailSubject,
+        templateId: emailTemplate,
+        campaignName: campaignName,
+      });
+
+      const webhookResult = await triggerEmailCampaign(
+        WEBHOOK_SPECS.campaign_dispatch,
+        {
+          campaign_id: newCampaign.id,
+          branches: selectedBranches,
+          tags: null, // All active subscribers — tag filtering added later
+          subject: emailSubject,
+          html_body: dispatchHtml,
+        }
+      );
+
+      if (!webhookResult.success) {
+        addToast?.(`Campaign dispatch failed: ${webhookResult.error}`, 'error');
+      }
+    }
+
     // Simulate per-channel deployment with staggered progress
     let progress = 0;
     const totalSteps = channels.length * 10;
@@ -718,6 +749,7 @@ Return ONLY the post content, no explanations or labels.`,
         {/* Token injection */}
         <div className="flex items-center space-x-3">
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tokens:</span>
+          <HelpLink articleId="art_campaigns_email_modules" variant="inline" label="Token syntax reference" onOpenArticle={onOpenArticle!} />
           <div className="flex gap-2">
             {['first_name', 'branch', 'ltv'].map(v => (
               <button
@@ -841,10 +873,13 @@ Return ONLY the post content, no explanations or labels.`,
             {/* Branch Targeting */}
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
               <div className="flex items-center justify-between mb-6">
-                <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center">
-                  <Globe size={18} className="mr-3 text-emerald-500" />
-                  Branch Targeting
-                </h4>
+                <div className="flex items-center space-x-3">
+                  <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center">
+                    <Globe size={18} className="mr-3 text-emerald-500" />
+                    Branch Targeting
+                  </h4>
+                  <HelpLink articleId="art_gs_build_segment" variant="badge" label="Segment guide" onOpenArticle={onOpenArticle!} />
+                </div>
                 <button
                   type="button"
                   onClick={toggleAllBranches}

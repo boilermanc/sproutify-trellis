@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport, ApiKeyConfig } from '../types';
+import { Article } from '../src/data/helpContent';
 import { generateText } from '../services/aiService';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
@@ -51,6 +52,7 @@ interface ReportsProps {
   branchStats: BranchStatsResult;
   branchContext?: BranchContext;
   apiKeys?: ApiKeyConfig;
+  onOpenArticle?: (article: Article) => void;
 }
 
 interface SageMessage {
@@ -58,7 +60,7 @@ interface SageMessage {
   content: string;
 }
 
-const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext, apiKeys }) => {
+const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext, apiKeys, onOpenArticle }) => {
   const [sageQuery, setSageQuery] = useState('');
   const [sageLoading, setSageLoading] = useState(false);
   const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);

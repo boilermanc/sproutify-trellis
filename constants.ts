@@ -412,6 +412,26 @@ END;
 $$;
 
 -- ═══════════════════════════════════════════════════════════
+-- 10b. NEWSLETTER AUDIENCE RPC (ATL Spoke — launch-phase shortcut)
+-- TODO: Once all spokes sync subscribers to Hub profiles table,
+-- replace with unified profiles query on Hub Supabase.
+-- Deploy this to ATL Spoke (povudgtvzggnxwgtjexa.supabase.co), NOT Hub.
+-- ═══════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION resolve_newsletter_audience(
+  p_tags TEXT[] DEFAULT NULL
+) RETURNS TABLE(email TEXT, first_name TEXT, last_name TEXT, tags TEXT[], customer_id UUID)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT ns.email, ns.first_name, ns.last_name, ns.tags, ns.customer_id
+  FROM newsletter_subscribers ns
+  WHERE ns.status = 'active'
+    AND (p_tags IS NULL OR ns.tags && p_tags);
+END;
+$$;
+
+-- ═══════════════════════════════════════════════════════════
 -- 11. SOCIAL SIGNALS (Inbound Intent Queue — Phase 4)
 -- ═══════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS social_signals (
@@ -635,6 +655,8 @@ export const N8N_BLUEPRINTS = {
     }
   ]
 }`,
+  // TODO: Resolve Audience queries ATL spoke newsletter_subscribers directly as a launch-phase shortcut.
+  // Once all spokes sync subscribers to the Hub profiles table, retarget back to Hub with unified profiles query.
   campaign_dispatch: `{
   "name": "Trellis: Campaign Dispatch Gateway",
   "nodes": [
@@ -653,10 +675,10 @@ export const N8N_BLUEPRINTS = {
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.email, p.first_name, p.branches, p.is_subscribed, p.marketing_pause FROM profiles p WHERE p.branches && $1::text[] AND p.is_subscribed = true AND p.marketing_pause = false",
+        "query": "SELECT ns.email, ns.first_name, ns.last_name, ns.tags, ns.customer_id FROM newsletter_subscribers ns WHERE ns.status = 'active' AND ($1::text[] IS NULL OR ns.tags && $1::text[])",
         "additionalFields": {}
       },
-      "name": "Resolve Audience",
+      "name": "Resolve Audience (ATL Spoke)",
       "type": "n8n-nodes-base.supabase",
       "position": [500, 300]
     },

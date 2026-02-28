@@ -14,6 +14,7 @@ import RedditGrowth from './pages/RedditGrowth';
 import SupportHub from './pages/SupportHub';
 import KnowledgeBase from './pages/KnowledgeBase';
 import HelpCenter from './pages/HelpCenter';
+import { Article } from './src/data/helpContent';
 import Settings from './pages/Settings';
 import Reports from './pages/Reports';
 import TeamMembers from './pages/TeamMembers';
@@ -49,6 +50,7 @@ const AppContent: React.FC = () => {
   const { user, loading, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
+  const [helpArticle, setHelpArticle] = useState<Article | null>(null);
   const [testEmail, setTestEmail] = useState<string | null>(null);
   const [currentBrand, setCurrentBrand] = useState<Brand>(DEFAULT_BRAND);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -317,6 +319,11 @@ const AppContent: React.FC = () => {
     }, 4000);
   }, []);
 
+  const handleOpenHelpArticle = useCallback((article: Article) => {
+    setHelpArticle(article);
+    setActiveView('help-center');
+  }, []);
+
   const handleToggleFavorite = useCallback((connectionId: string) => {
     setSavedConnections(prev =>
       prev.map(c =>
@@ -340,19 +347,19 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} />;
-      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
+      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
+      case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} />;
-      case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} />;
+      case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
       case 'reddit-growth': return <RedditGrowth setEvents={setEvents} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} />;
-      case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} />;
-      case 'knowledge-base': return <KnowledgeBase />;
-      case 'help-center': return <HelpCenter />;
-      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} />;
+      case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
+      case 'knowledge-base': return <KnowledgeBase onOpenArticle={handleOpenHelpArticle} />;
+      case 'help-center': return <HelpCenter initialArticle={helpArticle} />;
+      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} />;
       case 'marketing-brands': return (
         <MarketingBrands
           branchContext={branchContext}
@@ -366,11 +373,11 @@ const AppContent: React.FC = () => {
           apiKeys={apiKeys}
         />
       );
-      case 'automations': return <Automations />;
+      case 'automations': return <Automations onOpenArticle={handleOpenHelpArticle} />;
       case 'tasks': return <Tasks tasks={tasks} setTasks={setTasks} />;
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} branchContext={branchContext} />;
-      case 'dev-tools': return <DevTools profiles={profiles} branchContext={branchContext} />;
-      case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} apiKeys={apiKeys} />;
+      case 'dev-tools': return <DevTools profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
+      case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'team': return <TeamMembers />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'platform-wizard': return (
@@ -398,9 +405,10 @@ const AppContent: React.FC = () => {
           onSpokeConnectionsChange={setSpokeConnections}
           branches={branches}
           branchContext={branchContext}
+          onOpenArticle={handleOpenHelpArticle}
         />
       );
-      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} />;
+      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
     }
   };
 
@@ -420,7 +428,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys}>
+    <Layout activeView={activeView} onViewChange={setActiveView} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
       {renderView()}
 
       {/* Global Toast Notification Engine */}

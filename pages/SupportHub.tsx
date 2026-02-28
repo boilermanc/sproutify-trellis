@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Ticket, Profile, TicketPriority, Sentiment, BranchContext } from '../types';
+import { Article } from '../src/data/helpContent';
 import CustomerSitesTag from '../components/CustomerSitesTag';
 import { sanitizePII } from '../services/aiService';
 import { 
@@ -15,6 +16,7 @@ interface SupportHubProps {
   setTickets: React.Dispatch<React.SetStateAction<Ticket[]>>;
   profiles: Profile[];
   branchContext?: BranchContext;
+  onOpenArticle?: (article: Article) => void;
 }
 
 const SITE_ICONS: Record<string, any> = {
@@ -25,7 +27,7 @@ const SITE_ICONS: Record<string, any> = {
   'letsrejoice.app': Heart,
 };
 
-const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, branchContext }) => {
+const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, branchContext, onOpenArticle }) => {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(tickets[0]?.id || null);
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | 'all'>('all');

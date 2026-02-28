@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, PlatformPublishResult, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig } from '../types';
+import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
 import { publishToSocial, updateSignalStatus, linkProfileToSocial } from '../services/socialService';
@@ -30,6 +31,7 @@ interface SocialHubProps {
   deployedCampaigns: DeployedCampaign[];
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   apiKeys?: ApiKeyConfig;
+  onOpenArticle?: (article: Article) => void;
 }
 
 const INTENT_ICONS: Record<string, any> = {
@@ -99,7 +101,7 @@ const generateTestSignal = (branchId?: string | null): SocialActivity => ({
 
 const PIPELINE_STORAGE_KEY = 'trellis_social_pipeline';
 
-const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys }) => {
+const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle }) => {
   const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline'>('lab');
   const [baseContent, setBaseContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);

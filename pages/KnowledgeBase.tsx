@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { FAQ, KnowledgeDoc } from '../types';
+import { Article } from '../src/data/helpContent';
 import CustomerSitesTag from '../components/CustomerSitesTag';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -23,7 +24,11 @@ const MOCK_FAQS: FAQ[] = [
   { id: 'faq_2', question: 'Can I cancel my school subscription?', answer: 'Yes, cancellations are handled through the School dashboard under the Billing tab.', category: 'Account', sites: ['school.sproutify.app'], last_updated: '2023-10-12T00:00:00Z', status: 'indexed' },
 ];
 
-const KnowledgeBase: React.FC = () => {
+interface KnowledgeBaseProps {
+  onOpenArticle?: (article: Article) => void;
+}
+
+const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ onOpenArticle }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'faqs'>('docs');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);

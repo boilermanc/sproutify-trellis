@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { SQL_SCHEMA, WEBHOOK_SPECS, MOCK_SPOKE_CONFIGS, MOCK_FAILED_SYNCS, N8N_BLUEPRINTS } from '../constants';
 import { QueuedTask, Profile, BranchContext } from '../types';
+import { Article } from '../src/data/helpContent';
+import HelpLink from '../src/components/HelpLink';
 import { 
   Terminal, Database, CheckSquare, ExternalLink, Activity, 
   Globe, Shield, Code2, Zap, Lock, FileJson, Copy, 
@@ -17,9 +19,10 @@ import {
 interface DevToolsProps {
   profiles: Profile[];
   branchContext?: BranchContext;
+  onOpenArticle?: (article: Article) => void;
 }
 
-const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext }) => {
+const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext, onOpenArticle }) => {
   const [activeTab, setActiveTab] = useState<'sim' | 'worker' | 'hygiene' | 'dlq' | 'sql' | 'n8n'>('sim');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   
@@ -399,10 +402,13 @@ AND event_type IN ('open', 'click');`}
               <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
                  <div className="flex justify-between items-center mb-10">
                     <div>
-                        <h3 className="text-2xl font-black text-slate-800 flex items-center uppercase tracking-tight">
-                            <Cpu size={32} className="mr-4 text-emerald-600" />
-                            Worker Node (Supabase Gate)
-                        </h3>
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-2xl font-black text-slate-800 flex items-center uppercase tracking-tight">
+                              <Cpu size={32} className="mr-4 text-emerald-600" />
+                              Worker Node (Supabase Gate)
+                          </h3>
+                          <HelpLink articleId="art_queuing" variant="icon-only" onOpenArticle={onOpenArticle!} />
+                        </div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-12">Controlled Throttling: 5 tasks / sec</p>
                     </div>
                     <div className="flex space-x-3">
@@ -500,10 +506,13 @@ AND event_type IN ('open', 'click');`}
            <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
               <div className="flex justify-between items-center mb-10">
                  <div>
-                    <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center">
-                       <Bug size={32} className="mr-4 text-rose-500" />
-                       Dead Letter Queue
-                    </h3>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center">
+                         <Bug size={32} className="mr-4 text-rose-500" />
+                         Dead Letter Queue
+                      </h3>
+                      <HelpLink articleId="art_automations_dlq" variant="icon-only" onOpenArticle={onOpenArticle!} />
+                    </div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 ml-12">Failed Ingest Terminal</p>
                  </div>
               </div>
@@ -543,7 +552,10 @@ AND event_type IN ('open', 'click');`}
         <div className="space-y-8 animate-in fade-in duration-300">
            <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
               <div className="flex justify-between items-center mb-6">
-                 <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Active Schema</h3>
+                 <div className="flex items-center space-x-2">
+                   <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Active Schema</h3>
+                   <HelpLink articleId="art_db_tables" variant="icon-only" onOpenArticle={onOpenArticle!} />
+                 </div>
                  <button onClick={() => handleCopy(SQL_SCHEMA, 'sql')} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all">
                     {copiedSection === 'sql' ? <CheckCircle2 size={20} /> : <Copy size={20} />}
                  </button>

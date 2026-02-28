@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, SpokeConnection, BranchStatsResult, BranchContext } from '../types';
+import { Article } from '../src/data/helpContent';
+import HelpLink from '../src/components/HelpLink';
 import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
 import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
@@ -33,6 +35,7 @@ interface DashboardProps {
   branchStats: BranchStatsResult;
   branches: Branch[];
   branchContext?: BranchContext;
+  onOpenArticle?: (article: Article) => void;
 }
 
 /** Classify how fresh a timestamp is */
@@ -46,7 +49,7 @@ function getFreshness(ts?: string): { label: string; isStale: boolean; isWarning
   return { label: `${days}d ago`, isStale: true, isWarning: true };
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches, branchContext }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches, branchContext, onOpenArticle }) => {
   const [isBriefingOpen, setIsBriefingOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -245,6 +248,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
             </div>
             <div className="text-left">
               <h3 className="text-lg font-black text-white uppercase tracking-widest">Sage Strategic Pulse</h3>
+              <HelpLink
+                articleId="art_gs_monitor_reports"
+                label="What is the daily briefing?"
+                variant="inline"
+                onOpenArticle={onOpenArticle!}
+              />
               <div className="flex items-center space-x-3 mt-0.5">
                 <span className="text-[10px] text-sky-300 font-bold uppercase tracking-widest flex items-center">
                   <Zap size={10} className="mr-1" /> Ecosystem Harmony: Active
@@ -351,6 +360,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                     : `${spokeConnections.length} connection${spokeConnections.length !== 1 ? 's' : ''} \u2022 ${healthCounts.healthy} healthy${healthCounts.warning > 0 ? ` \u2022 ${healthCounts.warning} stale` : ''}${healthCounts.error > 0 ? ` \u2022 ${healthCounts.error} down` : ''}`}
                 </p>
               </div>
+              <HelpLink
+                articleId="art_gs_monitor_reports"
+                label="How is this calculated?"
+                variant="badge"
+                onOpenArticle={onOpenArticle!}
+              />
               {spokeConnections.length > 0 && (
                 <button
                   onClick={() => branchStats.refresh()}
