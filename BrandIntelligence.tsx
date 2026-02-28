@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { BrandIdentity, BrandAnalysisState, GeneratedBrandAsset, BranchContext } from './types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { BrandIdentity, BrandAnalysisState, GeneratedBrandAsset, BranchContext, EmailTemplate } from './types';
 import { MOCK_BRAND_IDENTITIES } from './constants';
 import { extractBrandFromUrl, generateBrandFromDescription } from './brandService';
 import { parseCSS, suggestColorRoles } from './cssParser';
@@ -10,15 +10,20 @@ import {
   archiveBrand,
   activateBrand,
   deleteBrand,
-  fetchAssetsByBrand
+  fetchAssetsByBrand,
+  fetchTemplatesForBranch,
+  upsertTemplate,
+  deleteTemplate as deleteTemplateFromDb
 } from './brandRepository';
 import {
   Dna, Globe, Palette, Type, Target, Megaphone, Sparkles,
   ArrowRight, RefreshCw, Loader2, CheckCircle2, AlertCircle,
   ChevronDown, Eye, Edit3, Save, X, Instagram, Linkedin,
   Facebook, Twitter, Video, Plus, ExternalLink, Copy, Upload,
-  Image as ImageIcon, Settings, Archive, Trash2, RotateCcw
+  Image as ImageIcon, Settings, Archive, Trash2, RotateCcw,
+  Mail, Code, FileText
 } from 'lucide-react';
+import { supabase } from './supabaseService';
 
 interface BrandIntelligenceProps {
   onBrandUpdate?: (brand: BrandIdentity) => void;
@@ -70,7 +75,21 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [editingBrand, setEditingBrand] = useState<BrandIdentity | null>(null);
   const [brandAssets, setBrandAssets] = useState<Record<string, GeneratedBrandAsset[]>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'manage' | 'templates'>('create');
+
+  // Email Templates state
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
+  const [templateHtml, setTemplateHtml] = useState('');
+  const [templateBranchFilter, setTemplateBranchFilter] = useState<string>(branchSlugs[0] || '');
+  const [templateDirty, setTemplateDirty] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Load brands from Supabase on mount
   useEffect(() => {
@@ -88,6 +107,169 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     };
     loadBrands();
   }, []);
+
+  // Load templates when branch filter changes
+  const loadTemplates = useCallback(async (branchId: string) => {
+    setTemplateLoading(true);
+    try {
+      const data = await fetchTemplatesForBranch(branchId);
+      setTemplates(data);
+    } catch (err) {
+      console.error('Failed to load templates:', err);
+      setTemplates([]);
+    } finally {
+      setTemplateLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'templates' && templateBranchFilter) {
+      loadTemplates(templateBranchFilter);
+    }
+  }, [activeTab, templateBranchFilter, loadTemplates]);
+
+  // Debounce HTML preview
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPreviewHtml(templateHtml);
+    }, 500);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [templateHtml]);
+
+  // Generate starter HTML scaffold from active brand
+  const generateStarterHtml = useCallback((branchId: string): string => {
+    const brand = brands.find(b => b.branch_id === branchId && b.status === 'active');
+    const primaryColor = brand?.color_palette.primary || '#059669';
+    const accentColor = brand?.color_palette.accent || '#F59E0B';
+    const headingFont = brand?.typography.heading || 'Inter';
+    const bodyFont = brand?.typography.body || 'Inter';
+    const brandName = brand?.name || 'Your Brand';
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <style>
+    body { font-family: ${bodyFont}, Arial, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
+    .container { max-width: 600px; margin: 0 auto; background: white; }
+    .header { background: ${primaryColor}; padding: 32px 40px; text-align: center; }
+    .header img { height: 48px; }
+    .body { padding: 40px; }
+    .headline { font-family: ${headingFont}, Arial, sans-serif; font-size: 28px; color: #1a1a1a; margin-bottom: 16px; }
+    .body-copy { font-size: 16px; color: #444; line-height: 1.6; }
+    .cta { display: inline-block; margin-top: 32px; padding: 14px 32px; background: ${accentColor}; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+    .footer { padding: 24px 40px; text-align: center; font-size: 11px; color: #999; border-top: 1px solid #eee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="{{logo_url}}" alt="${brandName}">
+    </div>
+    <div class="body">
+      <h1 class="headline">{{headline}}</h1>
+      <div class="body-copy">{{body_copy}}</div>
+      <a href="{{cta_url}}" class="cta">{{cta_text}}</a>
+    </div>
+    <div class="footer">
+      You're receiving this because you subscribed to ${brandName} updates.<br>
+      <a href="{{unsubscribe_url}}" style="color:#999;">Unsubscribe</a>
+    </div>
+  </div>
+</body>
+</html>`;
+  }, [brands]);
+
+  // Template editor helpers
+  const handleNewTemplate = () => {
+    setSelectedTemplate(null);
+    setTemplateName('');
+    setTemplateDescription('');
+    setTemplateHtml(generateStarterHtml(templateBranchFilter));
+    setTemplateDirty(true);
+  };
+
+  const handleSelectTemplate = (tmpl: EmailTemplate) => {
+    setSelectedTemplate(tmpl);
+    setTemplateName(tmpl.name);
+    setTemplateDescription(tmpl.description || '');
+    setTemplateHtml(tmpl.html_body);
+    setTemplateDirty(false);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim() || !templateHtml.trim()) return;
+    setTemplateSaving(true);
+    try {
+      const payload: Partial<EmailTemplate> = {
+        ...(selectedTemplate?.id ? { id: selectedTemplate.id } : {}),
+        branch_id: templateBranchFilter,
+        brand_identity_id: brands.find(b => b.branch_id === templateBranchFilter && b.status === 'active')?.id,
+        name: templateName.trim(),
+        description: templateDescription.trim() || undefined,
+        html_body: templateHtml,
+      };
+      const saved = await upsertTemplate(payload);
+      setSelectedTemplate(saved);
+      setTemplateDirty(false);
+      await loadTemplates(templateBranchFilter);
+    } catch (err) {
+      console.error('Failed to save template:', err);
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    try {
+      await deleteTemplateFromDb(id);
+      if (selectedTemplate?.id === id) {
+        setSelectedTemplate(null);
+        setTemplateName('');
+        setTemplateDescription('');
+        setTemplateHtml('');
+        setTemplateDirty(false);
+      }
+      await loadTemplates(templateBranchFilter);
+    } catch (err) {
+      console.error('Failed to delete template:', err);
+    }
+  };
+
+  const insertTokenAtCursor = (token: string) => {
+    const ta = htmlTextareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const before = templateHtml.substring(0, start);
+    const after = templateHtml.substring(end);
+    const newHtml = before + token + after;
+    setTemplateHtml(newHtml);
+    setTemplateDirty(true);
+    requestAnimationFrame(() => {
+      ta.selectionStart = ta.selectionEnd = start + token.length;
+      ta.focus();
+    });
+  };
+
+  const handleTemplateImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const filePath = `templates/${templateBranchFilter}/${Date.now()}_${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from('email-assets')
+      .upload(filePath, file, { upsert: true });
+    if (uploadError) {
+      console.error('Upload failed:', uploadError);
+      return;
+    }
+    const { data } = supabase.storage.from('email-assets').getPublicUrl(filePath);
+    if (data?.publicUrl) {
+      insertTokenAtCursor(`<img src="${data.publicUrl}" alt="" style="max-width:100%;height:auto;" />`);
+    }
+  };
 
   // Get active brand for a branch
   const getActiveBrand = (branchId: string) =>
@@ -443,6 +625,17 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           >
             <Settings className="w-4 h-4 inline mr-2" />
             Manage ({brands.filter(b => b.status === 'active').length})
+          </button>
+          <button
+            onClick={() => setActiveTab('templates')}
+            className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+              activeTab === 'templates'
+                ? 'bg-white text-violet-600 shadow-md'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Mail className="w-4 h-4 inline mr-2" />
+            Email Templates
           </button>
         </div>
       )}
@@ -927,6 +1120,215 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* IDLE STATE - EMAIL TEMPLATES TAB */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {analysisState === 'idle' && activeTab === 'templates' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Panel — Template List */}
+          <div className="lg:col-span-4 space-y-4">
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-violet-500" />
+                  Email Templates
+                </h2>
+                <button
+                  onClick={handleNewTemplate}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 text-white rounded-xl text-xs font-black hover:bg-violet-500 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New Template
+                </button>
+              </div>
+
+              {/* Branch Filter */}
+              <div className="mb-4">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Branch</label>
+                <div className="relative">
+                  <select
+                    value={templateBranchFilter}
+                    onChange={(e) => setTemplateBranchFilter(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold appearance-none cursor-pointer focus:border-violet-400 outline-none"
+                  >
+                    {branchSlugs.map(slug => (
+                      <option key={slug} value={slug}>{slug}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Template List */}
+              {templateLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-sm text-slate-500">No templates yet for this branch</p>
+                  <button
+                    onClick={handleNewTemplate}
+                    className="mt-3 text-xs font-bold text-violet-600 hover:text-violet-700"
+                  >
+                    Create your first template
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                  {templates.map(tmpl => (
+                    <button
+                      key={tmpl.id}
+                      onClick={() => handleSelectTemplate(tmpl)}
+                      className={`w-full text-left p-4 rounded-xl border transition-all ${
+                        selectedTemplate?.id === tmpl.id
+                          ? 'border-violet-400 bg-violet-50'
+                          : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-800 truncate">{tmpl.name}</p>
+                          {tmpl.description && (
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{tmpl.description}</p>
+                          )}
+                          <p className="text-[10px] text-slate-400 font-mono mt-1">
+                            {new Date(tmpl.updated_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={(ev) => { ev.stopPropagation(); handleSelectTemplate(tmpl); }}
+                            className="p-1.5 text-slate-400 hover:text-violet-600 transition-colors"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(ev) => { ev.stopPropagation(); handleDeleteTemplate(tmpl.id); }}
+                            className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Panel — Template Editor */}
+          <div className="lg:col-span-8 space-y-4">
+            {!templateName && !templateHtml && !selectedTemplate ? (
+              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-12 text-center">
+                <Code className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <h3 className="text-xl font-black text-slate-800 mb-2">Template Editor</h3>
+                <p className="text-sm text-slate-500 mb-6">Select a template from the list or create a new one to start editing.</p>
+                <button
+                  onClick={handleNewTemplate}
+                  className="px-6 py-3 bg-violet-600 text-white rounded-xl font-bold text-sm hover:bg-violet-500 transition-colors"
+                >
+                  <Plus className="w-4 h-4 inline mr-2" /> New Template
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+                {/* Template Name & Description */}
+                <div className="p-6 border-b border-slate-100 space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Template name"
+                    value={templateName}
+                    onChange={(e) => { setTemplateName(e.target.value); setTemplateDirty(true); }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-violet-400 outline-none transition-all"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Description (optional)"
+                    value={templateDescription}
+                    onChange={(e) => { setTemplateDescription(e.target.value); setTemplateDirty(true); }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:bg-white focus:border-violet-400 outline-none transition-all"
+                  />
+                </div>
+
+                {/* Toolbar */}
+                <div className="px-6 py-3 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">Tokens:</span>
+                  {['{{first_name}}', '{{unsubscribe_url}}', '{{headline}}', '{{body_copy}}', '{{cta_text}}', '{{cta_url}}'].map(token => (
+                    <button
+                      key={token}
+                      onClick={() => insertTokenAtCursor(token)}
+                      className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600 hover:border-violet-400 hover:text-violet-600 transition-all font-mono"
+                    >
+                      {token}
+                    </button>
+                  ))}
+                  <div className="ml-auto">
+                    <label className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600 hover:border-violet-400 cursor-pointer transition-all">
+                      <Upload className="w-3 h-3" /> Upload Image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleTemplateImageUpload}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Split Pane: Code + Preview */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 divide-x divide-slate-100" style={{ minHeight: 420 }}>
+                  {/* Code Editor */}
+                  <div className="relative">
+                    <div className="absolute top-2 left-3 text-[9px] font-black text-slate-300 uppercase tracking-widest">HTML</div>
+                    <textarea
+                      ref={htmlTextareaRef}
+                      value={templateHtml}
+                      onChange={(e) => { setTemplateHtml(e.target.value); setTemplateDirty(true); }}
+                      className="w-full h-full min-h-[420px] bg-slate-50 px-4 pt-7 pb-4 text-xs font-mono text-slate-700 resize-none outline-none focus:bg-white transition-colors"
+                      spellCheck={false}
+                    />
+                  </div>
+                  {/* Live Preview */}
+                  <div className="relative bg-gray-100">
+                    <div className="absolute top-2 left-3 text-[9px] font-black text-slate-300 uppercase tracking-widest z-10">Preview</div>
+                    <iframe
+                      srcDoc={previewHtml}
+                      title="Template Preview"
+                      className="w-full h-full min-h-[420px] border-0 pt-5"
+                      sandbox="allow-same-origin"
+                    />
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="text-[10px] font-bold uppercase tracking-wider">
+                    {templateSaving ? (
+                      <span className="text-violet-500 flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Saving...</span>
+                    ) : templateDirty ? (
+                      <span className="text-amber-500">Unsaved changes</span>
+                    ) : selectedTemplate ? (
+                      <span className="text-emerald-500 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Saved</span>
+                    ) : null}
+                  </div>
+                  <button
+                    onClick={handleSaveTemplate}
+                    disabled={!templateName.trim() || templateSaving}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black hover:bg-violet-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Save className="w-3.5 h-3.5" /> Save Template
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign } from '../types';
+import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate } from '../types';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
 import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
@@ -11,6 +11,7 @@ import { sendEmail, renderCampaignHtml, SendEmailResult } from '../src/services/
 import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { triggerEmailCampaign } from '../services/n8nService';
+import { fetchTemplatesForBranch } from '../brandRepository';
 import { WEBHOOK_SPECS } from '../constants';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
@@ -160,6 +161,16 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [activeComposeTab, setActiveComposeTab] = useState<CampaignChannel>('email');
   const [emailTemplate, setEmailTemplate] = useState('UnifiedSproutifyUpdate');
 
+  // Custom email templates from DB
+  const [customTemplates, setCustomTemplates] = useState<EmailTemplate[]>([]);
+  const [customTemplateFields, setCustomTemplateFields] = useState({
+    headline: '',
+    body_copy: '',
+    cta_text: '',
+    cta_url: '',
+  });
+  const isCustomTemplate = emailTemplate.startsWith('custom:');
+
   // Timing rules (staggered sequence)
   const [timingRules, setTimingRules] = useState<CampaignTimingRule[]>([]);
 
@@ -217,6 +228,24 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   useEffect(() => {
     loadNameCache();
   }, []);
+
+  // Load custom email templates when branches change
+  useEffect(() => {
+    const loadCustomTemplates = async () => {
+      if (selectedBranches.length === 0) {
+        setCustomTemplates([]);
+        return;
+      }
+      try {
+        const branchTemplates = await fetchTemplatesForBranch(selectedBranches[0]);
+        setCustomTemplates(branchTemplates);
+      } catch (err) {
+        console.error('Failed to load custom templates:', err);
+        setCustomTemplates([]);
+      }
+    };
+    loadCustomTemplates();
+  }, [selectedBranches]);
 
   // Initialize timing rules when channels change
   useEffect(() => {
@@ -435,6 +464,29 @@ Return ONLY the post content, no explanations or labels.`,
     );
   };
 
+  // Build HTML for the selected template (custom or built-in)
+  const buildDispatchHtml = (profile: Profile): string => {
+    if (isCustomTemplate) {
+      const customId = emailTemplate.replace('custom:', '');
+      const ct = customTemplates.find(t => t.id === customId);
+      if (ct) {
+        return ct.html_body
+          .replace(/\{\{headline\}\}/g, customTemplateFields.headline)
+          .replace(/\{\{body_copy\}\}/g, customTemplateFields.body_copy)
+          .replace(/\{\{cta_text\}\}/g, customTemplateFields.cta_text)
+          .replace(/\{\{cta_url\}\}/g, customTemplateFields.cta_url)
+          .replace(/\{\{first_name\}\}/g, profile.first_name || '{{first_name}}')
+          .replace(/\{\{unsubscribe_url\}\}/g, '{{unsubscribe_url}}');
+      }
+    }
+    return renderCampaignHtml({
+      profile,
+      subject: emailSubject,
+      templateId: emailTemplate,
+      campaignName: campaignName,
+    });
+  };
+
   const handleSendTest = async () => {
     if (!testEmailAddress) return;
     setIsSendingTest(true);
@@ -456,12 +508,7 @@ Return ONLY the post content, no explanations or labels.`,
         churn_risk: 'minimal',
       };
 
-      const html = renderCampaignHtml({
-        profile: testProfile,
-        subject: emailSubject || 'Test Campaign Preview',
-        templateId: emailTemplate,
-        campaignName: campaignName,
-      });
+      const html = buildDispatchHtml(testProfile);
 
       // Use the first selected branch's from address if available
       const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
@@ -543,12 +590,7 @@ Return ONLY the post content, no explanations or labels.`,
 
     // Fire n8n campaign dispatch webhook for immediate campaigns
     if (newCampaign && triggerType === 'immediate') {
-      const dispatchHtml = renderCampaignHtml({
-        profile: { email: '', first_name: '' } as Profile,
-        subject: emailSubject,
-        templateId: emailTemplate,
-        campaignName: campaignName,
-      });
+      const dispatchHtml = buildDispatchHtml({ email: '', first_name: '' } as Profile);
 
       const webhookResult = await triggerEmailCampaign(
         WEBHOOK_SPECS.campaign_dispatch,
@@ -1120,6 +1162,45 @@ Return ONLY the post content, no explanations or labels.`,
                 {/* Template Picker */}
                 <div className="space-y-6">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">Email Template</label>
+
+                  {/* Custom Templates from DB */}
+                  {customTemplates.length > 0 && (
+                    <>
+                      <p className="text-[9px] font-black text-violet-500 uppercase tracking-widest px-4">Custom Templates</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {customTemplates.map(ct => {
+                          const ctId = `custom:${ct.id}`;
+                          return (
+                            <button
+                              key={ctId}
+                              onClick={() => setEmailTemplate(ctId)}
+                              className={`group relative text-left p-6 rounded-[2rem] border-4 transition-all duration-300 ${
+                                emailTemplate === ctId
+                                ? 'border-emerald-500 bg-emerald-50/50 shadow-xl scale-[1.02]'
+                                : 'border-slate-100 bg-white hover:border-slate-200'
+                              }`}
+                            >
+                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 transition-transform group-hover:rotate-6 ${
+                                emailTemplate === ctId ? 'bg-emerald-600 text-white' : 'bg-violet-100 text-violet-500 shadow-inner'
+                              }`}>
+                                <Mail size={24} />
+                              </div>
+                              <h5 className="font-black text-slate-800 text-sm mb-2 uppercase tracking-tight">{ct.name}</h5>
+                              <p className="text-[11px] text-slate-500 leading-relaxed font-medium">{ct.description || 'Custom template'}</p>
+                              {emailTemplate === ctId && (
+                                <div className="absolute top-4 right-4 text-emerald-600">
+                                  <CheckCircle2 size={20} />
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-4 pt-2">Built-in Templates</p>
+                    </>
+                  )}
+
+                  {/* Built-in fallback templates */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {TEMPLATES.map(tmpl => (
                       <button
@@ -1147,6 +1228,58 @@ Return ONLY the post content, no explanations or labels.`,
                     ))}
                   </div>
                 </div>
+
+                {/* Custom Template Content Fields */}
+                {isCustomTemplate && (
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+                    <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">
+                      <Mail size={16} className="mr-3 text-violet-500" />
+                      Template Content
+                    </h4>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Headline</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Big news from your garden!"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
+                        value={customTemplateFields.headline}
+                        onChange={e => setCustomTemplateFields(prev => ({ ...prev, headline: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Body Copy</label>
+                      <textarea
+                        placeholder="Main email body content..."
+                        rows={4}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:bg-white focus:border-emerald-500 outline-none transition-all resize-none"
+                        value={customTemplateFields.body_copy}
+                        onChange={e => setCustomTemplateFields(prev => ({ ...prev, body_copy: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">CTA Button Text</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Shop Now"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
+                          value={customTemplateFields.cta_text}
+                          onChange={e => setCustomTemplateFields(prev => ({ ...prev, cta_text: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">CTA Button URL</label>
+                        <input
+                          type="text"
+                          placeholder="https://..."
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
+                          value={customTemplateFields.cta_url}
+                          onChange={e => setCustomTemplateFields(prev => ({ ...prev, cta_url: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Branch Content */}
                 {selectedBranches.length > 0 && (

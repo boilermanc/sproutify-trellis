@@ -1,5 +1,5 @@
 import { supabase } from './supabaseService';
-import { BrandIdentity, GeneratedBrandAsset, BrandColorPalette, BrandTypography } from './types';
+import { BrandIdentity, GeneratedBrandAsset, BrandColorPalette, BrandTypography, EmailTemplate } from './types';
 
 // ═══════════════════════════════════════════════════════════════
 // TYPE CONVERTERS (DB <-> App)
@@ -314,4 +314,36 @@ export async function saveBrandWithAssets(
   }
 
   return { brand: savedBrand, assets: savedAssets };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMAIL TEMPLATES CRUD
+// ═══════════════════════════════════════════════════════════════
+
+export async function fetchTemplatesForBranch(branchId: string): Promise<EmailTemplate[]> {
+  const { data, error } = await supabase
+    .from('email_templates')
+    .select('*')
+    .eq('branch_id', branchId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertTemplate(template: Partial<EmailTemplate>): Promise<EmailTemplate> {
+  const { data, error } = await supabase
+    .from('email_templates')
+    .upsert({ ...template, updated_at: new Date().toISOString() })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('email_templates')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
 }

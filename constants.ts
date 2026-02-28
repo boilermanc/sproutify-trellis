@@ -576,6 +576,26 @@ CREATE POLICY "Service Role Full Access" ON spoke_connections FOR ALL TO service
 CREATE POLICY "Anon Full Access" ON spoke_connections FOR ALL TO anon USING (true) WITH CHECK (true);
 
 CREATE INDEX IF NOT EXISTS idx_spoke_connections_org ON spoke_connections (organization_id);
+
+-- 15. EMAIL TEMPLATES (Brand Intelligence — Email Builder)
+CREATE TABLE IF NOT EXISTS email_templates (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+  branch_id TEXT REFERENCES branches(id) ON DELETE CASCADE,
+  brand_identity_id UUID REFERENCES brand_identities(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  thumbnail_url TEXT,
+  html_body TEXT NOT NULL DEFAULT '',
+  is_default BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE email_templates DISABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_email_templates_branch ON email_templates (branch_id);
+CREATE INDEX IF NOT EXISTS idx_email_templates_brand ON email_templates (brand_identity_id);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";

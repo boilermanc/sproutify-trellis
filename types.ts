@@ -627,6 +627,20 @@ export interface GeneratedBrandAsset {
   created_at: string;
 }
 
+export interface EmailTemplate {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  brand_identity_id?: string;
+  name: string;
+  description?: string;
+  thumbnail_url?: string;
+  html_body: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type BrandAnalysisState =
   | 'idle'
   | 'analyzing_site'
