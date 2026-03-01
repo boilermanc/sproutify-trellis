@@ -1550,7 +1550,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </button>
               </div>
             ) : (
-              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm">
                 {/* Template Name & Description */}
                 <div className="p-6 border-b border-slate-100 space-y-3">
                   <input
@@ -1595,7 +1595,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </div>
 
                 {/* Unlayer Editor */}
-                <div style={{ height: 600 }}>
+                <div style={{ height: 'calc(100vh - 280px)', minHeight: 600 }}>
                   <EmailEditor
                     ref={emailEditorRef}
                     onReady={() => {
