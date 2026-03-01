@@ -1326,8 +1326,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               )}
 
               {/* Metadata */}
-              <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4">
-                <div className="grid grid-cols-2 gap-4 text-[10px] font-mono text-slate-400">
+              <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6">
+                <div className="grid grid-cols-2 gap-4 text-sm font-mono text-slate-500">
                   <div>
                     <span className="font-bold uppercase">Created</span>
                     <p>{new Date(viewingBrand.created_at).toLocaleDateString()}</p>
