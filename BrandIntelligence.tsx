@@ -1619,7 +1619,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                         cta_text: { name: 'CTA Text', value: '{{cta_text}}' },
                         cta_url: { name: 'CTA URL', value: '{{cta_url}}' },
                       },
-                      features: { stockImages: false },
+                      features: { stockImages: false, codeEditor: { enabled: true } },
                       tools: { image: { enabled: true } },
                       appearance: { theme: 'modern_light' },
                     }}
