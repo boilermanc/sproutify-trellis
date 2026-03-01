@@ -979,7 +979,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 {brands.filter(b => b.status === 'active').map(brand => (
                   <div
                     key={brand.id}
-                    onClick={() => setSelectedBranchId(brand.branch_id)}
+                    onClick={() => { setActiveTab('manage'); setViewingBrand(brand); }}
                     className="p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-violet-300 transition-all cursor-pointer group"
                   >
                     <div className="flex items-center gap-3 mb-2">
