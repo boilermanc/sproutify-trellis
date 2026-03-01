@@ -24,6 +24,7 @@ import {
   Mail, Code, FileText
 } from 'lucide-react';
 import { supabase } from './supabaseService';
+import EmailEditor, { EditorRef, EmailEditorProps } from 'react-email-editor';
 
 interface BrandIntelligenceProps {
   onBrandUpdate?: (brand: BrandIdentity) => void;
@@ -91,6 +92,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [previewHtml, setPreviewHtml] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const emailEditorRef = useRef<EditorRef>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryImages, setGalleryImages] = useState<{ url: string; name: string }[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryUploading, setGalleryUploading] = useState(false);
 
   // Load brands from Supabase on mount
   useEffect(() => {
@@ -198,19 +204,41 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     setTemplateDescription(tmpl.description || '');
     setTemplateHtml(tmpl.html_body);
     setTemplateDirty(false);
+    setTimeout(() => {
+      if (emailEditorRef.current?.editor && tmpl.html_body) {
+        try {
+          const design = JSON.parse(tmpl.html_body);
+          emailEditorRef.current.editor.loadDesign(design);
+        } catch {
+          // Plain HTML template — load as body
+          emailEditorRef.current.editor.loadDesign({
+            body: { rows: [], values: { backgroundColor: '#f1f5f9' } }
+          });
+        }
+      }
+    }, 300);
   };
 
   const handleSaveTemplate = async () => {
-    if (!templateName.trim() || !templateHtml.trim()) return;
+    if (!templateName.trim()) return;
     setTemplateSaving(true);
     try {
+      // Export current Unlayer design as HTML
+      const exportedHtml = await new Promise<string>((resolve) => {
+        if (emailEditorRef.current?.editor) {
+          emailEditorRef.current.editor.exportHtml((data) => resolve(data.html));
+        } else {
+          resolve(templateHtml);
+        }
+      });
+      setTemplateHtml(exportedHtml);
       const payload: Partial<EmailTemplate> = {
         ...(selectedTemplate?.id ? { id: selectedTemplate.id } : {}),
         branch_id: templateBranchFilter,
         brand_identity_id: brands.find(b => b.branch_id === templateBranchFilter && b.status === 'active')?.id,
         name: templateName.trim(),
         description: templateDescription.trim() || undefined,
-        html_body: templateHtml,
+        html_body: exportedHtml,
       };
       const saved = await upsertTemplate(payload);
       setSelectedTemplate(saved);
@@ -270,6 +298,62 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     if (data?.publicUrl) {
       insertTokenAtCursor(`<img src="${data.publicUrl}" alt="" style="max-width:100%;height:auto;" />`);
     }
+  };
+
+  const loadGallery = async () => {
+    if (!templateBranchFilter) return;
+    setGalleryLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from('email-assets')
+        .list(`${templateBranchFilter}/gallery`, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
+      if (error) throw error;
+      const images = (data || [])
+        .filter(f => f.name !== '.emptyFolderPlaceholder')
+        .map(f => {
+          const { data: urlData } = supabase.storage
+            .from('email-assets')
+            .getPublicUrl(`${templateBranchFilter}/gallery/${f.name}`);
+          return { url: urlData.publicUrl, name: f.name };
+        });
+      setGalleryImages(images);
+    } catch (err) {
+      console.error('Failed to load gallery:', err);
+    } finally {
+      setGalleryLoading(false);
+    }
+  };
+
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !templateBranchFilter) return;
+    setGalleryUploading(true);
+    try {
+      const path = `${templateBranchFilter}/gallery/${Date.now()}_${file.name}`;
+      const { error } = await supabase.storage.from('email-assets').upload(path, file, { upsert: true });
+      if (error) throw error;
+      await loadGallery();
+    } catch (err) {
+      console.error('Gallery upload failed:', err);
+    } finally {
+      setGalleryUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleGalleryDeleteImage = async (name: string) => {
+    if (!templateBranchFilter) return;
+    await supabase.storage.from('email-assets').remove([`${templateBranchFilter}/gallery/${name}`]);
+    await loadGallery();
+  };
+
+  const insertGalleryImage = (url: string) => {
+    emailEditorRef.current?.editor?.loadDesign({
+      body: { rows: [] }
+    });
+    // Copy URL to clipboard as fallback
+    navigator.clipboard.writeText(url);
+    setGalleryOpen(false);
   };
 
   // Get active brand for a branch
@@ -1491,48 +1575,55 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   {['{{first_name}}', '{{unsubscribe_url}}', '{{headline}}', '{{body_copy}}', '{{cta_text}}', '{{cta_url}}'].map(token => (
                     <button
                       key={token}
-                      onClick={() => insertTokenAtCursor(token)}
+                      onClick={() => {
+                        navigator.clipboard.writeText(token);
+                      }}
+                      title="Click to copy"
                       className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600 hover:border-violet-400 hover:text-violet-600 transition-all font-mono"
                     >
                       {token}
                     </button>
                   ))}
-                  <div className="ml-auto">
-                    <label className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600 hover:border-violet-400 cursor-pointer transition-all">
-                      <Upload className="w-3 h-3" /> Upload Image
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleTemplateImageUpload}
-                      />
-                    </label>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      onClick={() => { setGalleryOpen(true); loadGallery(); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-[9px] font-bold text-violet-600 hover:bg-violet-100 transition-all"
+                    >
+                      <ImageIcon className="w-3 h-3" /> Brand Gallery
+                    </button>
                   </div>
                 </div>
 
-                {/* Split Pane: Code + Preview */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 divide-x divide-slate-100" style={{ minHeight: 420 }}>
-                  {/* Code Editor */}
-                  <div className="relative">
-                    <div className="absolute top-2 left-3 text-[9px] font-black text-slate-300 uppercase tracking-widest">HTML</div>
-                    <textarea
-                      ref={htmlTextareaRef}
-                      value={templateHtml}
-                      onChange={(e) => { setTemplateHtml(e.target.value); setTemplateDirty(true); }}
-                      className="w-full h-full min-h-[420px] bg-slate-50 px-4 pt-7 pb-4 text-xs font-mono text-slate-700 resize-none outline-none focus:bg-white transition-colors"
-                      spellCheck={false}
-                    />
-                  </div>
-                  {/* Live Preview */}
-                  <div className="relative bg-gray-100">
-                    <div className="absolute top-2 left-3 text-[9px] font-black text-slate-300 uppercase tracking-widest z-10">Preview</div>
-                    <iframe
-                      srcDoc={previewHtml}
-                      title="Template Preview"
-                      className="w-full h-full min-h-[420px] border-0 pt-5"
-                      sandbox="allow-same-origin allow-scripts"
-                    />
-                  </div>
+                {/* Unlayer Editor */}
+                <div style={{ height: 600 }}>
+                  <EmailEditor
+                    ref={emailEditorRef}
+                    onReady={() => {
+                      if (selectedTemplate?.html_body) {
+                        try {
+                          const design = JSON.parse(selectedTemplate.html_body);
+                          emailEditorRef.current?.editor?.loadDesign(design);
+                        } catch {
+                          emailEditorRef.current?.editor?.loadDesign({
+                            body: { rows: [], values: { backgroundColor: '#f1f5f9' } }
+                          });
+                        }
+                      }
+                    }}
+                    options={{
+                      mergeTags: {
+                        first_name: { name: 'First Name', value: '{{first_name}}' },
+                        unsubscribe_url: { name: 'Unsubscribe URL', value: '{{unsubscribe_url}}' },
+                        headline: { name: 'Headline', value: '{{headline}}' },
+                        body_copy: { name: 'Body Copy', value: '{{body_copy}}' },
+                        cta_text: { name: 'CTA Text', value: '{{cta_text}}' },
+                        cta_url: { name: 'CTA URL', value: '{{cta_url}}' },
+                      },
+                      features: { stockImages: false },
+                      tools: { image: { enabled: true } },
+                      appearance: { theme: 'modern_light' },
+                    }}
+                  />
                 </div>
 
                 {/* Footer */}
@@ -1556,6 +1647,67 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Brand Image Gallery Drawer */}
+      {galleryOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setGalleryOpen(false)} />
+          <div className="relative ml-auto w-full max-w-md bg-white h-full shadow-2xl flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Brand Gallery</h3>
+                <p className="text-[10px] text-slate-400 mt-1">{templateBranchFilter}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white rounded-xl text-[10px] font-black cursor-pointer hover:bg-violet-500 transition-all">
+                  {galleryUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  Upload
+                  <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
+                </label>
+                <button onClick={() => setGalleryOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 transition">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {galleryLoading ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
+                </div>
+              ) : galleryImages.length === 0 ? (
+                <div className="text-center py-16">
+                  <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-sm text-slate-400 font-bold">No images yet</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Upload brand assets to use in templates</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {galleryImages.map(img => (
+                    <div key={img.name} className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 aspect-video">
+                      <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(img.url); setGalleryOpen(false); }}
+                          className="w-full px-3 py-1.5 bg-white text-slate-800 rounded-lg text-[9px] font-black uppercase tracking-wide hover:bg-violet-600 hover:text-white transition-all"
+                        >
+                          Copy URL
+                        </button>
+                        <button
+                          onClick={() => handleGalleryDeleteImage(img.name)}
+                          className="w-full px-3 py-1.5 bg-rose-500 text-white rounded-lg text-[9px] font-black uppercase tracking-wide hover:bg-rose-600 transition-all"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      <p className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] px-2 py-1 truncate">{img.name}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
