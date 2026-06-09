@@ -203,6 +203,16 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     }
   }, [availableBranches, selectedBranchIds]);
 
+  // One-time cleanup: collapse any duplicate scheduled posts (same id) left over from the pre-fix duplication bug.
+  useEffect(() => {
+    setScheduledPosts(prev => {
+      const seen = new Set<string>();
+      const deduped = prev.filter(p => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+      return deduped.length === prev.length ? prev : deduped;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Brands selected for content fan-out (one draft generated per brand)
   const selectedBranches = useMemo(() =>
     (branches || []).filter(b => selectedBranchIds.includes(b.id)),
@@ -333,13 +343,14 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       }
     }
 
-    // Gaps: branch has posts but missing a platform this month
+    // Gaps: branch has posts but missing a platform this month.
+    // Only consider platforms actually in use this month (so X/LinkedIn don't nag if you only do FB + IG).
     const branchPlatforms: Record<string, Set<string>> = {};
     monthEvents.forEach(e => {
       if (!branchPlatforms[e.branch_id]) branchPlatforms[e.branch_id] = new Set();
       branchPlatforms[e.branch_id].add(e.channel);
     });
-    const socialChannels = ['facebook', 'instagram', 'x', 'linkedin'];
+    const socialChannels = Array.from(new Set(monthEvents.map(e => e.channel)));
     Object.entries(branchPlatforms).forEach(([branchId, platforms]) => {
       socialChannels.forEach(ch => {
         if (!platforms.has(ch)) {
