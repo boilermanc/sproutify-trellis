@@ -386,6 +386,7 @@ export interface DraftPost {
   branch_id?: string;
   base_content: string;
   versions: Record<string, string>;
+  image_urls?: string[];
   status: 'drafting' | 'approved' | 'scheduled' | 'published' | 'archived';
   created_at: string;
   scheduled_for?: string;

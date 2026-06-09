@@ -210,6 +210,32 @@ export async function uploadAvatar(
 }
 
 /**
+ * Upload a social post image and return the public URL.
+ * Reuses the public `avatars` bucket under a `social/` prefix (no new bucket/policy setup needed).
+ */
+export async function uploadSocialImage(
+  branchId: string,
+  file: File
+): Promise<{ url: string | null; error?: string }> {
+  const fileExt = file.name.split('.').pop() || 'png';
+  const safeBranch = (branchId || 'brand').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+  const rand = Math.random().toString(36).slice(2, 8);
+  const filePath = `social/${safeBranch}-${Date.now()}-${rand}.${fileExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('avatars')
+    .upload(filePath, file, { upsert: true, contentType: file.type || undefined });
+
+  if (uploadError) {
+    console.error('Error uploading social image:', uploadError);
+    return { url: null, error: uploadError.message };
+  }
+
+  const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+  return { url: data.publicUrl };
+}
+
+/**
  * Fetch all profiles (alias for getProfiles for import consistency)
  */
 export async function fetchProfiles(): Promise<Profile[]> {

@@ -5,6 +5,7 @@ import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
 import { updateSignalStatus, linkProfileToSocial } from '../services/socialService';
+import { uploadSocialImage } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
   Sparkles, Send,
@@ -13,7 +14,7 @@ import {
   Target, Settings2, CalendarDays, LayoutGrid, List, X, Check,
   History, Ban, RotateCcw, ChevronLeft, ChevronRight,
   AlertTriangle, ShieldCheck, Mail, Smartphone, Eye,
-  Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info, Copy
+  Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info, Copy, ImagePlus, Download
 } from 'lucide-react';
 
 interface SocialHubProps {
@@ -153,6 +154,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   // Content-only mode: which platforms to generate variants for (no publishing — export to Meta Business Suite)
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(['facebook', 'instagram']);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [uploadingDraftId, setUploadingDraftId] = useState<string | null>(null);
 
   // Scheduling controls (content-only: drafts land on the calendar, not published)
   const [scheduleAt, setScheduleAt] = useState<string>(() => defaultScheduleAt());
@@ -173,6 +175,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [calendarView, setCalendarView] = useState<'month' | 'week'>('month');
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<CalendarEvent | null>(null);
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<Date | null>(null);
   const [complianceResult, setComplianceResult] = useState<ComplianceResult | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
   const [showCompliancePanel, setShowCompliancePanel] = useState(false);
@@ -575,6 +578,31 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, versions: { ...d.versions, [platform]: value } } : d));
   };
 
+  // Upload image file(s) from the user's computer to Supabase storage and attach to the draft.
+  const handleImageUpload = async (draftId: string, fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const draft = activeDrafts.find(d => d.id === draftId);
+    const branchId = draft?.branch_id || 'brand';
+    setUploadingDraftId(draftId);
+    const urls: string[] = [];
+    for (const file of Array.from(fileList)) {
+      if (!file.type.startsWith('image/')) { addToast?.(`${file.name} is not an image.`, 'error'); continue; }
+      if (file.size > 10 * 1024 * 1024) { addToast?.(`${file.name} is over 10MB.`, 'error'); continue; }
+      const { url, error } = await uploadSocialImage(branchId, file);
+      if (url) urls.push(url);
+      else addToast?.(error || `Failed to upload ${file.name}.`, 'error');
+    }
+    if (urls.length > 0) {
+      setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, image_urls: [...(d.image_urls || []), ...urls] } : d));
+      addToast?.(`Added ${urls.length} image${urls.length > 1 ? 's' : ''}.`, 'success');
+    }
+    setUploadingDraftId(null);
+  };
+
+  const removeDraftImage = (draftId: string, url: string) => {
+    setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, image_urls: (d.image_urls || []).filter(u => u !== url) } : d));
+  };
+
   const handleEditFromPipeline = (draft: DraftPost) => {
     // Pull the whole series back under its base id so re-scheduling replaces it (no duplicates),
     // and remove its currently-scheduled instances while it's being edited.
@@ -613,7 +641,10 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     const block = Object.entries(draft.versions)
       .map(([plat, text]) => `── ${SOCIAL_PLATFORM_META[plat]?.label || plat} ──\n${text}`)
       .join('\n\n');
-    return `${brandName}\n\n${block}`;
+    const images = draft.image_urls && draft.image_urls.length > 0
+      ? `\n\n── Images (${draft.image_urls.length}) ──\n${draft.image_urls.join('\n')}`
+      : '';
+    return `${brandName}\n\n${block}${images}`;
   };
 
   const copyAllVariants = (draft: DraftPost) => {
@@ -871,6 +902,34 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                             );
                           })}
                         </div>
+
+                        {/* Images — uploaded from your computer, then attached manually in Meta Business when you paste the text */}
+                        <div className="mt-6 pt-5 border-t border-slate-100">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
+                              <ImagePlus size={14} /> Images{draft.image_urls?.length ? ` · ${draft.image_urls.length}` : ''}
+                            </span>
+                            <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${uploadingDraftId === draft.id ? 'bg-slate-100 text-slate-400 cursor-wait' : 'bg-slate-900 text-white hover:bg-emerald-600'}`}>
+                              {uploadingDraftId === draft.id ? <><Loader2 size={12} className="animate-spin" /> Uploading</> : <><ImagePlus size={12} /> Upload</>}
+                              <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingDraftId === draft.id} onChange={(e) => { handleImageUpload(draft.id, e.target.files); e.target.value = ''; }} />
+                            </label>
+                          </div>
+                          {draft.image_urls && draft.image_urls.length > 0 ? (
+                            <div className="flex flex-wrap gap-3">
+                              {draft.image_urls.map((url, i) => (
+                                <div key={url} className="relative group w-24 h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                  <img src={url} alt={`upload ${i + 1}`} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
+                                    <a href={url} download target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-white/90 text-slate-700 hover:text-emerald-600" title="Download"><Download size={14} /></a>
+                                    <button type="button" onClick={() => removeDraftImage(draft.id, url)} className="p-1.5 rounded-lg bg-white/90 text-slate-700 hover:text-rose-600" title="Remove"><X size={14} /></button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] font-bold text-slate-400">No images yet. Upload here, then attach them in Meta Business Suite when you paste the text.</p>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1059,8 +1118,16 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                     {getDaysInMonth(calendarDate).map((day, idx) => {
                       const dayEvents = getEventsForDay(day.date);
                       const today = isToday(day.date);
+                      const isSelectedDay = selectedCalendarDay &&
+                        day.date.getFullYear() === selectedCalendarDay.getFullYear() &&
+                        day.date.getMonth() === selectedCalendarDay.getMonth() &&
+                        day.date.getDate() === selectedCalendarDay.getDate();
                       return (
-                        <div key={idx} className={`min-h-[90px] border-b border-r border-slate-50 p-1.5 ${!day.isCurrentMonth ? 'opacity-40 bg-slate-50/50' : ''} ${today ? 'ring-2 ring-inset ring-emerald-500' : ''}`}>
+                        <div
+                          key={idx}
+                          onClick={() => { setSelectedCalendarDay(new Date(day.date)); setSelectedCalendarEvent(null); }}
+                          className={`min-h-[90px] border-b border-r border-slate-50 p-1.5 cursor-pointer hover:bg-slate-50 transition ${!day.isCurrentMonth ? 'opacity-40 bg-slate-50/50' : ''} ${today ? 'ring-2 ring-inset ring-emerald-500' : ''} ${isSelectedDay ? 'bg-emerald-50/60 ring-2 ring-inset ring-emerald-400' : ''}`}
+                        >
                           <span className={`text-[10px] font-black ${today ? 'text-emerald-600' : 'text-slate-400'}`}>{day.date.getDate()}</span>
                           <div className="mt-1 space-y-0.5">
                             {dayEvents.slice(0, 3).map(ev => {
@@ -1068,7 +1135,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                               return (
                                 <button
                                   key={ev.id}
-                                  onClick={() => { setSelectedCalendarEvent(ev); setComplianceResult(null); setShowCompliancePanel(false); }}
+                                  onClick={(e) => { e.stopPropagation(); setSelectedCalendarEvent(ev); setComplianceResult(null); setShowCompliancePanel(false); }}
                                   className="w-full flex items-center gap-1 px-1.5 py-0.5 rounded text-left hover:bg-slate-100 transition group"
                                   style={{ borderLeft: `3px solid ${ev.branch_color}` }}
                                 >
@@ -1148,6 +1215,69 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                 </div>
               )}
 
+              {/* Day Detail — posts scheduled for the clicked day */}
+              {selectedCalendarDay && !selectedCalendarEvent && (() => {
+                const dayEvents = getEventsForDay(selectedCalendarDay)
+                  .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime());
+                return (
+                  <div className="bg-white rounded-[2rem] border-2 border-emerald-200 shadow-lg p-8 animate-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                          {selectedCalendarDay.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        </h4>
+                        <p className="text-xs font-bold text-slate-400 mt-1">
+                          {dayEvents.length} post{dayEvents.length === 1 ? '' : 's'} scheduled
+                        </p>
+                      </div>
+                      <button onClick={() => setSelectedCalendarDay(null)} className="p-2 text-slate-300 hover:text-rose-500"><X size={20} /></button>
+                    </div>
+
+                    {dayEvents.length === 0 ? (
+                      <div className="bg-slate-50 rounded-2xl p-8 text-center">
+                        <CalendarDays size={28} className="text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-400">No posts scheduled for this day.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {dayEvents.map(ev => {
+                          const PIcon = getPlatformIcon(ev.channel);
+                          const time = new Date(ev.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                          return (
+                            <button
+                              key={ev.id}
+                              onClick={() => { setSelectedCalendarEvent(ev); setComplianceResult(null); setShowCompliancePanel(false); }}
+                              className="w-full flex items-center gap-3 rounded-2xl p-4 border border-slate-100 hover:border-emerald-300 hover:bg-slate-50 transition text-left"
+                              style={{ borderLeft: `4px solid ${ev.branch_color}` }}
+                            >
+                              <PIcon size={16} className="text-slate-400 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-slate-700 truncate">{ev.title}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] font-bold text-slate-400">{time}</span>
+                                  <span className="text-[10px] text-slate-300">|</span>
+                                  <span className="text-[10px] font-bold text-slate-400">{ev.branch_name}</span>
+                                  <span className="text-[10px] text-slate-300">|</span>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">{ev.channel}</span>
+                                </div>
+                              </div>
+                              <span className={`text-[8px] font-black uppercase px-2 py-1 rounded flex-shrink-0 ${
+                                ev.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
+                                ev.status === 'failed' ? 'bg-rose-100 text-rose-700' :
+                                ev.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                                ev.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
+                                ev.status === 'pending_review' ? 'bg-amber-100 text-amber-700' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>{ev.status}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Event Detail + Compliance Panel */}
               {selectedCalendarEvent && (
                 <div className="bg-white rounded-[2rem] border-2 border-emerald-200 shadow-lg p-8 animate-in slide-in-from-bottom-4 duration-300">
@@ -1169,6 +1299,27 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   <div className="bg-slate-50 rounded-2xl p-6 mb-6">
                     <p className="text-sm text-slate-700 font-medium leading-relaxed">{selectedCalendarEvent.content_preview || selectedCalendarEvent.title}</p>
                   </div>
+
+                  {/* Attached images — hover to download, then upload them in Meta Business */}
+                  {(() => {
+                    const post = scheduledPosts.find(p => p.id === selectedCalendarEvent.source_id);
+                    if (!post?.image_urls?.length) return null;
+                    return (
+                      <div className="mb-6">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Images ({post.image_urls.length})</p>
+                        <div className="flex flex-wrap gap-3">
+                          {post.image_urls.map((url, i) => (
+                            <div key={url} className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                              <img src={url} alt={`image ${i + 1}`} className="w-full h-full object-cover" />
+                              <a href={url} download target="_blank" rel="noopener noreferrer" className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 opacity-0 group-hover:opacity-100 transition" title="Download image">
+                                <Download size={16} className="text-white" />
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Approval Status Display */}
                   {selectedCalendarEvent.source === 'social_hub' && (() => {
