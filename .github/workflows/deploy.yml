@@ -99,15 +99,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update && sudo apt-get install -y lftp
-          # --- DIAGNOSTIC: reveal the SFTP login dir (chroot root) and how the target path resolves ---
-          echo "::group::lftp path diagnostic"
-          lftp -c "set sftp:auto-confirm yes; \
-            open -u \"$IONOS_USERNAME\",\"$IONOS_PASSWORD\" -p \"$IONOS_PORT\" sftp://$IONOS_HOST; \
-            echo '=== login pwd (effective root if chrooted) ==='; pwd; \
-            echo '=== listing of login dir ==='; cls -la ./; \
-            echo '=== resolve target: cd \$IONOS_TRELLIS_PATH ==='; \
-            cd \"$IONOS_TRELLIS_PATH\" && pwd && cls -la ./ || echo 'CD TO IONOS_TRELLIS_PATH FAILED'" || true
-          echo "::endgroup::"
+          # The IONOS_TRELLIS_PATH secret carried stray whitespace, so lftp was uploading
+          # into a phantom "/.../<space>trellis.sproutify.app" dir that Apache never served,
+          # freezing the live site at the last pre-lftp deploy. Strip all whitespace — these
+          # server paths never legitimately contain spaces. (Also fix the secret itself.)
+          IONOS_TRELLIS_PATH="$(printf '%s' "$IONOS_TRELLIS_PATH" | tr -d '[:space:]')"
           # Native lftp upload — no Node runtime, so immune to the Node 20 action deprecation.
           # mirror -R uploads the contents of ./dist/ into the remote path (no remote deletion).
           lftp -c "set sftp:auto-confirm yes; \
