@@ -412,6 +412,31 @@ END;
 $$;
 
 -- ═══════════════════════════════════════════════════════════
+-- 10a2. META INSIGHTS CREDENTIALS RPC
+-- Returns decrypted Facebook + Instagram page token + platform IDs for a
+-- branch in one call, for the meta-insights Edge Function. SECURITY DEFINER.
+-- ═══════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION get_meta_insight_credentials(p_branch_id TEXT)
+RETURNS JSON LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  result JSON;
+BEGIN
+  SELECT json_object_agg(platform, json_build_object(
+    'access_token', pgp_sym_decrypt(access_token_encrypted, get_encryption_key()),
+    'platform_user_id', platform_user_id
+  ))
+  INTO result
+  FROM social_credentials
+  WHERE branch_id = p_branch_id
+    AND platform IN ('facebook', 'instagram')
+    AND is_valid = true;
+
+  RETURN COALESCE(result, '{}'::json);
+END;
+$$;
+
+-- ═══════════════════════════════════════════════════════════
 -- 10b. NEWSLETTER AUDIENCE RPC (ATL Spoke — launch-phase shortcut)
 -- TODO: Once all spokes sync subscribers to Hub profiles table,
 -- replace with unified profiles query on Hub Supabase.

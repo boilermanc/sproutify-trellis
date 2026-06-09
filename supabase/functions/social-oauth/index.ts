@@ -105,6 +105,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformOAuthConfig> = {
       "pages_read_engagement",
       "pages_manage_posts",
       "pages_read_user_content",
+      "read_insights",
     ],
     buildAuthUrl(appId, state, scopes) {
       const params = new URLSearchParams({

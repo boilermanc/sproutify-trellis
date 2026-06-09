@@ -7,10 +7,11 @@ import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
 import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
 import { timeAgo, SOCIAL_PLATFORM_META, PLATFORM_ICONS } from '../utils';
+import { fetchBrandInsights, MetaInsights } from '../services/metaInsightsService';
 import {
   Globe, Sparkles, ChevronDown, ChevronRight, X, Target,
   LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2,
-  Package, DollarSign, GitBranch, AlertTriangle, Clock, Send, Rocket, CalendarDays, CheckCircle2, Image as ImageIcon
+  Package, DollarSign, GitBranch, AlertTriangle, Clock, Send, Rocket, CalendarDays, CheckCircle2, Image as ImageIcon, Users
 } from 'lucide-react';
 
 interface CampaignRecord {
@@ -185,6 +186,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
   const unmarkPosted = (id: string) => {
     setScheduledPosts?.(prev => prev.map(p => p.id === id ? { ...p, status: 'scheduled', published_at: undefined } : p));
   };
+
+  // ── Live Meta audience stats (per connected brand, via the meta-insights Edge Function) ──
+  const [metaInsights, setMetaInsights] = useState<Record<string, MetaInsights>>({});
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const branchIdsKey = useMemo(() => (branches || []).map(b => b.id).join(','), [branches]);
+
+  const loadInsights = React.useCallback(() => {
+    const ids = branchIdsKey ? branchIdsKey.split(',') : [];
+    if (ids.length === 0) return () => {};
+    let cancelled = false;
+    setInsightsLoading(true);
+    Promise.all(ids.map(id => fetchBrandInsights(id).then(r => [id, r] as const)))
+      .then(entries => { if (!cancelled) setMetaInsights(Object.fromEntries(entries)); })
+      .finally(() => { if (!cancelled) setInsightsLoading(false); });
+    return () => { cancelled = true; };
+  }, [branchIdsKey]);
+
+  useEffect(() => loadInsights(), [loadInsights]);
+
+  const connectedInsights = useMemo(() =>
+    (branches || [])
+      .map(b => ({ branch: b, stats: metaInsights[b.id] }))
+      .filter((x): x is { branch: Branch; stats: MetaInsights } => !!x.stats && x.stats.connected),
+    [branches, metaInsights]
+  );
 
   // Branch lookup: connectionId → branch record
   const branchByConnectionId = useMemo(() => {
@@ -531,6 +557,70 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Audience — live Meta stats per connected brand */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-lg font-black text-yale-blue flex items-center">
+                  <Users size={20} className="mr-2 text-emerald-600" />
+                  Audience
+                </h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Live from Meta</p>
+              </div>
+              <button onClick={() => loadInsights()} disabled={insightsLoading} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition disabled:opacity-50" title="Refresh">
+                <RefreshCw size={16} className={insightsLoading ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            {connectedInsights.length === 0 ? (
+              <div className="bg-slate-50 rounded-2xl p-6 text-center">
+                {insightsLoading ? (
+                  <Loader2 size={24} className="text-slate-300 mx-auto animate-spin" />
+                ) : (
+                  <>
+                    <Users size={28} className="text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm font-bold text-slate-500 mb-1">No Meta accounts connected yet</p>
+                    <p className="text-[11px] text-slate-400 mb-3">Connect a brand's Facebook &amp; Instagram to see live follower and reach stats.</p>
+                    <button onClick={() => onViewChange?.('settings')} className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-wider">
+                      Connect in Settings <ArrowRight size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {connectedInsights.map(({ branch, stats }) => {
+                  const FbIcon = PLATFORM_ICONS['facebook'];
+                  const IgIcon = PLATFORM_ICONS['instagram'];
+                  return (
+                    <div key={branch.id} className="border border-slate-100 rounded-2xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2.5 h-2.5 rounded" style={{ backgroundColor: branch.primary_color || '#6b7280' }} />
+                        <span className="text-xs font-black text-slate-700 uppercase tracking-tight">{branch.name}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {stats.facebook && !stats.facebook.error && (
+                          <div className="bg-slate-50 rounded-xl p-3">
+                            <div className="flex items-center gap-1.5 mb-1 text-blue-600">{FbIcon && <FbIcon size={13} />}<span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Facebook</span></div>
+                            <p className="text-xl font-black text-slate-800">{(stats.facebook.followers ?? stats.facebook.fans ?? 0).toLocaleString()}</p>
+                            <p className="text-[10px] font-bold text-slate-400">followers{stats.facebook.reach_28d != null ? ` · ${stats.facebook.reach_28d.toLocaleString()} reach/28d` : ''}</p>
+                          </div>
+                        )}
+                        {stats.instagram && !stats.instagram.error && (
+                          <div className="bg-slate-50 rounded-xl p-3">
+                            <div className="flex items-center gap-1.5 mb-1 text-pink-600">{IgIcon && <IgIcon size={13} />}<span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Instagram</span></div>
+                            <p className="text-xl font-black text-slate-800">{(stats.instagram.followers ?? 0).toLocaleString()}</p>
+                            <p className="text-[10px] font-bold text-slate-400">followers{stats.instagram.posts != null ? ` · ${stats.instagram.posts} posts` : ''}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Branch Network Health */}
