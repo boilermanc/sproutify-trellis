@@ -511,7 +511,71 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       </div>
 
       <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
+        {/* Mobile cards — the full table is unreadable on a phone */}
+        <div className="lg:hidden divide-y divide-slate-50">
+          {dataSource === 'local' ? (
+            paginatedProfiles.map((profile) => (
+              <button
+                key={profile.id}
+                onClick={() => setSelectedProfileId(profile.id)}
+                className={`w-full text-left flex items-center gap-3 p-4 transition ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : 'hover:bg-slate-50/80'}`}
+              >
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base shrink-0 ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-slate-800 text-sm truncate">{profile.first_name}</p>
+                  <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
+                  {profile.branches.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {profile.branches.map((slug) => (
+                        <BranchBadge key={slug} slug={slug} branchMap={branchMap} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <ChevronRight size={16} className="text-slate-300 shrink-0" />
+              </button>
+            ))
+          ) : (
+            federatedProfiles.map((profile, index) => (
+              <button
+                key={`${profile._spoke_id}-${profile.email}-${index}`}
+                onClick={() => setSelectedFederatedProfile(profile)}
+                className="w-full text-left flex items-center gap-3 p-4 hover:bg-slate-50/80 transition"
+              >
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base shrink-0 ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                  {(profile.first_name || profile.email || '?').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-slate-800 text-sm truncate">
+                    {profile.first_name || profile.email.split('@')[0]}
+                    {profile.last_name ? ` ${profile.last_name}` : ''}
+                    {profile.order_stats && profile.order_stats.ltv >= 50 && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">VIP</span>
+                    )}
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100"><Link size={9} />{profile._spoke_name}</span>
+                    {profile.order_stats && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600"><DollarSign className="w-3 h-3" />{profile.order_stats.ltv.toFixed(2)}</span>
+                    )}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      profile.subscribed
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        : profile.subscribed === false
+                        ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                        : 'bg-amber-50 text-amber-600 border border-amber-100'
+                    }`}>
+                      {profile.subscribed === true ? 'Sub' : profile.subscribed === false ? 'Unsub' : 'Unverified'}
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-slate-300 shrink-0" />
+              </button>
+            ))
+          )}
+        </div>
+        <table className="hidden lg:table w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-100">
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Identity</th>
@@ -667,7 +731,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         </table>
 
         {/* Pagination Controls */}
-        <div className="px-10 py-6 border-t border-slate-100 flex items-center justify-between">
+        <div className="px-4 sm:px-10 py-4 sm:py-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Per page</label>
             <select

@@ -125,11 +125,11 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
 
   if (isMaximized) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-xl animate-in fade-in duration-300">
-        <div className="bg-white w-full max-w-6xl h-[85vh] rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-white/20 animate-in zoom-in-95 duration-500">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-6 bg-slate-900/80 backdrop-blur-xl animate-in fade-in duration-300">
+        <div className="bg-white w-full max-w-6xl h-full sm:h-[85vh] rounded-none sm:rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col border border-white/20 animate-in zoom-in-95 duration-500">
           
-          <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
-            <div className="flex items-center space-x-6">
+          <div className="p-4 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div className="flex items-center space-x-3 sm:space-x-6">
               <SageIcon size={24} />
               <div>
                 <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Strategic Hub</h2>
@@ -148,7 +148,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
 
           <div className="flex-1 flex min-h-0">
             <div className="flex-1 flex flex-col bg-slate-50/50 relative border-r border-slate-100">
-               <div ref={scrollRef} className="flex-1 overflow-y-auto p-10 space-y-6 custom-scrollbar">
+               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-10 space-y-6 custom-scrollbar">
                   {messages.map((m, idx) => (
                     <div key={idx} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}>
                       <div className={`max-w-[80%] p-6 rounded-3xl text-sm leading-relaxed ${
@@ -177,7 +177,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                   )}
                </div>
 
-               <div className="p-8 bg-white border-t border-slate-100">
+               <div className="p-4 sm:p-8 bg-white border-t border-slate-100">
                   <form onSubmit={handleSend} className="relative flex items-center">
                     <input 
                       autoFocus
@@ -198,7 +198,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                </div>
             </div>
 
-            <div className="w-[420px] bg-white p-8 overflow-y-auto custom-scrollbar flex flex-col space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="hidden lg:flex w-[420px] bg-white p-8 overflow-y-auto custom-scrollbar flex-col space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="space-y-4">
                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
                     <Activity size={12} className="mr-2 text-rose-500" />
@@ -296,7 +296,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
   }
 
   return (
-    <div className="fixed bottom-8 right-8 w-96 h-[500px] bg-white rounded-[2.5rem] shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden z-[60] animate-in slide-in-from-bottom-8 duration-300 border border-slate-100">
+    <div className="fixed inset-x-4 bottom-4 sm:inset-x-auto sm:bottom-8 sm:right-8 w-auto sm:w-96 h-[70vh] sm:h-[500px] bg-white rounded-[2.5rem] shadow-[0_35px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden z-[60] animate-in slide-in-from-bottom-8 duration-300 border border-slate-100">
       <div className="p-6 bg-slate-900 text-white flex items-center justify-between" style={{ backgroundColor: brand?.primaryColor || '#1e293b' }}>
         <div className="flex items-center space-x-3">
           <div 

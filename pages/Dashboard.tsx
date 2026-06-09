@@ -276,7 +276,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
       {/* High-Action Alert Strip */}
       {pendingApprovalsCount > 0 && (
-        <div className="bg-blue-slate-2 text-white px-8 py-5 rounded-[2rem] shadow-xl flex items-center justify-between animate-in slide-in-from-top duration-500 border-4 border-blue-slate/50">
+        <div className="bg-blue-slate-2 text-white px-6 sm:px-8 py-5 rounded-[2rem] shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top duration-500 border-4 border-blue-slate/50">
           <div className="flex items-center space-x-6">
             <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center animate-pulse">
               <Sparkles size={24} />
@@ -288,7 +288,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
           </div>
           <button
             onClick={() => onViewChange?.('social-hub')}
-            className="px-8 py-3 bg-white text-yale-blue rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-cornflower-ocean hover:text-yale-blue transition-all flex items-center space-x-3 shadow-lg"
+            className="px-8 py-3 bg-white text-yale-blue rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-cornflower-ocean hover:text-yale-blue transition-all flex items-center justify-center sm:justify-start w-full sm:w-auto space-x-3 shadow-lg shrink-0"
           >
             <span>Go to Review Queue</span>
             <ArrowRight size={16} />
@@ -303,7 +303,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
         <button
           onClick={() => setIsBriefingOpen(!isBriefingOpen)}
-          className="w-full px-10 py-7 flex items-center justify-between hover:bg-white/5 transition relative z-10"
+          className="w-full px-5 sm:px-10 py-5 sm:py-7 flex items-center justify-between hover:bg-white/5 transition relative z-10"
         >
           <div className="flex items-center space-x-5">
             <div
@@ -334,8 +334,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
         </button>
 
         {isBriefingOpen && (
-          <div className="px-10 pb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative z-10">
-            <div className="p-8 bg-blue-slate-2/50 rounded-3xl border border-blue-slate/50 flex flex-col md:flex-row items-center justify-between gap-8 backdrop-blur-sm">
+          <div className="px-5 sm:px-10 pb-6 sm:pb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative z-10">
+            <div className="p-5 sm:p-8 bg-blue-slate-2/50 rounded-3xl border border-blue-slate/50 flex flex-col md:flex-row items-center justify-between gap-8 backdrop-blur-sm">
               <div className="space-y-2">
                 <div className="flex items-center space-x-2 text-[10px] font-black text-sky-300 uppercase tracking-widest mb-1">
                   <Activity size={12} />
@@ -412,7 +412,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
         <div className="lg:col-span-2 space-y-8">
 
           {/* Social Content — pipeline stats + today's posts */}
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+          <div className="bg-white p-5 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-lg font-black text-yale-blue flex items-center">
@@ -534,7 +534,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
           </div>
 
           {/* Branch Network Health */}
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative">
+          <div className="bg-white p-5 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-lg font-black text-yale-blue flex items-center">
@@ -730,7 +730,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
           </div>
 
           {/* Campaign Velocity */}
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+          <div className="bg-white p-5 sm:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-lg font-black text-yale-blue flex items-center">
@@ -818,7 +818,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
           {/* Recent Orders */}
           {recentOrders.length > 0 && (
-            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+            <div className="bg-white p-5 sm:p-8 rounded-2xl border border-slate-100 shadow-sm">
               <h3 className="text-lg font-black text-yale-blue mb-6 uppercase tracking-tight flex items-center">
                 <Package size={20} className="mr-2 text-blue-600" />
                 Recent Orders
@@ -854,7 +854,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
           )}
 
           {/* Activity Feed */}
-          <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="bg-white p-5 sm:p-8 rounded-2xl border border-slate-100 shadow-sm">
             <h3 className="text-lg font-bold text-yale-blue mb-6 font-black uppercase tracking-tight">Recent Brand Interactions</h3>
             <div className="space-y-6">
               {recentEvents.map((event) => (
@@ -1043,13 +1043,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
             <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar bg-slate-50/50">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                 <div className="bg-white p-8 rounded-3xl border border-blue-slate-2/20 shadow-sm">
+                 <div className="bg-white p-5 sm:p-8 rounded-3xl border border-blue-slate-2/20 shadow-sm">
                     <Target size={32} className="text-cornflower-ocean mb-6" />
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Campaign Momentum</h4>
                     <p className="text-4xl font-black text-yale-blue mb-2">{MOCK_BRIEFING.detailed_analysis.campaign_velocity.avg_ctr}</p>
                     <p className="text-slate-600 text-xs leading-relaxed italic">Customers on farm.sproutify.app are highly engaged right now.</p>
                  </div>
-                 <div className="bg-white p-8 rounded-3xl border border-blue-slate-2/20 shadow-sm">
+                 <div className="bg-white p-5 sm:p-8 rounded-3xl border border-blue-slate-2/20 shadow-sm">
                     <LifeBuoy size={32} className="text-amber-500 mb-6" />
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Team Responsiveness</h4>
                     <p className="text-4xl font-black text-yale-blue mb-2">{MOCK_BRIEFING.detailed_analysis.support_load.avg_response_time}</p>

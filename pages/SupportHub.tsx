@@ -8,7 +8,7 @@ import {
   LifeBuoy, RefreshCw, Globe, GraduationCap, Sprout, Heart, Building2,
   Filter, Activity, AlertTriangle, BarChart3, X, Search, Send, CheckCircle2,
   Zap, MoreVertical, Sparkles, ShieldCheck, Inbox, Clock, ShieldAlert,
-  Eye, Lock, AlertCircle, Info
+  Eye, Lock, AlertCircle, Info, ChevronLeft
 } from 'lucide-react';
 
 interface SupportHubProps {
@@ -87,8 +87,8 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
           </div>
       </div>
 
-      <div className="flex gap-8 flex-1 min-h-0">
-        <div className="w-96 flex flex-col space-y-4">
+      <div className="flex gap-4 lg:gap-8 flex-1 min-h-0">
+        <div className={`${selectedTicket ? 'hidden lg:flex' : 'flex'} w-full lg:w-96 flex-col space-y-4`}>
           <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1">
             {filteredTickets.length > 0 ? filteredTickets.map(ticket => {
                const p = profiles.find(x => x.id === ticket.profile_id);
@@ -123,9 +123,10 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
 
         {selectedTicket ? (
           <div className="flex-1 flex flex-col bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
-             <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/20">
-                <div className="flex items-center space-x-4">
-                   <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center font-black text-lg">{profile?.first_name?.charAt(0) || '?'}</div>
+             <div className="p-4 sm:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/20 gap-3">
+                <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
+                   <button onClick={() => setSelectedTicketId(null)} className="lg:hidden p-2 -ml-1 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0" aria-label="Back to tickets"><ChevronLeft size={20} /></button>
+                   <div className="w-12 h-12 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center font-black text-lg shrink-0">{profile?.first_name?.charAt(0) || '?'}</div>
                    <div>
                       <h3 className="text-lg font-black text-slate-800 leading-tight">{selectedTicket.subject}</h3>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{profile?.email} • {selectedTicket.id}</p>
@@ -150,13 +151,13 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
                 </div>
              )}
 
-             <div className="flex-1 p-10 overflow-y-auto space-y-10 custom-scrollbar bg-slate-50/30">
+             <div className="flex-1 p-4 sm:p-10 overflow-y-auto space-y-6 sm:space-y-10 custom-scrollbar bg-slate-50/30">
                 <div className="space-y-4">
                    <div className="flex items-center justify-between px-2">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Request</span>
                       <span className="text-[9px] font-bold text-slate-300 italic">Auto-scrubbing active</span>
                    </div>
-                   <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm text-sm text-slate-600 leading-relaxed italic max-w-[90%] relative">
+                   <div className="bg-white p-5 sm:p-8 rounded-3xl border border-slate-200 shadow-sm text-sm text-slate-600 leading-relaxed italic max-w-[90%] relative">
                       <div className="absolute -top-3 -left-3 bg-slate-900 text-white p-2 rounded-xl"><Activity size={12}/></div>
                       "{selectedTicket.description}"
                    </div>
@@ -169,7 +170,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
                          <span className="text-[9px] font-black uppercase tracking-tight">Confidence: {confidenceLevel}%</span>
                       </div>
                    </div>
-                   <div className={`p-8 rounded-[2.5rem] rounded-tr-none text-white max-w-[85%] shadow-2xl relative overflow-hidden group ${isLowConfidence ? 'bg-slate-700' : 'bg-slate-900'}`}>
+                   <div className={`p-5 sm:p-8 rounded-[2.5rem] rounded-tr-none text-white max-w-[85%] shadow-2xl relative overflow-hidden group ${isLowConfidence ? 'bg-slate-700' : 'bg-slate-900'}`}>
                       <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-125 transition-transform"><Sparkles size={100} className="text-emerald-400" /></div>
                       <div className="flex items-center space-x-2 text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-4">
                          <Zap size={12} />
@@ -193,7 +194,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
                 </div>
 
                 {isLowConfidence && (
-                  <div className="bg-amber-50 border-2 border-amber-200 p-8 rounded-3xl animate-in shake-in duration-500">
+                  <div className="bg-amber-50 border-2 border-amber-200 p-5 sm:p-8 rounded-3xl animate-in shake-in duration-500">
                      <div className="flex items-start space-x-4">
                         <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl">
                            <AlertCircle size={24} />
@@ -209,12 +210,12 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
                 )}
              </div>
 
-             <div className="p-8 bg-white border-t border-slate-100 flex items-center justify-between">
-                <div className="flex space-x-3">
+             <div className="p-4 sm:p-8 bg-white border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-3">
                    <button 
                     onClick={handleApproveAndSend} 
                     disabled={isSending || sendSuccess || selectedTicket.status === 'resolved' || isLowConfidence} 
-                    className={`px-10 py-5 rounded-[1.5rem] font-black text-sm flex items-center space-x-3 transition-all ${
+                    className={`px-6 sm:px-10 py-4 sm:py-5 rounded-[1.5rem] font-black text-sm flex items-center justify-center space-x-3 transition-all ${
                       isLowConfidence ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' :
                       (sendSuccess || selectedTicket.status === 'resolved') ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-900 text-white hover:bg-emerald-600 shadow-xl'
                     } disabled:opacity-50`}
@@ -238,7 +239,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
              </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-[2.5rem] border-4 border-dashed border-slate-100 opacity-40">
+          <div className="flex-1 hidden lg:flex flex-col items-center justify-center bg-white rounded-[2.5rem] border-4 border-dashed border-slate-100 opacity-40">
              <LifeBuoy size={64} className="text-slate-200 mb-6" />
              <p className="text-xl font-black text-slate-300 uppercase tracking-tighter">Select a ticket to orchestrate</p>
           </div>

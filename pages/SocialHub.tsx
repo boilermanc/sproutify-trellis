@@ -321,6 +321,27 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     return events;
   }, [scheduledPosts, deployedCampaigns, branches]);
 
+  // Upcoming events grouped by day — powers the mobile agenda (phones can't show a 7-col grid)
+  const agendaGroups = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const sorted = calendarEvents
+      .filter(e => new Date(e.scheduled_for) >= startOfToday)
+      .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime());
+    const groups: { key: string; date: Date; events: CalendarEvent[] }[] = [];
+    const index: Record<string, number> = {};
+    sorted.forEach(ev => {
+      const d = new Date(ev.scheduled_for);
+      const key = d.toDateString();
+      if (index[key] === undefined) {
+        index[key] = groups.length;
+        groups.push({ key, date: d, events: [] });
+      }
+      groups[index[key]].events.push(ev);
+    });
+    return groups;
+  }, [calendarEvents]);
+
   // ═══════════════════════════════════════════════════════════════
   // CONFLICT & GAP DETECTION
   // ═══════════════════════════════════════════════════════════════
@@ -766,16 +787,16 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   return (
     <div className="space-y-8 min-h-screen pb-40">
-      <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit border border-slate-200 shadow-sm">
-        <button onClick={() => setActiveTab('lab')} className={`flex items-center space-x-3 px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'lab' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><Zap size={18} /><span>Lab</span></button>
-        <button onClick={() => setActiveTab('queue')} className={`flex items-center space-x-3 px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all relative ${activeTab === 'queue' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
+      <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit max-w-full overflow-x-auto border border-slate-200 shadow-sm">
+        <button onClick={() => setActiveTab('lab')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'lab' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><Zap size={18} /><span>Lab</span></button>
+        <button onClick={() => setActiveTab('queue')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all relative ${activeTab === 'queue' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
           <Terminal size={18} />
           <span>Queue</span>
           {newSignalCount > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{newSignalCount}</span>
           )}
         </button>
-        <button onClick={() => setActiveTab('pipeline')} className={`flex items-center space-x-3 px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'pipeline' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Pipeline</span></button>
+        <button onClick={() => setActiveTab('pipeline')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'pipeline' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Pipeline</span></button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -810,10 +831,10 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
               )}
 
               {workflowStatus === 'idle' ? (
-                <div className={`bg-white p-12 rounded-[3.5rem] border border-slate-200 shadow-sm relative ${isGenerating ? 'opacity-40' : ''}`}>
+                <div className={`bg-white p-6 sm:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm relative ${isGenerating ? 'opacity-40' : ''}`}>
                   {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20 rounded-[3.5rem]"><Loader2 className="animate-spin text-emerald-600" size={56} /></div>}
                   <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />Strategy Lab</h3>
-                  <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-8 text-xl font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[220px] shadow-inner mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
+                  <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-5 sm:p-8 text-base sm:text-xl font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[220px] shadow-inner mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
                   <div className="flex flex-wrap items-center gap-2 mb-10">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Platforms</span>
                     {(['facebook', 'instagram', 'x', 'linkedin'] as SocialPlatform[]).map(p => {
@@ -832,7 +853,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                       );
                     })}
                   </div>
-                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-xl flex items-center justify-center space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Generate multi-platform variants</span></button>
+                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full py-5 sm:py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-base sm:text-xl flex items-center justify-center space-x-3 sm:space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Generate multi-platform variants</span></button>
                 </div>
               ) : activeDrafts.length > 0 && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
@@ -873,11 +894,11 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-4">
-                      <button onClick={handleApproveAll} className="flex-1 min-w-[200px] py-6 bg-white border-2 border-slate-200 text-slate-800 rounded-[2rem] font-black text-lg flex items-center justify-center gap-3 shadow-sm hover:border-emerald-500 hover:text-emerald-700 transition">
+                      <button onClick={handleApproveAll} className="flex-1 min-w-[160px] py-4 sm:py-6 bg-white border-2 border-slate-200 text-slate-800 rounded-[2rem] font-black text-base sm:text-lg flex items-center justify-center gap-3 shadow-sm hover:border-emerald-500 hover:text-emerald-700 transition">
                         <CalendarDays size={24} className="text-emerald-500" />
                         <span>Schedule All{activeDrafts.length > 1 ? ` (${activeDrafts.length} brands)` : ''}</span>
                       </button>
-                      <button onClick={copyAllBrands} className="flex-1 min-w-[200px] py-6 bg-slate-900 text-white rounded-[2rem] font-black text-lg flex items-center justify-center gap-3 shadow-2xl hover:bg-emerald-600 transition">
+                      <button onClick={copyAllBrands} className="flex-1 min-w-[160px] py-4 sm:py-6 bg-slate-900 text-white rounded-[2rem] font-black text-base sm:text-lg flex items-center justify-center gap-3 shadow-2xl hover:bg-emerald-600 transition">
                         {copiedKey === 'all_brands' ? <Check size={24} className="text-emerald-400" /> : <Copy size={24} className="text-emerald-400" />}
                         <span>{copiedKey === 'all_brands' ? 'Copied All Brands' : 'Copy All for Meta Business'}</span>
                       </button>
@@ -888,7 +909,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   {activeDrafts.map(draft => {
                     const brand = getBranchForDraft(draft);
                     return (
-                      <div key={draft.id} className="bg-white p-8 rounded-[3rem] border-2 border-slate-200 shadow-lg">
+                      <div key={draft.id} className="bg-white p-5 sm:p-8 rounded-[3rem] border-2 border-slate-200 shadow-lg">
                         <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
                           <div className="flex items-center gap-2">
                             {brand && <div className="w-3 h-3 rounded" style={{ backgroundColor: brand.primary_color }} />}
@@ -1053,7 +1074,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                           )}
                         </div>
                         {!isDismissed && (
-                          <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+                          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100">
                             <button onClick={() => handleRespondToSignal(signal)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition"><Zap size={14} /> Respond</button>
                             <button onClick={() => handleRouteToSupport(signal)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 text-[10px] font-black uppercase tracking-wider transition"><LifeBuoy size={14} /> Route to Support</button>
                             <button onClick={() => { setLinkingSignalId(signal.id); setProfileSearchTerm(''); }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-purple-100 text-slate-600 hover:text-purple-700 text-[10px] font-black uppercase tracking-wider transition"><Users size={14} /> Link to Profile</button>
@@ -1097,7 +1118,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   <CalendarDays size={22} className="text-emerald-600" />
                   Content Calendar
                 </h3>
-                <div className="flex bg-slate-100 p-1 rounded-xl">
+                <div className="hidden lg:flex bg-slate-100 p-1 rounded-xl">
                   <button onClick={() => setCalendarView('month')} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${calendarView === 'month' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}><LayoutGrid size={14} />Month</button>
                   <button onClick={() => setCalendarView('week')} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${calendarView === 'week' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}><List size={14} />Week</button>
                 </div>
@@ -1117,7 +1138,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
               {/* Month View */}
               {calendarView === 'month' && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+                <div className="hidden lg:block bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                   {/* Month header */}
                   <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition"><ChevronLeft size={18} /></button>
@@ -1178,7 +1199,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
               {/* Week View */}
               {calendarView === 'week' && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+                <div className="hidden lg:block bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                   <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <button onClick={() => { const d = new Date(calendarDate); d.setDate(d.getDate() - 7); setCalendarDate(d); }} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition"><ChevronLeft size={18} /></button>
                     <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest">
@@ -1235,6 +1256,68 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   </div>
                 </div>
               )}
+
+              {/* Mobile Agenda — vertical day-grouped list (phones can't render a 7-col grid) */}
+              <div className="lg:hidden space-y-4">
+                {agendaGroups.length === 0 ? (
+                  <div className="bg-slate-50 border-4 border-dashed border-slate-200 rounded-[2rem] py-16 text-center">
+                    <CalendarDays size={40} className="mx-auto text-slate-300 mb-3" />
+                    <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Nothing scheduled ahead</p>
+                    <p className="text-xs text-slate-400 font-bold mt-1">Generate posts in the Lab to fill your calendar.</p>
+                  </div>
+                ) : (
+                  agendaGroups.map(group => {
+                    const isTodayGroup = isToday(group.date);
+                    return (
+                      <div key={group.key} className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+                        <div className={`flex items-baseline gap-2 px-4 py-3 border-b border-slate-100 ${isTodayGroup ? 'bg-emerald-50' : 'bg-slate-50'}`}>
+                          <span className={`text-sm font-black uppercase tracking-tight ${isTodayGroup ? 'text-emerald-700' : 'text-slate-700'}`}>
+                            {isTodayGroup ? 'Today' : group.date.toLocaleDateString('en-US', { weekday: 'short' })}
+                          </span>
+                          <span className="text-xs font-bold text-slate-400">
+                            {group.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                          <span className="ml-auto text-[10px] font-black text-slate-400 uppercase">{group.events.length} post{group.events.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="p-2 space-y-1.5">
+                          {group.events.map(ev => {
+                            const PIcon = getPlatformIcon(ev.channel);
+                            const time = new Date(ev.scheduled_for).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                            return (
+                              <button
+                                key={ev.id}
+                                onClick={() => { setSelectedCalendarEvent(ev); setComplianceResult(null); setShowCompliancePanel(false); }}
+                                className="w-full flex items-center gap-3 rounded-2xl p-3 border border-slate-100 hover:border-emerald-300 hover:bg-slate-50 transition text-left"
+                                style={{ borderLeft: `4px solid ${ev.branch_color}` }}
+                              >
+                                <PIcon size={16} className="text-slate-400 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-slate-700 truncate">{ev.title}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[10px] font-bold text-slate-400">{time}</span>
+                                    <span className="text-[10px] text-slate-300">|</span>
+                                    <span className="text-[10px] font-bold text-slate-400 truncate">{ev.branch_name}</span>
+                                    <span className="text-[10px] text-slate-300">|</span>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase">{ev.channel}</span>
+                                  </div>
+                                </div>
+                                <span className={`text-[8px] font-black uppercase px-2 py-1 rounded flex-shrink-0 ${
+                                  ev.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
+                                  ev.status === 'failed' ? 'bg-rose-100 text-rose-700' :
+                                  ev.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                                  ev.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
+                                  ev.status === 'pending_review' ? 'bg-amber-100 text-amber-700' :
+                                  'bg-blue-100 text-blue-700'
+                                }`}>{ev.status}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
               {/* Day Detail — posts scheduled for the clicked day */}
               {selectedCalendarDay && !selectedCalendarEvent && (() => {

@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug, Wand2, Palette, Video
+  ChevronDown, Plug, Wand2, Palette, Video, Menu, X
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -27,6 +27,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, onOpenHelpArticle, onOpenHelpCenter }) => {
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const branchPickerRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -40,6 +41,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isBranchPickerOpen]);
+
+  // Close the mobile nav whenever the view changes
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [activeView]);
 
   const navItems = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -65,11 +71,33 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-64 bg-yale-blue flex flex-col shrink-0">
-        <div className="p-6 flex items-center space-x-3 text-sky-300 border-b border-blue-slate-2/30">
-          <Sprout size={28} />
-          <span className="font-bold text-xl text-white tracking-tight">Trellis</span>
+      {/* Mobile backdrop */}
+      {isMobileNavOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-slate-900/50 backdrop-blur-sm lg:hidden"
+          onClick={() => setIsMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar — static on desktop, slide-in drawer on mobile */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-yale-blue flex flex-col shrink-0 transform transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
+          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="p-6 flex items-center justify-between text-sky-300 border-b border-blue-slate-2/30">
+          <div className="flex items-center space-x-3">
+            <Sprout size={28} />
+            <span className="font-bold text-xl text-white tracking-tight">Trellis</span>
+          </div>
+          <button
+            onClick={() => setIsMobileNavOpen(false)}
+            className="lg:hidden text-white/70 hover:text-white transition-colors"
+            aria-label="Close navigation"
+          >
+            <X size={22} />
+          </button>
         </div>
 
         <nav className="flex-1 mt-6 px-3 space-y-1 overflow-y-auto custom-scrollbar">
@@ -143,31 +171,44 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto bg-slate-50 relative">
-        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xl font-semibold text-slate-800 capitalize">
+        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 lg:px-8 py-4 flex justify-between items-center gap-3">
+          <div className="flex items-center space-x-2 min-w-0">
+            <button
+              onClick={() => setIsMobileNavOpen(true)}
+              className="lg:hidden p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
+              aria-label="Open navigation"
+            >
+              <Menu size={22} />
+            </button>
+            <h2 className="text-lg lg:text-xl font-semibold text-slate-800 capitalize truncate">
               {activeView.replace('-', ' ')}
             </h2>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 lg:space-x-4 shrink-0">
              {/* Branch Scope Picker */}
              <div className="relative" ref={branchPickerRef}>
                <button
                  onClick={() => setIsBranchPickerOpen(!isBranchPickerOpen)}
-                 className="flex items-center space-x-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200"
+                 className="flex items-center space-x-2 px-3 lg:px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200"
                >
-                 <GitBranch size={16} className="text-emerald-600" />
-                 <span className="text-xs font-black uppercase tracking-widest text-slate-700">
+                 <GitBranch size={16} className="text-emerald-600 shrink-0" />
+                 <span className="hidden sm:inline text-xs font-black uppercase tracking-widest text-slate-700">
                    {branchContext.isAllSelected
                      ? `All Branches (${branchContext.allBranches.length})`
                      : `${branchContext.activeBranchSlugs.length} of ${branchContext.allBranches.length} Branches`
+                   }
+                 </span>
+                 <span className="sm:hidden text-xs font-black uppercase tracking-widest text-slate-700">
+                   {branchContext.isAllSelected
+                     ? `All (${branchContext.allBranches.length})`
+                     : `${branchContext.activeBranchSlugs.length}/${branchContext.allBranches.length}`
                    }
                  </span>
                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${isBranchPickerOpen ? 'rotate-180' : ''}`} />
                </button>
 
                {isBranchPickerOpen && (
-                 <div className="absolute top-full mt-2 right-0 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+                 <div className="absolute top-full mt-2 right-0 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                      <span className="text-xs font-black uppercase tracking-widest text-slate-500">Branch Scope</span>
                      <div className="flex items-center space-x-2">
@@ -255,14 +296,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                 <HelpCircle size={20} />
              </button>
 
-            <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full flex items-center border border-emerald-200">
+            <span className="hidden xl:flex text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full items-center border border-emerald-200">
               <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2 animate-pulse"></span>
               {brand.name} Orchestrator v1.2
             </span>
           </div>
         </header>
 
-        <div className="p-8">
+        <div className="p-4 lg:p-8">
           {children}
         </div>
 
