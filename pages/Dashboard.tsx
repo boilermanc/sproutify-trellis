@@ -1,16 +1,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, SpokeConnection, BranchStatsResult, BranchContext } from '../types';
+import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, SpokeConnection, BranchStatsResult, BranchContext, DraftPost } from '../types';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
 import { MOCK_BRIEFING } from '../constants';
 import { fetchRecentEvents } from '../lib/supabaseService';
 import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
-import { timeAgo } from '../utils';
+import { timeAgo, SOCIAL_PLATFORM_META, PLATFORM_ICONS } from '../utils';
 import {
   Globe, Sparkles, ChevronDown, ChevronRight, X, Target,
   LifeBuoy, ShieldAlert, Activity, Zap, ArrowRight, Database, RefreshCw, Loader2,
-  Package, DollarSign, GitBranch, AlertTriangle, Clock, Send, Rocket
+  Package, DollarSign, GitBranch, AlertTriangle, Clock, Send, Rocket, CalendarDays, CheckCircle2, Image as ImageIcon
 } from 'lucide-react';
 
 interface CampaignRecord {
@@ -35,6 +35,8 @@ interface DashboardProps {
   branchStats: BranchStatsResult;
   branches: Branch[];
   branchContext?: BranchContext;
+  scheduledPosts?: DraftPost[];
+  setScheduledPosts?: React.Dispatch<React.SetStateAction<DraftPost[]>>;
   onOpenArticle?: (article: Article) => void;
 }
 
@@ -49,7 +51,7 @@ function getFreshness(ts?: string): { label: string; isStale: boolean; isWarning
   return { label: `${days}d ago`, isStale: true, isWarning: true };
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches, branchContext, onOpenArticle }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, profiles, brand, spokeConnections, branchStats, branches, branchContext, scheduledPosts, setScheduledPosts, onOpenArticle }) => {
   const [isBriefingOpen, setIsBriefingOpen] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -137,6 +139,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
       recentCampaigns: [...campaignHistory].sort((a, b) => new Date(b.launchedAt).getTime() - new Date(a.launchedAt).getTime()).slice(0, 4),
     };
   }, [campaignHistory]);
+
+  // Social content stats — computed from the scheduled-posts pipeline
+  const socialStats = useMemo(() => {
+    const posts = scheduledPosts || [];
+    const now = Date.now();
+    const startOfToday = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+    const endOfToday = startOfToday + 86400000;
+    const weekAgo = now - 7 * 86400000;
+    const monthAgo = now - 30 * 86400000;
+    const isPosted = (p: DraftPost) => p.status === 'published' && !!p.published_at;
+
+    const postedThisWeek = posts.filter(p => isPosted(p) && new Date(p.published_at!).getTime() >= weekAgo).length;
+    const postedThisMonth = posts.filter(p => isPosted(p) && new Date(p.published_at!).getTime() >= monthAgo).length;
+    const upcoming = posts.filter(p => p.status === 'scheduled' && p.scheduled_for && new Date(p.scheduled_for).getTime() >= startOfToday).length;
+
+    const todayPosts = posts
+      .filter(p => {
+        const sched = p.scheduled_for ? new Date(p.scheduled_for).getTime() : null;
+        const pub = p.published_at ? new Date(p.published_at).getTime() : null;
+        return (sched !== null && sched >= startOfToday && sched < endOfToday) || (pub !== null && pub >= startOfToday && pub < endOfToday);
+      })
+      .sort((a, b) => new Date(a.scheduled_for || a.published_at || 0).getTime() - new Date(b.scheduled_for || b.published_at || 0).getTime());
+
+    const platformCounts: Record<string, number> = {};
+    posts.forEach(p => Object.keys(p.versions || {}).forEach(plat => { platformCounts[plat] = (platformCounts[plat] || 0) + 1; }));
+
+    return { postedThisWeek, postedThisMonth, upcoming, todayPosts, platformCounts, total: posts.length };
+  }, [scheduledPosts]);
+
+  const branchNameForPost = (branchId?: string): string => {
+    if (!branchId) return 'Brand';
+    return branches?.find(b => b.id === branchId)?.name || branchId.split('.')[0];
+  };
+
+  const markPosted = (id: string) => {
+    setScheduledPosts?.(prev => prev.map(p => p.id === id ? { ...p, status: 'published', published_at: new Date().toISOString() } : p));
+  };
+  const unmarkPosted = (id: string) => {
+    setScheduledPosts?.(prev => prev.map(p => p.id === id ? { ...p, status: 'scheduled', published_at: undefined } : p));
+  };
 
   // Branch lookup: connectionId → branch record
   const branchByConnectionId = useMemo(() => {
@@ -345,6 +387,97 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
+
+          {/* Social Content — pipeline stats + today's posts */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-lg font-black text-yale-blue flex items-center">
+                  <Send size={20} className="mr-2 text-emerald-600" />
+                  Social Content
+                </h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  {socialStats.total} post{socialStats.total !== 1 ? 's' : ''} in the pipeline
+                </p>
+              </div>
+              <button onClick={() => onViewChange?.('social-hub')} className="flex items-center gap-1.5 text-xs font-black text-emerald-600 hover:text-emerald-700 uppercase tracking-wider">
+                Open Social Hub <ArrowRight size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="bg-slate-50 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black text-yale-blue">{socialStats.upcoming}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">Upcoming</p>
+              </div>
+              <div className="bg-slate-50 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black text-emerald-600">{socialStats.postedThisWeek}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">Posted · 7d</p>
+              </div>
+              <div className="bg-slate-50 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black text-emerald-600">{socialStats.postedThisMonth}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">Posted · 30d</p>
+              </div>
+            </div>
+
+            {Object.keys(socialStats.platformCounts).length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {Object.entries(socialStats.platformCounts).map(([plat, count]) => {
+                  const Icon = PLATFORM_ICONS[plat];
+                  return (
+                    <span key={plat} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider">
+                      {Icon && <Icon size={12} />}
+                      {SOCIAL_PLATFORM_META[plat]?.label || plat} · {count}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Today */}
+            <div className="border-t border-slate-100 pt-5">
+              <div className="flex items-center gap-2 mb-3">
+                <CalendarDays size={16} className="text-emerald-600" />
+                <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">Today</h4>
+                <span className="text-[10px] font-bold text-slate-400">{socialStats.todayPosts.length} post{socialStats.todayPosts.length !== 1 ? 's' : ''}</span>
+              </div>
+              {socialStats.todayPosts.length === 0 ? (
+                <p className="text-xs font-bold text-slate-400 py-4 text-center bg-slate-50 rounded-2xl">Nothing scheduled for today.</p>
+              ) : (
+                <div className="space-y-2">
+                  {socialStats.todayPosts.map(post => {
+                    const posted = post.status === 'published';
+                    const time = new Date(post.scheduled_for || post.published_at || Date.now()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                    const plats = Object.keys(post.versions || {});
+                    return (
+                      <div key={post.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${posted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                        <span className="text-[10px] font-black text-slate-400 w-12 text-center">{time}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-700">{branchNameForPost(post.branch_id)}</span>
+                            <div className="flex gap-1">
+                              {plats.map(plat => { const Icon = PLATFORM_ICONS[plat]; return Icon ? <Icon key={plat} size={12} className="text-slate-400" /> : null; })}
+                            </div>
+                            {post.image_urls && post.image_urls.length > 0 && <ImageIcon size={12} className="text-slate-400" />}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">{post.base_content}</p>
+                        </div>
+                        {posted ? (
+                          <button onClick={() => unmarkPosted(post.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition shrink-0" title="Click to undo">
+                            <CheckCircle2 size={12} /> Posted
+                          </button>
+                        ) : (
+                          <button onClick={() => markPosted(post.id)} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-600 transition shrink-0">
+                            Mark posted
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Branch Network Health */}
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative">

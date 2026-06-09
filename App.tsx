@@ -139,6 +139,15 @@ const AppContent: React.FC = () => {
     } catch { return []; }
   });
 
+  // Persist scheduled posts at the app level so mark-as-posted from the Dashboard survives reloads
+  // (SocialHub also writes this key; we preserve its `archived` slice by merging).
+  useEffect(() => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('trellis_social_pipeline') || '{}');
+      localStorage.setItem('trellis_social_pipeline', JSON.stringify({ ...existing, scheduled: scheduledPosts }));
+    } catch { /* ignore quota/parse errors */ }
+  }, [scheduledPosts]);
+
   // Deployed campaigns (fed from CampaignBuilder, read by SocialHub calendar)
   const [deployedCampaigns, setDeployedCampaigns] = useState<DeployedCampaign[]>(() => {
     try {
@@ -347,7 +356,7 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
+      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} />;
@@ -408,7 +417,7 @@ const AppContent: React.FC = () => {
           onOpenArticle={handleOpenHelpArticle}
         />
       );
-      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
+      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
     }
   };
 
