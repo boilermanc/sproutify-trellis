@@ -17,7 +17,8 @@ interface GenerateResult {
   error?: string;
 }
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// gemini-1.5-flash was retired by Google; use the current flash model (same one the Social Hub Lab uses).
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 

@@ -117,6 +117,10 @@ const defaultScheduleAt = (): string => {
   return toLocalInput(d);
 };
 
+// A draft's base id, ignoring any recurrence suffix (e.g. "lab_1_atl_r3" -> "lab_1_atl").
+// Used to make re-scheduling idempotent so editing + re-scheduling replaces a series instead of duplicating it.
+const baseDraftId = (id: string): string => id.replace(/_r\d+$/, '');
+
 // Expand a start date + cadence into N ISO timestamps
 const buildScheduleDates = (startIso: string, recurrence: Recurrence, count: number): string[] => {
   const start = new Date(startIso);
@@ -528,17 +532,21 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
     const newPosts: DraftPost[] = [];
     drafts.forEach(draft => {
+      const root = baseDraftId(draft.id);
       dates.forEach((iso, i) => {
         newPosts.push({
           ...draft,
-          id: i === 0 ? draft.id : `${draft.id}_r${i}`,
+          id: i === 0 ? root : `${root}_r${i}`,
           status: 'scheduled',
           scheduled_for: iso,
         });
       });
     });
 
-    setScheduledPosts(prev => [...newPosts, ...prev]);
+    // Idempotent: drop any previously-scheduled posts from the same draft series before adding the fresh set,
+    // so editing + re-scheduling replaces rather than duplicating.
+    const bases = new Set(drafts.map(d => baseDraftId(d.id)));
+    setScheduledPosts(prev => [...newPosts, ...prev.filter(p => !bases.has(baseDraftId(p.id)))]);
 
     const scheduledIds = new Set(drafts.map(d => d.id));
     setInboundQueue(prev => prev.filter(p => !scheduledIds.has(p.id)));
@@ -568,7 +576,11 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   };
 
   const handleEditFromPipeline = (draft: DraftPost) => {
-    setActiveDrafts([draft]);
+    // Pull the whole series back under its base id so re-scheduling replaces it (no duplicates),
+    // and remove its currently-scheduled instances while it's being edited.
+    const root = baseDraftId(draft.id);
+    setScheduledPosts(prev => prev.filter(p => baseDraftId(p.id) !== root));
+    setActiveDrafts([{ ...draft, id: root, status: 'drafting' }]);
     setWorkflowStatus('reviewing');
     setActiveTab('lab');
   };
