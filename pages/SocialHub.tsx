@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -176,6 +176,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedCalendarEvent, setSelectedCalendarEvent] = useState<CalendarEvent | null>(null);
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<Date | null>(null);
+  const dayDetailRef = useRef<HTMLDivElement>(null);
   const [complianceResult, setComplianceResult] = useState<ComplianceResult | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
   const [showCompliancePanel, setShowCompliancePanel] = useState(false);
@@ -188,6 +189,15 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       archived: archivedPosts,
     }));
   }, [scheduledPosts, archivedPosts]);
+
+  // Bring the Day Detail panel into view when a calendar day is clicked
+  useEffect(() => {
+    if (selectedCalendarDay && !selectedCalendarEvent) {
+      requestAnimationFrame(() => {
+        dayDetailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [selectedCalendarDay, selectedCalendarEvent]);
 
   // Filter branches by active context
   const availableBranches = useMemo(() => {
@@ -1231,7 +1241,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                 const dayEvents = getEventsForDay(selectedCalendarDay)
                   .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime());
                 return (
-                  <div className="bg-white rounded-[2rem] border-2 border-emerald-200 shadow-lg p-8 animate-in slide-in-from-bottom-4 duration-300">
+                  <div ref={dayDetailRef} className="bg-white rounded-[2rem] border-2 border-emerald-200 shadow-lg p-8 animate-in slide-in-from-bottom-4 duration-300 scroll-mt-6">
                     <div className="flex justify-between items-start mb-6">
                       <div>
                         <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">
@@ -1393,6 +1403,21 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                         <span>Edit & Recheck</span>
                       </button>
                     )}
+                    {selectedCalendarEvent.source === 'social_hub' && (() => {
+                      const draft = scheduledPosts.find(p => p.id === selectedCalendarEvent.source_id);
+                      if (!draft) return null;
+                      const posted = draft.status === 'published';
+                      return (
+                        <button
+                          onClick={() => setScheduledPosts(prev => prev.map(p => p.id === draft.id ? { ...p, status: posted ? 'scheduled' : 'published', published_at: posted ? undefined : new Date().toISOString() } : p))}
+                          className={`flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-black transition ${posted ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}
+                          title={posted ? 'Click to undo' : 'Mark this post as published'}
+                        >
+                          <CheckCircle2 size={14} />
+                          <span>{posted ? 'Posted' : 'Mark as Posted'}</span>
+                        </button>
+                      );
+                    })()}
                   </div>
 
                   {/* Compliance Results */}
