@@ -248,6 +248,8 @@ export interface ApiKeyConfig {
   resend_from_address: string;
   twilio_sid: string;
   twilio_token: string;
+  meta_app_id?: string;
+  meta_app_secret?: string;
 }
 
 export type TicketStatus = 'open' | 'pending' | 'resolved' | 'closed';

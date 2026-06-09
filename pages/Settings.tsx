@@ -7,7 +7,8 @@ import {
   Key, Globe, Save, RefreshCw,
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
   Phone, Cpu, Sparkles, Zap, Plug,
-  Trash2, Plus, X, Slack, Database, Mail
+  Trash2, Plus, X, Slack, Database, Mail,
+  Instagram, ExternalLink, AlertCircle, ChevronRight, CheckCheck, Lock, Info
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
 import ConnectionsManager from '../ConnectionsManager';
@@ -43,7 +44,7 @@ const Settings: React.FC<SettingsProps> = ({
   branches,
   onOpenArticle,
 }) => {
-  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api'>('integrations');
+  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api' | 'social'>('integrations');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);
@@ -56,6 +57,8 @@ const Settings: React.FC<SettingsProps> = ({
     description: '',
     credentials: {}
   });
+  const [metaWizardStep, setMetaWizardStep] = useState<number>(0);
+  const [metaSaveStatus, setMetaSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const handleSave = () => {
     setIsSaving(true);
@@ -66,6 +69,18 @@ const Settings: React.FC<SettingsProps> = ({
       setTimeout(() => setSaveSuccess(false), 3000);
     }, 1500);
   };
+
+  const handleMetaSave = () => {
+    if (!localApiKeys.meta_app_id || !localApiKeys.meta_app_secret) return;
+    setMetaSaveStatus('saving');
+    setTimeout(() => {
+      onUpdateApiKeys(localApiKeys);
+      setMetaSaveStatus('saved');
+      setMetaWizardStep(4);
+    }, 1500);
+  };
+
+  const metaIsConnected = !!(localApiKeys.meta_app_id && localApiKeys.meta_app_secret);
 
   const toggleIntegrationStatus = (id: string) => {
     setIntegrations(prev => prev.map(i => {
@@ -104,6 +119,7 @@ const Settings: React.FC<SettingsProps> = ({
           { id: 'integrations', label: 'Integrations', icon: Plug },
           { id: 'spokes', label: 'Connections', icon: Database },
           { id: 'api', label: 'Secrets', icon: Key },
+          { id: 'social', label: 'Social', icon: Instagram },
         ].map(tab => (
           <button
             key={tab.id}
@@ -477,9 +493,257 @@ const Settings: React.FC<SettingsProps> = ({
                </div>
             </div>
           )}
+
+          {activeTab === 'social' && (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Social Platform Connections</h3>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Connect your business accounts to enable publishing and listening</p>
+              </div>
+
+              {/* Meta / Instagram Card */}
+              <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+                {/* Card Header */}
+                <div className="p-6 flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 border-b border-slate-100">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                      <Instagram size={22} className="text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">Meta / Instagram</h4>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Instagram Graph API &middot; Pages API</p>
+                    </div>
+                  </div>
+                  {metaIsConnected ? (
+                    <div className="flex items-center space-x-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full">
+                      <CheckCheck size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Connected</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 bg-amber-100 text-amber-700 px-4 py-2 rounded-full">
+                      <AlertCircle size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Not Connected</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Wizard Body */}
+                <div className="p-8 space-y-8">
+
+                  {/* Step Progress */}
+                  <div className="flex items-center space-x-2">
+                    {['Create App', 'Use Cases', 'Business', 'Credentials', 'Done'].map((label, i) => (
+                      <React.Fragment key={i}>
+                        <div className="flex flex-col items-center space-y-1">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
+                            metaWizardStep > i ? 'bg-emerald-500 text-white' :
+                            metaWizardStep === i ? 'bg-slate-800 text-white ring-4 ring-slate-200' :
+                            'bg-slate-100 text-slate-400'
+                          }`}>
+                            {metaWizardStep > i ? <CheckCheck size={12} /> : i + 1}
+                          </div>
+                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 hidden sm:block whitespace-nowrap">{label}</span>
+                        </div>
+                        {i < 4 && <div className={`flex-1 h-0.5 mb-4 transition-all ${metaWizardStep > i ? 'bg-emerald-400' : 'bg-slate-100'}`} />}
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  {/* Step 0 — Create App */}
+                  {metaWizardStep === 0 && (
+                    <div className="space-y-6">
+                      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6 space-y-3">
+                        <div className="flex items-center space-x-3">
+                          <Info size={18} className="text-blue-600 flex-shrink-0" />
+                          <h5 className="font-black text-blue-900 text-sm">One-Time Meta Developer Setup</h5>
+                        </div>
+                        <p className="text-sm text-blue-800 leading-relaxed">
+                          Trellis uses the <b>Instagram Graph API</b> to publish posts, respond to comments, and listen for buying signals across all your properties. You only create this Meta app once &mdash; all your branches (ATL Urban Farms, school.sproutify.app, etc.) connect through it.
+                        </p>
+                      </div>
+                      <div className="space-y-4">
+                        <h5 className="font-black text-slate-700 text-xs uppercase tracking-widest">Step 1: Create Your Meta App</h5>
+                        <ol className="space-y-3 text-sm text-slate-600">
+                          <li className="flex items-start space-x-3"><span className="bg-slate-100 text-slate-600 font-black text-[10px] rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 mt-0.5">1</span><span>Go to <b>developers.facebook.com/apps</b> and click <b>&quot;Create App&quot;</b></span></li>
+                          <li className="flex items-start space-x-3"><span className="bg-slate-100 text-slate-600 font-black text-[10px] rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 mt-0.5">2</span><span>Name your app after your primary property (e.g. <b>&quot;ATL Urban Farms&quot;</b>) and enter your contact email</span></li>
+                          <li className="flex items-start space-x-3"><span className="bg-slate-100 text-slate-600 font-black text-[10px] rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 mt-0.5">3</span><span>Click <b>Next</b> to reach the Use Cases screen</span></li>
+                        </ol>
+                        <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="inline-flex items-center space-x-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-black text-xs hover:bg-blue-700 transition">
+                          <ExternalLink size={14} />
+                          <span>Open Meta Developer Portal</span>
+                        </a>
+                      </div>
+                      <button onClick={() => setMetaWizardStep(1)} className="w-full py-3 bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition flex items-center justify-center space-x-2">
+                        <span>App Created &mdash; Next Step</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Step 1 — Use Cases */}
+                  {metaWizardStep === 1 && (
+                    <div className="space-y-6">
+                      <h5 className="font-black text-slate-700 text-xs uppercase tracking-widest">Step 2: Select Use Cases</h5>
+                      <div className="space-y-3 text-sm text-slate-600">
+                        <p>On the <b>&quot;Use Cases&quot;</b> screen, click <b>&quot;Content management (5)&quot;</b> in the left filter, then select <b>both</b> of the following:</p>
+                        <div className="space-y-3 mt-4">
+                          {[
+                            { title: 'Manage messaging & content on Instagram', desc: 'Enables publishing posts, stories, responding to comments and DMs' },
+                            { title: 'Manage everything on your Page', desc: 'Required to enumerate all your Pages/properties under one Business Manager login' }
+                          ].map((item, i) => (
+                            <div key={i} className="flex items-start space-x-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                              <CheckCheck size={18} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-black text-emerald-900 text-xs uppercase">{item.title}</p>
+                                <p className="text-xs text-emerald-700 mt-1">{item.desc}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex space-x-3">
+                        <button onClick={() => setMetaWizardStep(0)} className="px-5 py-3 border border-slate-200 rounded-xl font-black text-xs text-slate-500 hover:bg-slate-50 transition">Back</button>
+                        <button onClick={() => setMetaWizardStep(2)} className="flex-1 py-3 bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition flex items-center justify-center space-x-2">
+                          <span>Use Cases Selected &mdash; Next</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 2 — Business */}
+                  {metaWizardStep === 2 && (
+                    <div className="space-y-6">
+                      <h5 className="font-black text-slate-700 text-xs uppercase tracking-widest">Step 3: Connect Business Portfolio</h5>
+                      <div className="space-y-3 text-sm text-slate-600">
+                        <p>On the <b>&quot;Business&quot;</b> screen, select your <b>verified business portfolio</b> &mdash; it shows &quot;Business verification complete.&quot;</p>
+                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start space-x-3 mt-4">
+                          <AlertCircle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-amber-800"><b>Do not</b> select a personal portfolio. Only a verified business portfolio unlocks third-party user data access needed for multi-property management.</p>
+                        </div>
+                        <p className="mt-2">Click through <b>Requirements</b> (no action needed) and <b>Overview</b>, then click <b>&quot;Go to dashboard.&quot;</b></p>
+                      </div>
+                      <div className="flex space-x-3">
+                        <button onClick={() => setMetaWizardStep(1)} className="px-5 py-3 border border-slate-200 rounded-xl font-black text-xs text-slate-500 hover:bg-slate-50 transition">Back</button>
+                        <button onClick={() => setMetaWizardStep(3)} className="flex-1 py-3 bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-700 transition flex items-center justify-center space-x-2">
+                          <span>App Created &mdash; Add Credentials</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3 — Enter Credentials */}
+                  {metaWizardStep === 3 && (
+                    <div className="space-y-6">
+                      <h5 className="font-black text-slate-700 text-xs uppercase tracking-widest">Step 4: Copy Your App Credentials</h5>
+                      <p className="text-sm text-slate-600">From your Meta App dashboard, your <b>App ID</b> is at the top of the page. Go to <b>App Settings &rarr; Basic</b> to reveal your <b>App Secret</b>.</p>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">App ID</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 4336246873255158"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                            value={localApiKeys.meta_app_id || ''}
+                            onChange={e => setLocalApiKeys({ ...localApiKeys, meta_app_id: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">App Secret</label>
+                          <div className="relative">
+                            <input
+                              type={visibleKeys['meta_secret'] ? 'text' : 'password'}
+                              placeholder="32-character hex string"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                              value={localApiKeys.meta_app_secret || ''}
+                              onChange={e => setLocalApiKeys({ ...localApiKeys, meta_app_secret: e.target.value })}
+                            />
+                            <button onClick={() => setVisibleKeys(prev => ({ ...prev, meta_secret: !prev['meta_secret'] }))} className="absolute right-4 top-3.5 text-slate-400 hover:text-slate-900 transition-colors">
+                              {visibleKeys['meta_secret'] ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-start space-x-3">
+                          <Lock size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                          <p className="text-[10px] text-slate-500 leading-relaxed">These credentials are stored encrypted in your Trellis vault. They are never exposed in the browser or committed to code.</p>
+                        </div>
+                      </div>
+                      <div className="flex space-x-3">
+                        <button onClick={() => setMetaWizardStep(2)} className="px-5 py-3 border border-slate-200 rounded-xl font-black text-xs text-slate-500 hover:bg-slate-50 transition">Back</button>
+                        <button
+                          onClick={handleMetaSave}
+                          disabled={!localApiKeys.meta_app_id || !localApiKeys.meta_app_secret || metaSaveStatus === 'saving'}
+                          className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {metaSaveStatus === 'saving' ? <RefreshCw size={14} className="animate-spin" /> : <Lock size={14} />}
+                          <span>{metaSaveStatus === 'saving' ? 'Saving to Vault...' : 'Save & Connect'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 4 — Connected */}
+                  {metaWizardStep === 4 && (
+                    <div className="space-y-6 text-center py-4">
+                      <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+                        <CheckCheck size={36} className="text-emerald-600" />
+                      </div>
+                      <div>
+                        <h5 className="font-black text-slate-800 text-lg">Meta App Connected</h5>
+                        <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">Your App ID and Secret are stored in the Trellis vault. The next step is to connect individual Instagram accounts per branch in the Social Hub.</p>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 text-left space-y-3">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Stored Credentials</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-600 font-bold">App ID</span>
+                          <span className="text-xs font-mono text-slate-800">{localApiKeys.meta_app_id}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-600 font-bold">App Secret</span>
+                          <span className="text-xs font-mono text-slate-500">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span>
+                        </div>
+                      </div>
+                      <button onClick={() => { setMetaWizardStep(3); setMetaSaveStatus('idle'); }} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-700 transition">
+                        Update Credentials
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* X / Twitter Placeholder */}
+              <div className="border-2 border-slate-100 rounded-3xl p-6 flex items-center justify-between opacity-50">
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center">
+                    <span className="text-white font-black text-lg">&#120143;</span>
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">X / Twitter</h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Twitter API v2</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-full">Coming Soon</span>
+              </div>
+
+              {/* LinkedIn Placeholder */}
+              <div className="border-2 border-slate-100 rounded-3xl p-6 flex items-center justify-between opacity-50">
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-700 flex items-center justify-center">
+                    <span className="text-white font-black text-sm">in</span>
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">LinkedIn</h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Marketing API</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-full">Coming Soon</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {activeTab !== 'integrations' && activeTab !== 'spokes' && (
+        {activeTab !== 'integrations' && activeTab !== 'spokes' && activeTab !== 'social' && (
           <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end items-center space-x-4">
             <button
               onClick={handleSave}

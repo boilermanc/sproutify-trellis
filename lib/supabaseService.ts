@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Profile, MarketingEvent, QueuedTask, FailedSync, Branch } from '../types';
+import { Profile, MarketingEvent, QueuedTask, FailedSync, Branch, Role } from '../types';
 
 /**
  * Fetch all profiles from the profiles table
@@ -127,6 +127,41 @@ export async function getTeamMembers(): Promise<Profile[]> {
 
   // Filter for profiles with a role assigned
   return (data || []).filter(profile => profile.role != null);
+}
+
+/**
+ * Invite a new team member. Calls the `invite-user` Edge Function,
+ * which (as service_role) creates the auth user, sends the invite
+ * email, and upserts the profile row with the assigned role.
+ * The caller must be a signed-in admin.
+ */
+export async function inviteUser(input: {
+  email: string;
+  first_name: string;
+  role: Role;
+}): Promise<{ success: boolean; error?: string }> {
+  const { data, error } = await supabase.functions.invoke('invite-user', {
+    body: input,
+  });
+
+  if (error) {
+    // Edge Function non-2xx responses surface here; try to read the body message
+    let message = error.message;
+    try {
+      const ctx = (error as { context?: Response }).context;
+      if (ctx && typeof ctx.json === 'function') {
+        const payload = await ctx.json();
+        if (payload?.error) message = payload.error;
+      }
+    } catch {
+      /* fall back to error.message */
+    }
+    console.error('Error inviting user:', message);
+    return { success: false, error: message };
+  }
+
+  if (data?.error) return { success: false, error: data.error };
+  return { success: true };
 }
 
 /**
