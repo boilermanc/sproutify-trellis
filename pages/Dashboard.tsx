@@ -165,7 +165,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     const platformCounts: Record<string, number> = {};
     posts.forEach(p => Object.keys(p.versions || {}).forEach(plat => { platformCounts[plat] = (platformCounts[plat] || 0) + 1; }));
 
-    return { postedThisWeek, postedThisMonth, upcoming, todayPosts, platformCounts, total: posts.length };
+    // Reminders: due today (scheduled for today, not yet posted) + overdue (scheduled before today, never posted)
+    const dueToday = todayPosts.filter(p => p.status === 'scheduled').length;
+    const overduePosts = posts
+      .filter(p => p.status === 'scheduled' && p.scheduled_for && new Date(p.scheduled_for).getTime() < startOfToday)
+      .sort((a, b) => new Date(a.scheduled_for!).getTime() - new Date(b.scheduled_for!).getTime());
+
+    return { postedThisWeek, postedThisMonth, upcoming, todayPosts, platformCounts, total: posts.length, dueToday, overduePosts };
   }, [scheduledPosts]);
 
   const branchNameForPost = (branchId?: string): string => {
@@ -250,6 +256,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
 
   return (
     <div className="space-y-8 pb-10">
+
+      {/* Posting reminder nudge — due today + overdue */}
+      {(socialStats.dueToday > 0 || socialStats.overduePosts.length > 0) && (
+        <div className={`flex items-center justify-between gap-4 px-6 py-4 rounded-2xl border ${socialStats.overduePosts.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+          <div className="flex items-center gap-3">
+            <CalendarDays size={18} className={socialStats.overduePosts.length > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+            <span className="text-sm font-black text-slate-700">
+              {socialStats.dueToday > 0 && `${socialStats.dueToday} post${socialStats.dueToday !== 1 ? 's' : ''} due today`}
+              {socialStats.dueToday > 0 && socialStats.overduePosts.length > 0 && ' · '}
+              {socialStats.overduePosts.length > 0 && `${socialStats.overduePosts.length} overdue`}
+            </span>
+          </div>
+          <button onClick={() => onViewChange?.('social-hub')} className="flex items-center gap-1.5 text-xs font-black text-slate-600 hover:text-emerald-700 uppercase tracking-wider shrink-0">
+            Review <ArrowRight size={14} />
+          </button>
+        </div>
+      )}
 
       {/* High-Action Alert Strip */}
       {pendingApprovalsCount > 0 && (
@@ -431,6 +454,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                     </span>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Overdue */}
+            {socialStats.overduePosts.length > 0 && (
+              <div className="border-t border-slate-100 pt-5 mb-1">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle size={16} className="text-amber-600" />
+                  <h4 className="text-xs font-black text-amber-700 uppercase tracking-widest">Overdue</h4>
+                  <span className="text-[10px] font-bold text-slate-400">{socialStats.overduePosts.length} past their date</span>
+                </div>
+                <div className="space-y-2">
+                  {socialStats.overduePosts.slice(0, 5).map(post => {
+                    const date = new Date(post.scheduled_for!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    const plats = Object.keys(post.versions || {});
+                    return (
+                      <div key={post.id} className="flex items-center gap-3 p-3 rounded-2xl border bg-amber-50 border-amber-200">
+                        <span className="text-[10px] font-black text-amber-600 w-12 text-center">{date}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-700">{branchNameForPost(post.branch_id)}</span>
+                            <div className="flex gap-1">{plats.map(plat => { const Icon = PLATFORM_ICONS[plat]; return Icon ? <Icon key={plat} size={12} className="text-slate-400" /> : null; })}</div>
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">{post.base_content}</p>
+                        </div>
+                        <button onClick={() => markPosted(post.id)} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-600 transition shrink-0">Mark posted</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {socialStats.overduePosts.length > 5 && <p className="text-[10px] font-bold text-slate-400 mt-2">+{socialStats.overduePosts.length - 5} more — reschedule in Social Hub.</p>}
               </div>
             )}
 
