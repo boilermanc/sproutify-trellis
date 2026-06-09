@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, PlatformPublishResult, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig } from '../types';
+import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
-import { publishToSocial, updateSignalStatus, linkProfileToSocial } from '../services/socialService';
+import { updateSignalStatus, linkProfileToSocial } from '../services/socialService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
   Sparkles, Send,
@@ -13,7 +13,7 @@ import {
   Target, Settings2, CalendarDays, LayoutGrid, List, X, Check,
   History, Ban, RotateCcw, ChevronLeft, ChevronRight,
   AlertTriangle, ShieldCheck, Mail, Smartphone, Eye,
-  Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info
+  Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info, Copy
 } from 'lucide-react';
 
 interface SocialHubProps {
@@ -101,11 +101,41 @@ const generateTestSignal = (branchId?: string | null): SocialActivity => ({
 
 const PIPELINE_STORAGE_KEY = 'trellis_social_pipeline';
 
+type Recurrence = 'none' | 'weekly' | 'monthly';
+
+// Format a Date as a datetime-local input value (local time, no timezone suffix)
+const toLocalInput = (d: Date): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// Default schedule slot: tomorrow at 9:00am local
+const defaultScheduleAt = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return toLocalInput(d);
+};
+
+// Expand a start date + cadence into N ISO timestamps
+const buildScheduleDates = (startIso: string, recurrence: Recurrence, count: number): string[] => {
+  const start = new Date(startIso);
+  const n = recurrence === 'none' ? 1 : Math.max(1, Math.min(count, 52));
+  const dates: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(start);
+    if (recurrence === 'weekly') d.setDate(d.getDate() + i * 7);
+    else if (recurrence === 'monthly') d.setMonth(d.getMonth() + i);
+    dates.push(d.toISOString());
+  }
+  return dates;
+};
+
 const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle }) => {
   const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline'>('lab');
   const [baseContent, setBaseContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [activeDraft, setActiveDraft] = useState<DraftPost | null>(null);
+  const [activeDrafts, setActiveDrafts] = useState<DraftPost[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<'idle' | 'reviewing'>('idle');
   const [inboundQueue, setInboundQueue] = useState<DraftPost[]>([]);
   const [archivedPosts, setArchivedPosts] = useState<DraftPost[]>(() => {
@@ -114,11 +144,16 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       return stored ? JSON.parse(stored).archived || [] : [];
     } catch { return []; }
   });
-  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
 
-  // Phase 3: Publish state
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishResults, setPublishResults] = useState<Record<string, PlatformPublishResult[]>>({});
+  // Content-only mode: which platforms to generate variants for (no publishing — export to Meta Business Suite)
+  const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(['facebook', 'instagram']);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Scheduling controls (content-only: drafts land on the calendar, not published)
+  const [scheduleAt, setScheduleAt] = useState<string>(() => defaultScheduleAt());
+  const [recurrence, setRecurrence] = useState<Recurrence>('none');
+  const [recurrenceCount, setRecurrenceCount] = useState<number>(4);
 
   // Queue filters
   const [queuePlatformFilter, setQueuePlatformFilter] = useState<SocialPlatform | 'all'>('all');
@@ -156,20 +191,22 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   // Auto-select first branch
   useEffect(() => {
-    if (!selectedBranchId && availableBranches.length > 0) {
-      setSelectedBranchId(availableBranches[0].id);
+    if (selectedBranchIds.length === 0 && availableBranches.length > 0) {
+      setSelectedBranchIds([availableBranches[0].id]);
     }
-  }, [availableBranches, selectedBranchId]);
+  }, [availableBranches, selectedBranchIds]);
 
-  const selectedBranch = useMemo(() =>
-    branches?.find(b => b.id === selectedBranchId) || null,
-    [branches, selectedBranchId]
+  // Brands selected for content fan-out (one draft generated per brand)
+  const selectedBranches = useMemo(() =>
+    (branches || []).filter(b => selectedBranchIds.includes(b.id)),
+    [branches, selectedBranchIds]
   );
 
-  const selectedBranchAccounts = useMemo(() =>
-    selectedBranchId && branchSocialAccounts?.[selectedBranchId] ? branchSocialAccounts[selectedBranchId] : [],
-    [selectedBranchId, branchSocialAccounts]
-  );
+  const toggleBranch = (branchId: string) => {
+    setSelectedBranchIds(prev =>
+      prev.includes(branchId) ? prev.filter(id => id !== branchId) : [...prev, branchId]
+    );
+  };
 
   // Queue filtered signals
   const filteredSignals = useMemo(() => {
@@ -295,7 +332,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       if (!branchPlatforms[e.branch_id]) branchPlatforms[e.branch_id] = new Set();
       branchPlatforms[e.branch_id].add(e.channel);
     });
-    const socialChannels = ['instagram', 'x', 'linkedin'];
+    const socialChannels = ['facebook', 'instagram', 'x', 'linkedin'];
     Object.entries(branchPlatforms).forEach(([branchId, platforms]) => {
       socialChannels.forEach(ch => {
         if (!platforms.has(ch)) {
@@ -425,17 +462,11 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setIsGenerating(true);
 
     try {
-      const platformKeys: string[] = selectedBranchAccounts.length > 0
-        ? selectedBranchAccounts.map(a => a.platform as string)
-        : ['instagram', 'x', 'linkedin'];
+      const platformKeys: string[] = selectedPlatforms.length > 0
+        ? (selectedPlatforms as string[])
+        : ['facebook', 'instagram'];
       const uniquePlatforms: string[] = Array.from(new Set(platformKeys));
       const platformList = uniquePlatforms.map(p => SOCIAL_PLATFORM_META[p]?.label || p).join(', ');
-
-      const branchName = selectedBranch?.name || 'brand';
-      const tone = selectedBranch?.tone || 'friendly';
-      const keywords = (selectedBranch?.brand_keywords || []).join(', ');
-
-      const prompt = `TASK: Brand Broadcast for ${branchName}. VOICE: ${tone}. ${keywords ? `KEYWORDS: ${keywords}. ` : ''}SEED: "${promptText}". Generate variants for ${platformList}. Return JSON.`;
 
       const schemaProperties: Record<string, any> = {};
       uniquePlatforms.forEach(p => {
@@ -445,120 +476,99 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       const geminiKey = apiKeys?.gemini_api_key;
       if (!geminiKey) { addToast?.('Gemini API key not configured. Set it in Settings.', 'error'); setIsGenerating(false); return; }
       const ai = new GoogleGenAI({ apiKey: geminiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: { type: Type.OBJECT, properties: schemaProperties, required: uniquePlatforms },
-        },
-      });
 
-      const result = JSON.parse(response.text || "{}");
-      setActiveDraft({
-        id: `lab_${Date.now()}`,
-        branch_id: selectedBranchId || undefined,
-        base_content: promptText,
-        versions: result,
-        status: 'drafting',
-        created_at: new Date().toISOString(),
-      });
-      setWorkflowStatus('reviewing');
+      // Fan out: one draft per selected brand (or a single generic draft if none selected)
+      const targetBranches = selectedBranches.length > 0 ? selectedBranches : [null];
+      const drafts: DraftPost[] = [];
+
+      for (const branch of targetBranches) {
+        const branchName = branch?.name || 'brand';
+        const tone = branch?.tone || 'friendly';
+        const keywords = (branch?.brand_keywords || []).join(', ');
+        const prompt = `TASK: Brand Broadcast for ${branchName}. VOICE: ${tone}. ${keywords ? `KEYWORDS: ${keywords}. ` : ''}SEED: "${promptText}". Generate variants for ${platformList}. Return JSON.`;
+
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: { type: Type.OBJECT, properties: schemaProperties, required: uniquePlatforms },
+            },
+          });
+          const result = JSON.parse(response.text || "{}");
+          drafts.push({
+            id: `lab_${Date.now()}_${branch?.id || 'generic'}`,
+            branch_id: branch?.id || undefined,
+            base_content: promptText,
+            versions: result,
+            status: 'drafting',
+            created_at: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.error(e);
+          addToast?.(`Content generation failed for ${branchName}.`, 'error');
+        }
+      }
+
+      if (drafts.length > 0) {
+        setActiveDrafts(drafts);
+        setWorkflowStatus('reviewing');
+      }
     } catch (error) {
       console.error(error);
     } finally { setIsGenerating(false); }
   };
 
-  const handleQuickApprove = (draft: DraftPost) => {
-    const newScheduled: DraftPost = { ...draft, status: 'scheduled', scheduled_for: new Date(Date.now() + 86400000).toISOString() };
-    setScheduledPosts(prev => [newScheduled, ...prev]);
-    setInboundQueue(prev => prev.filter(p => p.id !== draft.id));
-    if (activeDraft?.id === draft.id) {
-      setActiveDraft(null);
-      setWorkflowStatus('idle');
-    }
+  // Schedule one or more drafts onto the Content Calendar, expanding each by the chosen cadence.
+  const scheduleDrafts = (drafts: DraftPost[]) => {
+    if (drafts.length === 0) return;
+    const startIso = scheduleAt ? new Date(scheduleAt).toISOString() : new Date(Date.now() + 86400000).toISOString();
+    const dates = buildScheduleDates(startIso, recurrence, recurrenceCount);
 
-    const primaryPlatform = Object.keys(draft.versions)[0] || 'instagram';
+    const newPosts: DraftPost[] = [];
+    drafts.forEach(draft => {
+      dates.forEach((iso, i) => {
+        newPosts.push({
+          ...draft,
+          id: i === 0 ? draft.id : `${draft.id}_r${i}`,
+          status: 'scheduled',
+          scheduled_for: iso,
+        });
+      });
+    });
+
+    setScheduledPosts(prev => [...newPosts, ...prev]);
+
+    const scheduledIds = new Set(drafts.map(d => d.id));
+    setInboundQueue(prev => prev.filter(p => !scheduledIds.has(p.id)));
+    const remaining = activeDrafts.filter(p => !scheduledIds.has(p.id));
+    setActiveDrafts(remaining);
+    if (remaining.length === 0) setWorkflowStatus('idle');
+
+    const primaryPlatform = Object.keys(drafts[0].versions)[0] || 'instagram';
     const event: MarketingEvent = {
       id: `soc_${Date.now()}`,
       profile_id: 'SYSTEM',
       event_type: 'social_intent',
       source: primaryPlatform as any,
-      payload: { content: draft.base_content, branch_id: draft.branch_id },
+      payload: { brands: drafts.length, scheduled_count: newPosts.length },
       created_at: new Date().toISOString()
     };
     setEvents(prev => [event, ...prev]);
+    addToast?.(`Scheduled ${newPosts.length} post${newPosts.length > 1 ? 's' : ''}${drafts.length > 1 ? ` across ${drafts.length} brands` : ''} onto the calendar.`, 'success');
     setActiveTab('pipeline');
   };
 
-  const handlePublishNow = async (draft: DraftPost) => {
-    if (!draft.branch_id) {
-      handleQuickApprove(draft);
-      return;
-    }
+  const handleQuickApprove = (draft: DraftPost) => scheduleDrafts([draft]);
+  const handleApproveAll = () => scheduleDrafts(activeDrafts);
 
-    const branchAccounts = branchSocialAccounts?.[draft.branch_id] || [];
-    const connectedPlatforms = branchAccounts
-      .filter(acc => acc.is_connected && draft.versions[acc.platform])
-      .map(acc => acc.platform as SocialPlatform);
-
-    if (connectedPlatforms.length === 0) {
-      handleQuickApprove(draft);
-      return;
-    }
-
-    setIsPublishing(true);
-
-    const content: Record<string, string> = {};
-    connectedPlatforms.forEach(p => {
-      content[p] = draft.versions[p];
-    });
-
-    const result = await publishToSocial(draft.branch_id, connectedPlatforms, content);
-
-    setPublishResults(prev => ({ ...prev, [draft.id]: result.results }));
-
-    const anySuccess = result.results.some(r => r.success);
-    const publishedDraft: DraftPost = {
-      ...draft,
-      status: anySuccess ? 'published' : 'scheduled',
-      published_at: anySuccess ? new Date().toISOString() : undefined,
-      publish_results: result.results,
-    };
-
-    setScheduledPosts(prev => {
-      const existing = prev.findIndex(p => p.id === draft.id);
-      if (existing >= 0) {
-        return prev.map(p => p.id === draft.id ? publishedDraft : p);
-      }
-      return [publishedDraft, ...prev];
-    });
-
-    if (activeDraft?.id === draft.id) {
-      setActiveDraft(null);
-      setWorkflowStatus('idle');
-    }
-
-    const event: MarketingEvent = {
-      id: `soc_pub_${Date.now()}`,
-      profile_id: 'SYSTEM',
-      event_type: 'social_publish',
-      source: connectedPlatforms[0] as any,
-      payload: {
-        branch_id: draft.branch_id,
-        platforms: connectedPlatforms,
-        results: result.results,
-      },
-      created_at: new Date().toISOString(),
-    };
-    setEvents(prev => [event, ...prev]);
-
-    setIsPublishing(false);
-    setActiveTab('pipeline');
+  const updateDraftVersion = (draftId: string, platform: string, value: string) => {
+    setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, versions: { ...d.versions, [platform]: value } } : d));
   };
 
   const handleEditFromPipeline = (draft: DraftPost) => {
-    setActiveDraft(draft);
+    setActiveDrafts([draft]);
     setWorkflowStatus('reviewing');
     setActiveTab('lab');
   };
@@ -568,11 +578,47 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setArchivedPosts(prev => [{ ...draft, status: 'archived' }, ...prev]);
   };
 
+  // ─── Content-only export: copy posts to paste into Meta Business Suite / native apps ───
+  const togglePlatform = (platform: SocialPlatform) => {
+    setSelectedPlatforms(prev =>
+      prev.includes(platform) ? prev.filter(p => p !== platform) : [...prev, platform]
+    );
+  };
+
+  const copyText = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(curr => (curr === key ? null : curr)), 1800);
+      addToast?.('Copied to clipboard.', 'success');
+    } catch {
+      addToast?.('Could not copy — check browser clipboard permissions.', 'error');
+    }
+  };
+
+  const draftToText = (draft: DraftPost): string => {
+    const brandName = getBranchForDraft(draft)?.name || 'Brand';
+    const block = Object.entries(draft.versions)
+      .map(([plat, text]) => `── ${SOCIAL_PLATFORM_META[plat]?.label || plat} ──\n${text}`)
+      .join('\n\n');
+    return `${brandName}\n\n${block}`;
+  };
+
+  const copyAllVariants = (draft: DraftPost) => {
+    copyText(draftToText(draft), `all_${draft.id}`);
+  };
+
+  // Copy every brand's content in one block — for pasting a full batch into Meta Business Suite
+  const copyAllBrands = () => {
+    const block = activeDrafts.map(draftToText).join('\n\n══════════════════════\n\n');
+    copyText(block, 'all_brands');
+  };
+
   // ─── Queue Action Handlers ────────────────────────────────────────
 
   const handleRespondToSignal = (signal: SocialActivity) => {
     setBaseContent(signal.content);
-    if (signal.branch_id) setSelectedBranchId(signal.branch_id);
+    if (signal.branch_id) setSelectedBranchIds([signal.branch_id]);
     setSocialSignals(prev => prev.map(s => s.id === signal.id ? { ...s, status: 'actioned' as const, actioned_at: new Date().toISOString() } : s));
     updateSignalStatus(signal.id, 'actioned');
     setActiveTab('lab');
@@ -647,9 +693,9 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   };
 
   const allPipelinePosts = useMemo(() => {
-    const drafts = activeDraft && activeDraft.status === 'drafting' ? [activeDraft] : [];
+    const drafts = activeDrafts.filter(d => d.status === 'drafting');
     return [...drafts, ...scheduledPosts, ...archivedPosts];
-  }, [activeDraft, scheduledPosts, archivedPosts]);
+  }, [activeDrafts, scheduledPosts, archivedPosts]);
 
   const conflictCount = calendarAlerts.filter(a => a.type === 'conflict').length;
   const gapCount = calendarAlerts.filter(a => a.type === 'gap').length;
@@ -674,32 +720,26 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
           {activeTab === 'lab' && (
             <div className="space-y-8 animate-in fade-in duration-500">
               {availableBranches.length > 0 && (
-                <div className="flex items-center gap-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Branch</label>
-                  <div className="flex items-center gap-3 flex-1">
-                    <select
-                      value={selectedBranchId || ''}
-                      onChange={(e) => setSelectedBranchId(e.target.value || null)}
-                      className="px-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500 shadow-sm"
-                    >
-                      {availableBranches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                    {selectedBranchAccounts.length > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        {selectedBranchAccounts.map((acc) => {
-                          const Icon = getPlatformIcon(acc.platform);
-                          return (
-                            <span key={`${acc.platform}-${acc.handle}`} className={`p-1.5 rounded-lg bg-white border border-slate-200 shadow-sm ${PLATFORM_COLORS[acc.platform] || 'text-slate-500'}`}>
-                              <Icon size={14} />
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {selectedBranchAccounts.length === 0 && selectedBranch && (
-                      <span className="text-[10px] text-slate-400 font-bold">No social accounts configured</span>
+                <div className="flex items-start gap-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-2.5">Brands</label>
+                  <div className="flex flex-wrap items-center gap-2 flex-1">
+                    {availableBranches.map(b => {
+                      const active = selectedBranchIds.includes(b.id);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => toggleBranch(b.id)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${active ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+                        >
+                          <span className="w-2.5 h-2.5 rounded" style={{ backgroundColor: b.primary_color || '#6b7280' }} />
+                          {b.name}
+                          {active && <Check size={12} className="text-emerald-400" />}
+                        </button>
+                      );
+                    })}
+                    {selectedBranchIds.length > 1 && (
+                      <span className="text-[10px] font-black text-emerald-600 ml-1 uppercase tracking-wider">Fan-out · {selectedBranchIds.length} brands</span>
                     )}
                   </div>
                 </div>
@@ -709,89 +749,119 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                 <div className={`bg-white p-12 rounded-[3.5rem] border border-slate-200 shadow-sm relative ${isGenerating ? 'opacity-40' : ''}`}>
                   {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20 rounded-[3.5rem]"><Loader2 className="animate-spin text-emerald-600" size={56} /></div>}
                   <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />Strategy Lab</h3>
-                  <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-8 text-xl font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[220px] shadow-inner mb-10" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
-                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating} className="w-full py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-xl flex items-center justify-center space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Generate multi-platform variants</span></button>
+                  <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-8 text-xl font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[220px] shadow-inner mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
+                  <div className="flex flex-wrap items-center gap-2 mb-10">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Platforms</span>
+                    {(['facebook', 'instagram', 'x', 'linkedin'] as SocialPlatform[]).map(p => {
+                      const Icon = getPlatformIcon(p);
+                      const active = selectedPlatforms.includes(p);
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => togglePlatform(p)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${active ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}
+                        >
+                          <Icon size={14} className={active ? 'text-emerald-400' : ''} />
+                          {SOCIAL_PLATFORM_META[p]?.label || p}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-xl flex items-center justify-center space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Generate multi-platform variants</span></button>
                 </div>
-              ) : activeDraft && (
-                <div className="bg-white p-10 rounded-[3.5rem] border-4 border-emerald-500 shadow-2xl animate-in slide-in-from-bottom-8 duration-700">
-                  <div className="flex justify-between items-center mb-10 pb-6 border-b border-slate-100">
+              ) : activeDrafts.length > 0 && (
+                <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
+                  {/* Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
                     <div>
-                      <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Reviewing Draft</h3>
-                      {selectedBranch && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="w-3 h-3 rounded" style={{ backgroundColor: selectedBranch.primary_color }} />
-                          <span className="text-xs font-bold text-slate-500">{selectedBranch.name}</span>
-                        </div>
-                      )}
+                      <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Reviewing {activeDrafts.length} Draft{activeDrafts.length > 1 ? 's' : ''}</h3>
+                      <p className="text-[11px] font-bold text-slate-400 mt-1">One per brand — edit, schedule, or copy each below.</p>
                     </div>
-                    <button onClick={() => { setWorkflowStatus('idle'); setActiveDraft(null); }} className="p-3 text-slate-300 hover:text-rose-500"><X size={24} /></button>
-                  </div>
-                  <div className="space-y-8 mb-12">
-                    {Object.entries(activeDraft.versions).map(([plat, text]) => (
-                        <div key={plat}>
-                           <div className="flex items-center space-x-2 text-[10px] font-black uppercase text-slate-400 mb-2">
-                             {React.createElement(getPlatformIcon(plat), { size: 14 })}
-                             <span>{SOCIAL_PLATFORM_META[plat]?.label || plat} Strategy</span>
-                           </div>
-                           <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 text-sm font-medium" value={text} onChange={(e) => setActiveDraft({...activeDraft, versions: {...activeDraft.versions, [plat]: e.target.value}})} />
-                        </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-4">
-                    <button
-                      onClick={() => handleQuickApprove(activeDraft)}
-                      disabled={isPublishing}
-                      className="flex-1 py-7 bg-white border-2 border-slate-200 text-slate-800 rounded-[2.5rem] font-black text-xl flex items-center justify-center space-x-4 shadow-sm hover:border-emerald-500 hover:text-emerald-700 transition disabled:opacity-30"
-                    >
-                      <Check size={28} className="text-emerald-500" />
-                      <span>Approve Draft</span>
-                    </button>
-                    <button
-                      onClick={() => handlePublishNow(activeDraft)}
-                      disabled={isPublishing || !activeDraft.branch_id}
-                      className="flex-1 py-7 bg-slate-900 text-white rounded-[2.5rem] font-black text-xl flex items-center justify-center space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-30"
-                    >
-                      {isPublishing ? (
-                        <Loader2 size={28} className="animate-spin text-emerald-400" />
-                      ) : (
-                        <Rocket size={28} className="text-emerald-400" />
-                      )}
-                      <span>{isPublishing ? 'Publishing...' : 'Publish Now'}</span>
-                    </button>
+                    <button onClick={() => { setWorkflowStatus('idle'); setActiveDrafts([]); }} className="p-3 text-slate-300 hover:text-rose-500"><X size={24} /></button>
                   </div>
 
-                  {publishResults[activeDraft.id] && (
-                    <div className="mt-6 space-y-2">
-                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Publish Results</h4>
-                      {publishResults[activeDraft.id].map((r) => {
-                        const PIcon = getPlatformIcon(r.platform);
-                        return (
-                          <div key={r.platform} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${r.success ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                            <PIcon size={16} className={r.success ? 'text-emerald-600' : 'text-red-500'} />
-                            <span className="text-sm font-bold flex-1">
-                              {SOCIAL_PLATFORM_META[r.platform]?.label || r.platform}
-                            </span>
-                            {r.success ? (
-                              <div className="flex items-center gap-2">
-                                <CheckCircle2 size={14} className="text-emerald-600" />
-                                <span className="text-xs font-bold text-emerald-700">Published</span>
-                                {r.post_url && (
-                                  <a href={r.post_url} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:text-emerald-800">
-                                    <ExternalLink size={12} />
-                                  </a>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <AlertCircle size={14} className="text-red-500" />
-                                <span className="text-xs font-bold text-red-600">{r.error || 'Failed'}</span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                  {/* Shared scheduling controls + batch actions */}
+                  <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                    <div className="flex flex-wrap items-end gap-4 mb-5 p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">First post</label>
+                        <input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500 shadow-sm" />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Repeat</label>
+                        <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500 shadow-sm">
+                          <option value="none">One-time</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+                      {recurrence !== 'none' && (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">How many</label>
+                          <input type="number" min={1} max={52} value={recurrenceCount} onChange={(e) => setRecurrenceCount(Math.max(1, Math.min(52, parseInt(e.target.value) || 1)))} className="w-24 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500 shadow-sm" />
+                        </div>
+                      )}
+                      <p className="text-[11px] font-bold text-slate-400 flex-1 min-w-[180px]">
+                        {recurrence === 'none'
+                          ? `Schedules ${activeDrafts.length} post${activeDrafts.length > 1 ? 's (one per brand)' : ''} on the calendar.`
+                          : `Creates ${recurrenceCount} ${recurrence} posts per brand (${recurrenceCount * activeDrafts.length} total).`}
+                      </p>
                     </div>
-                  )}
+                    <div className="flex flex-wrap gap-4">
+                      <button onClick={handleApproveAll} className="flex-1 min-w-[200px] py-6 bg-white border-2 border-slate-200 text-slate-800 rounded-[2rem] font-black text-lg flex items-center justify-center gap-3 shadow-sm hover:border-emerald-500 hover:text-emerald-700 transition">
+                        <CalendarDays size={24} className="text-emerald-500" />
+                        <span>Schedule All{activeDrafts.length > 1 ? ` (${activeDrafts.length} brands)` : ''}</span>
+                      </button>
+                      <button onClick={copyAllBrands} className="flex-1 min-w-[200px] py-6 bg-slate-900 text-white rounded-[2rem] font-black text-lg flex items-center justify-center gap-3 shadow-2xl hover:bg-emerald-600 transition">
+                        {copiedKey === 'all_brands' ? <Check size={24} className="text-emerald-400" /> : <Copy size={24} className="text-emerald-400" />}
+                        <span>{copiedKey === 'all_brands' ? 'Copied All Brands' : 'Copy All for Meta Business'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Per-brand draft cards */}
+                  {activeDrafts.map(draft => {
+                    const brand = getBranchForDraft(draft);
+                    return (
+                      <div key={draft.id} className="bg-white p-8 rounded-[3rem] border-2 border-slate-200 shadow-lg">
+                        <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                          <div className="flex items-center gap-2">
+                            {brand && <div className="w-3 h-3 rounded" style={{ backgroundColor: brand.primary_color }} />}
+                            <span className="text-sm font-black text-slate-700 uppercase tracking-tight">{brand?.name || 'Brand'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => copyAllVariants(draft)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
+                              {copiedKey === `all_${draft.id}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy brand</>}
+                            </button>
+                            <button onClick={() => handleQuickApprove(draft)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-wider transition">
+                              <CalendarDays size={12} /> Schedule
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-6">
+                          {Object.entries(draft.versions).map(([plat, rawText]) => {
+                            const text = String(rawText);
+                            return (
+                              <div key={plat}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center space-x-2 text-[10px] font-black uppercase text-slate-400">
+                                    {React.createElement(getPlatformIcon(plat), { size: 14 })}
+                                    <span>{SOCIAL_PLATFORM_META[plat]?.label || plat}</span>
+                                    <span className="text-slate-300 normal-case font-bold">· {text.length} chars</span>
+                                  </div>
+                                  <button type="button" onClick={() => copyText(text, `${draft.id}_${plat}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
+                                    {copiedKey === `${draft.id}_${plat}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+                                  </button>
+                                </div>
+                                <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 text-sm font-medium" value={text} onChange={(e) => updateDraftVersion(draft.id, plat, e.target.value)} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -832,7 +902,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   <Eye size={12} className="inline mr-1" />Dismissed
                 </button>
                 <button
-                  onClick={() => setSocialSignals(prev => [generateTestSignal(selectedBranchId), ...prev])}
+                  onClick={() => setSocialSignals(prev => [generateTestSignal(selectedBranchIds[0] || null), ...prev])}
                   className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition"
                 >
                   <Plus size={12} className="inline mr-1" />Test Signal
