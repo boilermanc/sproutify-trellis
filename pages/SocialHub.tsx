@@ -149,6 +149,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       return stored ? JSON.parse(stored).archived || [] : [];
     } catch { return []; }
   });
+  const [publishedPosts, setPublishedPosts] = useState<DraftPost[]>(() => {
+    try {
+      const stored = localStorage.getItem(PIPELINE_STORAGE_KEY);
+      return stored ? JSON.parse(stored).published || [] : [];
+    } catch { return []; }
+  });
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
 
   // Content-only mode: which platforms to generate variants for (no publishing — export to Meta Business Suite)
@@ -186,13 +192,14 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [showCompliancePanel, setShowCompliancePanel] = useState(false);
   const [approvalNote, setApprovalNote] = useState('');
 
-  // Persist archived posts to localStorage
+  // Persist archived + published posts to localStorage
   useEffect(() => {
     localStorage.setItem(PIPELINE_STORAGE_KEY, JSON.stringify({
       scheduled: scheduledPosts,
       archived: archivedPosts,
+      published: publishedPosts,
     }));
-  }, [scheduledPosts, archivedPosts]);
+  }, [scheduledPosts, archivedPosts, publishedPosts]);
 
   // Bring the Day Detail panel into view when a calendar day is clicked
   useEffect(() => {
@@ -689,8 +696,35 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setPublishConfirmId(null);
 
     if (result.ok) {
+      const publishedAt = new Date().toISOString();
+
+      // Move the draft out of the active list (can't be re-published by mistake)
+      // and into the published record, mirroring the archivedPosts pattern.
+      const publishedDraft: DraftPost = {
+        ...draft,
+        status: 'published',
+        published_at: publishedAt,
+        publish_results: [{ platform: 'instagram', success: true, post_id: result.postId }],
+      };
+      setActiveDrafts(prev => prev.filter(d => d.id !== draft.id));
+      setPublishedPosts(prev => [publishedDraft, ...prev]);
+      if (activeDrafts.length <= 1) setWorkflowStatus('idle');
+
+      // Marketing event so the publish shows in the timeline/reports
+      // (same pattern as the social_intent event in scheduleDrafts).
+      const event: MarketingEvent = {
+        id: `pub_${Date.now()}`,
+        profile_id: 'SYSTEM',
+        event_type: 'social_publish',
+        source: 'instagram' as any,
+        payload: { branch_id: draft.branch_id, post_id: result.postId, caption, published_at: publishedAt },
+        created_at: publishedAt,
+      };
+      setEvents(prev => [event, ...prev]);
+
       addToast?.(`Published to Instagram ✓${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
     } else {
+      // Leave the draft in place so the user can retry.
       addToast?.(`Instagram publish failed: ${result.error}`, 'error');
     }
   };
@@ -814,8 +848,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   const allPipelinePosts = useMemo(() => {
     const drafts = activeDrafts.filter(d => d.status === 'drafting');
-    return [...drafts, ...scheduledPosts, ...archivedPosts];
-  }, [activeDrafts, scheduledPosts, archivedPosts]);
+    return [...drafts, ...scheduledPosts, ...publishedPosts, ...archivedPosts];
+  }, [activeDrafts, scheduledPosts, publishedPosts, archivedPosts]);
 
   const conflictCount = calendarAlerts.filter(a => a.type === 'conflict').length;
   const gapCount = calendarAlerts.filter(a => a.type === 'gap').length;
