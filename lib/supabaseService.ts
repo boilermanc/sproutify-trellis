@@ -493,6 +493,81 @@ export async function fetchBranchDistribution(): Promise<Record<string, number>>
 }
 
 /**
+ * A published social post, normalized from a marketing_events row
+ * with event_type='social_publish'. image_url and post_id may be null
+ * (older rows predate the image_url payload field).
+ */
+export interface PublishedPost {
+  id: string;
+  source: string;            // platform: 'instagram' | 'facebook' | ...
+  branch_id: string | null;
+  post_id: string | null;
+  caption: string;
+  image_url: string | null;
+  published_at: string | null;
+  created_at: string;
+  permalink: string | null;  // public link if one can be built reliably, else null
+}
+
+/**
+ * Build a public permalink for a published post.
+ * - facebook: post_id is already in `pageid_postid` form → https://www.facebook.com/{post_id}
+ * - instagram: there is no reliable public URL derivable from the post_id alone → null
+ *   (the UI shows the post_id as text instead of a broken link).
+ */
+function buildPostPermalink(source: string, postId: string | null): string | null {
+  if (!postId) return null;
+  if (source === 'facebook') return `https://www.facebook.com/${postId}`;
+  return null;
+}
+
+/**
+ * Fetch all published social posts from marketing_events (event_type='social_publish'),
+ * newest first. Returns a clean, normalized shape. Never throws — returns [] on error.
+ */
+export async function getPublishedPosts(): Promise<PublishedPost[]> {
+  try {
+    const { data, error } = await supabase
+      .from('marketing_events')
+      .select('*')
+      .eq('event_type', 'social_publish')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching published posts:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => {
+      // payload is jsonb (object); be defensive in case a row stored it as a string.
+      let payload: any = row.payload;
+      if (typeof payload === 'string') {
+        try { payload = JSON.parse(payload); } catch { payload = {}; }
+      }
+      if (!payload || typeof payload !== 'object') payload = {};
+
+      const source: string = row.source || payload.platform || 'unknown';
+      const postId: string | null = payload.post_id ?? null;
+
+      return {
+        id: row.id,
+        source,
+        branch_id: payload.branch_id ?? null,
+        post_id: postId,
+        caption: payload.caption || '',
+        image_url: payload.image_url ?? null,
+        published_at: payload.published_at ?? row.created_at ?? null,
+        created_at: row.created_at,
+        permalink: buildPostPermalink(source, postId),
+      } as PublishedPost;
+    });
+  } catch (err) {
+    console.error('Error fetching published posts:', err);
+    return [];
+  }
+}
+
+/**
  * Fetch recent marketing events ordered by created_at desc
  */
 export async function fetchRecentEvents(limit: number = 10): Promise<MarketingEvent[]> {

@@ -4,7 +4,7 @@ import { Profile, MarketingEvent, MarketingTask, ViewState, Brand, Branch, Spoke
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
 import { MOCK_BRIEFING } from '../constants';
-import { fetchRecentEvents } from '../lib/supabaseService';
+import { fetchRecentEvents, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
 import { timeAgo, SOCIAL_PLATFORM_META, PLATFORM_ICONS } from '../utils';
 import { fetchBrandInsights, MetaInsights } from '../services/metaInsightsService';
@@ -59,6 +59,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
   // Dashboard data loading
   const [isLoading, setIsLoading] = useState(true);
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
+
+  // Real published-post history from marketing_events (event_type='social_publish').
+  // Drives the POSTED·7d / POSTED·30d counters and the "posted today" list.
+  const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
+  useEffect(() => {
+    let active = true;
+    getPublishedPosts()
+      .then(posts => { if (active) setPublishedPosts(posts); })
+      .catch(err => { console.error('Failed to load published posts:', err); /* leave counters at 0 */ });
+    return () => { active = false; };
+  }, []);
 
   // Recent orders (only thing Dashboard still fetches independently)
   const [recentOrders, setRecentOrders] = useState<NormalizedOrder[]>([]);
@@ -141,39 +152,48 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
     };
   }, [campaignHistory]);
 
-  // Social content stats — computed from the scheduled-posts pipeline
+  // Social content stats.
+  // - UPCOMING / overdue / due-today come from the scheduled-posts localStorage pipeline
+  //   (marketing_events has no future posts).
+  // - POSTED·7d / POSTED·30d and the "posted today" list come from real published-post
+  //   history in marketing_events (event_type='social_publish').
   const socialStats = useMemo(() => {
     const posts = scheduledPosts || [];
-    const now = Date.now();
+    const published = publishedPosts || [];
     const startOfToday = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
     const endOfToday = startOfToday + 86400000;
+    const now = Date.now();
     const weekAgo = now - 7 * 86400000;
     const monthAgo = now - 30 * 86400000;
-    const isPosted = (p: DraftPost) => p.status === 'published' && !!p.published_at;
 
-    const postedThisWeek = posts.filter(p => isPosted(p) && new Date(p.published_at!).getTime() >= weekAgo).length;
-    const postedThisMonth = posts.filter(p => isPosted(p) && new Date(p.published_at!).getTime() >= monthAgo).length;
+    // Real posted counts from marketing_events.
+    const pubTime = (p: PublishedPost) => new Date(p.published_at || p.created_at).getTime();
+    const postedThisWeek = published.filter(p => pubTime(p) >= weekAgo).length;
+    const postedThisMonth = published.filter(p => pubTime(p) >= monthAgo).length;
+
+    // Upcoming still reflects the scheduled (not-yet-published) pipeline.
     const upcoming = posts.filter(p => p.status === 'scheduled' && p.scheduled_for && new Date(p.scheduled_for).getTime() >= startOfToday).length;
 
-    const todayPosts = posts
-      .filter(p => {
-        const sched = p.scheduled_for ? new Date(p.scheduled_for).getTime() : null;
-        const pub = p.published_at ? new Date(p.published_at).getTime() : null;
-        return (sched !== null && sched >= startOfToday && sched < endOfToday) || (pub !== null && pub >= startOfToday && pub < endOfToday);
-      })
-      .sort((a, b) => new Date(a.scheduled_for || a.published_at || 0).getTime() - new Date(b.scheduled_for || b.published_at || 0).getTime());
+    // Today: scheduled-for-today (not yet posted, actionable) + real publishes today.
+    const scheduledToday = posts
+      .filter(p => p.status === 'scheduled' && p.scheduled_for && new Date(p.scheduled_for).getTime() >= startOfToday && new Date(p.scheduled_for).getTime() < endOfToday)
+      .sort((a, b) => new Date(a.scheduled_for!).getTime() - new Date(b.scheduled_for!).getTime());
+    const publishedToday = published
+      .filter(p => { const t = pubTime(p); return t >= startOfToday && t < endOfToday; })
+      .sort((a, b) => pubTime(a) - pubTime(b));
+    const todayCount = scheduledToday.length + publishedToday.length;
 
     const platformCounts: Record<string, number> = {};
     posts.forEach(p => Object.keys(p.versions || {}).forEach(plat => { platformCounts[plat] = (platformCounts[plat] || 0) + 1; }));
 
     // Reminders: due today (scheduled for today, not yet posted) + overdue (scheduled before today, never posted)
-    const dueToday = todayPosts.filter(p => p.status === 'scheduled').length;
+    const dueToday = scheduledToday.length;
     const overduePosts = posts
       .filter(p => p.status === 'scheduled' && p.scheduled_for && new Date(p.scheduled_for).getTime() < startOfToday)
       .sort((a, b) => new Date(a.scheduled_for!).getTime() - new Date(b.scheduled_for!).getTime());
 
-    return { postedThisWeek, postedThisMonth, upcoming, todayPosts, platformCounts, total: posts.length, dueToday, overduePosts };
-  }, [scheduledPosts]);
+    return { postedThisWeek, postedThisMonth, upcoming, scheduledToday, publishedToday, todayCount, platformCounts, total: posts.length, dueToday, overduePosts };
+  }, [scheduledPosts, publishedPosts]);
 
   const branchNameForPost = (branchId?: string): string => {
     if (!branchId) return 'Brand';
@@ -519,18 +539,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
               <div className="flex items-center gap-2 mb-3">
                 <CalendarDays size={16} className="text-emerald-600" />
                 <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">Today</h4>
-                <span className="text-[10px] font-bold text-slate-400">{socialStats.todayPosts.length} post{socialStats.todayPosts.length !== 1 ? 's' : ''}</span>
+                <span className="text-[10px] font-bold text-slate-400">{socialStats.todayCount} post{socialStats.todayCount !== 1 ? 's' : ''}</span>
               </div>
-              {socialStats.todayPosts.length === 0 ? (
-                <p className="text-xs font-bold text-slate-400 py-4 text-center bg-slate-50 rounded-2xl">Nothing scheduled for today.</p>
+              {socialStats.todayCount === 0 ? (
+                <p className="text-xs font-bold text-slate-400 py-4 text-center bg-slate-50 rounded-2xl">Nothing scheduled or posted today.</p>
               ) : (
                 <div className="space-y-2">
-                  {socialStats.todayPosts.map(post => {
-                    const posted = post.status === 'published';
-                    const time = new Date(post.scheduled_for || post.published_at || Date.now()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                  {/* Scheduled for today (not yet posted) — from the pipeline, still actionable */}
+                  {socialStats.scheduledToday.map(post => {
+                    const time = new Date(post.scheduled_for || Date.now()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                     const plats = Object.keys(post.versions || {});
                     return (
-                      <div key={post.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${posted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                      <div key={post.id} className="flex items-center gap-3 p-3 rounded-2xl border bg-white border-slate-200">
                         <span className="text-[10px] font-black text-slate-400 w-12 text-center">{time}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -542,15 +562,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, events, tasks, prof
                           </div>
                           <p className="text-[11px] text-slate-500 truncate">{post.base_content}</p>
                         </div>
-                        {posted ? (
-                          <button onClick={() => unmarkPosted(post.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition shrink-0" title="Click to undo">
-                            <CheckCircle2 size={12} /> Posted
-                          </button>
-                        ) : (
-                          <button onClick={() => markPosted(post.id)} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-600 transition shrink-0">
-                            Mark posted
-                          </button>
-                        )}
+                        <button onClick={() => markPosted(post.id)} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-600 transition shrink-0">
+                          Mark posted
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {/* Actually published today — from marketing_events (read-only) */}
+                  {socialStats.publishedToday.map(post => {
+                    const time = new Date(post.published_at || post.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                    const Icon = PLATFORM_ICONS[post.source];
+                    return (
+                      <div key={post.id} className="flex items-center gap-3 p-3 rounded-2xl border bg-emerald-50 border-emerald-200">
+                        <span className="text-[10px] font-black text-emerald-600 w-12 text-center">{time}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-slate-700">{branchNameForPost(post.branch_id ?? undefined)}</span>
+                            {Icon && <Icon size={12} className="text-slate-400" />}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">{post.caption || 'Published post'}</p>
+                        </div>
+                        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider shrink-0">
+                          <CheckCircle2 size={12} /> Posted
+                        </span>
                       </div>
                     );
                   })}

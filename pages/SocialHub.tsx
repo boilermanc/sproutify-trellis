@@ -5,7 +5,7 @@ import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
 import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook } from '../services/socialService';
-import { uploadSocialImage } from '../lib/supabaseService';
+import { uploadSocialImage, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
   Sparkles, Send,
@@ -14,7 +14,8 @@ import {
   Target, Settings2, CalendarDays, LayoutGrid, List, X, Check,
   History, Ban, RotateCcw, ChevronLeft, ChevronRight,
   AlertTriangle, ShieldCheck, Mail, Smartphone, Eye,
-  Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info, Copy, ImagePlus, Download
+  Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info, Copy, ImagePlus, Download,
+  BarChart3, Search, ArrowUpDown, Image as ImageIcon
 } from 'lucide-react';
 
 interface SocialHubProps {
@@ -137,7 +138,90 @@ const buildScheduleDates = (startIso: string, recurrence: Recurrence, count: num
 };
 
 const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle }) => {
-  const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline'>('lab');
+  const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline' | 'reports'>('lab');
+
+  // ─── Reports tab: published posts from marketing_events ─────────────
+  const [reportPosts, setReportPosts] = useState<PublishedPost[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+  const [reportsLoaded, setReportsLoaded] = useState(false);
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportPlatformFilter, setReportPlatformFilter] = useState<'all' | 'instagram' | 'facebook'>('all');
+  const [reportSortKey, setReportSortKey] = useState<'date' | 'platform' | 'branch'>('date');
+  const [reportSortDir, setReportSortDir] = useState<'asc' | 'desc'>('desc');
+  const [reportImgErrors, setReportImgErrors] = useState<Record<string, boolean>>({});
+
+  // Resolve a branch_id to a display name (falls back to the id).
+  const reportBranchName = (branchId: string | null): string => {
+    if (!branchId) return 'Unknown';
+    return branches?.find(b => b.id === branchId)?.name || branchId;
+  };
+
+  // Load published posts lazily the first time the Reports tab is opened.
+  const loadReports = async () => {
+    setReportsLoading(true);
+    setReportsError(null);
+    try {
+      const posts = await getPublishedPosts();
+      setReportPosts(posts);
+      setReportsLoaded(true);
+    } catch (err) {
+      console.error('Failed to load published posts:', err);
+      setReportsError('Could not load published posts. Please try again.');
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'reports' && !reportsLoaded && !reportsLoading) {
+      loadReports();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Toggle sort: clicking the active column flips direction; a new column resets to desc.
+  const toggleReportSort = (key: 'date' | 'platform' | 'branch') => {
+    if (reportSortKey === key) {
+      setReportSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setReportSortKey(key);
+      setReportSortDir('desc');
+    }
+  };
+
+  // Filtered + sorted view of the published posts.
+  const visibleReportPosts = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    let rows = reportPosts;
+
+    if (reportPlatformFilter !== 'all') {
+      rows = rows.filter(p => p.source === reportPlatformFilter);
+    }
+    if (q) {
+      rows = rows.filter(p =>
+        p.caption.toLowerCase().includes(q) ||
+        reportBranchName(p.branch_id).toLowerCase().includes(q)
+      );
+    }
+
+    const dir = reportSortDir === 'asc' ? 1 : -1;
+    const sorted = [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (reportSortKey === 'date') {
+        cmp = new Date(a.published_at || a.created_at).getTime() - new Date(b.published_at || b.created_at).getTime();
+      } else if (reportSortKey === 'platform') {
+        cmp = a.source.localeCompare(b.source);
+      } else {
+        cmp = reportBranchName(a.branch_id).localeCompare(reportBranchName(b.branch_id));
+      }
+      // Stable tiebreaker on date (newest first) when the primary key is equal.
+      if (cmp === 0) cmp = new Date(a.published_at || a.created_at).getTime() - new Date(b.published_at || b.created_at).getTime();
+      return cmp * dir;
+    });
+    return sorted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportPosts, reportSearch, reportPlatformFilter, reportSortKey, reportSortDir, branches]);
   const [baseContent, setBaseContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeDrafts, setActiveDrafts] = useState<DraftPost[]>([]);
@@ -972,6 +1056,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
           )}
         </button>
         <button onClick={() => setActiveTab('pipeline')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'pipeline' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Pipeline</span></button>
+        <button onClick={() => setActiveTab('reports')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'reports' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><BarChart3 size={18} /><span>Reports</span></button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1770,6 +1855,158 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   <p className="text-sm text-slate-400 font-bold mt-2">Generate and approve content from the Lab to populate your calendar</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ═══════════════ REPORTS TAB ═══════════════ */}
+          {activeTab === 'reports' && (
+            <div className="space-y-6 animate-in fade-in duration-500">
+              <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+                {/* Header + controls */}
+                <div className="p-6 sm:p-8 border-b border-slate-100">
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-800 flex items-center"><BarChart3 size={28} className="mr-3 text-emerald-600" />Published Posts</h3>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+                        {reportsLoading ? 'Loading…' : `${visibleReportPosts.length} post${visibleReportPosts.length !== 1 ? 's' : ''}`}
+                      </p>
+                    </div>
+                    <button onClick={loadReports} disabled={reportsLoading} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-200 transition disabled:opacity-50">
+                      <RefreshCw size={14} className={reportsLoading ? 'animate-spin' : ''} /> Refresh
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Search */}
+                    <div className="relative flex-1 min-w-[220px]">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={reportSearch}
+                        onChange={e => setReportSearch(e.target.value)}
+                        placeholder="Search caption or branch…"
+                        className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+                      />
+                    </div>
+                    {/* Platform filter chips */}
+                    <div className="flex items-center gap-1.5">
+                      {(['all', 'instagram', 'facebook'] as const).map(p => (
+                        <button key={p} onClick={() => setReportPlatformFilter(p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition ${reportPlatformFilter === p ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                          {p === 'all' ? 'All' : SOCIAL_PLATFORM_META[p]?.label || p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Body */}
+                {reportsLoading ? (
+                  <div className="py-20 text-center">
+                    <Loader2 size={32} className="mx-auto text-emerald-500 animate-spin mb-3" />
+                    <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Loading published posts…</p>
+                  </div>
+                ) : reportsError ? (
+                  <div className="py-20 text-center">
+                    <AlertTriangle size={32} className="mx-auto text-amber-500 mb-3" />
+                    <p className="text-sm font-black text-slate-500 uppercase tracking-widest">{reportsError}</p>
+                    <button onClick={loadReports} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-600 transition">Retry</button>
+                  </div>
+                ) : visibleReportPosts.length === 0 ? (
+                  <div className="py-20 text-center">
+                    <Send size={32} className="mx-auto text-slate-200 mb-3" />
+                    <p className="text-sm font-black text-slate-400 uppercase tracking-widest">
+                      {reportPosts.length === 0 ? 'No published posts yet' : 'No posts match your filters'}
+                    </p>
+                    <p className="text-xs text-slate-400 font-bold mt-1">
+                      {reportPosts.length === 0 ? 'Publish from the Lab to see your history here.' : 'Try clearing the search or platform filter.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                          <th className="px-6 py-3 font-black">Post</th>
+                          <th className="px-3 py-3 font-black">
+                            <button onClick={() => toggleReportSort('platform')} className="flex items-center gap-1 hover:text-slate-700 transition">
+                              Platform {reportSortKey === 'platform' ? <ChevronDown size={12} className={reportSortDir === 'asc' ? 'rotate-180' : ''} /> : <ArrowUpDown size={11} className="opacity-40" />}
+                            </button>
+                          </th>
+                          <th className="px-3 py-3 font-black">
+                            <button onClick={() => toggleReportSort('branch')} className="flex items-center gap-1 hover:text-slate-700 transition">
+                              Branch {reportSortKey === 'branch' ? <ChevronDown size={12} className={reportSortDir === 'asc' ? 'rotate-180' : ''} /> : <ArrowUpDown size={11} className="opacity-40" />}
+                            </button>
+                          </th>
+                          <th className="px-3 py-3 font-black">
+                            <button onClick={() => toggleReportSort('date')} className="flex items-center gap-1 hover:text-slate-700 transition">
+                              Published {reportSortKey === 'date' ? <ChevronDown size={12} className={reportSortDir === 'asc' ? 'rotate-180' : ''} /> : <ArrowUpDown size={11} className="opacity-40" />}
+                            </button>
+                          </th>
+                          <th className="px-3 py-3 font-black">Link</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleReportPosts.map(post => {
+                          const Icon = PLATFORM_ICONS[post.source];
+                          const showImg = post.image_url && !reportImgErrors[post.id];
+                          const when = new Date(post.published_at || post.created_at);
+                          return (
+                            <tr key={post.id} className="border-b border-slate-50 hover:bg-slate-50/60 transition align-top">
+                              {/* Thumbnail + caption */}
+                              <td className="px-6 py-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center">
+                                    {showImg ? (
+                                      <img
+                                        src={post.image_url!}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        onError={() => setReportImgErrors(prev => ({ ...prev, [post.id]: true }))}
+                                      />
+                                    ) : (
+                                      <ImageIcon size={18} className="text-slate-300" />
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-slate-600 font-medium line-clamp-2 max-w-md" title={post.caption}>
+                                    {post.caption || <span className="text-slate-300 italic">No caption</span>}
+                                  </p>
+                                </div>
+                              </td>
+                              {/* Platform */}
+                              <td className="px-3 py-4">
+                                <span className={`inline-flex items-center gap-1.5 text-xs font-black ${PLATFORM_COLORS[post.source] || 'text-slate-500'}`}>
+                                  {Icon && <Icon size={16} />}
+                                  {SOCIAL_PLATFORM_META[post.source]?.label || post.source}
+                                </span>
+                              </td>
+                              {/* Branch */}
+                              <td className="px-3 py-4">
+                                <span className="text-xs font-bold text-slate-600">{reportBranchName(post.branch_id)}</span>
+                              </td>
+                              {/* Date */}
+                              <td className="px-3 py-4 whitespace-nowrap">
+                                <span className="text-xs font-bold text-slate-600">{when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                <span className="block text-[10px] font-medium text-slate-400">{when.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                              </td>
+                              {/* Link */}
+                              <td className="px-3 py-4 whitespace-nowrap">
+                                {post.permalink ? (
+                                  <a href={post.permalink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-600 hover:text-emerald-700 transition">
+                                    View <ExternalLink size={12} />
+                                  </a>
+                                ) : post.post_id ? (
+                                  <span className="text-[10px] font-mono text-slate-400" title="No public link available for this platform">{post.post_id}</span>
+                                ) : (
+                                  <span className="text-[10px] font-bold text-slate-300">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
