@@ -912,3 +912,22 @@ export interface VideoAdBatchRequest {
   configs: VideoAdConfig[];
   variants: number;
 }
+
+export interface TrellisUserBranch {
+  branch_id: string;
+  branch_name: string;
+  branch_role: 'lead' | 'member' | 'viewer';
+}
+
+export interface TrellisUser {
+  id: string;
+  auth_user_id: string | null;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: 'owner' | 'admin' | 'operator' | 'analyst' | 'viewer';
+  status: 'active' | 'invited' | 'suspended' | 'deleted';
+  last_login_at: string | null;
+  created_at: string;
+  branches: TrellisUserBranch[];
+}

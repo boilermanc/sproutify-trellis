@@ -321,6 +321,61 @@ CREATE POLICY "Service Role Only" ON processed_events FOR ALL TO service_role US
 CREATE POLICY "Service Role Only" ON failed_syncs FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Service Role Only" ON marketing_task_queue FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+-- 10. TRELLIS OPERATORS (App users / staff who log into Trellis)
+CREATE TABLE IF NOT EXISTS trellis_users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  auth_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  avatar_url TEXT,
+  role TEXT DEFAULT 'operator' CHECK (role IN ('owner', 'admin', 'operator', 'analyst', 'viewer')),
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'invited', 'suspended', 'deleted')),
+  last_login_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_trellis_users_role ON trellis_users (role);
+CREATE INDEX IF NOT EXISTS idx_trellis_users_status ON trellis_users (status);
+
+CREATE TABLE IF NOT EXISTS trellis_user_branches (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  trellis_user_id UUID NOT NULL REFERENCES trellis_users(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+  branch_role TEXT DEFAULT 'member' CHECK (branch_role IN ('lead', 'member', 'viewer')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (trellis_user_id, branch_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tub_user ON trellis_user_branches (trellis_user_id);
+CREATE INDEX IF NOT EXISTS idx_tub_branch ON trellis_user_branches (branch_id);
+
+CREATE OR REPLACE VIEW trellis_users_view AS
+SELECT
+  u.id, u.auth_user_id, u.email, u.full_name, u.avatar_url,
+  u.role, u.status, u.last_login_at, u.created_at,
+  COALESCE(
+    jsonb_agg(
+      jsonb_build_object('branch_id', b.id, 'branch_name', b.name, 'branch_role', tub.branch_role)
+      ORDER BY b.name
+    ) FILTER (WHERE b.id IS NOT NULL),
+    '[]'::jsonb
+  ) AS branches
+FROM trellis_users u
+LEFT JOIN trellis_user_branches tub ON tub.trellis_user_id = u.id
+LEFT JOIN branches b ON b.id = tub.branch_id
+WHERE u.status != 'deleted'
+GROUP BY u.id;
+
+ALTER TABLE trellis_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_user_branches ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service Role Full Access" ON trellis_users FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Users read self" ON trellis_users FOR SELECT TO authenticated USING (auth.uid() = auth_user_id);
+CREATE POLICY "Service Role Full Access" ON trellis_user_branches FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Users read own assignments" ON trellis_user_branches FOR SELECT TO authenticated USING (trellis_user_id IN (SELECT id FROM trellis_users WHERE auth_user_id = auth.uid()));
+
 -- ═══════════════════════════════════════════════════════════
 -- 10. SOCIAL CREDENTIAL VAULT (Phase 3 — API Publish)
 -- ═══════════════════════════════════════════════════════════

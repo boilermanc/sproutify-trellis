@@ -8,10 +8,12 @@ import {
   Eye, EyeOff, Workflow, ShoppingBag, Send as SendIcon,
   Phone, Cpu, Sparkles, Zap, Plug,
   Trash2, Plus, X, Slack, Database, Mail,
-  Instagram, ExternalLink, AlertCircle, ChevronRight, CheckCheck, Lock, Info
+  Instagram, ExternalLink, AlertCircle, ChevronRight, CheckCheck, Lock, Info,
+  Users
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
 import ConnectionsManager from '../ConnectionsManager';
+import TeamPanel from './TeamPanel';
 
 interface SettingsProps {
   apiKeys: ApiKeyConfig;
@@ -44,7 +46,7 @@ const Settings: React.FC<SettingsProps> = ({
   branches,
   onOpenArticle,
 }) => {
-  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api' | 'social'>('integrations');
+  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team'>('integrations');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);
@@ -120,6 +122,7 @@ const Settings: React.FC<SettingsProps> = ({
           { id: 'spokes', label: 'Connections', icon: Database },
           { id: 'api', label: 'Secrets', icon: Key },
           { id: 'social', label: 'Social', icon: Instagram },
+          { id: 'team', label: 'Team', icon: Users },
         ].map(tab => (
           <button
             key={tab.id}
@@ -741,9 +744,11 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
             </div>
           )}
+
+          {activeTab === 'team' && <TeamPanel />}
         </div>
 
-        {activeTab !== 'integrations' && activeTab !== 'spokes' && activeTab !== 'social' && (
+        {activeTab !== 'integrations' && activeTab !== 'spokes' && activeTab !== 'social' && activeTab !== 'team' && (
           <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end items-center space-x-4">
             <button
               onClick={handleSave}
