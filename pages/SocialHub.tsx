@@ -4,7 +4,7 @@ import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Bran
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
-import { updateSignalStatus, linkProfileToSocial } from '../services/socialService';
+import { updateSignalStatus, linkProfileToSocial, publishToSocial } from '../services/socialService';
 import { uploadSocialImage } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
@@ -155,6 +155,10 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(['facebook', 'instagram']);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [uploadingDraftId, setUploadingDraftId] = useState<string | null>(null);
+
+  // Publish Now (Instagram only) — confirm modal + in-flight tracking
+  const [publishConfirmId, setPublishConfirmId] = useState<string | null>(null);
+  const [publishingDraftId, setPublishingDraftId] = useState<string | null>(null);
 
   // Scheduling controls (content-only: drafts land on the calendar, not published)
   const [scheduleAt, setScheduleAt] = useState<string>(() => defaultScheduleAt());
@@ -660,6 +664,37 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setArchivedPosts(prev => [{ ...draft, status: 'archived' }, ...prev]);
   };
 
+  // ─── Publish Now (Instagram only) ─────────────────────────────────
+  // Open the confirmation modal. Actual publish happens in confirmPublish.
+  const requestPublish = (draft: DraftPost) => setPublishConfirmId(draft.id);
+
+  // Publish the draft's Instagram caption + first image to Instagram via the
+  // n8n webhook. branch_id is the branch UUID from the draft. Slow/synchronous.
+  const confirmPublish = async () => {
+    const draft = activeDrafts.find(d => d.id === publishConfirmId);
+    if (!draft) { setPublishConfirmId(null); return; }
+
+    const caption = draft.versions.instagram || '';
+    const imageUrl = draft.image_urls?.[0];
+
+    if (!draft.branch_id) { addToast?.('Select a brand before publishing.', 'error'); setPublishConfirmId(null); return; }
+    if (!imageUrl) { addToast?.('Instagram requires an image to publish.', 'error'); setPublishConfirmId(null); return; }
+
+    setPublishingDraftId(draft.id);
+    addToast?.('Publishing to Instagram…', 'info');
+
+    const result = await publishToSocial(draft.branch_id, caption, imageUrl, null);
+
+    setPublishingDraftId(null);
+    setPublishConfirmId(null);
+
+    if (result.ok) {
+      addToast?.(`Published to Instagram ✓${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
+    } else {
+      addToast?.(`Instagram publish failed: ${result.error}`, 'error');
+    }
+  };
+
   // ─── Content-only export: copy posts to paste into Meta Business Suite / native apps ───
   const togglePlatform = (platform: SocialPlatform) => {
     setSelectedPlatforms(prev =>
@@ -787,6 +822,36 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   return (
     <div className="space-y-8 min-h-screen pb-40">
+      {/* ═══════════════ PUBLISH NOW — CONFIRMATION MODAL ═══════════════ */}
+      {publishConfirmId && (() => {
+        const draft = activeDrafts.find(d => d.id === publishConfirmId);
+        if (!draft) return null;
+        const brandName = getBranchForDraft(draft)?.name || 'Brand';
+        const publishing = publishingDraftId === draft.id;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if (!publishing) setPublishConfirmId(null); }} />
+            <div className="relative bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-pink-50 border border-pink-200 flex items-center justify-center">
+                  {React.createElement(getPlatformIcon('instagram'), { size: 24, className: 'text-pink-500' })}
+                </div>
+                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Publish to Instagram</h3>
+              </div>
+              <p className="text-sm font-medium text-slate-600 leading-relaxed mb-6">
+                Publish this post to Instagram for <strong className="text-slate-900">{brandName}</strong>? It will go live immediately.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setPublishConfirmId(null)} disabled={publishing} className="flex-1 py-3.5 rounded-2xl border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 transition disabled:opacity-40">Cancel</button>
+                <button onClick={confirmPublish} disabled={publishing} className="flex-1 py-3.5 rounded-2xl bg-slate-900 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-emerald-600 transition disabled:opacity-60">
+                  {publishing ? <><Loader2 size={16} className="animate-spin" /> Publishing…</> : <><Send size={16} className="text-emerald-400" /> Publish Now</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit max-w-full overflow-x-auto border border-slate-200 shadow-sm">
         <button onClick={() => setActiveTab('lab')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'lab' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><Zap size={18} /><span>Lab</span></button>
         <button onClick={() => setActiveTab('queue')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all relative ${activeTab === 'queue' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
@@ -935,11 +1000,43 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                                     <span>{SOCIAL_PLATFORM_META[plat]?.label || plat}</span>
                                     <span className="text-slate-300 normal-case font-bold">· {text.length} chars</span>
                                   </div>
-                                  <button type="button" onClick={() => copyText(text, `${draft.id}_${plat}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
-                                    {copiedKey === `${draft.id}_${plat}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
-                                  </button>
+                                  <div className="flex items-center gap-1.5">
+                                    <button type="button" onClick={() => copyText(text, `${draft.id}_${plat}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
+                                      {copiedKey === `${draft.id}_${plat}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
+                                    </button>
+                                    {plat === 'instagram' && (() => {
+                                      const hasImage = !!(draft.image_urls && draft.image_urls.length > 0);
+                                      const hasBranch = !!draft.branch_id;
+                                      const publishing = publishingDraftId === draft.id;
+                                      const disabled = !hasImage || !hasBranch || publishing;
+                                      const reason = !hasBranch
+                                        ? 'Select a brand to publish'
+                                        : !hasImage
+                                        ? 'Instagram requires an image — upload one below'
+                                        : 'Publish this caption + image to Instagram now';
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => requestPublish(draft)}
+                                          disabled={disabled}
+                                          title={reason}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition ${disabled ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-pink-600 text-white hover:bg-pink-700 shadow-sm'}`}
+                                        >
+                                          {publishing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Publish Now
+                                        </button>
+                                      );
+                                    })()}
+                                    {(plat === 'x' || plat === 'linkedin') && (
+                                      <span title="Direct publishing for this platform isn't connected yet — copy the text for now" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-wider cursor-default">
+                                        <Clock size={12} /> Publish soon
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 text-sm font-medium" value={text} onChange={(e) => updateDraftVersion(draft.id, plat, e.target.value)} />
+                                {plat === 'instagram' && !(draft.image_urls && draft.image_urls.length > 0) && (
+                                  <p className="mt-2 text-[10px] font-bold text-amber-600 flex items-center gap-1.5"><AlertTriangle size={11} /> Add an image below — Instagram requires one to publish.</p>
+                                )}
                               </div>
                             );
                           })}

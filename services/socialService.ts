@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { SocialPlatform, SocialConnectionStatus, PlatformPublishResult, PublishResult, SocialActivity, SignalStatus } from '../types';
+import { SocialPlatform, SocialConnectionStatus, SocialActivity, SignalStatus } from '../types';
 import { WEBHOOK_SPECS } from '../constants';
 
 // ─── Result Types ───────────────────────────────────────────────────
@@ -97,60 +97,61 @@ export async function disconnectPlatform(
 }
 
 // ─── 4. publishToSocial ────────────────────────────────────────────
-// Fires publish request to n8n webhook. n8n handles credential lookup
-// and platform API calls.
+// Publishes a single Instagram post (image + caption) for a branch via the
+// n8n webhook. n8n looks up the branch's credential, creates a media container,
+// then publishes — so this call is SLOW and synchronous; we await the result.
+//
+// Payload contract (matches the deployed trellis-social-publish webhook):
+//   { branch_id, caption, image_url, scheduled_for }
+// - branch_id MUST be the branch UUID, never a domain slug.
+// - image_url is REQUIRED (Instagram cannot publish a caption-only post).
+// - scheduled_for is null for immediate publish.
+export interface PublishOutcome {
+  ok: boolean;
+  postId?: string;
+  error?: string;
+}
+
 export async function publishToSocial(
   branchId: string,
-  platforms: SocialPlatform[],
-  content: Record<string, string>,
+  caption: string,
+  imageUrl: string,
+  scheduledFor: string | null = null,
   webhookUrl?: string
-): Promise<PublishResult> {
-  if (!branchId || platforms.length === 0) {
-    return { success: false, results: [], error: 'Branch ID and at least one platform are required' };
-  }
+): Promise<PublishOutcome> {
+  if (!branchId) return { ok: false, error: 'Branch ID is required' };
+  if (!caption) return { ok: false, error: 'Caption is required' };
+  if (!imageUrl) return { ok: false, error: 'An image is required to publish to Instagram' };
 
   const url = webhookUrl || WEBHOOK_SPECS.social_publish;
   if (!url) {
-    return { success: false, results: [], error: 'Social publish webhook URL not configured' };
+    return { ok: false, error: 'Social publish webhook URL not configured' };
   }
 
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Webhook-Secret': import.meta.env.VITE_N8N_WEBHOOK_SECRET || '',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         branch_id: branchId,
-        platforms,
-        content,
-        timestamp: new Date().toISOString(),
+        caption,
+        image_url: imageUrl,
+        scheduled_for: scheduledFor,
       }),
     });
 
     if (!response.ok) {
-      return { success: false, results: [], error: `Webhook returned ${response.status}` };
+      return { ok: false, error: `Webhook returned ${response.status}` };
     }
 
     const data = await response.json();
 
-    const results: PlatformPublishResult[] = (data.results || []).map((r: any) => ({
-      platform: r.platform as SocialPlatform,
-      success: r.success,
-      post_id: r.post_id,
-      post_url: r.post_url,
-      error: r.error,
-    }));
-
-    const allSuccess = results.length > 0 && results.every(r => r.success);
-    return { success: allSuccess, results };
+    if (data?.success === true) {
+      return { ok: true, postId: data.post_id };
+    }
+    return { ok: false, error: data?.error || 'Publish failed' };
   } catch (error) {
-    return {
-      success: false,
-      results: [],
-      error: error instanceof Error ? error.message : 'Failed to publish',
-    };
+    return { ok: false, error: error instanceof Error ? error.message : 'Failed to publish' };
   }
 }
 
