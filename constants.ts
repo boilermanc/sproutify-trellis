@@ -632,6 +632,7 @@ export const WEBHOOK_SPECS = {
   compliance: "https://n8n.sproutify.app/webhook/resend-compliance",
   voice: "https://n8n.sproutify.app/webhook/twilio-whisper-sync",
   social_publish: "https://n8n.sproutify.app/webhook/trellis-social-publish",
+  facebook_publish: "https://n8n.sproutify.app/webhook/trellis-facebook-publish",
   social_ingest: "https://n8n.sproutify.app/webhook/social-signal-ingest",
   sms_dispatch: "https://n8n.sproutify.app/webhook/twilio-sms-dispatch",
   reddit_review_stage: "https://n8n.sproutify.app/webhook/reddit-review-stage",

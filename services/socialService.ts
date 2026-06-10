@@ -155,6 +155,61 @@ export async function publishToSocial(
   }
 }
 
+// ─── 4b. publishToFacebook ─────────────────────────────────────────
+// Publishes a Facebook post (caption + optional image) for a branch via the
+// Facebook n8n webhook. Same slow/synchronous response handling as Instagram,
+// but the image is OPTIONAL — Facebook allows text-only posts.
+//
+// Payload contract (matches the deployed trellis-facebook-publish webhook):
+//   { branch_id, caption, image_url, scheduled_for }
+// - branch_id MUST be the branch UUID.
+// - image_url is null when the draft has no image (text-only post).
+export async function publishToFacebook(
+  branchId: string,
+  caption: string,
+  imageUrl: string | null = null,
+  scheduledFor: string | null = null,
+  webhookUrl?: string
+): Promise<PublishOutcome> {
+  if (!branchId) return { ok: false, error: 'Branch ID is required' };
+  if (!caption) return { ok: false, error: 'Caption is required' };
+
+  const url = webhookUrl || WEBHOOK_SPECS.facebook_publish;
+  if (!url) {
+    return { ok: false, error: 'Facebook publish webhook URL not configured' };
+  }
+
+  return postToPublishWebhook(url, {
+    branch_id: branchId,
+    caption,
+    image_url: imageUrl,      // optional — null = text-only Facebook post
+    scheduled_for: scheduledFor,
+  });
+}
+
+// Shared POST + response parsing for the publish webhooks. Awaits the slow,
+// synchronous webhook and maps the result to a PublishOutcome.
+async function postToPublishWebhook(
+  url: string,
+  body: Record<string, unknown>
+): Promise<PublishOutcome> {
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) return { ok: false, error: `Webhook returned ${response.status}` };
+
+    const data = await response.json();
+    if (data?.success === true) return { ok: true, postId: data.post_id };
+    return { ok: false, error: data?.error || 'Publish failed' };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Failed to publish' };
+  }
+}
+
 // ─── social_signals table gate ──────────────────────────────────────
 // Checked once per page load via a HEAD probe in fetchSocialSignals().
 // If the table doesn't exist, all social_signals functions no-op.

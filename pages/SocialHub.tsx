@@ -4,7 +4,7 @@ import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Bran
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
-import { updateSignalStatus, linkProfileToSocial, publishToSocial } from '../services/socialService';
+import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook } from '../services/socialService';
 import { uploadSocialImage } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
@@ -162,9 +162,10 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [uploadingDraftId, setUploadingDraftId] = useState<string | null>(null);
 
-  // Publish Now (Instagram only) — confirm modal + in-flight tracking
-  const [publishConfirmId, setPublishConfirmId] = useState<string | null>(null);
-  const [publishingDraftId, setPublishingDraftId] = useState<string | null>(null);
+  // Publish Now (Instagram + Facebook) — confirm modal + in-flight tracking.
+  // Tracked per (draft, platform) so a draft can publish to each platform separately.
+  const [publishConfirm, setPublishConfirm] = useState<{ draftId: string; platform: 'instagram' | 'facebook' } | null>(null);
+  const [publishingKey, setPublishingKey] = useState<string | null>(null); // `${draftId}_${platform}` while in flight
 
   // Scheduling controls (content-only: drafts land on the calendar, not published)
   const [scheduleAt, setScheduleAt] = useState<string>(() => defaultScheduleAt());
@@ -671,62 +672,133 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setArchivedPosts(prev => [{ ...draft, status: 'archived' }, ...prev]);
   };
 
-  // ─── Publish Now (Instagram only) ─────────────────────────────────
-  // Open the confirmation modal. Actual publish happens in confirmPublish.
-  const requestPublish = (draft: DraftPost) => setPublishConfirmId(draft.id);
+  // ─── Publish Now (Instagram + Facebook) ───────────────────────────
+  // Only these two platforms are wired to live webhooks today.
+  const WIRED_PUBLISH_PLATFORMS: Array<'instagram' | 'facebook'> = ['instagram', 'facebook'];
+  const PLATFORM_LABEL: Record<'instagram' | 'facebook', string> = { instagram: 'Instagram', facebook: 'Facebook' };
 
-  // Publish the draft's Instagram caption + first image to Instagram via the
-  // n8n webhook. branch_id is the branch UUID from the draft. Slow/synchronous.
+  // Has this draft already been published to the given platform?
+  const isPlatformPublished = (draft: DraftPost, platform: string) =>
+    (draft.publish_results || []).some(r => r.platform === platform && r.success);
+
+  // Open the confirmation modal for a (draft, platform). Publish fires in confirmPublish.
+  const requestPublish = (draft: DraftPost, platform: 'instagram' | 'facebook') =>
+    setPublishConfirm({ draftId: draft.id, platform });
+
+  // Record a successful publish. Tracks per-platform: the draft is kept in the
+  // active list (with the platform's result recorded) until EVERY wired platform
+  // present on the draft has been published — only then is it removed. This lets a
+  // draft be published to Instagram and Facebook separately without one blocking the other.
+  const recordPublish = (draft: DraftPost, platform: 'instagram' | 'facebook', postId?: string) => {
+    const publishedAt = new Date().toISOString();
+    const newResult = { platform, success: true, post_id: postId };
+    const mergedResults = [
+      ...(draft.publish_results || []).filter(r => r.platform !== platform),
+      newResult,
+    ];
+
+    // Which wired platforms does this draft actually have a caption for?
+    const present = WIRED_PUBLISH_PLATFORMS.filter(p => draft.versions[p]);
+    const allDone = present.every(p => mergedResults.some(r => r.platform === p && r.success));
+
+    if (allDone) {
+      // Nothing left to publish — remove from the active list (matches single-platform behavior).
+      setActiveDrafts(prev => prev.filter(d => d.id !== draft.id));
+      if (activeDrafts.length <= 1) setWorkflowStatus('idle');
+    } else {
+      // Keep the draft so the other platform can still be published; just record this result.
+      setActiveDrafts(prev => prev.map(d => d.id === draft.id ? { ...d, publish_results: mergedResults, published_at: publishedAt } : d));
+    }
+
+    // Trace record per platform publish (mirrors the archivedPosts/publishedPosts pattern + persistence).
+    const publishedRecord: DraftPost = {
+      ...draft,
+      id: `${draft.id}_pub_${platform}`,
+      status: 'published',
+      published_at: publishedAt,
+      publish_results: [newResult],
+    };
+    setPublishedPosts(prev => [publishedRecord, ...prev.filter(p => p.id !== publishedRecord.id)]);
+
+    // Marketing event so the publish shows in the timeline/reports.
+    const event: MarketingEvent = {
+      id: `pub_${platform}_${Date.now()}`,
+      profile_id: 'SYSTEM',
+      event_type: 'social_publish',
+      source: platform as any,
+      payload: { branch_id: draft.branch_id, post_id: postId, caption: draft.versions[platform] || '', platform, published_at: publishedAt },
+      created_at: publishedAt,
+    };
+    setEvents(prev => [event, ...prev]);
+  };
+
+  // Publish the confirmed (draft, platform) via the matching webhook. Slow/synchronous.
   const confirmPublish = async () => {
-    const draft = activeDrafts.find(d => d.id === publishConfirmId);
-    if (!draft) { setPublishConfirmId(null); return; }
+    if (!publishConfirm) return;
+    const { draftId, platform } = publishConfirm;
+    const draft = activeDrafts.find(d => d.id === draftId);
+    if (!draft) { setPublishConfirm(null); return; }
 
-    const caption = draft.versions.instagram || '';
+    const caption = draft.versions[platform] || '';
     const imageUrl = draft.image_urls?.[0];
+    const label = PLATFORM_LABEL[platform];
 
-    if (!draft.branch_id) { addToast?.('Select a brand before publishing.', 'error'); setPublishConfirmId(null); return; }
-    if (!imageUrl) { addToast?.('Instagram requires an image to publish.', 'error'); setPublishConfirmId(null); return; }
+    if (!draft.branch_id) { addToast?.('Select a brand before publishing.', 'error'); setPublishConfirm(null); return; }
+    // Instagram requires an image; Facebook does not.
+    if (platform === 'instagram' && !imageUrl) { addToast?.('Instagram requires an image to publish.', 'error'); setPublishConfirm(null); return; }
 
-    setPublishingDraftId(draft.id);
-    addToast?.('Publishing to Instagram…', 'info');
+    setPublishingKey(`${draftId}_${platform}`);
+    addToast?.(`Publishing to ${label}…`, 'info');
 
-    const result = await publishToSocial(draft.branch_id, caption, imageUrl, null);
+    const result = platform === 'instagram'
+      ? await publishToSocial(draft.branch_id, caption, imageUrl!, null)
+      : await publishToFacebook(draft.branch_id, caption, imageUrl || null, null);
 
-    setPublishingDraftId(null);
-    setPublishConfirmId(null);
+    setPublishingKey(null);
+    setPublishConfirm(null);
 
     if (result.ok) {
-      const publishedAt = new Date().toISOString();
-
-      // Move the draft out of the active list (can't be re-published by mistake)
-      // and into the published record, mirroring the archivedPosts pattern.
-      const publishedDraft: DraftPost = {
-        ...draft,
-        status: 'published',
-        published_at: publishedAt,
-        publish_results: [{ platform: 'instagram', success: true, post_id: result.postId }],
-      };
-      setActiveDrafts(prev => prev.filter(d => d.id !== draft.id));
-      setPublishedPosts(prev => [publishedDraft, ...prev]);
-      if (activeDrafts.length <= 1) setWorkflowStatus('idle');
-
-      // Marketing event so the publish shows in the timeline/reports
-      // (same pattern as the social_intent event in scheduleDrafts).
-      const event: MarketingEvent = {
-        id: `pub_${Date.now()}`,
-        profile_id: 'SYSTEM',
-        event_type: 'social_publish',
-        source: 'instagram' as any,
-        payload: { branch_id: draft.branch_id, post_id: result.postId, caption, published_at: publishedAt },
-        created_at: publishedAt,
-      };
-      setEvents(prev => [event, ...prev]);
-
-      addToast?.(`Published to Instagram ✓${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
+      recordPublish(draft, platform, result.postId);
+      addToast?.(`Published to ${label} ✓${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
     } else {
       // Leave the draft in place so the user can retry.
-      addToast?.(`Instagram publish failed: ${result.error}`, 'error');
+      addToast?.(`${label} publish failed: ${result.error}`, 'error');
     }
+  };
+
+  // Render the per-platform Publish Now control (or a "Published" badge once done).
+  const renderPublishControl = (draft: DraftPost, platform: 'instagram' | 'facebook') => {
+    if (isPlatformPublished(draft, platform)) {
+      return (
+        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-wider cursor-default">
+          <Check size={12} /> Published
+        </span>
+      );
+    }
+    const hasImage = !!(draft.image_urls && draft.image_urls.length > 0);
+    const hasBranch = !!draft.branch_id;
+    const publishing = publishingKey === `${draft.id}_${platform}`;
+    const needsImage = platform === 'instagram' && !hasImage;
+    const disabled = !hasBranch || needsImage || publishing;
+    const reason = !hasBranch
+      ? 'Select a brand to publish'
+      : needsImage
+      ? 'Instagram requires an image — upload one below'
+      : platform === 'instagram'
+      ? 'Publish this caption + image to Instagram now'
+      : 'Publish this caption to Facebook now';
+    const activeClass = platform === 'instagram' ? 'bg-pink-600 hover:bg-pink-700' : 'bg-blue-600 hover:bg-blue-700';
+    return (
+      <button
+        type="button"
+        onClick={() => requestPublish(draft, platform)}
+        disabled={disabled}
+        title={reason}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition ${disabled ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : `${activeClass} text-white shadow-sm`}`}
+      >
+        {publishing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Publish Now
+      </button>
+    );
   };
 
   // ─── Content-only export: copy posts to paste into Meta Business Suite / native apps ───
@@ -857,26 +929,30 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   return (
     <div className="space-y-8 min-h-screen pb-40">
       {/* ═══════════════ PUBLISH NOW — CONFIRMATION MODAL ═══════════════ */}
-      {publishConfirmId && (() => {
-        const draft = activeDrafts.find(d => d.id === publishConfirmId);
+      {publishConfirm && (() => {
+        const draft = activeDrafts.find(d => d.id === publishConfirm.draftId);
         if (!draft) return null;
+        const platform = publishConfirm.platform;
+        const label = PLATFORM_LABEL[platform];
         const brandName = getBranchForDraft(draft)?.name || 'Brand';
-        const publishing = publishingDraftId === draft.id;
+        const publishing = publishingKey === `${draft.id}_${platform}`;
+        const iconBg = platform === 'instagram' ? 'bg-pink-50 border-pink-200' : 'bg-blue-50 border-blue-200';
+        const iconColor = platform === 'instagram' ? 'text-pink-500' : 'text-blue-600';
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if (!publishing) setPublishConfirmId(null); }} />
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if (!publishing) setPublishConfirm(null); }} />
             <div className="relative bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-pink-50 border border-pink-200 flex items-center justify-center">
-                  {React.createElement(getPlatformIcon('instagram'), { size: 24, className: 'text-pink-500' })}
+                <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center ${iconBg}`}>
+                  {React.createElement(getPlatformIcon(platform), { size: 24, className: iconColor })}
                 </div>
-                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Publish to Instagram</h3>
+                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Publish to {label}</h3>
               </div>
               <p className="text-sm font-medium text-slate-600 leading-relaxed mb-6">
-                Publish this post to Instagram for <strong className="text-slate-900">{brandName}</strong>? It will go live immediately.
+                Publish this post to {label} for <strong className="text-slate-900">{brandName}</strong>? It will go live immediately.
               </p>
               <div className="flex gap-3">
-                <button onClick={() => setPublishConfirmId(null)} disabled={publishing} className="flex-1 py-3.5 rounded-2xl border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 transition disabled:opacity-40">Cancel</button>
+                <button onClick={() => setPublishConfirm(null)} disabled={publishing} className="flex-1 py-3.5 rounded-2xl border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 transition disabled:opacity-40">Cancel</button>
                 <button onClick={confirmPublish} disabled={publishing} className="flex-1 py-3.5 rounded-2xl bg-slate-900 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-emerald-600 transition disabled:opacity-60">
                   {publishing ? <><Loader2 size={16} className="animate-spin" /> Publishing…</> : <><Send size={16} className="text-emerald-400" /> Publish Now</>}
                 </button>
@@ -1038,28 +1114,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                                     <button type="button" onClick={() => copyText(text, `${draft.id}_${plat}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
                                       {copiedKey === `${draft.id}_${plat}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
                                     </button>
-                                    {plat === 'instagram' && (() => {
-                                      const hasImage = !!(draft.image_urls && draft.image_urls.length > 0);
-                                      const hasBranch = !!draft.branch_id;
-                                      const publishing = publishingDraftId === draft.id;
-                                      const disabled = !hasImage || !hasBranch || publishing;
-                                      const reason = !hasBranch
-                                        ? 'Select a brand to publish'
-                                        : !hasImage
-                                        ? 'Instagram requires an image — upload one below'
-                                        : 'Publish this caption + image to Instagram now';
-                                      return (
-                                        <button
-                                          type="button"
-                                          onClick={() => requestPublish(draft)}
-                                          disabled={disabled}
-                                          title={reason}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition ${disabled ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-pink-600 text-white hover:bg-pink-700 shadow-sm'}`}
-                                        >
-                                          {publishing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Publish Now
-                                        </button>
-                                      );
-                                    })()}
+                                    {(plat === 'instagram' || plat === 'facebook') && renderPublishControl(draft, plat)}
                                     {(plat === 'x' || plat === 'linkedin') && (
                                       <span title="Direct publishing for this platform isn't connected yet — copy the text for now" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-wider cursor-default">
                                         <Clock size={12} /> Publish soon
