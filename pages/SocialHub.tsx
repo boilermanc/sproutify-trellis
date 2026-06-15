@@ -1170,7 +1170,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                     const brand = getBranchForDraft(draft);
                     return (
                       <div key={draft.id} className="bg-white p-5 sm:p-8 rounded-[3rem] border-2 border-slate-200 shadow-lg">
-                        <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                        <div className="flex flex-wrap items-center justify-between gap-y-3 mb-6 pb-4 border-b border-slate-100">
                           <div className="flex items-center gap-2">
                             {brand && <div className="w-3 h-3 rounded" style={{ backgroundColor: brand.primary_color }} />}
                             <span className="text-sm font-black text-slate-700 uppercase tracking-tight">{brand?.name || 'Brand'}</span>
@@ -1189,7 +1189,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                             const text = String(rawText);
                             return (
                               <div key={plat}>
-                                <div className="flex items-center justify-between mb-2">
+                                <div className="flex flex-wrap items-center justify-between gap-y-2 mb-2">
                                   <div className="flex items-center space-x-2 text-[10px] font-black uppercase text-slate-400">
                                     {React.createElement(getPlatformIcon(plat), { size: 14 })}
                                     <span>{SOCIAL_PLATFORM_META[plat]?.label || plat}</span>
