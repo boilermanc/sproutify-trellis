@@ -522,7 +522,7 @@ CREATE TABLE IF NOT EXISTS social_signals (
   intent_type TEXT NOT NULL CHECK (intent_type IN ('buying_intent', 'support_request', 'brand_mention', 'engagement', 'complaint', 'partnership', 'spam')),
   confidence INTEGER NOT NULL DEFAULT 50 CHECK (confidence BETWEEN 0 AND 100),
   branch_id TEXT,
-  matched_profile_id UUID REFERENCES profiles(id),
+  profile_id UUID REFERENCES profiles(id),
   source_post_id TEXT,
   source_post_url TEXT,
   status TEXT DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'actioned', 'dismissed')),
@@ -537,8 +537,8 @@ CREATE POLICY "Service Role Only" ON social_signals
 CREATE INDEX idx_social_signals_status_created
   ON social_signals (status, created_at DESC);
 
-CREATE INDEX idx_social_signals_matched_profile
-  ON social_signals (matched_profile_id) WHERE matched_profile_id IS NOT NULL;
+CREATE INDEX idx_social_signals_profile
+  ON social_signals (profile_id) WHERE profile_id IS NOT NULL;
 
 -- ═══════════════════════════════════════════════════════════
 -- 12. CAMPAIGN RUNS (Cross-Channel Deployment Tracking)

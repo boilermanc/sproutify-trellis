@@ -387,7 +387,6 @@ npm run preview  # Preview production build
 GEMINI_API_KEY=your_key_here
 VITE_SUPABASE_URL=https://cdhymstkzhlxcucbzipr.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
-VITE_TRELLIS_HUB_KEY=your_hub_service_key
 ```
 
 ---

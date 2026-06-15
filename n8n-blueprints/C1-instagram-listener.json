@@ -96,7 +96,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ platform: 'instagram', branch_id: $node['Fetch Tokens'].json.branch_id, author_handle: $json.username, content: $json.text, intent: $json.intent, confidence: $json.confidence, matched_profile_id: $json.profile_id || null, source_url: 'https://instagram.com/' + $json.username }) }}"
+        "jsonBody": "={{ JSON.stringify({ platform: 'instagram', branch_id: $node['Fetch Tokens'].json.branch_id, author_handle: $json.username, content: $json.text, intent: $json.intent, confidence: $json.confidence, profile_id: $json.profile_id || null, source_url: 'https://instagram.com/' + $json.username }) }}"
       },
       "name": "Ingest Signal",
       "type": "n8n-nodes-base.httpRequest",
