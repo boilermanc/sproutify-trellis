@@ -141,13 +141,24 @@ const buildScheduleDates = (startIso: string, recurrence: Recurrence, count: num
 // model. Preview endpoints are deprioritized under load and 503 more often.
 const CONTENT_MODELS = ['gemini-3-flash-preview', 'gemini-2.5-flash'];
 
+// Per-request ceiling. An overloaded Gemini model sometimes holds the connection
+// open instead of returning a 503 — without this, the call (and the UI spinner)
+// hangs forever. A timeout is treated as a transient error so retry/fallback kicks in.
+const GENERATE_TIMEOUT_MS = 30000;
+
 const isTransientError = (e: unknown): boolean => {
   const msg = String((e as any)?.message || e);
-  return msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded') || msg.includes('high demand');
+  return msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded') || msg.includes('high demand') || msg.includes('timed out');
 };
 
-// Try each model in turn; for each, retry transient overloads (503 / UNAVAILABLE)
-// with exponential backoff before falling back to the next model. Non-transient
+const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms)),
+  ]);
+
+// Try each model in turn; for each, retry transient overloads (503 / UNAVAILABLE /
+// timeout) with exponential backoff before falling back to the next model. Non-transient
 // errors (bad key, schema) throw immediately. `fn` receives the model to use.
 const generateWithFallback = async <T,>(
   fn: (model: string) => Promise<T>,
@@ -158,7 +169,7 @@ const generateWithFallback = async <T,>(
   for (const model of models) {
     for (let i = 0; i < attemptsPerModel; i++) {
       try {
-        return { result: await fn(model), model };
+        return { result: await withTimeout(fn(model), GENERATE_TIMEOUT_MS), model };
       } catch (e) {
         lastErr = e;
         if (!isTransientError(e)) throw e;
