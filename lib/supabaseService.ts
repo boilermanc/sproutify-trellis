@@ -224,7 +224,7 @@ export async function uploadSocialImage(
 
   const { error: uploadError } = await supabase.storage
     .from('avatars')
-    .upload(filePath, file, { upsert: true, contentType: file.type || undefined });
+    .upload(filePath, file, { upsert: false, contentType: file.type || undefined });
 
   if (uploadError) {
     console.error('Error uploading social image:', uploadError);
