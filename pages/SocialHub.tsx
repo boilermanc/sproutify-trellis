@@ -1155,7 +1155,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                       );
                     })}
                   </div>
-                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full py-5 sm:py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-base sm:text-xl flex items-center justify-center space-x-3 sm:space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Generate multi-platform variants</span></button>
+                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full py-5 sm:py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-base sm:text-xl flex items-center justify-center space-x-3 sm:space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Create</span></button>
                 </div>
               ) : activeDrafts.length > 0 && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
