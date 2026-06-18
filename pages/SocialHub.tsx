@@ -665,7 +665,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         const branchName = branch?.name || 'brand';
         const tone = branch?.tone || 'friendly';
         const keywords = (branch?.brand_keywords || []).join(', ');
-        const prompt = `TASK: Brand Broadcast for ${branchName}. VOICE: ${tone}. ${keywords ? `KEYWORDS: ${keywords}. ` : ''}SEED: "${promptText}". Generate variants for ${platformList}. Return JSON.`;
+        const prompt = `TASK: Brand Broadcast for ${branchName}. VOICE: ${tone}. ${keywords ? `KEYWORDS: ${keywords}. ` : ''}SEED: "${promptText}". Generate variants for ${platformList}. HASHTAGS: append platform-appropriate hashtags at the END of each variant on a new line — Instagram 5-10, Facebook 1-3, X 1-2, LinkedIn 3-5. Weave the brand keywords into the hashtags where they fit naturally. Return JSON.`;
 
         try {
           const { result: response, model } = await generateWithFallback((model) => ai.models.generateContent({
