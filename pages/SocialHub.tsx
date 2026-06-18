@@ -137,6 +137,40 @@ const buildScheduleDates = (startIso: string, recurrence: Recurrence, count: num
   return dates;
 };
 
+// Content models in preference order: the preview model first, then a stable GA
+// model. Preview endpoints are deprioritized under load and 503 more often.
+const CONTENT_MODELS = ['gemini-3-flash-preview', 'gemini-2.5-flash'];
+
+const isTransientError = (e: unknown): boolean => {
+  const msg = String((e as any)?.message || e);
+  return msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded') || msg.includes('high demand');
+};
+
+// Try each model in turn; for each, retry transient overloads (503 / UNAVAILABLE)
+// with exponential backoff before falling back to the next model. Non-transient
+// errors (bad key, schema) throw immediately. `fn` receives the model to use.
+const generateWithFallback = async <T,>(
+  fn: (model: string) => Promise<T>,
+  models: string[] = CONTENT_MODELS,
+  attemptsPerModel = 2,
+): Promise<{ result: T; model: string }> => {
+  let lastErr: unknown;
+  for (const model of models) {
+    for (let i = 0; i < attemptsPerModel; i++) {
+      try {
+        return { result: await fn(model), model };
+      } catch (e) {
+        lastErr = e;
+        if (!isTransientError(e)) throw e;
+        // Last attempt on this model: fall through to the next model.
+        if (i === attemptsPerModel - 1) break;
+        await new Promise(res => setTimeout(res, 1000 * Math.pow(2, i))); // 1s, 2s
+      }
+    }
+  }
+  throw lastErr;
+};
+
 const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle }) => {
   const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline' | 'reports'>('lab');
 
@@ -625,6 +659,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       // Fan out: one draft per selected brand (or a single generic draft if none selected)
       const targetBranches = selectedBranches.length > 0 ? selectedBranches : [null];
       const drafts: DraftPost[] = [];
+      let usedFallbackModel = false;
 
       for (const branch of targetBranches) {
         const branchName = branch?.name || 'brand';
@@ -633,14 +668,15 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         const prompt = `TASK: Brand Broadcast for ${branchName}. VOICE: ${tone}. ${keywords ? `KEYWORDS: ${keywords}. ` : ''}SEED: "${promptText}". Generate variants for ${platformList}. Return JSON.`;
 
         try {
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+          const { result: response, model } = await generateWithFallback((model) => ai.models.generateContent({
+            model,
             contents: prompt,
             config: {
               responseMimeType: "application/json",
               responseSchema: { type: Type.OBJECT, properties: schemaProperties, required: uniquePlatforms },
             },
-          });
+          }));
+          if (model !== CONTENT_MODELS[0]) usedFallbackModel = true;
           const result = JSON.parse(response.text || "{}");
           drafts.push({
             id: `lab_${Date.now()}_${branch?.id || 'generic'}`,
@@ -652,11 +688,17 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
           });
         } catch (e) {
           console.error(e);
-          addToast?.(`Content generation failed for ${branchName}.`, 'error');
+          addToast?.(
+            isTransientError(e)
+              ? `Gemini is overloaded right now — content for ${branchName} couldn't generate. Try again in a moment.`
+              : `Content generation failed for ${branchName}.`,
+            'error'
+          );
         }
       }
 
       if (drafts.length > 0) {
+        if (usedFallbackModel) addToast?.('Preview model was busy — generated with the stable model instead.', 'info');
         setActiveDrafts(drafts);
         setWorkflowStatus('reviewing');
       }
