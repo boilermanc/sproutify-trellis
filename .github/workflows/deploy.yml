@@ -57,18 +57,22 @@ jobs:
         run: |
           echo "::group::Secret presence (values never printed)"
           missing=0
-          check() { if [ -z "${2:-}" ]; then echo "❌ $1 is MISSING"; missing=1; else echo "✅ $1 is set"; fi; }
-          check VITE_SUPABASE_URL       "$VITE_SUPABASE_URL"
-          check VITE_SUPABASE_ANON_KEY  "$VITE_SUPABASE_ANON_KEY"
-          check GEMINI_API_KEY          "$GEMINI_API_KEY"
-          check IONOS_HOST              "$IONOS_HOST"
-          check IONOS_PORT              "$IONOS_PORT"
-          check IONOS_USERNAME          "$IONOS_USERNAME"
-          check IONOS_PASSWORD          "$IONOS_PASSWORD"
-          check IONOS_TRELLIS_PATH      "$IONOS_TRELLIS_PATH"
+          # Required: build + deploy cannot succeed without these.
+          req()  { if [ -z "${2:-}" ]; then echo "❌ $1 is MISSING (required)"; missing=1; else echo "✅ $1 is set"; fi; }
+          # Optional: referenced but not needed at build time (Gemini key is
+          # read at runtime from tenant_secrets on the Hub, not from the bundle).
+          opt()  { if [ -z "${2:-}" ]; then echo "➖ $1 not set (optional — ok)"; else echo "✅ $1 is set"; fi; }
+          req VITE_SUPABASE_URL       "$VITE_SUPABASE_URL"
+          req VITE_SUPABASE_ANON_KEY  "$VITE_SUPABASE_ANON_KEY"
+          req IONOS_HOST              "$IONOS_HOST"
+          req IONOS_PORT              "$IONOS_PORT"
+          req IONOS_USERNAME          "$IONOS_USERNAME"
+          req IONOS_PASSWORD          "$IONOS_PASSWORD"
+          req IONOS_TRELLIS_PATH      "$IONOS_TRELLIS_PATH"
+          opt GEMINI_API_KEY          "$GEMINI_API_KEY"
           echo "::endgroup::"
           if [ "$missing" = "1" ]; then
-            echo "::error::One or more required secrets are missing — aborting before build."
+            echo "::error::One or more REQUIRED secrets are missing — aborting before build."
             exit 1
           fi
 
