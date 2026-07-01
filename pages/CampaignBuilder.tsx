@@ -945,7 +945,6 @@ Return ONLY the post content, no explanations or labels.`,
                     <Globe size={18} className="mr-3 text-emerald-500" />
                     Branch Targeting
                   </h4>
-                  <HelpLink articleId="art_gs_build_segment" variant="badge" label="Segment guide" onOpenArticle={onOpenArticle!} />
                 </div>
                 <button
                   type="button"
@@ -1011,10 +1010,13 @@ Return ONLY the post content, no explanations or labels.`,
 
             {/* Segment Engine */}
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-              <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-2 flex items-center">
-                <Target size={18} className="mr-3 text-indigo-500" />
-                Segment Engine
-              </h4>
+              <div className="flex items-center space-x-3 mb-2">
+                <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center">
+                  <Target size={18} className="mr-3 text-indigo-500" />
+                  Segment Engine
+                </h4>
+                <HelpLink articleId="art_gs_build_segment" variant="badge" label="Segment guide" onOpenArticle={onOpenArticle!} />
+              </div>
               <p className="text-[11px] text-slate-400 mb-6">Select one or more presets. Multiple selections combine with OR logic.</p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
