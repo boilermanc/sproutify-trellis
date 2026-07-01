@@ -1161,6 +1161,36 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 </div>
 
+                {/* No custom template — block + guide */}
+                {customTemplates.length === 0 && (
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-[2rem] p-6 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                      <h4 className="font-black text-amber-900 uppercase tracking-widest text-xs">Create an email template first</h4>
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      There's no custom email template for <b>{selectedBranches[0] ? formatBranchName(selectedBranches[0]) : 'this branch'}</b> yet. The built-in layouts below can't hold your own copy, so you'll need to create one before you can compose and send.
+                    </p>
+                    <div className="text-xs text-amber-800 leading-relaxed">
+                      <p className="font-black mb-1">What to do:</p>
+                      <ol className="list-decimal ml-5 space-y-1">
+                        <li>Open <b>Brand Intelligence</b> (left sidebar &rarr; <b>Brand DNA</b>).</li>
+                        <li>Go to <b>Email Templates</b> and select the <b>{selectedBranches[0] ? formatBranchName(selectedBranches[0]) : 'target'}</b> branch.</li>
+                        <li>Design your template, then click <b>Save</b>.</li>
+                      </ol>
+                      <p className="mt-2">Back here, it appears in a <b className="text-violet-600">violet &ldquo;Custom Templates&rdquo;</b> row below &mdash; select it and the <b>Headline / Body Copy / CTA</b> editor unlocks. <b>Continue</b> stays disabled until a custom template is selected.</p>
+                    </div>
+                  </div>
+                )}
+                {customTemplates.length > 0 && !isCustomTemplate && (
+                  <div className="flex items-start gap-2 rounded-2xl bg-amber-50 border border-amber-200 p-4">
+                    <Info size={16} className="mt-0.5 text-amber-600 shrink-0" />
+                    <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                      Select your <b className="text-violet-600">Custom Template</b> below to continue &mdash; built-in layouts don't include your own copy.
+                    </p>
+                  </div>
+                )}
+
                 {/* Template Picker */}
                 <div className="space-y-6">
                   <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4">Email Template</label>
@@ -1783,6 +1813,11 @@ Return ONLY the post content, no explanations or labels.`,
   // MAIN RENDER
   // ═══════════════════════════════════════════════════════════════
 
+  // Gate: when Email is a selected channel, a custom template must be chosen
+  // before leaving Compose. Built-in layouts can't hold custom copy, so a
+  // real send requires a template created in Brand Intelligence.
+  const emailComposeIncomplete = enabledChannels.has('email') && !isCustomTemplate;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-12 pb-20">
       <div className="lg:col-span-3 space-y-12">
@@ -1797,8 +1832,8 @@ Return ONLY the post content, no explanations or labels.`,
             const canNavigate = !isLaunching && (
               idx <= currentStep ||
               (idx === 1 && selectedBranches.length > 0 && campaignName) ||
-              (idx === 2 && selectedBranches.length > 0 && campaignName && emailSubject) ||
-              (idx === 3 && selectedBranches.length > 0 && campaignName && emailSubject && (triggerType !== 'scheduled' || scheduledDate))
+              (idx === 2 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete) ||
+              (idx === 3 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete && (triggerType !== 'scheduled' || scheduledDate))
             );
             return (
               <div key={step.id} className={`flex flex-col items-center group ${canNavigate ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`} onClick={() => canNavigate && setCurrentStep(idx)}>
@@ -1842,7 +1877,7 @@ Return ONLY the post content, no explanations or labels.`,
               onClick={() => setCurrentStep(Math.min(STEPS.length - 1, currentStep + 1))}
               disabled={
                 (currentStep === 0 && (selectedBranches.length === 0 || !campaignName)) ||
-                (currentStep === 1 && !emailSubject) ||
+                (currentStep === 1 && (!emailSubject || emailComposeIncomplete)) ||
                 (currentStep === 2 && triggerType === 'scheduled' && !scheduledDate)
               }
               className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group"
