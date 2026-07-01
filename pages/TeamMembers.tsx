@@ -12,7 +12,11 @@ const ROLE_CONFIG: Record<Role, { label: string; icon: React.ElementType; color:
 
 const ROLE_OPTIONS: Role[] = ['admin', 'marketer', 'developer', 'viewer'];
 
-const TeamMembers: React.FC = () => {
+interface TeamMembersProps {
+  addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}
+
+const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
   const [members, setMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,14 +70,22 @@ const TeamMembers: React.FC = () => {
 
     setSubmitting(false);
 
+    const target = inviteEmail.trim().toLowerCase();
+
     if (!result.success) {
-      setInviteError(result.error || 'Failed to send invite');
+      // The edge function only reports success once the invite email
+      // actually sent, so a failure here means the email did NOT go out.
+      const msg = result.error || 'Failed to send invite';
+      setInviteError(msg);
+      addToast(`Invite failed: ${msg}`, 'error');
       return;
     }
 
-    setInviteSuccess(`Invite sent to ${inviteEmail.trim().toLowerCase()}`);
+    // Success == the invite email was accepted by the mail server.
+    addToast(`Invite email sent to ${target}`, 'success');
     setInviteEmail('');
     setInviteFirstName('');
+    setInviteOpen(false);
     await fetchTeamMembers();
   };
 
