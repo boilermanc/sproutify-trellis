@@ -1287,7 +1287,27 @@ Return ONLY the post content, no explanations or labels.`,
                     <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">
                       <Globe size={16} className="mr-3 text-emerald-500" />
                       Branch-Conditional Content
+                      <span className="group relative ml-2 inline-flex">
+                        <Info size={14} className="text-slate-400 hover:text-emerald-500 cursor-help" />
+                        <span className="pointer-events-none absolute left-1/2 top-6 z-50 w-72 -translate-x-1/2 rounded-xl bg-slate-900 p-3 text-[11px] font-medium normal-case tracking-normal leading-relaxed text-slate-100 opacity-0 shadow-xl transition-opacity duration-200 group-hover:opacity-100">
+                          <span className="mb-1 block font-bold text-emerald-300">When to use it</span>
+                          Sending one campaign to <b>several branches at once</b>? Add a block that <b>only that branch's recipients see</b> — e.g. an ATL-only coupon that Farm or School readers won't get.
+                          <span className="mt-2 mb-1 block font-bold text-slate-400">When to skip it</span>
+                          Targeting a <b>single branch</b>? Leave it blank — everyone already gets your main email content.
+                        </span>
+                      </span>
                     </h4>
+                    <p className="text-[11px] font-medium normal-case tracking-normal text-slate-400 -mt-1">
+                      Optional extra content shown only to recipients of a specific branch.
+                    </p>
+                    {selectedBranches.length === 1 && (
+                      <div className="flex items-start gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                        <Info size={14} className="mt-0.5 text-slate-400 shrink-0" />
+                        <p className="text-[11px] font-medium text-slate-500 leading-relaxed">
+                          You're targeting a <b>single branch</b>, so this is optional — every recipient already receives your main content above. Branch blocks matter when a campaign spans multiple branches.
+                        </p>
+                      </div>
+                    )}
                     <div className="space-y-3">
                       {selectedBranches.map(branch => (
                         <div key={branch} className="border-l-4 border-emerald-400 pl-4">
