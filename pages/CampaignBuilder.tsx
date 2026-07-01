@@ -160,6 +160,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   });
   const [activeComposeTab, setActiveComposeTab] = useState<CampaignChannel>('email');
   const [emailTemplate, setEmailTemplate] = useState('UnifiedSproutifyUpdate');
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
 
   // Custom email templates from DB
   const [customTemplates, setCustomTemplates] = useState<EmailTemplate[]>([]);
@@ -1313,6 +1314,40 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 )}
 
+                {/* Preview */}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailPreview(true)}
+                    className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition shadow-lg"
+                  >
+                    <Eye size={16} />
+                    Preview Email
+                  </button>
+                </div>
+                {showEmailPreview && (
+                  <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4" onClick={() => setShowEmailPreview(false)}>
+                    <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Eye size={18} className="text-emerald-600" />
+                          <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs">Email Preview</h4>
+                        </div>
+                        <button type="button" onClick={() => setShowEmailPreview(false)} className="text-slate-400 hover:text-slate-700 transition">
+                          <XCircle size={22} />
+                        </button>
+                      </div>
+                      <div className="px-6 py-3 border-b border-slate-100 bg-slate-50">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
+                        <p className="text-sm font-bold text-slate-800 mt-1 break-words">{emailSubject || '(no subject yet)'}</p>
+                      </div>
+                      <div className="flex-1 overflow-auto bg-slate-100 p-4">
+                        <iframe title="Email preview" srcDoc={buildDispatchHtml(previewProfile)} className="w-full h-[60vh] bg-white rounded-xl border border-slate-200" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Branch Content */}
                 {selectedBranches.length > 0 && (
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
@@ -1817,6 +1852,14 @@ Return ONLY the post content, no explanations or labels.`,
   // before leaving Compose. Built-in layouts can't hold custom copy, so a
   // real send requires a template created in Brand Intelligence.
   const emailComposeIncomplete = enabledChannels.has('email') && !isCustomTemplate;
+
+  // Synthetic recipient used to render the in-page email preview modal.
+  const previewProfile: Profile = {
+    id: 'preview', email: 'preview@sproutify.app', first_name: 'there',
+    is_subscribed: true, marketing_pause: false, tags: [], segments: [],
+    branches: selectedBranches.length ? selectedBranches : ['atl-urban-farms'],
+    status: 'active', ltv: 0, churn_risk: 'minimal',
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-12 pb-20">
