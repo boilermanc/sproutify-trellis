@@ -28,6 +28,7 @@ import MarketingBrands from './pages/MarketingBrands';
 import MarketingWizard from './pages/MarketingWizard';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
+import SetPassword from './pages/SetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getProfileByEmail, fetchAllBranches } from './lib/supabaseService';
 import { supabase } from './lib/supabase';
@@ -47,7 +48,7 @@ const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 type AuthView = 'login' | 'reset-password';
 
 const AppContent: React.FC = () => {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, isPasswordRecovery, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [helpArticle, setHelpArticle] = useState<Article | null>(null);
@@ -427,6 +428,12 @@ const AppContent: React.FC = () => {
         <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
       </div>
     );
+  }
+
+  // Invite acceptance / password recovery: the user has a session from the
+  // email link but must set a password before entering the app.
+  if (isPasswordRecovery) {
+    return <SetPassword />;
   }
 
   if (!user) {

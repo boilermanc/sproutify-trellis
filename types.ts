@@ -19,9 +19,11 @@ export interface AuthUser {
 export interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
+  isPasswordRecovery: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
 }
 
 // DEPRECATED: Use BrandIdentity instead. Keeping for backwards compatibility during migration.
