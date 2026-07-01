@@ -75,6 +75,44 @@ export async function createTrellisUser(params: {
   }
 }
 
+// ─── 2b. inviteTrellisUser ──────────────────────────────────────
+// Sends a real Supabase invite email AND upserts the trellis_users
+// row (status 'invited') via the invite-trellis-user Edge Function,
+// which runs as an owner/admin-gated service_role. The signup trigger
+// links auth_user_id + activates the row when they accept.
+export async function inviteTrellisUser(params: {
+  email: string;
+  full_name?: string | null;
+  role?: TrellisRole;
+}): Promise<ServiceResult<{ email: string }>> {
+  const email = params.email?.trim().toLowerCase();
+  if (!email) return { data: null, error: 'Email is required' };
+
+  try {
+    const { data, error } = await supabase.functions.invoke('invite-trellis-user', {
+      body: {
+        email,
+        full_name: params.full_name?.trim() || null,
+        role: params.role || 'operator',
+      },
+    });
+
+    // functions.invoke surfaces non-2xx as an error, but the useful
+    // message lives in the JSON body — prefer that when present.
+    if (error) {
+      const detail = (data as { error?: string } | null)?.error;
+      return { data: null, error: detail || error.message };
+    }
+    if ((data as { error?: string } | null)?.error) {
+      return { data: null, error: (data as { error: string }).error };
+    }
+
+    return { data: { email }, error: null };
+  } catch (err) {
+    return { data: null, error: toMessage(err) };
+  }
+}
+
 // ─── 3. updateTrellisUserRole ───────────────────────────────────
 export async function updateTrellisUserRole(
   id: string,

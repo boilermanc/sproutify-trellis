@@ -5,7 +5,7 @@ import {
 import { TrellisUser } from '../types';
 import {
   listTrellisUsers,
-  createTrellisUser,
+  inviteTrellisUser,
   updateTrellisUserRole,
   setTrellisUserStatus,
   assignBranch,
@@ -88,7 +88,7 @@ const TeamPanel: React.FC = () => {
     if (!inviteEmail.trim()) return;
     setInviting(true);
     setError(null);
-    const res = await createTrellisUser({
+    const res = await inviteTrellisUser({
       email: inviteEmail,
       full_name: inviteName,
       role: inviteRole,
