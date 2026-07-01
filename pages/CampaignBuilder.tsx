@@ -1344,6 +1344,12 @@ Return ONLY the post content, no explanations or labels.`,
       case 2:
         return (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="flex items-start gap-3 rounded-2xl bg-emerald-50 border border-emerald-200 p-5">
+              <ShieldCheck size={18} className="mt-0.5 text-emerald-600 shrink-0" />
+              <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                <b className="font-black">This won't send anything yet.</b> Choosing a timing below only sets <b>when</b> the campaign goes out. On the next step (<b>Deploy</b>) you can <b>send yourself a test email</b> and review the full audience first — even “Send Now” waits for your final confirmation there.
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 { id: 'immediate' as const, title: 'Send Now', desc: 'Deploy all channels immediately', icon: Send },
