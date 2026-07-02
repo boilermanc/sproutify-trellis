@@ -31,9 +31,9 @@ from datetime import datetime, timezone
 import requests
 from flask import Flask, request, jsonify
 
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-BUCKET = os.environ.get("ASSET_BUCKET", "episode-assets")
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip().rstrip("/")
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"].strip()  # strip: trailing newline breaks Storage's JWT parse
+BUCKET = os.environ.get("ASSET_BUCKET", "episode-assets").strip()
 PORT = int(os.environ.get("PORT", "8100"))
 
 app = Flask(__name__)

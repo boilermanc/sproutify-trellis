@@ -39,9 +39,9 @@ def _now() -> str:
     """ISO-8601 UTC timestamp (PostgREST wants a value, not the SQL now())."""
     return datetime.now(timezone.utc).isoformat()
 
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-BUCKET = os.environ.get("STITCH_BUCKET", "music-sessions")
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip().rstrip("/")
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"].strip()  # strip: trailing newline breaks Storage's JWT parse
+BUCKET = os.environ.get("STITCH_BUCKET", "music-sessions").strip()
 PORT = int(os.environ.get("PORT", "8099"))
 
 # Crossfade / fade tuning (ms)
