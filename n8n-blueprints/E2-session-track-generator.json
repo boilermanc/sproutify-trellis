@@ -61,14 +61,12 @@
     },
     {
       "parameters": {
-        "operation": "toBinary",
-        "sourceProperty": "output_audio.data",
-        "options": { "fileName": "track.mp3", "mimeType": "audio/mpeg" },
-        "binaryPropertyName": "data"
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nlet b64 = r.output_audio?.data;\nif (!b64 && Array.isArray(r.steps)) {\n  for (const step of r.steps) {\n    const content = step.model_output?.content || step.content || [];\n    const audio = (Array.isArray(content) ? content : []).find(c => c.type === 'audio' && c.data);\n    if (audio) { b64 = audio.data; break; }\n  }\n}\nif (!b64) throw new Error('No audio found. Keys: ' + Object.keys(r).join(', '));\nreturn { json: { hasAudio: true }, binary: { data: await this.helpers.prepareBinaryData(Buffer.from(b64, 'base64'), 'track.mp3', 'audio/mpeg') } };"
       },
-      "name": "Audio base64 to Binary (VERIFY path)",
-      "type": "n8n-nodes-base.convertToFile",
-      "typeVersion": 1.1,
+      "name": "Audio base64 to Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [770, 300]
     },
     {
@@ -137,8 +135,8 @@
   "connections": {
     "Track Webhook": { "main": [[{ "node": "Mark Generating", "type": "main", "index": 0 }]] },
     "Mark Generating": { "main": [[{ "node": "Lyria Generate", "type": "main", "index": 0 }]] },
-    "Lyria Generate": { "main": [[{ "node": "Audio base64 to Binary (VERIFY path)", "type": "main", "index": 0 }]] },
-    "Audio base64 to Binary (VERIFY path)": { "main": [[{ "node": "Upload Track", "type": "main", "index": 0 }]] },
+    "Lyria Generate": { "main": [[{ "node": "Audio base64 to Binary", "type": "main", "index": 0 }]] },
+    "Audio base64 to Binary": { "main": [[{ "node": "Upload Track", "type": "main", "index": 0 }]] },
     "Upload Track": { "main": [[{ "node": "Mark Completed", "type": "main", "index": 0 }]] }
   }
 }
