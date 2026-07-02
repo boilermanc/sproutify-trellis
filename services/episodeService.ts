@@ -3,7 +3,7 @@ import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication,
   CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession,
 } from '../types';
-import { EPISODE_ARTWORK_WEBHOOK, EPISODE_VIDEO_WEBHOOK, EPISODE_PUBLISH_WEBHOOK } from '../constants';
+import { EPISODE_VIDEO_WEBHOOK, EPISODE_PUBLISH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 import { getTracks, getRenders } from './sessionService';
 
@@ -94,13 +94,16 @@ export async function generateArtwork(episode: Episode, assetType: AssetType, ex
   }).select('*').single();
   if (error || !asset) throw new Error(`Could not queue artwork: ${error?.message}`);
 
-  fetch(EPISODE_ARTWORK_WEBHOOK, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  // Fire the artwork generator edge function: Gemini writes an on-theme 1960s Riviera
+  // scene, Imagen renders it in the locked house style, uploads to episode-assets,
+  // and PATCHes this asset row to ready. Fire-and-forget; the UI polls the asset row.
+  supabase.functions.invoke('generate-episode-artwork', {
+    body: {
       asset_id: asset.id, episode_id: episode.id, branch: episode.branch, asset_type: assetType,
       width: dims.width, height: dims.height,
-      prompt: `${episode.show_name || episode.title} — ${episode.theme || ''}. ${extraPrompt || ''} Album/episode ${assetType.replace('_', ' ')}, cohesive brand look.`.trim(),
-    }),
+      title: episode.title, theme: episode.theme || '',
+      prompt: `${episode.show_name ? episode.show_name + '. ' : ''}${extraPrompt || ''}`.trim(),
+    },
   }).catch(() => {});
   await setEpisodeStatus(episode.id, 'artwork');
   return asset as EpisodeAsset;
