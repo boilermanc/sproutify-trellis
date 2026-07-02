@@ -954,6 +954,84 @@ export interface MusicGenConfig {
   duration_seconds?: number;
 }
 
+// ─── Trellis Sessions (multi-track music sessions → stitched master) ─
+export type SessionStatus =
+  | 'draft' | 'planning' | 'planned' | 'generating' | 'review' | 'stitching' | 'ready' | 'failed' | 'archived';
+export type TrackStatus = 'planned' | 'queued' | 'generating' | 'completed' | 'failed';
+export type RenderStatus = 'queued' | 'processing' | 'ready' | 'failed';
+
+export interface MusicSession {
+  id: string;
+  branch: string | null;
+  created_by: string | null;
+  title: string;
+  target_duration_seconds: number | null;
+  actual_duration_seconds: number | null;
+  genre: string | null;
+  mood: string | null;
+  track_count: number | null;
+  avg_track_length_seconds: number | null;
+  status: SessionStatus;
+  final_audio_url: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MusicTrack {
+  id: string;
+  session_id: string;
+  track_number: number;
+  title: string;
+  prompt: string;
+  final_prompt: string | null;
+  genre: string | null;
+  mood: string | null;
+  vocal_style: string | null;
+  duration_seconds: number | null;
+  provider: string;
+  model: string | null;
+  status: TrackStatus;
+  approved: boolean;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  audio_url: string | null;
+  audio_mime_type: string | null;
+  file_size_bytes: number | null;
+  error_message: string | null;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MusicRender {
+  id: string;
+  session_id: string;
+  render_type: 'master' | 'preview';
+  status: RenderStatus;
+  track_ids: string[];
+  final_audio_url: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  duration_seconds: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSessionConfig {
+  branch: string;
+  title: string;
+  genre?: string;
+  mood?: string;
+  target_duration_seconds?: number;
+  track_count?: number;
+  avg_track_length_seconds?: number;
+  vocal_style?: string;
+}
+
 export interface VideoAdBatchRequest {
   configs: VideoAdConfig[];
   variants: number;

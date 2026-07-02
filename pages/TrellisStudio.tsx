@@ -1,324 +1,367 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Music, Sparkles, Loader2, RefreshCw, Archive, AlertCircle, Clock, CheckCircle2, XCircle, Wand2,
+  Music, Loader2, RefreshCw, Archive, AlertCircle, CheckCircle2, XCircle, Wand2,
+  Sparkles, ListMusic, Layers, Download, Plus, Check,
 } from 'lucide-react';
-import { MusicGeneration, MusicGenConfig } from '../types';
+import { MusicSession, MusicTrack, MusicRender, CreateSessionConfig } from '../types';
 import {
-  MUSIC_GENRES, MUSIC_MOODS, MUSIC_VOCALS, MUSIC_DURATIONS, MUSIC_PRESETS,
+  MUSIC_GENRES, MUSIC_MOODS, MUSIC_VOCALS, SESSION_PRESETS, SESSION_STATUS_META,
 } from '../constants';
-import { submitMusicJob, getMusicJobs, archiveMusicJob } from '../services/musicService';
-import { useMusicPoller } from '../hooks/useMusicPoller';
+import {
+  createSessionWithPlan, getSessions, getTracks, getRenders,
+  generateSessionTracks, setTrackApproved, regenerateTrack, stitchSession, archiveSession,
+} from '../services/sessionService';
 
 interface TrellisStudioProps {
   branches: Array<{ slug: string; name: string }>;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   userId?: string | null;
+  geminiApiKey?: string;
 }
 
-const STATUS_META: Record<MusicGeneration['status'], { label: string; cls: string; icon: React.ElementType }> = {
-  queued: { label: 'Queued', cls: 'bg-slate-100 text-slate-600', icon: Clock },
-  generating: { label: 'Composing', cls: 'bg-amber-100 text-amber-700', icon: Loader2 },
-  completed: { label: 'Ready', cls: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 },
-  failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700', icon: XCircle },
-  archived: { label: 'Archived', cls: 'bg-slate-100 text-slate-400', icon: Archive },
+const TRACK_BADGE: Record<MusicTrack['status'], { label: string; cls: string; spin?: boolean }> = {
+  planned: { label: 'Planned', cls: 'bg-slate-100 text-slate-500' },
+  queued: { label: 'Queued', cls: 'bg-slate-100 text-slate-600' },
+  generating: { label: 'Generating', cls: 'bg-amber-100 text-amber-700', spin: true },
+  completed: { label: 'Ready', cls: 'bg-emerald-100 text-emerald-700' },
+  failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700' },
 };
 
-const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId }) => {
+const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey }) => {
+  const [sessions, setSessions] = useState<MusicSession[]>([]);
+  const [selected, setSelected] = useState<MusicSession | null>(null);
+  const [tracks, setTracks] = useState<MusicTrack[]>([]);
+  const [renders, setRenders] = useState<MusicRender[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Create form
   const [branch, setBranch] = useState(branches[0]?.slug || '');
   const [title, setTitle] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [genre, setGenre] = useState<string>('');
-  const [mood, setMood] = useState<string>('');
+  const [genre, setGenre] = useState('');
+  const [mood, setMood] = useState('');
   const [vocalStyle, setVocalStyle] = useState<string>(MUSIC_VOCALS[0]);
-  const [durationSeconds, setDurationSeconds] = useState<number>(30);
+  const [targetMinutes, setTargetMinutes] = useState(15);
+  const [trackCount, setTrackCount] = useState<number | ''>(5);
+  const [avgTrackSeconds, setAvgTrackSeconds] = useState(180);
 
-  const [generations, setGenerations] = useState<MusicGeneration[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [reviewing, setReviewing] = useState<MusicGeneration | null>(null);
+  useEffect(() => { if (!branch && branches[0]) setBranch(branches[0].slug); }, [branches, branch]);
 
-  useEffect(() => {
-    if (!branch && branches[0]) setBranch(branches[0].slug);
-  }, [branches, branch]);
+  const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
+  const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
 
-  const loadGenerations = useCallback(async () => {
-    try {
-      setLoading(true);
-      const rows = await getMusicJobs(branch || undefined, 50);
-      setGenerations(rows);
-    } catch (err) {
-      addToast(`Failed to load songs: ${err instanceof Error ? err.message : 'error'}`, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [branch, addToast]);
-
-  useEffect(() => { loadGenerations(); }, [loadGenerations]);
-
-  // Poll non-terminal jobs
-  const activeJobIds = useMemo(
-    () => generations.filter(g => g.status === 'queued' || g.status === 'generating').map(g => g.id),
-    [generations],
-  );
-
-  const handleJobUpdate = useCallback((job: MusicGeneration) => {
-    setGenerations(prev => prev.map(g => (g.id === job.id ? { ...g, ...job } : g)));
-    if (job.status === 'completed') addToast(`"${job.title}" is ready to review`, 'success');
-    if (job.status === 'failed') addToast(`"${job.title}" failed: ${job.error_message || 'unknown error'}`, 'error');
+  const loadSessions = useCallback(async () => {
+    try { setLoading(true); setSessions(await getSessions(undefined, 50)); }
+    catch (e) { addToast(`Failed to load sessions: ${e instanceof Error ? e.message : 'error'}`, 'error'); }
+    finally { setLoading(false); }
   }, [addToast]);
 
-  useMusicPoller(activeJobIds, handleJobUpdate, activeJobIds.length > 0);
+  useEffect(() => { loadSessions(); }, [loadSessions]);
 
-  const applyPreset = (p: typeof MUSIC_PRESETS[number]) => {
-    setTitle(p.title);
-    setPrompt(p.prompt);
-    setGenre(p.genre);
-    setMood(p.mood);
-    setVocalStyle(p.vocal_style);
-    setDurationSeconds(p.duration_seconds);
+  const loadDetail = useCallback(async (s: MusicSession) => {
+    try {
+      const [t, r] = await Promise.all([getTracks(s.id), getRenders(s.id)]);
+      setTracks(t); setRenders(r);
+    } catch (e) { addToast(`Failed to load session: ${e instanceof Error ? e.message : 'error'}`, 'error'); }
+  }, [addToast]);
+
+  const selectSession = useCallback(async (s: MusicSession) => {
+    setSelected(s); setTracks([]); setRenders([]);
+    await loadDetail(s);
+  }, [loadDetail]);
+
+  // ── Polling: refetch detail while tracks generating or a render is in flight ──
+  const pollRef = useRef<number | null>(null);
+  const activeWork = useMemo(() => {
+    const trackActive = tracks.some(t => t.status === 'generating' || t.status === 'queued');
+    const renderActive = renders.some(r => r.status === 'queued' || r.status === 'processing');
+    return trackActive || renderActive;
+  }, [tracks, renders]);
+
+  useEffect(() => {
+    if (!selected || !activeWork) { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } return; }
+    pollRef.current = window.setInterval(async () => {
+      const [t, r] = await Promise.all([getTracks(selected.id), getRenders(selected.id)]);
+      setTracks(t); setRenders(r);
+      // sync session status if a render just went ready
+      const ready = r.find(x => x.status === 'ready');
+      if (ready && selected.status !== 'ready') {
+        setSelected(prev => prev ? { ...prev, status: 'ready', final_audio_url: ready.final_audio_url } : prev);
+        setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'ready', final_audio_url: ready.final_audio_url } : s));
+      }
+    }, 5000);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [selected, activeWork]);
+
+  const applyPreset = (p: typeof SESSION_PRESETS[number]) => {
+    setTitle(p.name); setGenre(p.genre); setMood(p.mood); setVocalStyle(p.vocal_style);
+    setTargetMinutes(Math.round(p.target_duration_seconds / 60)); setAvgTrackSeconds(p.avg_track_length_seconds);
+    setTrackCount(Math.max(1, Math.round(p.target_duration_seconds / p.avg_track_length_seconds)));
   };
 
-  const canGenerate = branch && title.trim() && prompt.trim() && !submitting;
+  const handleCreate = async () => {
+    if (!branch || !title.trim()) { addToast('Branch and title are required', 'error'); return; }
+    setCreating(true);
+    try {
+      const config: CreateSessionConfig = {
+        branch, title: title.trim(), genre: genre || undefined, mood: mood || undefined,
+        vocal_style: vocalStyle, target_duration_seconds: targetMinutes * 60,
+        avg_track_length_seconds: avgTrackSeconds,
+        track_count: trackCount === '' ? undefined : Number(trackCount),
+      };
+      const { session, tracks: planned } = await createSessionWithPlan(config, geminiApiKey || '', userId);
+      setSessions(prev => [session, ...prev]);
+      setSelected(session); setTracks(planned); setRenders([]);
+      addToast(`Session "${session.title}" planned — ${planned.length} tracks`, 'success');
+      setTitle('');
+    } catch (e) { addToast(`Could not create session: ${e instanceof Error ? e.message : 'error'}`, 'error'); }
+    finally { setCreating(false); }
+  };
 
   const handleGenerate = async () => {
-    if (!canGenerate) return;
-    setSubmitting(true);
+    if (!selected) return;
+    setBusy(true);
     try {
-      const config: MusicGenConfig = {
-        branch,
-        title: title.trim(),
-        prompt: prompt.trim(),
-        genre: genre || undefined,
-        mood: mood || undefined,
-        vocal_style: vocalStyle || undefined,
-        duration_seconds: durationSeconds,
-      };
-      const { job_id } = await submitMusicJob(config, userId);
-
-      // Optimistic row so the poller starts tracking immediately
-      const optimistic: MusicGeneration = {
-        id: job_id, campaign_id: null, branch, created_by: userId ?? null,
-        title: config.title, prompt: config.prompt, final_prompt: null,
-        genre: genre || null, mood: mood || null, vocal_style: vocalStyle || null,
-        duration_seconds: durationSeconds, provider: 'google', model: null,
-        status: 'queued', progress: 0, error_message: null, retry_count: 0,
-        storage_bucket: null, storage_path: null, audio_url: null, audio_mime_type: null,
-        file_size_bytes: null, cost_estimate: 0, generation_started_at: null, completed_at: null,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      };
-      setGenerations(prev => [optimistic, ...prev]);
-      addToast('Song queued — generating now', 'success');
-      setTitle(''); setPrompt('');
-    } catch (err) {
-      addToast(`Could not start generation: ${err instanceof Error ? err.message : 'error'}`, 'error');
-    } finally {
-      setSubmitting(false);
-    }
+      await generateSessionTracks(selected, tracks);
+      setTracks(prev => prev.map(t => (t.status === 'planned' || t.status === 'failed') ? { ...t, status: 'generating' } : t));
+      setSelected(prev => prev ? { ...prev, status: 'generating' } : prev);
+      addToast('Track generation started', 'success');
+    } catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
+    finally { setBusy(false); }
   };
 
-  const handleArchive = async (g: MusicGeneration) => {
-    try {
-      await archiveMusicJob(g.id);
-      setGenerations(prev => prev.map(x => (x.id === g.id ? { ...x, status: 'archived' } : x)));
-      if (reviewing?.id === g.id) setReviewing(null);
-    } catch (err) {
-      addToast(`Archive failed: ${err instanceof Error ? err.message : 'error'}`, 'error');
-    }
+  const toggleApprove = async (t: MusicTrack) => {
+    const next = !t.approved;
+    setTracks(prev => prev.map(x => x.id === t.id ? { ...x, approved: next } : x));
+    try { await setTrackApproved(t.id, next); }
+    catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); setTracks(prev => prev.map(x => x.id === t.id ? { ...x, approved: !next } : x)); }
   };
 
-  const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
-  const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
+  const handleRegenerate = async (t: MusicTrack) => {
+    if (!selected) return;
+    setTracks(prev => prev.map(x => x.id === t.id ? { ...x, status: 'generating', approved: false } : x));
+    try { await regenerateTrack(selected, t); addToast(`Regenerating "${t.title}"`, 'info'); }
+    catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
+  };
+
+  const approvedCompleted = tracks.filter(t => t.approved && t.status === 'completed');
+
+  const handleStitch = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await stitchSession(selected, approvedCompleted);
+      setSelected(prev => prev ? { ...prev, status: 'stitching' } : prev);
+      const r = await getRenders(selected.id); setRenders(r);
+      addToast(`Stitching ${approvedCompleted.length} tracks into a master`, 'success');
+    } catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const handleArchive = async (s: MusicSession) => {
+    try { await archiveSession(s.id); setSessions(prev => prev.map(x => x.id === s.id ? { ...x, status: 'archived' } : x)); if (selected?.id === s.id) setSelected(prev => prev ? { ...prev, status: 'archived' } : prev); }
+    catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
+  };
+
+  const latestReadyRender = renders.find(r => r.status === 'ready');
+  const activeRender = renders.find(r => r.status === 'queued' || r.status === 'processing');
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-20">
-      {/* Create form */}
-      <div className="xl:col-span-1 space-y-6">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
+      {/* ── Left: create + session list ── */}
+      <div className="lg:col-span-1 space-y-6">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center">
-            <Music className="w-6 h-6 text-emerald-600" />
-          </div>
+          <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center"><Music className="w-6 h-6 text-emerald-600" /></div>
           <div>
-            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Trellis Studio</h2>
-            <p className="text-[11px] text-slate-400 font-medium">AI music &amp; theme songs (Lyria)</p>
+            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Trellis Sessions</h2>
+            <p className="text-[11px] text-slate-400 font-medium">AI music sessions → stitched master</p>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-5">
-          {/* Presets */}
-          <div>
-            <label className={labelCls}>Quick Start</label>
-            <div className="flex flex-wrap gap-2">
-              {MUSIC_PRESETS.map(p => (
-                <button key={p.id} type="button" onClick={() => applyPreset(p)}
-                  className="px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-[10px] font-black text-violet-600 uppercase tracking-tight hover:border-violet-400 transition">
-                  {p.name}
-                </button>
-              ))}
-            </div>
+        {/* Create form */}
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Plus size={14} /> New Session</h3>
+          <div className="flex flex-wrap gap-2">
+            {SESSION_PRESETS.map(p => (
+              <button key={p.id} type="button" onClick={() => applyPreset(p)}
+                className="px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-[10px] font-black text-violet-600 uppercase tracking-tight hover:border-violet-400 transition">
+                {p.name}
+              </button>
+            ))}
           </div>
-
-          <div>
-            <label className={labelCls}>Branch</label>
+          <div><label className={labelCls}>Branch</label>
             <select className={inputCls} value={branch} onChange={e => setBranch(e.target.value)}>
               {branches.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
             </select>
           </div>
-
-          <div>
-            <label className={labelCls}>Song Title</label>
-            <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Rekkrd After Dark Intro" />
+          <div><label className={labelCls}>Session Title</label>
+            <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Rekkrd After Dark — Midnight Jazz Vol. 1" />
           </div>
-
-          <div>
-            <label className={labelCls}>Prompt / Song Idea</label>
-            <textarea className={`${inputCls} resize-none`} rows={4} value={prompt} onChange={e => setPrompt(e.target.value)}
-              placeholder="Describe the song — vibe, instruments, brand phrase to include..." />
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Genre</label>
+            <div><label className={labelCls}>Genre</label>
               <select className={inputCls} value={genre} onChange={e => setGenre(e.target.value)}>
-                <option value="">Any</option>
-                {MUSIC_GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                <option value="">Any</option>{MUSIC_GENRES.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
-            <div>
-              <label className={labelCls}>Mood</label>
+            <div><label className={labelCls}>Mood</label>
               <select className={inputCls} value={mood} onChange={e => setMood(e.target.value)}>
-                <option value="">Any</option>
-                {MUSIC_MOODS.map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="">Any</option>{MUSIC_MOODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            <div>
-              <label className={labelCls}>Vocals</label>
+            <div><label className={labelCls}>Vocals</label>
               <select className={inputCls} value={vocalStyle} onChange={e => setVocalStyle(e.target.value)}>
                 {MUSIC_VOCALS.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
-            <div>
-              <label className={labelCls}>Duration</label>
-              <select className={inputCls} value={durationSeconds} onChange={e => setDurationSeconds(Number(e.target.value))}>
-                {MUSIC_DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
+            <div><label className={labelCls}>Target (min)</label>
+              <input type="number" min={1} className={inputCls} value={targetMinutes} onChange={e => setTargetMinutes(Number(e.target.value))} />
+            </div>
+            <div><label className={labelCls}>Track Count</label>
+              <input type="number" min={1} className={inputCls} value={trackCount} onChange={e => setTrackCount(e.target.value === '' ? '' : Number(e.target.value))} placeholder="auto" />
+            </div>
+            <div><label className={labelCls}>Avg Track (sec)</label>
+              <input type="number" min={15} className={inputCls} value={avgTrackSeconds} onChange={e => setAvgTrackSeconds(Number(e.target.value))} />
             </div>
           </div>
-
-          <button type="button" onClick={handleGenerate} disabled={!canGenerate}
-            className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">
-            {submitting ? <Loader2 size={18} className="animate-spin" /> : <Wand2 size={18} />}
-            {submitting ? 'Starting...' : 'Generate Song'}
+          <button type="button" onClick={handleCreate} disabled={creating || !branch || !title.trim()}
+            className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">
+            {creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            {creating ? 'Planning...' : 'Create + Plan Tracks'}
           </button>
-          <p className="text-[10px] text-slate-400 text-center font-medium">Generation runs in the background — the list updates when it's ready.</p>
+        </div>
+
+        {/* Session list */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sessions</h3>
+            <button onClick={loadSessions} className="text-slate-400 hover:text-emerald-600 transition"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
+          </div>
+          {sessions.length === 0 && !loading ? (
+            <p className="text-xs text-slate-400 px-1 py-4">No sessions yet.</p>
+          ) : sessions.map(s => {
+            const meta = SESSION_STATUS_META[s.status] || SESSION_STATUS_META.draft;
+            return (
+              <button key={s.id} type="button" onClick={() => selectSession(s)}
+                className={`w-full text-left p-4 rounded-2xl border-2 transition ${selected?.id === s.id ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-black text-slate-800 text-xs truncate">{s.title}</span>
+                  <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${meta.cls}`}>{meta.label}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium mt-1">{[s.genre, s.mood, `${s.track_count || '?'} tracks`].filter(Boolean).join(' · ')}</p>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Generations list */}
-      <div className="xl:col-span-2 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Recent Generations</h3>
-          <button type="button" onClick={loadGenerations} className="text-slate-400 hover:text-emerald-600 transition" title="Refresh">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-
-        {loading && generations.length === 0 ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-emerald-500" /></div>
-        ) : generations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-[2rem] border border-slate-100">
-            <Music size={40} className="text-slate-300 mb-3" />
-            <p className="text-sm font-bold text-slate-600">No songs yet</p>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs">Fill out the form and hit Generate — your first track will appear here.</p>
+      {/* ── Right: session detail ── */}
+      <div className="lg:col-span-2">
+        {!selected ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center bg-white rounded-[2rem] border border-slate-100">
+            <ListMusic size={44} className="text-slate-300 mb-3" />
+            <p className="text-sm font-bold text-slate-600">Select or create a session</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs">Plan a set of tracks, generate them, approve the keepers, and stitch them into one master.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {generations.map(g => {
-              const meta = STATUS_META[g.status];
-              const StatusIcon = meta.icon;
-              return (
-                <div key={g.id} className="bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-black text-slate-800 text-sm truncate">{g.title}</h4>
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${meta.cls}`}>
-                          <StatusIcon size={10} className={g.status === 'generating' ? 'animate-spin' : ''} />
-                          {meta.label}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-medium truncate">
-                        {[g.genre, g.mood, g.vocal_style].filter(Boolean).join(' · ') || g.prompt}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {g.status === 'completed' && (
-                        <button type="button" onClick={() => setReviewing(g)}
-                          className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition">
-                          Review
-                        </button>
-                      )}
-                      {g.status !== 'archived' && (
-                        <button type="button" onClick={() => handleArchive(g)} className="text-slate-300 hover:text-slate-500 transition" title="Archive">
-                          <Archive size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {g.status === 'failed' && g.error_message && (
-                    <div className="mt-3 flex items-start gap-2 text-[11px] text-rose-600 bg-rose-50 rounded-xl p-3">
-                      <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                      <span>{g.error_message}</span>
-                    </div>
-                  )}
+          <div className="space-y-5">
+            {/* Session header */}
+            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">{selected.title}</h3>
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">
+                    {[selected.genre, selected.mood, selected.vocal_style, `${selected.track_count || tracks.length} tracks`,
+                      selected.target_duration_seconds ? `~${Math.round(selected.target_duration_seconds / 60)} min target` : null].filter(Boolean).join(' · ')}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                <span className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${(SESSION_STATUS_META[selected.status] || SESSION_STATUS_META.draft).cls}`}>
+                  {(SESSION_STATUS_META[selected.status] || SESSION_STATUS_META.draft).label}
+                </span>
+              </div>
 
-      {/* Review modal */}
-      {reviewing && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4" onClick={() => setReviewing(null)}>
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Music size={18} className="text-emerald-600" />
-                <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs">Review</h4>
-              </div>
-              <button type="button" onClick={() => setReviewing(null)} className="text-slate-400 hover:text-slate-700 transition"><XCircle size={22} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <h3 className="text-lg font-black text-slate-800">{reviewing.title}</h3>
-                <p className="text-[11px] text-slate-400 font-medium mt-1">
-                  {[reviewing.genre, reviewing.mood, reviewing.vocal_style, reviewing.duration_seconds ? `${reviewing.duration_seconds}s` : null].filter(Boolean).join(' · ')}
-                </p>
-              </div>
-              {reviewing.audio_url ? (
-                <audio controls src={reviewing.audio_url} className="w-full">
-                  Your browser doesn't support audio playback.
-                </audio>
-              ) : (
-                <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 rounded-xl p-4">
-                  <AlertCircle size={14} /> Audio URL not available on this record.
-                </div>
-              )}
-              <div>
-                <p className={labelCls}>Prompt used</p>
-                <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 rounded-xl p-3">{reviewing.final_prompt || reviewing.prompt}</p>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => handleArchive(reviewing)}
-                  className="px-4 py-2 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition flex items-center gap-1">
+              <div className="flex flex-wrap gap-3 mt-5">
+                {tracks.some(t => t.status === 'planned' || t.status === 'failed') && (
+                  <button type="button" onClick={handleGenerate} disabled={busy}
+                    className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition disabled:opacity-50">
+                    <Wand2 size={15} /> Generate Tracks
+                  </button>
+                )}
+                <button type="button" onClick={handleStitch} disabled={busy || approvedCompleted.length === 0}
+                  className="px-5 py-2.5 bg-violet-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-violet-700 transition disabled:opacity-40">
+                  <Layers size={15} /> Stitch Approved ({approvedCompleted.length})
+                </button>
+                <button type="button" onClick={() => handleArchive(selected)} className="px-4 py-2.5 text-slate-400 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition flex items-center gap-1">
                   <Archive size={14} /> Archive
                 </button>
               </div>
             </div>
+
+            {/* Final master */}
+            {(latestReadyRender || activeRender) && (
+              <div className="bg-white p-6 rounded-[2rem] border-2 border-emerald-200 shadow-sm">
+                <h4 className="text-xs font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2 mb-3"><Layers size={15} /> Final Master</h4>
+                {latestReadyRender?.final_audio_url ? (
+                  <div className="space-y-3">
+                    <audio controls src={latestReadyRender.final_audio_url} className="w-full" />
+                    <a href={latestReadyRender.final_audio_url} download className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700">
+                      <Download size={14} /> Download master
+                    </a>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl p-3">
+                    <Loader2 size={14} className="animate-spin" /> Stitching in progress — this updates automatically when the master is ready.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tracks */}
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tracks</h4>
+              {tracks.length === 0 ? (
+                <div className="py-10 text-center bg-white rounded-2xl border border-slate-100"><Loader2 className="w-6 h-6 animate-spin text-emerald-500 mx-auto" /></div>
+              ) : tracks.map(t => {
+                const b = TRACK_BADGE[t.status];
+                return (
+                  <div key={t.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-slate-300">#{t.track_number}</span>
+                          <h5 className="font-black text-slate-800 text-sm truncate">{t.title}</h5>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${b.cls}`}>
+                            {b.spin && <Loader2 size={9} className="animate-spin" />}{b.label}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-medium mt-1 line-clamp-2">{t.prompt}</p>
+                      </div>
+                      {t.status === 'completed' && (
+                        <button type="button" onClick={() => toggleApprove(t)}
+                          className={`shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition ${t.approved ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                          {t.approved ? <><Check size={12} /> Approved</> : 'Approve'}
+                        </button>
+                      )}
+                    </div>
+                    {t.status === 'completed' && t.audio_url && (
+                      <div className="mt-3 flex items-center gap-3">
+                        <audio controls src={t.audio_url} className="w-full h-9" />
+                        <button type="button" onClick={() => handleRegenerate(t)} title="Regenerate" className="text-slate-300 hover:text-emerald-600 transition shrink-0"><RefreshCw size={15} /></button>
+                      </div>
+                    )}
+                    {t.status === 'failed' && (
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1 text-[11px] text-rose-600"><AlertCircle size={12} />{t.error_message || 'Generation failed'}</span>
+                        <button type="button" onClick={() => handleRegenerate(t)} className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Retry</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

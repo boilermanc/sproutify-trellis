@@ -57,7 +57,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'branches', label: 'Branches', icon: GitBranch },
     { id: 'social-hub', label: 'Social Hub', icon: Share2 },
     { id: 'video-ad-lab', label: 'Video Ad Lab', icon: Video },
-    { id: 'trellis-studio', label: 'Trellis Studio', icon: Music },
+    { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },
     { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },
     { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
     { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },

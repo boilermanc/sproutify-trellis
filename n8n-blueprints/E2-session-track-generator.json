@@ -1,0 +1,117 @@
+{
+  "name": "Trellis: Session Track Generator (Lyria)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-session-track-generate",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Track Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_music_tracks?id=eq.{{ $node['Track Webhook'].json.body.track_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'generating', updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Generating",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/lyria-3-clip:generateMusic",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-goog-api-key", "value": "YOUR_GEMINI_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: $node['Track Webhook'].json.body.prompt, duration_seconds: $node['Track Webhook'].json.body.duration_seconds }) }}"
+      },
+      "name": "Lyria Generate (VERIFY endpoint + body)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [710, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/music-sessions/{{ $node['Track Webhook'].json.body.session_id }}/tracks/track-{{ $node['Track Webhook'].json.body.track_number }}.mp3",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "audio/mpeg" },
+            { "name": "x-upsert", "value": "true" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data"
+      },
+      "name": "Upload Track",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_music_tracks?id=eq.{{ $node['Track Webhook'].json.body.track_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'completed', storage_bucket: 'music-sessions', storage_path: $node['Track Webhook'].json.body.session_id + '/tracks/track-' + $node['Track Webhook'].json.body.track_number + '.mp3', audio_url: 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/music-sessions/' + $node['Track Webhook'].json.body.session_id + '/tracks/track-' + $node['Track Webhook'].json.body.track_number + '.mp3', audio_mime_type: 'audio/mpeg', updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1170, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Session Track Generator (Lyria)\n\nOne track of a Trellis Session. Called once per planned track by `sessionService.generateSessionTracks` (fire-and-forget, in parallel).\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-session-track-generate`\n\n**POST body:**\n```json\n{\n  \"track_id\": \"uuid\",\n  \"session_id\": \"uuid\",\n  \"branch\": \"atl-urban-farms\",\n  \"track_number\": 1,\n  \"title\": \"...\",\n  \"prompt\": \"...\",\n  \"genre\": \"Jazz\",\n  \"mood\": \"Mysterious\",\n  \"vocal_style\": \"Instrumental only\",\n  \"duration_seconds\": 180\n}\n```\n\n### SETUP (same as E1)\n1. Replace `YOUR_SERVICE_ROLE_KEY` (3 nodes) — Hub `horvjqqifgrzxesuxtfm`.\n2. Replace `YOUR_GEMINI_API_KEY` (or fetch from `tenant_secrets.gemini_api_key`).\n3. **⚠️ Lyria node is a SCAFFOLD** — verify model id / endpoint / body / response vs https://ai.google.dev/gemini-api/docs/music-generation. Decode the returned base64 audio to a binary field `data` before Upload.\n4. Upload writes to `music-sessions/{session_id}/tracks/track-{n}.mp3` (public bucket → the audio_url is directly playable).\n5. **Error path (add):** on failure PATCH the track to `status='failed'` + `error_message` (UI renders failed tracks with a Retry button).\n\nWhen all approved tracks are `completed`, the user hits **Stitch Approved** → `trellis-music-stitch` (Python worker on the VPS, see /workers).\n\n**Prereqs done:** `trellis_music_sessions/tracks/renders` tables + `music-sessions` public bucket exist (2026-07-02).",
+        "width": 560,
+        "height": 640
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -360]
+    }
+  ],
+  "connections": {
+    "Track Webhook": { "main": [[{ "node": "Mark Generating", "type": "main", "index": 0 }]] },
+    "Mark Generating": { "main": [[{ "node": "Lyria Generate (VERIFY endpoint + body)", "type": "main", "index": 0 }]] },
+    "Lyria Generate (VERIFY endpoint + body)": { "main": [[{ "node": "Upload Track", "type": "main", "index": 0 }]] },
+    "Upload Track": { "main": [[{ "node": "Mark Completed", "type": "main", "index": 0 }]] }
+  }
+}

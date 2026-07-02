@@ -717,6 +717,91 @@ GRANT ALL ON music_generations TO anon, authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_music_generations_branch ON music_generations (branch);
 CREATE INDEX IF NOT EXISTS idx_music_generations_status ON music_generations (status);
 CREATE INDEX IF NOT EXISTS idx_music_generations_created_at ON music_generations (created_at DESC);
+
+-- 17. TRELLIS SESSIONS (multi-track music sessions → stitched master)
+CREATE TABLE IF NOT EXISTS trellis_music_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch TEXT,
+  created_by UUID,
+  title TEXT NOT NULL,
+  target_duration_seconds INTEGER DEFAULT 3600,
+  actual_duration_seconds INTEGER,
+  genre TEXT,
+  mood TEXT,
+  track_count INTEGER DEFAULT 5,
+  avg_track_length_seconds INTEGER DEFAULT 180,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','planning','planned','generating','review','stitching','ready','failed','archived')),
+  final_audio_url TEXT,
+  storage_bucket TEXT,
+  storage_path TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_music_tracks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES trellis_music_sessions(id) ON DELETE CASCADE,
+  track_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  final_prompt TEXT,
+  genre TEXT,
+  mood TEXT,
+  vocal_style TEXT,
+  duration_seconds INTEGER,
+  provider TEXT NOT NULL DEFAULT 'google',
+  model TEXT,
+  status TEXT NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned','queued','generating','completed','failed')),
+  approved BOOLEAN DEFAULT false,
+  storage_bucket TEXT,
+  storage_path TEXT,
+  audio_url TEXT,
+  audio_mime_type TEXT,
+  file_size_bytes BIGINT,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_music_renders (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES trellis_music_sessions(id) ON DELETE CASCADE,
+  render_type TEXT NOT NULL DEFAULT 'master' CHECK (render_type IN ('master','preview')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','ready','failed')),
+  track_ids JSONB DEFAULT '[]'::jsonb,
+  final_audio_url TEXT,
+  storage_bucket TEXT,
+  storage_path TEXT,
+  duration_seconds INTEGER,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE trellis_music_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_music_tracks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_music_renders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anon Full Access" ON trellis_music_sessions FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_music_sessions FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_music_sessions FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_music_tracks FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_music_tracks FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_music_tracks FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_music_renders FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_music_renders FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_music_renders FOR ALL TO service_role USING (true) WITH CHECK (true);
+GRANT ALL ON trellis_music_sessions TO anon, authenticated, service_role;
+GRANT ALL ON trellis_music_tracks TO anon, authenticated, service_role;
+GRANT ALL ON trellis_music_renders TO anon, authenticated, service_role;
+
+CREATE INDEX IF NOT EXISTS idx_tms_branch ON trellis_music_sessions (branch);
+CREATE INDEX IF NOT EXISTS idx_tms_status ON trellis_music_sessions (status);
+CREATE INDEX IF NOT EXISTS idx_tmt_session ON trellis_music_tracks (session_id, track_number);
+CREATE INDEX IF NOT EXISTS idx_tmr_session ON trellis_music_renders (session_id);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
@@ -733,7 +818,9 @@ export const WEBHOOK_SPECS = {
   sms_dispatch: "https://n8n.sproutify.app/webhook/twilio-sms-dispatch",
   reddit_review_stage: "https://n8n.sproutify.app/webhook/reddit-review-stage",
   reddit_post_comment: "https://n8n.sproutify.app/webhook/reddit-post-comment",
-  music_generate: "https://n8n.sproutify.app/webhook/trellis-music-generate"
+  music_generate: "https://n8n.sproutify.app/webhook/trellis-music-generate",
+  session_track_generate: "https://n8n.sproutify.app/webhook/trellis-session-track-generate",
+  music_stitch: "https://n8n.sproutify.app/webhook/trellis-music-stitch"
 };
 
 export const MOCK_BRIEFING: DailyBriefing = {
@@ -1171,3 +1258,25 @@ export const MUSIC_GEN_STAGES = [
   { key: 'generating', label: 'Composing' },
   { key: 'completed', label: 'Complete' },
 ] as const;
+
+// ─── Trellis Sessions (multi-track → stitched master) ───────────────
+export const MUSIC_SESSION_TRACK_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-session-track-generate';
+export const MUSIC_STITCH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-music-stitch';
+
+export const SESSION_PRESETS = [
+  { id: 'rekkrd_midnight_jazz', name: 'Rekkrd After Dark — Midnight Jazz', genre: 'Jazz', mood: 'Mysterious', vocal_style: 'Instrumental only', target_duration_seconds: 3600, avg_track_length_seconds: 180 },
+  { id: 'lofi_study', name: 'Lo-fi Study Hour', genre: 'Lo-fi', mood: 'Smooth', vocal_style: 'Instrumental only', target_duration_seconds: 3600, avg_track_length_seconds: 150 },
+  { id: 'soul_lounge', name: 'Soul Lounge Evening', genre: 'Soul', mood: 'Warm', vocal_style: 'Female vocals', target_duration_seconds: 1800, avg_track_length_seconds: 200 },
+] as const;
+
+export const SESSION_STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft: { label: 'Draft', cls: 'bg-slate-100 text-slate-500' },
+  planning: { label: 'Planning', cls: 'bg-amber-100 text-amber-700' },
+  planned: { label: 'Planned', cls: 'bg-blue-100 text-blue-700' },
+  generating: { label: 'Generating', cls: 'bg-amber-100 text-amber-700' },
+  review: { label: 'Review', cls: 'bg-violet-100 text-violet-700' },
+  stitching: { label: 'Stitching', cls: 'bg-amber-100 text-amber-700' },
+  ready: { label: 'Ready', cls: 'bg-emerald-100 text-emerald-700' },
+  failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700' },
+  archived: { label: 'Archived', cls: 'bg-slate-100 text-slate-400' },
+};
