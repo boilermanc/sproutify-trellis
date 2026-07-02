@@ -1,6 +1,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate } from '../types';
+import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult } from '../types';
+import { Segment, PRESET_SEGMENTS } from '../segmentTypes';
+import { evaluateSegment } from '../segmentEngine';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
 import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
@@ -45,6 +47,7 @@ interface CampaignRecord {
 interface CampaignBuilderProps {
   onCampaignLaunch: (campaign: { name: string, audienceSize: number, segments: string[] }) => void;
   profiles: Profile[];
+  branchStats?: BranchStatsResult;
   spokeConnections?: SpokeConnection[];
   branches?: Branch[];
   branchContext?: BranchContext;
@@ -87,13 +90,13 @@ const TEMPLATES = [
 ];
 
 const CAMPAIGN_PRESETS = [
-  { id: 'high_value', label: 'High-Value Customers', desc: 'LTV above $200', filter: (p: Profile) => p.ltv >= 200, color: 'emerald' },
-  { id: 'at_risk', label: 'Churn Risk', desc: 'Moderate or higher churn risk', filter: (p: Profile) => ['moderate', 'high', 'critical'].includes(p.churn_risk), color: 'rose' },
-  { id: 'engaged', label: 'Recently Active', desc: 'Activity within 30 days', filter: (p: Profile) => { const d = p.last_active ? new Date(p.last_active) : null; return d ? (Date.now() - d.getTime()) < 30*24*60*60*1000 : false; }, color: 'blue' },
-  { id: 'dormant', label: 'Dormant', desc: 'No activity in 90+ days', filter: (p: Profile) => { const d = p.last_active ? new Date(p.last_active) : null; return d ? (Date.now() - d.getTime()) > 90*24*60*60*1000 : true; }, color: 'amber' },
-  { id: 'subscribed', label: 'Opted-In', desc: 'Email subscription active', filter: (p: Profile) => p.is_subscribed && !p.marketing_pause, color: 'indigo' },
-  { id: 'multi_branch', label: 'Cross-Pollinated', desc: 'Present on 2+ branches', filter: (p: Profile) => p.branches.length >= 2, color: 'violet' },
-  { id: 'all', label: 'Entire Ecosystem', desc: 'All profiles in scoped branches', filter: () => true, color: 'slate' },
+  { id: 'high_value', label: 'High-Value Customers', desc: 'Top spenders — over $200 lifetime value. Ideal for VIP offers & early access.', filter: (p: Profile) => p.ltv >= 200, color: 'emerald' },
+  { id: 'at_risk', label: 'Churn Risk', desc: 'Slipping away — flagged moderate-to-critical churn. Best for win-back offers.', filter: (p: Profile) => ['moderate', 'high', 'critical'].includes(p.churn_risk), color: 'rose' },
+  { id: 'engaged', label: 'Recently Active', desc: 'Warm audience — bought, opened, or clicked in the last 30 days.', filter: (p: Profile) => { const d = p.last_active ? new Date(p.last_active) : null; return d ? (Date.now() - d.getTime()) < 30*24*60*60*1000 : false; }, color: 'blue' },
+  { id: 'dormant', label: 'Dormant', desc: 'Gone quiet — no activity in 90+ days. Good for a "we miss you" re-engage.', filter: (p: Profile) => { const d = p.last_active ? new Date(p.last_active) : null; return d ? (Date.now() - d.getTime()) > 90*24*60*60*1000 : true; }, color: 'amber' },
+  { id: 'subscribed', label: 'Opted-In', desc: 'Confirmed opt-ins — subscribed and not paused. Always safe to email.', filter: (p: Profile) => p.is_subscribed && !p.marketing_pause, color: 'indigo' },
+  { id: 'multi_branch', label: 'Cross-Pollinated', desc: 'Cross-shoppers — active on 2+ Sproutify sites. Your most engaged fans.', filter: (p: Profile) => p.branches.length >= 2, color: 'violet' },
+  { id: 'all', label: 'Entire Ecosystem', desc: 'Everyone contactable in the selected branch(es). Broadest reach.', filter: () => true, color: 'slate' },
 ];
 
 const PRESET_COLOR_MAP: Record<string, { bg: string, border: string, text: string, selectedBg: string }> = {
@@ -125,6 +128,7 @@ const CAMPAIGN_HISTORY_KEY = 'trellis_campaign_history';
 const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   onCampaignLaunch,
   profiles,
+  branchStats,
   spokeConnections = [],
   branches = [],
   branchContext,
@@ -146,6 +150,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [emailSubject, setEmailSubject] = useState('');
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
+  const [selectedSavedSegments, setSelectedSavedSegments] = useState<string[]>([]);
+  const [showAudiencePreview, setShowAudiencePreview] = useState(false);
   const [selectedTags] = useState<string[]>([]);
   const [triggerType, setTriggerType] = useState<'immediate' | 'scheduled' | 'staggered'>('immediate');
 
@@ -361,15 +367,69 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     );
   }, [scopedProfiles, selectedBranches]);
 
+  // Saved Segments — the same rule-based library managed on the Segments page
+  // (built-in presets + user-created custom segments from localStorage). These are
+  // evaluated with the shared segmentEngine over the ENRICHED profiles so that what
+  // you see on the Segments page matches what you can target here.
+  const savedSegments = useMemo<Segment[]>(() => {
+    const presets: Segment[] = PRESET_SEGMENTS.map((preset, index) => ({
+      ...preset,
+      id: `preset-${index}`,
+      created_at: '',
+      updated_at: '',
+    }));
+    let custom: Segment[] = [];
+    try {
+      const raw = localStorage.getItem('trellis_custom_segments');
+      if (raw) custom = JSON.parse(raw);
+    } catch { /* ignore malformed cache */ }
+    return [...presets, ...custom];
+  }, []);
+
+  // For each saved segment, the lowercased set of emails that qualify (evaluated once
+  // over every enriched profile). Membership is then intersected with the scoped,
+  // consent-filtered audience below — so branch scope + consent are still enforced.
+  const savedSegmentEmails = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    const enriched = branchStats?.enrichedProfiles || [];
+    for (const seg of savedSegments) {
+      const emails = new Set<string>();
+      for (const ep of enriched) {
+        if (ep.email && evaluateSegment(ep, seg)) emails.add(ep.email.toLowerCase());
+      }
+      map[seg.id] = emails;
+    }
+    return map;
+  }, [savedSegments, branchStats?.enrichedProfiles]);
+
   const segmentProfiles = useMemo(() => {
-    if (selectedSegments.length === 0) return consentFiltered;
+    if (selectedSegments.length === 0 && selectedSavedSegments.length === 0) return consentFiltered;
     const activeFilters = CAMPAIGN_PRESETS.filter(p => selectedSegments.includes(p.id));
-    return consentFiltered.filter(profile =>
-      activeFilters.some(preset => preset.filter(profile))
-    );
-  }, [consentFiltered, selectedSegments]);
+    const activeSavedSets = selectedSavedSegments.map(id => savedSegmentEmails[id]).filter(Boolean);
+    return consentFiltered.filter(profile => {
+      const matchesQuick = activeFilters.some(preset => preset.filter(profile));
+      const matchesSaved = activeSavedSets.some(set => set.has((profile.email || '').toLowerCase()));
+      return matchesQuick || matchesSaved;
+    });
+  }, [consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
 
   const audienceSize = segmentProfiles.length;
+
+  // Same selection as segmentProfiles, but BEFORE consent filtering — lets us show
+  // exactly where the drop happens (matched → opted-in → excluded for consent).
+  const matchBeforeConsent = useMemo(() => {
+    if (selectedBranches.length === 0) return 0;
+    if (selectedSegments.length === 0 && selectedSavedSegments.length === 0) return scopedProfiles.length;
+    const activeFilters = CAMPAIGN_PRESETS.filter(p => selectedSegments.includes(p.id));
+    const activeSavedSets = selectedSavedSegments.map(id => savedSegmentEmails[id]).filter(Boolean);
+    return scopedProfiles.filter(profile => {
+      const matchesQuick = activeFilters.some(preset => preset.filter(profile));
+      const matchesSaved = activeSavedSets.some(set => set.has((profile.email || '').toLowerCase()));
+      return matchesQuick || matchesSaved;
+    }).length;
+  }, [scopedProfiles, selectedBranches, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
+
+  const excludedForConsent = Math.max(0, matchBeforeConsent - audienceSize);
 
   const presetCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -378,6 +438,16 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     }
     return counts;
   }, [scopedProfiles]);
+
+  // Count of each saved segment WITHIN the currently scoped branches (reflects reach here)
+  const savedSegmentCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const seg of savedSegments) {
+      const set = savedSegmentEmails[seg.id];
+      counts[seg.id] = set ? scopedProfiles.filter(p => set.has((p.email || '').toLowerCase())).length : 0;
+    }
+    return counts;
+  }, [savedSegments, savedSegmentEmails, scopedProfiles]);
 
   const enabledChannelCount = enabledChannels.size;
 
@@ -406,6 +476,34 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         : [...prev, presetId]
     );
   };
+
+  const toggleSavedSegment = (segmentId: string) => {
+    setSelectedSavedSegments(prev =>
+      prev.includes(segmentId)
+        ? prev.filter(id => id !== segmentId)
+        : [...prev, segmentId]
+    );
+  };
+
+  // One-time handoff from the Segments page "Send Campaign" button: pre-select the
+  // handed-off segment and scope to all branches so it's immediately addressable.
+  const handoffAppliedRef = useRef(false);
+  useEffect(() => {
+    if (handoffAppliedRef.current) return;
+    let pending: string | null = null;
+    try { pending = localStorage.getItem('trellis_pending_campaign_segment'); } catch { /* ignore */ }
+    if (!pending) { handoffAppliedRef.current = true; return; }
+    // Wait until segments + branches have loaded before applying the handoff.
+    if (savedSegments.length === 0 || availableBranches.length === 0) return;
+    handoffAppliedRef.current = true;
+    try { localStorage.removeItem('trellis_pending_campaign_segment'); } catch { /* ignore */ }
+    if (savedSegments.some(s => s.id === pending)) {
+      setSelectedSavedSegments([pending]);
+      setSelectedBranches([...availableBranches]);
+      setCurrentStep(0);
+      setShowAudiencePreview(true);
+    }
+  }, [savedSegments, availableBranches]);
 
   const toggleChannel = (channel: CampaignChannel) => {
     setEnabledChannels(prev => {
@@ -580,6 +678,7 @@ Return ONLY the post content, no explanations or labels.`,
         query: {
           branches: selectedBranches,
           presets: selectedSegments,
+          saved_segments: selectedSavedSegments,
           branch_content: branchContent,
         },
         channels: channels,
@@ -1027,8 +1126,15 @@ Return ONLY the post content, no explanations or labels.`,
                 </h4>
                 <HelpLink articleId="art_gs_build_segment" variant="badge" label="Segment guide" onOpenArticle={onOpenArticle!} />
               </div>
-              <p className="text-[11px] text-slate-400 mb-6">Select one or more presets. Multiple selections combine with OR logic.</p>
+              <p className="text-[11px] text-slate-400 mb-3">Select one or more segments. Everything you select combines with OR logic.</p>
+              <div className="flex items-start gap-2 mb-6 bg-amber-50 border border-amber-100 rounded-2xl px-4 py-2.5">
+                <Info size={13} className="text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-[10px] text-amber-700 leading-relaxed">
+                  Counts here are <b>who you can actually email</b> — people in your selected branch(es) who are opted-in and not paused. This is normally lower than the total shown on the Segments page, which counts everyone regardless of consent.
+                </p>
+              </div>
 
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Quick Filters</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {CAMPAIGN_PRESETS.map(preset => {
                   const isActive = selectedSegments.includes(preset.id);
@@ -1062,28 +1168,165 @@ Return ONLY the post content, no explanations or labels.`,
                   );
                 })}
               </div>
+
+              {/* Saved Segments — mirror of the Segments page (built-in presets + your custom segments) */}
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Saved Segments <span className="text-slate-300 normal-case font-medium tracking-normal">· from the Segments page</span>
+                  </p>
+                  <span className="text-[10px] font-bold text-indigo-400">{savedSegments.length} available</span>
+                </div>
+
+                {savedSegments.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 bg-slate-50 rounded-2xl px-4 py-3">
+                    Build reusable, rule-based segments on the <b className="text-slate-500">Segments</b> page and they'll appear here automatically.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {savedSegments.map(seg => {
+                      const isActive = selectedSavedSegments.includes(seg.id);
+                      const count = savedSegmentCounts[seg.id] || 0;
+                      const isPreset = seg.id.startsWith('preset-');
+                      return (
+                        <button
+                          type="button"
+                          key={seg.id}
+                          onClick={() => toggleSavedSegment(seg.id)}
+                          className={`text-left p-4 rounded-2xl border-2 transition-all duration-200 flex items-center justify-between ${
+                            isActive
+                              ? 'bg-indigo-50 border-indigo-300 shadow-md'
+                              : 'border-slate-100 bg-white hover:border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3 min-w-0">
+                            <div className={`w-1.5 h-10 rounded-full ${isActive ? 'bg-indigo-500' : 'bg-slate-200'}`} />
+                            <div className="min-w-0">
+                              <p className={`text-xs font-black uppercase tracking-tight truncate ${isActive ? 'text-indigo-700' : 'text-slate-700'}`}>
+                                {seg.name}
+                                {!isPreset && <span className="ml-2 text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full align-middle tracking-normal">CUSTOM</span>}
+                              </p>
+                              {seg.description && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{seg.description}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 shrink-0 pl-2">
+                            <span className={`text-sm font-black ${isActive ? 'text-indigo-700' : 'text-slate-400'}`}>{count}</span>
+                            {isActive && <CheckCircle2 size={16} className="text-indigo-700" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Audience Preview — see who's actually in the segment (no more selecting blind) */}
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAudiencePreview(v => !v)}
+                  disabled={selectedBranches.length === 0}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
+                    selectedBranches.length === 0
+                      ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                      : 'border-indigo-100 bg-indigo-50/60 text-indigo-700 hover:bg-indigo-50'
+                  }`}
+                >
+                  <span className="flex items-center text-[11px] font-black uppercase tracking-widest">
+                    <Eye size={15} className="mr-2.5" />
+                    Preview this audience
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs font-black">{audienceSize} {audienceSize === 1 ? 'person' : 'people'}</span>
+                    <ChevronDown size={16} className={`transition-transform ${showAudiencePreview ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+
+                {showAudiencePreview && (
+                  <div className="mt-3">
+                    {selectedBranches.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">Pick a branch above to see who qualifies.</p>
+                    ) : audienceSize === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">
+                        No opted-in customers match {selectedSegments.length > 0 ? 'these presets' : 'this branch'} yet — try {selectedSegments.length > 0 ? 'different or fewer presets' : 'another branch'}.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="space-y-1.5">
+                          {segmentProfiles.slice(0, 8).map(p => (
+                            <div key={p.id} className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-50">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-slate-700 truncate">
+                                  {p.first_name || 'Unknown'}
+                                  <span className="font-normal text-slate-400 ml-2">{p.email}</span>
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0 text-[10px] font-black">
+                                <span className="text-emerald-600" title="Lifetime value">${Math.round(p.ltv || 0)}</span>
+                                <span className="text-slate-400" title="Last activity">{p.last_active ? timeAgo(p.last_active) : 'no activity'}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {audienceSize > 8 && (
+                          <p className="text-[10px] text-slate-400 text-center mt-2.5 font-medium">
+                            + {audienceSize - 8} more not shown — this is a sample of the full {audienceSize}-person audience.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Channel Selector Grid */}
             {renderChannelSelector()}
 
             {/* Reach Summary */}
-            <div className={`p-8 rounded-[2.5rem] border-4 transition-all duration-500 flex items-center justify-between ${
+            <div className={`p-8 rounded-[2.5rem] border-4 transition-all duration-500 ${
               audienceSize > 0 ? 'bg-emerald-50 border-emerald-500/10' : 'bg-slate-50 border-slate-100'
             }`}>
-              <div className="flex items-center space-x-6">
-                <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg ${audienceSize > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-white'}`}>
-                  <Users size={32} />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-6">
+                  <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center shadow-lg ${audienceSize > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-white'}`}>
+                    <Users size={32} />
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Strategy Reach</p>
+                    <p className="text-3xl font-black text-slate-800">{audienceSize} Identities</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Strategy Reach</p>
-                  <p className="text-3xl font-black text-slate-800">{audienceSize} Identities</p>
+                <div className="text-right space-y-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedBranches.length} Branches</p>
+                  <p className="text-[10px] font-black text-indigo-600">{enabledChannelCount} Channels</p>
                 </div>
               </div>
-              <div className="text-right space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{selectedBranches.length} Branches</p>
-                <p className="text-[10px] font-black text-indigo-600">{enabledChannelCount} Channels</p>
-              </div>
+
+              {/* Consent breakdown — where the drop happens */}
+              {matchBeforeConsent > 0 && (
+                <div className="mt-6 pt-6 border-t border-emerald-500/10">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="text-center">
+                      <p className="text-2xl font-black text-slate-700">{matchBeforeConsent}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Match the rules</p>
+                    </div>
+                    <div className="text-center border-x border-slate-200/70">
+                      <p className="text-2xl font-black text-emerald-600">{audienceSize}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 mt-1">Opted-in · will send</p>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-2xl font-black ${excludedForConsent > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{excludedForConsent}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-amber-500/80 mt-1">Excluded · no consent</p>
+                    </div>
+                  </div>
+                  {excludedForConsent > 0 && (
+                    <p className="text-[10px] text-slate-400 text-center mt-4 leading-relaxed">
+                      {excludedForConsent} {excludedForConsent === 1 ? 'person matches' : 'people match'} this segment but {excludedForConsent === 1 ? "isn't" : "aren't"} subscribed (or {excludedForConsent === 1 ? 'is' : 'are'} paused), so they'll be skipped. Only the <b className="text-emerald-600">{audienceSize} opted-in</b> will receive this campaign.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );

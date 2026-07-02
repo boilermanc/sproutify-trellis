@@ -25,6 +25,7 @@ import { SegmentProfilesModal } from './SegmentProfilesModal';
 interface SegmentsProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
+  onSendCampaign?: (segment: Segment) => void;
 }
 
 // Icon map for segments
@@ -52,7 +53,7 @@ const colorMap: Record<string, string> = {
   'green': 'bg-green-100 text-green-700 border-green-200',
 };
 
-export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStats }) => {
+export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStats, onSendCampaign }) => {
   const profiles = branchStats.enrichedProfiles;
   const isLoading = branchStats.isLoading;
 
@@ -504,6 +505,9 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                     </span>
                     <span className="text-gray-500">matching profiles</span>
                   </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Total match across all sources — <b>not filtered by email consent</b>. When you send a campaign, only opted-in, non-paused people in the targeted branch(es) are emailed, so the reach shown in Campaign Builder will usually be lower.
+                  </p>
                 </div>
               </div>
 
@@ -545,7 +549,11 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
 
             {/* Actions */}
             <div className="flex gap-3 mb-6">
-              <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
+              <button
+                onClick={() => selectedSegment && onSendCampaign?.(selectedSegment)}
+                disabled={!onSendCampaign}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <Mail className="w-4 h-4" />
                 Send Campaign
               </button>
