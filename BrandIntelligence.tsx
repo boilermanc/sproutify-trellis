@@ -97,6 +97,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
+  const [codeMode, setCodeMode] = useState(false); // paste-raw-HTML mode vs Unlayer visual editor
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const emailEditorRef = useRef<EditorRef>(null);
@@ -230,8 +231,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     if (!templateName.trim()) return;
     setTemplateSaving(true);
     try {
-      // Export current Unlayer design as HTML
-      const exportedHtml = await new Promise<string>((resolve) => {
+      // Code mode saves the raw pasted HTML directly; visual mode exports Unlayer's HTML.
+      const exportedHtml = codeMode ? templateHtml : await new Promise<string>((resolve) => {
         if (emailEditorRef.current?.editor) {
           emailEditorRef.current.editor.exportHtml((data) => resolve(data.html));
         } else {
@@ -1582,16 +1583,18 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   {['{{first_name}}', '{{unsubscribe_url}}', '{{headline}}', '{{body_copy}}', '{{cta_text}}', '{{cta_url}}'].map(token => (
                     <button
                       key={token}
-                      onClick={() => {
-                        navigator.clipboard.writeText(token);
-                      }}
-                      title="Click to copy"
+                      onClick={() => { if (codeMode) { insertTokenAtCursor(token); } else { navigator.clipboard.writeText(token); } }}
+                      title={codeMode ? 'Insert at cursor' : 'Click to copy'}
                       className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600 hover:border-violet-400 hover:text-violet-600 transition-all font-mono"
                     >
                       {token}
                     </button>
                   ))}
                   <div className="ml-auto flex items-center gap-2">
+                    <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                      <button onClick={() => setCodeMode(false)} className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition ${!codeMode ? 'bg-violet-600 text-white' : 'bg-white text-slate-500 hover:text-slate-700'}`}>Visual</button>
+                      <button onClick={() => setCodeMode(true)} className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition ${codeMode ? 'bg-violet-600 text-white' : 'bg-white text-slate-500 hover:text-slate-700'}`}>Code</button>
+                    </div>
                     <button
                       onClick={() => { setGalleryOpen(true); loadGallery(); }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-[9px] font-bold text-violet-600 hover:bg-violet-100 transition-all"
@@ -1601,36 +1604,50 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   </div>
                 </div>
 
-                {/* Unlayer Editor */}
+                {/* Editor: Visual (Unlayer) or Code (paste raw HTML + tokens) */}
                 <div style={{ height: 'calc(100vh - 280px)', minHeight: 600 }}>
-                  <EmailEditor
-                    ref={emailEditorRef}
-                    onReady={() => {
-                      if (selectedTemplate?.html_body) {
-                        try {
-                          const design = JSON.parse(selectedTemplate.html_body);
-                          emailEditorRef.current?.editor?.loadDesign(design);
-                        } catch {
-                          emailEditorRef.current?.editor?.loadDesign({
-                            body: { rows: [], values: { backgroundColor: '#f1f5f9' } }
-                          });
+                  {codeMode ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 h-full">
+                      <textarea
+                        ref={htmlTextareaRef}
+                        value={templateHtml}
+                        onChange={(e) => { setTemplateHtml(e.target.value); setTemplateDirty(true); }}
+                        spellCheck={false}
+                        placeholder={'Paste your email HTML here. Put a token where you want a fill-in box in Compose:\n\n  {{headline}}   {{body_copy}}   {{cta_text}}   {{cta_url}}\n\n...plus {{first_name}} / {{unsubscribe_url}} for personalization. Click a token chip above to insert it at the cursor.'}
+                        className="w-full h-full p-4 font-mono text-xs bg-slate-900 text-slate-100 resize-none outline-none leading-relaxed"
+                      />
+                      <iframe title="HTML preview" srcDoc={templateHtml} className="w-full h-full bg-white border-l border-slate-200" />
+                    </div>
+                  ) : (
+                    <EmailEditor
+                      ref={emailEditorRef}
+                      onReady={() => {
+                        if (selectedTemplate?.html_body) {
+                          try {
+                            const design = JSON.parse(selectedTemplate.html_body);
+                            emailEditorRef.current?.editor?.loadDesign(design);
+                          } catch {
+                            emailEditorRef.current?.editor?.loadDesign({
+                              body: { rows: [], values: { backgroundColor: '#f1f5f9' } }
+                            });
+                          }
                         }
-                      }
-                    }}
-                    options={{
-                      mergeTags: {
-                        first_name: { name: 'First Name', value: '{{first_name}}' },
-                        unsubscribe_url: { name: 'Unsubscribe URL', value: '{{unsubscribe_url}}' },
-                        headline: { name: 'Headline', value: '{{headline}}' },
-                        body_copy: { name: 'Body Copy', value: '{{body_copy}}' },
-                        cta_text: { name: 'CTA Text', value: '{{cta_text}}' },
-                        cta_url: { name: 'CTA URL', value: '{{cta_url}}' },
-                      },
-                      features: { stockImages: false, codeEditor: { enabled: true } },
-                      tools: { image: { enabled: true } },
-                      appearance: { theme: 'modern_light' },
-                    }}
-                  />
+                      }}
+                      options={{
+                        mergeTags: {
+                          first_name: { name: 'First Name', value: '{{first_name}}' },
+                          unsubscribe_url: { name: 'Unsubscribe URL', value: '{{unsubscribe_url}}' },
+                          headline: { name: 'Headline', value: '{{headline}}' },
+                          body_copy: { name: 'Body Copy', value: '{{body_copy}}' },
+                          cta_text: { name: 'CTA Text', value: '{{cta_text}}' },
+                          cta_url: { name: 'CTA URL', value: '{{cta_url}}' },
+                        },
+                        features: { stockImages: false, codeEditor: { enabled: true } },
+                        tools: { image: { enabled: true } },
+                        appearance: { theme: 'modern_light' },
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* Footer */}
