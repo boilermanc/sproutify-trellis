@@ -39,10 +39,17 @@ Genre: ${config.genre || 'any'}
 Mood: ${config.mood || 'any'}
 Vocals: ${config.vocal_style || 'instrumental'}
 
-Create exactly ${trackCount} tracks that flow well back-to-back (intro energy, build, wind-down). For each track give a short title and a detailed music-generation prompt (instruments, tempo feel, texture) of ~${avgLen} seconds. Keep the set stylistically consistent.
+Create exactly ${trackCount} tracks that flow well back-to-back.
+
+For each track return a short title and a CONCISE prompt for an AI music model. Each prompt MUST:
+- be ONE sentence, ~15-30 words max (no multi-part stories or timelines)
+- describe only instruments, genre, mood, and tempo (a BPM)
+- NOT reference any real artist, band, song, label, or brand name
+- avoid narrative/story language and any mention of smoking, drugs, alcohol, violence, or explicit or edgy themes
+Keep the set stylistically consistent.
 
 Return ONLY a raw JSON array, no markdown, no commentary:
-[{"title":"...","prompt":"..."}]`;
+[{"title":"...","prompt":"A smooth late-night jazz piece with upright bass, brushed drums, and soft Rhodes piano, mellow and warm, around 80 BPM."}]`;
 
     const response = await ai.models.generateContent({ model: PLAN_MODEL, contents: instruction });
     const raw = (response.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
