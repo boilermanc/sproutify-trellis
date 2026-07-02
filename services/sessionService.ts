@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import {
-  MusicSession, MusicTrack, MusicRender, CreateSessionConfig,
+  MusicSession, MusicTrack, MusicRender, CreateSessionConfig, SessionStatus,
 } from '../types';
 import { MUSIC_SESSION_TRACK_WEBHOOK, MUSIC_STITCH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
@@ -242,4 +242,9 @@ export async function stitchSession(session: MusicSession, approvedTracks: Music
 export async function archiveSession(id: string): Promise<void> {
   await supabase.from('trellis_music_sessions')
     .update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+export async function updateSessionStatus(id: string, status: SessionStatus): Promise<void> {
+  await supabase.from('trellis_music_sessions')
+    .update({ status, updated_at: new Date().toISOString() }).eq('id', id);
 }

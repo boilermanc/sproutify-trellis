@@ -28,10 +28,16 @@ import os
 import io
 import threading
 import traceback
+from datetime import datetime, timezone
 
 import requests
 from flask import Flask, request, jsonify
 from pydub import AudioSegment
+
+
+def _now() -> str:
+    """ISO-8601 UTC timestamp (PostgREST wants a value, not the SQL now())."""
+    return datetime.now(timezone.utc).isoformat()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -44,6 +50,20 @@ FADE_IN_MS = 1000
 FADE_OUT_MS = 2000
 
 app = Flask(__name__)
+
+
+@app.after_request
+def _cors(resp):
+    # Allow the Trellis browser app to fire /stitch directly (fire-and-forget).
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    return resp
+
+
+@app.route("/stitch", methods=["OPTIONS"])
+def stitch_preflight():
+    return ("", 204)
 
 
 def _rest_headers():
@@ -121,7 +141,7 @@ def _stitch(render_id: str, session_id: str, tracks: list):
             "storage_bucket": BUCKET,
             "storage_path": path,
             "duration_seconds": duration_s,
-            "updated_at": "now()",
+            "updated_at": _now(),
         })
         _patch("trellis_music_sessions", session_id, {
             "status": "ready",
@@ -129,7 +149,7 @@ def _stitch(render_id: str, session_id: str, tracks: list):
             "actual_duration_seconds": duration_s,
             "storage_bucket": BUCKET,
             "storage_path": path,
-            "updated_at": "now()",
+            "updated_at": _now(),
         })
         print(f"[stitch] render {render_id} ready ({duration_s}s) -> {public_url}")
     except Exception as e:  # noqa: BLE001

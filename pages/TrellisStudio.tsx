@@ -9,7 +9,7 @@ import {
 } from '../constants';
 import {
   createSessionWithPlan, getSessions, getTracks, getRenders,
-  generateSessionTracks, setTrackApproved, regenerateTrack, stitchSession, archiveSession,
+  generateSessionTracks, setTrackApproved, regenerateTrack, stitchSession, archiveSession, updateSessionStatus,
 } from '../services/sessionService';
 
 interface TrellisStudioProps {
@@ -84,11 +84,18 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     pollRef.current = window.setInterval(async () => {
       const [t, r] = await Promise.all([getTracks(selected.id), getRenders(selected.id)]);
       setTracks(t); setRenders(r);
-      // sync session status if a render just went ready
+      // Render finished → session ready
       const ready = r.find(x => x.status === 'ready');
       if (ready && selected.status !== 'ready') {
         setSelected(prev => prev ? { ...prev, status: 'ready', final_audio_url: ready.final_audio_url } : prev);
         setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'ready', final_audio_url: ready.final_audio_url } : s));
+      }
+      // All tracks done generating → move session to Review (once)
+      const allDone = t.length > 0 && t.every(x => x.status === 'completed' || x.status === 'failed');
+      if (allDone && t.some(x => x.status === 'completed') && selected.status === 'generating') {
+        updateSessionStatus(selected.id, 'review').catch(() => {});
+        setSelected(prev => prev ? { ...prev, status: 'review' } : prev);
+        setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'review' } : s));
       }
     }, 5000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
