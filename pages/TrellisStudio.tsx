@@ -131,9 +131,9 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     setBusy(true);
     try {
       await generateSessionTracks(selected, tracks);
-      setTracks(prev => prev.map(t => (t.status === 'planned' || t.status === 'failed') ? { ...t, status: 'generating' } : t));
+      setTracks(prev => prev.map(t => (t.status === 'planned' || t.status === 'failed') ? { ...t, status: 'queued' } : t));
       setSelected(prev => prev ? { ...prev, status: 'generating' } : prev);
-      addToast('Track generation started', 'success');
+      addToast('Generation queued — tracks render one at a time', 'success');
     } catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
     finally { setBusy(false); }
   };

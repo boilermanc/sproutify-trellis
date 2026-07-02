@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import {
   MusicSession, MusicTrack, MusicRender, CreateSessionConfig, SessionStatus,
 } from '../types';
-import { MUSIC_SESSION_TRACK_WEBHOOK, MUSIC_STITCH_WEBHOOK } from '../constants';
+import { MUSIC_SESSION_TRACK_WEBHOOK, MUSIC_SESSION_GENERATE_WEBHOOK, MUSIC_STITCH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 
 // ─── Trellis Sessions Service ───────────────────────────────────────
@@ -165,28 +165,20 @@ export async function generateSessionTracks(session: MusicSession, tracks: Music
   const pending = tracks.filter(t => t.status === 'planned' || t.status === 'failed');
   if (pending.length === 0) return;
 
-  await Promise.all(pending.map(async (t) => {
-    fetch(MUSIC_SESSION_TRACK_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        track_id: t.id,
-        session_id: session.id,
-        branch: session.branch,
-        track_number: t.track_number,
-        title: t.title,
-        prompt: t.prompt,
-        genre: t.genre,
-        mood: t.mood,
-        vocal_style: t.vocal_style,
-        duration_seconds: t.duration_seconds,
-      }),
-    }).catch(() => { /* fire-and-forget: n8n gets it even if response is unreadable */ });
+  // Fire ONE session-level webhook. n8n fetches the session's tracks and
+  // generates them ONE AT A TIME (Split In Batches + Wait) so we never flood
+  // Lyria's preview quota, regardless of how many tracks the session has.
+  fetch(MUSIC_SESSION_GENERATE_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: session.id, branch: session.branch }),
+  }).catch(() => { /* fire-and-forget */ });
 
-    await supabase.from('trellis_music_tracks')
-      .update({ status: 'generating', updated_at: new Date().toISOString() }).eq('id', t.id);
-  }));
-
+  // Queue the pending tracks + mark the session generating. n8n flips each
+  // track queued → generating → completed as the loop reaches it.
+  await supabase.from('trellis_music_tracks')
+    .update({ status: 'queued', updated_at: new Date().toISOString() })
+    .in('id', pending.map(t => t.id));
   await supabase.from('trellis_music_sessions')
     .update({ status: 'generating', updated_at: new Date().toISOString() }).eq('id', session.id);
 }

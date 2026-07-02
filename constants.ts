@@ -912,6 +912,7 @@ export const WEBHOOK_SPECS = {
   reddit_post_comment: "https://n8n.sproutify.app/webhook/reddit-post-comment",
   music_generate: "https://n8n.sproutify.app/webhook/trellis-music-generate",
   session_track_generate: "https://n8n.sproutify.app/webhook/trellis-session-track-generate",
+  session_generate: "https://n8n.sproutify.app/webhook/trellis-session-generate",
   music_stitch: "https://n8n.sproutify.app/webhook/trellis-music-stitch",
   episode_artwork: "https://n8n.sproutify.app/webhook/trellis-episode-artwork",
   episode_video: "https://n8n.sproutify.app/webhook/trellis-episode-video",
@@ -1355,7 +1356,8 @@ export const MUSIC_GEN_STAGES = [
 ] as const;
 
 // ─── Trellis Sessions (multi-track → stitched master) ───────────────
-export const MUSIC_SESSION_TRACK_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-session-track-generate';
+export const MUSIC_SESSION_TRACK_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-session-track-generate'; // single track (regenerate)
+export const MUSIC_SESSION_GENERATE_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-session-generate';     // whole session, paced one-at-a-time in n8n
 export const MUSIC_STITCH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-music-stitch';
 
 export const SESSION_PRESETS = [
