@@ -1042,3 +1042,53 @@ export const VIDEO_AD_STAGES = [
   { key: 'generating_video', label: 'Lipsync' },
   { key: 'completed', label: 'Complete' },
 ] as const;
+
+// ─── Trellis Studio (AI music generation via Lyria) ─────────────────
+export const MUSIC_GEN_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-music-generate';
+
+export const MUSIC_GENRES = ['Jazz', 'Blues', 'Soul', 'Lo-fi', 'Rock', 'Country', 'Pop', 'Electronic', 'Cinematic'] as const;
+export const MUSIC_MOODS = ['Dark', 'Smooth', 'Fun', 'Romantic', 'Mysterious', 'Upbeat', 'Cinematic', 'Warm'] as const;
+export const MUSIC_VOCALS = ['Instrumental only', 'Female vocals', 'Male vocals', 'Duet'] as const;
+export const MUSIC_DURATIONS = [
+  { label: '30 sec clip', value: 30 },
+  { label: '60 sec', value: 60 },
+  { label: 'Full (up to 3 min)', value: 180 },
+] as const;
+
+// Quick-start presets — prefill the create form
+export const MUSIC_PRESETS = [
+  {
+    id: 'rekkrd_after_dark',
+    name: 'Rekkrd After Dark Intro',
+    title: 'Rekkrd After Dark Intro',
+    genre: 'Jazz', mood: 'Mysterious', vocal_style: 'Female vocals', duration_seconds: 30,
+    prompt: 'Smoky late-night jazz intro for a vinyl-themed show called Rekkrd After Dark. Female vocals, upright bass, brushed drums, Rhodes piano, soft saxophone. Feels like a mysterious underground record lounge after midnight. Include the phrase "Rekkrd After Dark" naturally in the hook. Cinematic, classy, memorable.',
+  },
+  {
+    id: 'podcast_intro',
+    name: 'Podcast Intro',
+    title: 'Podcast Intro',
+    genre: 'Electronic', mood: 'Upbeat', vocal_style: 'Instrumental only', duration_seconds: 30,
+    prompt: 'Modern podcast intro, confident and polished, short memorable hook, clean brand feel.',
+  },
+  {
+    id: 'business_jingle',
+    name: 'Business Jingle',
+    title: 'Business Jingle',
+    genre: 'Pop', mood: 'Fun', vocal_style: 'Female vocals', duration_seconds: 30,
+    prompt: 'Catchy upbeat commercial jingle with friendly vocals and a memorable tagline.',
+  },
+  {
+    id: 'social_reel',
+    name: 'Social Reel Music',
+    title: 'Social Reel Music',
+    genre: 'Electronic', mood: 'Upbeat', vocal_style: 'Instrumental only', duration_seconds: 30,
+    prompt: 'Short energetic background track for Instagram or TikTok content, loop-friendly.',
+  },
+] as const;
+
+export const MUSIC_GEN_STAGES = [
+  { key: 'queued', label: 'Queued' },
+  { key: 'generating', label: 'Composing' },
+  { key: 'completed', label: 'Complete' },
+] as const;

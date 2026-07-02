@@ -360,7 +360,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio';
 
 export interface TrellisReport {
   id: string;
@@ -908,6 +908,50 @@ export interface VideoAdJob {
   created_by: string | null;
   publish_status: string | null;
   scheduled_for: string | null;
+}
+
+// ─── Trellis Studio (AI music generation) ───────────────────────────
+export type MusicGenerationStatus =
+  | 'queued' | 'generating' | 'completed' | 'failed' | 'archived';
+
+export interface MusicGeneration {
+  id: string;
+  campaign_id: string | null;
+  branch: string;
+  created_by: string | null;
+  title: string;
+  prompt: string;
+  final_prompt: string | null;
+  genre: string | null;
+  mood: string | null;
+  vocal_style: string | null;
+  duration_seconds: number | null;
+  provider: string;
+  model: string | null;
+  status: MusicGenerationStatus;
+  progress: number;
+  error_message: string | null;
+  retry_count: number;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  audio_url: string | null;
+  audio_mime_type: string | null;
+  file_size_bytes: number | null;
+  cost_estimate: number | null;
+  generation_started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MusicGenConfig {
+  branch: string;
+  title: string;
+  prompt: string;
+  genre?: string;
+  mood?: string;
+  vocal_style?: string;
+  duration_seconds?: number;
 }
 
 export interface VideoAdBatchRequest {
