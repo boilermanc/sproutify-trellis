@@ -1,0 +1,142 @@
+{
+  "name": "Trellis: Music Generator (Lyria)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-music-generate",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Music Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "final_prompt",
+              "value": "=Create an original song for a branded purpose.\nTitle: {{ $json.body.title }}\nGenre: {{ $json.body.genre }}\nMood: {{ $json.body.mood }}\nVocals: {{ $json.body.vocal_style }}\nApprox duration: {{ $json.body.duration_seconds }}s\n\nSong idea:\n{{ $json.body.prompt }}\n\nRequirements: original, memorable hook, include the brand/show name naturally if present, suitable for commercial/social use, avoid copying any existing artist."
+            }
+          ]
+        }
+      },
+      "name": "Build Final Prompt",
+      "type": "n8n-nodes-base.set",
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/music_generations?id=eq.{{ $node['Music Webhook'].json.body.job_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'generating', final_prompt: $node['Build Final Prompt'].json.final_prompt, generation_started_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Generating",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/lyria-3-clip:generateMusic",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-goog-api-key", "value": "YOUR_GEMINI_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: $node['Build Final Prompt'].json.final_prompt, duration_seconds: $node['Music Webhook'].json.body.duration_seconds }) }}"
+      },
+      "name": "Lyria Generate (VERIFY endpoint + body)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/music-generations/{{ $node['Music Webhook'].json.body.branch }}/{{ $node['Music Webhook'].json.body.job_id }}/song.mp3",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "audio/mpeg" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data"
+      },
+      "name": "Upload Audio to Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1130, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/music_generations?id=eq.{{ $node['Music Webhook'].json.body.job_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'completed', storage_bucket: 'music-generations', storage_path: $node['Music Webhook'].json.body.branch + '/' + $node['Music Webhook'].json.body.job_id + '/song.mp3', audio_url: 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/music-generations/' + $node['Music Webhook'].json.body.branch + '/' + $node['Music Webhook'].json.body.job_id + '/song.mp3', audio_mime_type: 'audio/mpeg', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Music Generator (Lyria)\n\n**What it does:** Receives a music-generation job from Trellis Studio, builds a controlled production prompt, marks the row `generating`, calls Lyria, uploads the audio to the `music-generations` bucket, and marks the row `completed` with the public `audio_url`.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-music-generate`\n\n**Expected POST body (sent by musicService.submitMusicJob):**\n```json\n{\n  \"job_id\": \"uuid\",\n  \"branch\": \"atl-urban-farms\",\n  \"created_by\": \"uuid|null\",\n  \"title\": \"Rekkrd After Dark Intro\",\n  \"prompt\": \"...\",\n  \"genre\": \"Jazz\",\n  \"mood\": \"Mysterious\",\n  \"vocal_style\": \"Female vocals\",\n  \"duration_seconds\": 30\n}\n```\n**IMPORTANT:** n8n MUST use the incoming `job_id` as the row id — the frontend poller is already tracking it. The row is created client-side optimistically; the `Mark Generating` PATCH updates it (change to upsert/INSERT ... ON CONFLICT if you prefer n8n to own row creation).\n\n---\n\n### SETUP REQUIRED\n\n1. **Service role key:** replace every `YOUR_SERVICE_ROLE_KEY` (3 nodes). The Hub project is `horvjqqifgrzxesuxtfm`.\n2. **Gemini/Lyria key:** replace `YOUR_GEMINI_API_KEY`, or fetch it from `tenant_secrets` (org `00000000-0000-0000-0000-000000000001`, column `gemini_api_key`) with an extra HTTP node so it isn't hardcoded.\n3. **⚠️ Lyria node is a SCAFFOLD — verify against current docs** (https://ai.google.dev/gemini-api/docs/music-generation). Confirm the exact model id (`lyria-3-clip` vs `lyria-3` / `lyria-3-pro`), endpoint path, request body, and response shape. Lyria returns 44.1kHz audio — likely base64 in the response; decode it to a binary field named `data` (a `Move Binary Data` / `Extract from File` node) before the Upload node.\n4. **Upload node** streams binary `data` to Supabase Storage at `music-generations/{branch}/{job_id}/song.mp3`. Bucket is PUBLIC so the `audio_url` in Mark Completed is directly playable.\n5. **Error path (add):** on any node failure, PATCH the row to `status='failed'` with `error_message` so the UI surfaces it (the frontend already renders failed rows).\n\n**Prereqs already done:** `music_generations` table + `music-generations` public bucket exist on the Hub (applied 2026-07-01). Table columns match the PATCH bodies above.",
+        "width": 560,
+        "height": 760
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -420]
+    }
+  ],
+  "connections": {
+    "Music Webhook": {
+      "main": [[{ "node": "Build Final Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Final Prompt": {
+      "main": [[{ "node": "Mark Generating", "type": "main", "index": 0 }]]
+    },
+    "Mark Generating": {
+      "main": [[{ "node": "Lyria Generate (VERIFY endpoint + body)", "type": "main", "index": 0 }]]
+    },
+    "Lyria Generate (VERIFY endpoint + body)": {
+      "main": [[{ "node": "Upload Audio to Storage", "type": "main", "index": 0 }]]
+    },
+    "Upload Audio to Storage": {
+      "main": [[{ "node": "Mark Completed", "type": "main", "index": 0 }]]
+    }
+  }
+}

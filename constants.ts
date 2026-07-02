@@ -676,6 +676,47 @@ ALTER TABLE email_templates DISABLE ROW LEVEL SECURITY;
 
 CREATE INDEX IF NOT EXISTS idx_email_templates_branch ON email_templates (branch_id);
 CREATE INDEX IF NOT EXISTS idx_email_templates_brand ON email_templates (brand_identity_id);
+
+-- 16. MUSIC GENERATIONS (Trellis Studio — AI music generation via Lyria)
+CREATE TABLE IF NOT EXISTS music_generations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  campaign_id UUID,
+  branch TEXT NOT NULL,
+  created_by UUID,
+  title TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  final_prompt TEXT,
+  genre TEXT,
+  mood TEXT,
+  vocal_style TEXT,
+  duration_seconds INTEGER,
+  provider TEXT NOT NULL DEFAULT 'google',
+  model TEXT,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','generating','completed','failed','archived')),
+  progress INTEGER DEFAULT 0,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  storage_bucket TEXT,
+  storage_path TEXT,
+  audio_url TEXT,
+  audio_mime_type TEXT,
+  file_size_bytes BIGINT,
+  cost_estimate NUMERIC DEFAULT 0,
+  generation_started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE music_generations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anon Full Access" ON music_generations FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON music_generations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON music_generations FOR ALL TO service_role USING (true) WITH CHECK (true);
+GRANT ALL ON music_generations TO anon, authenticated, service_role;
+
+CREATE INDEX IF NOT EXISTS idx_music_generations_branch ON music_generations (branch);
+CREATE INDEX IF NOT EXISTS idx_music_generations_status ON music_generations (status);
+CREATE INDEX IF NOT EXISTS idx_music_generations_created_at ON music_generations (created_at DESC);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
@@ -691,7 +732,8 @@ export const WEBHOOK_SPECS = {
   social_ingest: "https://n8n.sproutify.app/webhook/social-signal-ingest",
   sms_dispatch: "https://n8n.sproutify.app/webhook/twilio-sms-dispatch",
   reddit_review_stage: "https://n8n.sproutify.app/webhook/reddit-review-stage",
-  reddit_post_comment: "https://n8n.sproutify.app/webhook/reddit-post-comment"
+  reddit_post_comment: "https://n8n.sproutify.app/webhook/reddit-post-comment",
+  music_generate: "https://n8n.sproutify.app/webhook/trellis-music-generate"
 };
 
 export const MOCK_BRIEFING: DailyBriefing = {
@@ -753,6 +795,43 @@ export const N8N_BLUEPRINTS = {
       "name": "Fetch Batch",
       "type": "n8n-nodes-base.supabase",
       "position": [450, 400]
+    }
+  ]
+}`,
+  music_generator: `{
+  "name": "Trellis: Music Generator (Lyria)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-music-generate", "responseMode": "onReceived", "options": {} },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": { "operation": "executeQuery", "query": "INSERT INTO music_generations (id, branch, created_by, title, prompt, genre, mood, vocal_style, duration_seconds, status, generation_started_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'generating', now()) ON CONFLICT (id) DO UPDATE SET status='generating', generation_started_at=now();" },
+      "name": "Mark Generating",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [440, 300]
+    },
+    {
+      "parameters": { "method": "POST", "url": "https://generativelanguage.googleapis.com/v1beta/models/lyria-3-clip:generateMusic", "options": {} },
+      "name": "Lyria Generate (verify endpoint)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 300]
+    },
+    {
+      "parameters": { "operation": "upload", "bucketName": "music-generations" },
+      "name": "Upload Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [880, 300]
+    },
+    {
+      "parameters": { "operation": "executeQuery", "query": "UPDATE music_generations SET status='completed', audio_url=$2, storage_bucket='music-generations', storage_path=$3, audio_mime_type='audio/mpeg', completed_at=now(), updated_at=now() WHERE id=$1;" },
+      "name": "Mark Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1100, 300]
     }
   ]
 }`,
