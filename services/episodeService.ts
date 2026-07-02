@@ -3,7 +3,7 @@ import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication,
   CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession,
 } from '../types';
-import { EPISODE_VIDEO_WEBHOOK, EPISODE_PUBLISH_WEBHOOK } from '../constants';
+import { EPISODE_VIDEO_WEBHOOK, EPISODE_PUBLISH_WEBHOOK, EpisodeArtStyle } from '../constants';
 import { supabase } from '../lib/supabase';
 import { getTracks, getRenders } from './sessionService';
 
@@ -86,23 +86,24 @@ export async function getSessionMasterUrl(sessionId: string): Promise<string | n
   return renders.find(r => r.status === 'ready')?.final_audio_url ?? null;
 }
 
-// ─── Artwork (fire n8n → image model → episode-assets) ──────────────
-export async function generateArtwork(episode: Episode, assetType: AssetType, extraPrompt?: string): Promise<EpisodeAsset> {
+// ─── Artwork (Gemini scene → image model → episode-assets) ──────────
+export async function generateArtwork(episode: Episode, assetType: AssetType, extraPrompt?: string, style?: EpisodeArtStyle): Promise<EpisodeAsset> {
   const dims = ASSET_DIMS[assetType] ?? { width: 1920, height: 1080 };
   const { data: asset, error } = await supabase.from('trellis_episode_assets').insert({
     episode_id: episode.id, asset_type: assetType, status: 'queued', width: dims.width, height: dims.height,
   }).select('*').single();
   if (error || !asset) throw new Error(`Could not queue artwork: ${error?.message}`);
 
-  // Fire the artwork generator edge function: Gemini writes an on-theme 1960s Riviera
-  // scene, Imagen renders it in the locked house style, uploads to episode-assets,
-  // and PATCHes this asset row to ready. Fire-and-forget; the UI polls the asset row.
+  // Fire the artwork generator edge function: Gemini writes an on-theme scene in the
+  // chosen style's setting, the image model renders it in that style, uploads to
+  // episode-assets, and PATCHes this asset row to ready. Fire-and-forget; the UI polls.
   supabase.functions.invoke('generate-episode-artwork', {
     body: {
       asset_id: asset.id, episode_id: episode.id, branch: episode.branch, asset_type: assetType,
       width: dims.width, height: dims.height,
       title: episode.title, theme: episode.theme || '',
       prompt: `${episode.show_name ? episode.show_name + '. ' : ''}${extraPrompt || ''}`.trim(),
+      ...(style ? { style_prompt: style.prompt, setting: style.setting } : {}),
     },
   }).catch(() => {});
   await setEpisodeStatus(episode.id, 'artwork');

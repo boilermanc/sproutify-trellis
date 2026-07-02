@@ -11,13 +11,14 @@ const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
 const TEXT_MODEL = Deno.env.get("TEXT_MODEL") || "gemini-2.5-flash";
 const BUCKET = "episode-assets";
 
-// Locked house style for the Sproutify episode covers ("Blend both" direction).
-const HOUSE_STYLE =
+// Default house style + setting if the caller doesn't pass one (see EPISODE_ART_STYLES).
+const DEFAULT_STYLE =
   "1960s mid-century illustrated cover art, hand-painted gouache figures with cinematic contrast, " +
   "expressive visible brushwork, glamorous Riviera scene, elegant figures in vintage haute couture, " +
   "classic European sports car, warm sun-drenched palette with bold teal and crimson accents, romantic " +
   "and sophisticated, in the style of vintage Robert McGinnis paperback covers and 1960s film posters. " +
   "No text, no words, no lettering, no logos, no watermark, no signature.";
+const DEFAULT_SETTING = "the glamorous 1960s Mediterranean / Riviera world";
 
 function aspectFor(w?: number, h?: number): string {
   if (!w || !h) return "16:9";
@@ -40,14 +41,13 @@ async function gemini(path: string, body: unknown, key: string): Promise<any> {
   return json;
 }
 
-async function writeScene(title: string, theme: string, extra: string, key: string): Promise<string> {
+async function writeScene(title: string, theme: string, extra: string, setting: string, key: string): Promise<string> {
   try {
     const prompt =
       `Write ONE vivid visual scene (a single sentence, no preamble, no quotes) for the cover art of a ` +
       `music episode titled "${title}"${theme ? ` with the theme "${theme}"` : ""}. ` +
-      `${extra ? extra + " " : ""}Set it in the glamorous 1960s Mediterranean/Riviera world — describe the setting, ` +
-      `one or two elegant figures, and a vintage detail (a classic car, a grand hotel, a seaside promenade). ` +
-      `Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
+      `${extra ? extra + " " : ""}Set it in ${setting} — describe the setting, one or two evocative subjects, ` +
+      `and a period-appropriate detail. Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
     const j = await gemini(`models/${TEXT_MODEL}:generateContent`, { contents: [{ parts: [{ text: prompt }] }] }, key);
     const txt = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     return txt || "";
@@ -67,8 +67,6 @@ async function renderImage(prompt: string, aspect: string, key: string): Promise
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
-// Upload via storage. Try supabase-js first; if Storage rejects the key, retry raw
-// with STORAGE_JWT (legacy service_role JWT).
 async function upload(supabase: any, path: string, bytes: Uint8Array): Promise<string> {
   const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, { contentType: "image/png", upsert: true });
   if (error) {
@@ -85,7 +83,11 @@ async function upload(supabase: any, path: string, bytes: Uint8Array): Promise<s
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("ok", { status: 200 });
   const body = await req.json().catch(() => ({}));
-  const { asset_id, episode_id, asset_type = "cover_art", width, height, title = "", theme = "", prompt: extra = "" } = body;
+  const {
+    asset_id, episode_id, asset_type = "cover_art", width, height,
+    title = "", theme = "", prompt: extra = "",
+    style_prompt = DEFAULT_STYLE, setting = DEFAULT_SETTING,
+  } = body;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const fail = async (msg: string) => {
@@ -101,8 +103,8 @@ Deno.serve(async (req: Request) => {
     const key = sec?.gemini_api_key;
     if (!key) return await fail("No gemini_api_key in tenant_secrets");
 
-    const scene = await writeScene(title, theme, extra, key);
-    const finalPrompt = `${scene || extra || title || "A glamorous 1960s Riviera scene"}. ${HOUSE_STYLE}`;
+    const scene = await writeScene(title, theme, extra, setting, key);
+    const finalPrompt = `${scene || extra || title || "A glamorous vintage scene"}. ${style_prompt}`;
     const aspect = aspectFor(width, height);
     const bytes = await renderImage(finalPrompt, aspect, key);
 
@@ -112,7 +114,7 @@ Deno.serve(async (req: Request) => {
     if (asset_id) {
       await supabase.from("trellis_episode_assets").update({
         status: "ready", url, storage_bucket: BUCKET, storage_path: path,
-        metadata: { prompt: finalPrompt, aspect, model: IMAGE_MODEL, scene }, updated_at: new Date().toISOString(),
+        metadata: { prompt: finalPrompt, aspect, model: IMAGE_MODEL, scene, style_prompt, setting }, updated_at: new Date().toISOString(),
       }).eq("id", asset_id);
     }
 

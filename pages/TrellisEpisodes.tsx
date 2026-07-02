@@ -6,7 +6,7 @@ import {
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform,
 } from '../types';
-import { EPISODE_PHASES, EPISODE_STATUS_META, PUBLISH_PLATFORMS } from '../constants';
+import { EPISODE_PHASES, EPISODE_STATUS_META, PUBLISH_PLATFORMS, EPISODE_ART_STYLES } from '../constants';
 import {
   createEpisode, getEpisodes, getEpisode, getAssets, getMetadata, getPublications,
   linkSession, setEpisodeStatus, setAssetApproved, getSessionMasterUrl,
@@ -37,6 +37,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const [masterUrl, setMasterUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [artStyleId, setArtStyleId] = useState(EPISODE_ART_STYLES[0].id);
 
   const [branch, setBranch] = useState(branches[0]?.slug || '');
   const [title, setTitle] = useState('');
@@ -241,9 +242,21 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             {/* Phase 3: Artwork */}
             <div className={card}>
               <h4 className={phaseHead}><ImageIcon size={15} className="text-violet-500" /> Artwork</h4>
+
+              {/* Art style picker — drives the generator's look + scene setting */}
+              <div className="mt-3">
+                <label className={labelCls}>Art Style</label>
+                <select value={artStyleId} onChange={e => setArtStyleId(e.target.value)} disabled={!!busy}
+                  className={inputCls}>
+                  {EPISODE_ART_STYLES.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} — {s.desc}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="mt-3 flex flex-wrap gap-2">
                 {(['cover_art', 'thumbnail', 'vertical'] as AssetType[]).map(t => (
-                  <button key={t} type="button" disabled={!!busy} onClick={() => run(`art-${t}`, () => generateArtwork(selected, t).then(() => {}))}
+                  <button key={t} type="button" disabled={!!busy} onClick={() => run(`art-${t}`, () => generateArtwork(selected, t, undefined, EPISODE_ART_STYLES.find(s => s.id === artStyleId)).then(() => {}))}
                     className="px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-[10px] font-black text-violet-600 uppercase tracking-tight hover:border-violet-400 transition disabled:opacity-40 flex items-center gap-1">
                     <Wand2 size={11} /> {t.replace('_', ' ')}
                   </button>
