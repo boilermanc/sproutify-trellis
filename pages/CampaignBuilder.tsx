@@ -171,6 +171,13 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     cta_url: '',
   });
   const isCustomTemplate = emailTemplate.startsWith('custom:');
+  // The HTML of the currently-selected template (custom row or built-in).
+  const selectedTemplateHtml = isCustomTemplate
+    ? (customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''))?.html_body || '')
+    : (BUILTIN_EMAIL_TEMPLATES[emailTemplate] || '');
+  // Only templates with {{headline}}/{{body_copy}}/{{cta}} tokens expose the
+  // content editor; fully-designed templates (baked content) ship as-is.
+  const templateHasTokens = /\{\{\s*(headline|body_copy|cta_text|cta_url)\s*\}\}/.test(selectedTemplateHtml);
 
   // Timing rules (staggered sequence)
   const [timingRules, setTimingRules] = useState<CampaignTimingRule[]>([]);
@@ -1242,8 +1249,8 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 </div>
 
-                {/* Template Content Fields — for built-in and custom templates alike */}
-                {!!emailTemplate && (
+                {/* Template Content Fields — only for token-based templates */}
+                {templateHasTokens && (
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
                     <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">
                       <Mail size={16} className="mr-3 text-violet-500" />
@@ -1291,6 +1298,16 @@ Return ONLY the post content, no explanations or labels.`,
                         />
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Fully-designed template (no tokens) — ships as-is */}
+                {!templateHasTokens && !!emailTemplate && (
+                  <div className="flex items-start gap-2 rounded-2xl bg-emerald-50 border border-emerald-200 p-4">
+                    <CheckCircle2 size={16} className="mt-0.5 text-emerald-600 shrink-0" />
+                    <p className="text-xs text-emerald-800 leading-relaxed">
+                      This template is <b>ready to send as-is</b> — its content is baked in, so there's nothing to fill here. Hit <b>Preview</b> to check it. (Only recipient personalization like <span className="font-mono">{'{{first_name}}'}</span> is applied at send time.)
+                    </p>
                   </div>
                 )}
 
@@ -1831,8 +1848,8 @@ Return ONLY the post content, no explanations or labels.`,
   // Gate: when Email is a selected channel, a custom template must be chosen
   // before leaving Compose. Built-in layouts can't hold custom copy, so a
   // real send requires a template created in Brand Intelligence.
-  // Any layout (built-in or custom) works — just require body copy to be written.
-  const emailComposeIncomplete = enabledChannels.has('email') && !customTemplateFields.body_copy?.trim();
+  // Token templates need body copy written; fully-designed templates ship as-is.
+  const emailComposeIncomplete = enabledChannels.has('email') && templateHasTokens && !customTemplateFields.body_copy?.trim();
 
   // Synthetic recipient used to render the in-page email preview modal.
   const previewProfile: Profile = {
