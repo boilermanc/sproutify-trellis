@@ -42,7 +42,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/lyria-3-clip:generateMusic",
+        "url": "https://generativelanguage.googleapis.com/v1beta/interactions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -52,12 +52,24 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ prompt: $node['Track Webhook'].json.body.prompt, duration_seconds: $node['Track Webhook'].json.body.duration_seconds }) }}"
+        "jsonBody": "={{ JSON.stringify({ model: ($node['Track Webhook'].json.body.duration_seconds <= 45 ? 'lyria-3-clip-preview' : 'lyria-3-pro-preview'), input: $node['Track Webhook'].json.body.prompt, response_format: { type: 'audio' } }) }}"
       },
-      "name": "Lyria Generate (VERIFY endpoint + body)",
+      "name": "Lyria Generate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "output_audio.data",
+        "options": { "fileName": "track.mp3", "mimeType": "audio/mpeg" },
+        "binaryPropertyName": "data"
+      },
+      "name": "Audio base64 to Binary (VERIFY path)",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [770, 300]
     },
     {
       "parameters": {
@@ -124,8 +136,9 @@
   ],
   "connections": {
     "Track Webhook": { "main": [[{ "node": "Mark Generating", "type": "main", "index": 0 }]] },
-    "Mark Generating": { "main": [[{ "node": "Lyria Generate (VERIFY endpoint + body)", "type": "main", "index": 0 }]] },
-    "Lyria Generate (VERIFY endpoint + body)": { "main": [[{ "node": "Upload Track", "type": "main", "index": 0 }]] },
+    "Mark Generating": { "main": [[{ "node": "Lyria Generate", "type": "main", "index": 0 }]] },
+    "Lyria Generate": { "main": [[{ "node": "Audio base64 to Binary (VERIFY path)", "type": "main", "index": 0 }]] },
+    "Audio base64 to Binary (VERIFY path)": { "main": [[{ "node": "Upload Track", "type": "main", "index": 0 }]] },
     "Upload Track": { "main": [[{ "node": "Mark Completed", "type": "main", "index": 0 }]] }
   }
 }
