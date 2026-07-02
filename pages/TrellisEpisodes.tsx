@@ -79,7 +79,15 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
     pollRef.current = window.setInterval(async () => {
       const [a, p, ep] = await Promise.all([getAssets(selected.id), getPublications(selected.id), getEpisode(selected.id)]);
       setAssets(a); setPubs(p);
-      if (ep) { setSelected(ep); setEpisodes(prev => prev.map(x => x.id === ep.id ? ep : x)); }
+      if (!ep) return;
+      // A publication went live → advance the episode to 'published' (once)
+      if (p.some(x => x.status === 'live') && ep.status === 'publishing') {
+        setEpisodeStatus(ep.id, 'published').catch(() => {});
+        const done = { ...ep, status: 'published' as const };
+        setSelected(done); setEpisodes(prev => prev.map(x => x.id === ep.id ? done : x));
+      } else {
+        setSelected(ep); setEpisodes(prev => prev.map(x => x.id === ep.id ? ep : x));
+      }
     }, 5000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [selected, active]);
