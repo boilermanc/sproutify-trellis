@@ -939,9 +939,11 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Slug</label>
-                    <input type="text" value={editedBranch.slug || ''} onChange={(e) => setEditedBranch({ ...editedBranch, slug: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono focus:outline-none focus:border-emerald-500" />
+                    <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Slug <span className="text-slate-300 normal-case tracking-normal">· permanent</span></label>
+                    <input type="text" value={editedBranch.slug || ''} readOnly disabled
+                      title="The slug is a permanent identifier. Templates, brands and campaigns are keyed to it — changing it would orphan them."
+                      className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono cursor-not-allowed focus:outline-none" />
+                    <p className="text-[10px] text-slate-400 mt-1">Permanent identifier — templates, brands &amp; campaigns are keyed to it and can't be re-pointed by editing this.</p>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Type</label>
