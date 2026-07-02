@@ -1,0 +1,40 @@
+{
+  "name": "Trellis: Music Stitch Forward",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-music-stitch", "responseMode": "onReceived", "options": {} },
+      "name": "Stitch Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8099/stitch",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": { "timeout": 15000 }
+      },
+      "name": "Forward to Stitch Worker",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Music Stitch Forward\n\nBrowser can't reach the VPS worker directly, so this forwards the stitch request from the public n8n webhook to the Python worker.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-music-stitch` (= `MUSIC_STITCH_WEBHOOK`)\n**Fired by:** `sessionService.stitchSession` with `{ render_id, session_id, branch, tracks:[{id, track_number, audio_url}] }`.\n\n### SETUP\n1. **`stitch_worker.py` must be running on the VPS** (see /workers README — port 8099, `GET /health`, `POST /stitch`).\n2. Set the **Forward** node URL to reach the worker from n8n:\n   - n8n + worker on the same host, n8n NOT in Docker → `http://localhost:8099/stitch`\n   - n8n in **Docker**, worker on the host → `http://host.docker.internal:8099/stitch` (or the host LAN IP)\n3. The worker responds **202** immediately and stitches in a background thread; it PATCHes `trellis_music_renders` → ready and `trellis_music_sessions` → ready when done. The Trellis UI's poll then shows the **Final Master** player.\n\nNo Supabase creds needed here — the worker holds the service_role key itself.",
+        "width": 480,
+        "height": 360
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -120]
+    }
+  ],
+  "connections": {
+    "Stitch Webhook": { "main": [[{ "node": "Forward to Stitch Worker", "type": "main", "index": 0 }]] }
+  }
+}
