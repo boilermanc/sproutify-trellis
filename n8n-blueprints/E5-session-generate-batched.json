@@ -1,0 +1,159 @@
+{
+  "name": "Trellis: Session Generate (paced, one at a time)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-session-generate", "responseMode": "onReceived", "options": {} },
+      "name": "Session Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 340]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "trellis_music_tracks",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            { "keyName": "session_id", "condition": "eq", "keyValue": "={{ $json.body.session_id }}" },
+            { "keyName": "status", "condition": "neq", "keyValue": "completed" }
+          ]
+        }
+      },
+      "name": "Get Tracks",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [400, 340],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [620, 340]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "trellis_music_tracks",
+        "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Loop Over Items').item.json.id }}" } ] },
+        "dataToSend": "defineBelow",
+        "fieldsUi": { "fieldValues": [ { "fieldId": "status", "fieldValue": "generating" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" } ] }
+      },
+      "name": "Mark Generating",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [840, 440],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/interactions",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: ($('Loop Over Items').item.json.duration_seconds <= 45 ? 'lyria-3-clip-preview' : 'lyria-3-pro-preview'), input: $('Loop Over Items').item.json.prompt, response_format: { type: 'audio' } }) }}"
+      },
+      "name": "Lyria Generate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 440]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nlet b64 = r.output_audio?.data;\nif (!b64 && Array.isArray(r.steps)) {\n  for (const step of r.steps) {\n    const content = step.model_output?.content || step.content || [];\n    const audio = (Array.isArray(content) ? content : []).find(c => c.type === 'audio' && c.data);\n    if (audio) { b64 = audio.data; break; }\n  }\n}\nif (!b64) throw new Error('No audio found. Keys: ' + Object.keys(r).join(', '));\nreturn { json: { hasAudio: true }, binary: { data: await this.helpers.prepareBinaryData(Buffer.from(b64, 'base64'), 'track.mp3', 'audio/mpeg') } };"
+      },
+      "name": "Audio base64 to Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1280, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/music-sessions/' + $('Loop Over Items').item.json.session_id + '/tracks/' + $('Loop Over Items').item.json.id + '.mp3' }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Content-Type", "value": "audio/mpeg" }, { "name": "x-upsert", "value": "true" } ] },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data"
+      },
+      "name": "Upload Track",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 440]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "trellis_music_tracks",
+        "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Loop Over Items').item.json.id }}" } ] },
+        "dataToSend": "defineBelow",
+        "fieldsUi": { "fieldValues": [
+          { "fieldId": "status", "fieldValue": "completed" },
+          { "fieldId": "storage_bucket", "fieldValue": "music-sessions" },
+          { "fieldId": "storage_path", "fieldValue": "={{ $('Loop Over Items').item.json.session_id + '/tracks/' + $('Loop Over Items').item.json.id + '.mp3' }}" },
+          { "fieldId": "audio_url", "fieldValue": "={{ 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/music-sessions/' + $('Loop Over Items').item.json.session_id + '/tracks/' + $('Loop Over Items').item.json.id + '.mp3' }}" },
+          { "fieldId": "audio_mime_type", "fieldValue": "audio/mpeg" },
+          { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
+        ] }
+      },
+      "name": "Mark Completed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1720, 440],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": { "amount": 8, "unit": "seconds" },
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1940, 440]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "trellis_music_sessions",
+        "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Session Webhook').item.json.body.session_id }}" } ] },
+        "dataToSend": "defineBelow",
+        "fieldsUi": { "fieldValues": [ { "fieldId": "status", "fieldValue": "review" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" } ] }
+      },
+      "name": "Mark Session Review",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [840, 200],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Session Generate (paced)\n\nGenerates a whole session's tracks **one at a time** so we never flood Lyria's preview quota. Fired ONCE by `sessionService.generateSessionTracks`.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-session-generate`\n**POST body:** `{ session_id, branch }`\n\n### FLOW\nWebhook → **Get Tracks** (non-completed rows for the session) → **Loop Over Items (batch 1)** → Mark Generating → Lyria → base64→Binary → Upload → Mark Completed → **Wait 8s** → back to Loop → (when done) **Mark Session Review**.\n\n### SETUP\n1. Set **Credential → your Supabase account** on all 4 Supabase nodes (Get Tracks, Mark Generating, Mark Completed, Mark Session Review).\n2. **Lyria** + **Upload** are HTTP: set Lyria's *Authentication → Predefined Credential Type → your Gemini credential*; set Upload's *Authentication → Predefined Credential Type → your Supabase credential*.\n3. **⚠️ Verify the loop wiring after import** (n8n loop connections are fragile): **Loop Over Items** has two outputs — **done** (top) → *Mark Session Review*, and **loop** (bottom) → *Mark Generating*. And **Wait → back into Loop Over Items**. Re-draw those 3 links if the import didn't keep them.\n4. Tune the **Wait** (8s) up if you still see 429s.\n\n**Naming:** tracks now store as `music-sessions/{session_id}/tracks/{track_id}.mp3` — globally unique (no more `track-1.mp3` collisions).\n\nSingle-track **regenerate** still uses the separate `trellis-session-track-generate` workflow (E2).",
+        "width": 620,
+        "height": 640
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -360]
+    }
+  ],
+  "connections": {
+    "Session Webhook": { "main": [[{ "node": "Get Tracks", "type": "main", "index": 0 }]] },
+    "Get Tracks": { "main": [[{ "node": "Loop Over Items", "type": "main", "index": 0 }]] },
+    "Loop Over Items": { "main": [ [{ "node": "Mark Session Review", "type": "main", "index": 0 }], [{ "node": "Mark Generating", "type": "main", "index": 0 }] ] },
+    "Mark Generating": { "main": [[{ "node": "Lyria Generate", "type": "main", "index": 0 }]] },
+    "Lyria Generate": { "main": [[{ "node": "Audio base64 to Binary", "type": "main", "index": 0 }]] },
+    "Audio base64 to Binary": { "main": [[{ "node": "Upload Track", "type": "main", "index": 0 }]] },
+    "Upload Track": { "main": [[{ "node": "Mark Completed", "type": "main", "index": 0 }]] },
+    "Mark Completed": { "main": [[{ "node": "Wait", "type": "main", "index": 0 }]] },
+    "Wait": { "main": [[{ "node": "Loop Over Items", "type": "main", "index": 0 }]] }
+  }
+}
