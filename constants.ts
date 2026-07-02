@@ -282,6 +282,68 @@ CREATE TABLE IF NOT EXISTS campaigns (
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns (status);
 CREATE INDEX IF NOT EXISTS idx_campaigns_deployed ON campaigns (deployed_at DESC);
 
+-- 6b. EMAIL REPORTING & SUPPRESSION
+-- Suppression list (do-not-email). Trellis reads consent live from spokes but keeps
+-- its own unsubscribe/bounce/complaint list here (never writes back to spokes).
+CREATE TABLE IF NOT EXISTS email_suppressions (
+  email TEXT PRIMARY KEY,
+  reason TEXT NOT NULL DEFAULT 'unsubscribe' CHECK (reason IN ('unsubscribe','bounce','complaint','manual')),
+  source TEXT,
+  campaign_subject TEXT,
+  detail JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE email_suppressions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "suppressions_service" ON email_suppressions;
+CREATE POLICY "suppressions_service" ON email_suppressions FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "suppressions_read" ON email_suppressions;
+CREATE POLICY "suppressions_read" ON email_suppressions FOR SELECT TO anon, authenticated USING (true);
+GRANT SELECT ON email_suppressions TO anon, authenticated;
+GRANT ALL ON email_suppressions TO service_role;
+
+-- Delivery/engagement events ingested from Resend webhooks (resend-webhook edge fn).
+CREATE TABLE IF NOT EXISTS email_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN ('sent','delivered','delivery_delayed','opened','clicked','bounced','complained','failed')),
+  resend_email_id TEXT,
+  campaign_subject TEXT,
+  campaign_id UUID,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  occurred_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_events_email ON email_events (email);
+CREATE INDEX IF NOT EXISTS idx_email_events_subject ON email_events (campaign_subject);
+CREATE INDEX IF NOT EXISTS idx_email_events_type ON email_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_email_events_occurred ON email_events (occurred_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_events_dedup ON email_events (resend_email_id, event_type, occurred_at) WHERE resend_email_id IS NOT NULL;
+ALTER TABLE email_events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "events_service" ON email_events;
+CREATE POLICY "events_service" ON email_events FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "events_read" ON email_events;
+CREATE POLICY "events_read" ON email_events FOR SELECT TO anon, authenticated USING (true);
+GRANT SELECT ON email_events TO anon, authenticated;
+GRANT ALL ON email_events TO service_role;
+
+-- Per-campaign rollup (matched by subject). security_invoker so it honors caller RLS.
+CREATE OR REPLACE VIEW campaign_email_stats
+WITH (security_invoker = true) AS
+SELECT
+  campaign_subject,
+  COUNT(*) FILTER (WHERE event_type = 'sent')                 AS sent,
+  COUNT(*) FILTER (WHERE event_type = 'delivered')            AS delivered,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')  AS opened,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked') AS clicked,
+  COUNT(*) FILTER (WHERE event_type = 'bounced')              AS bounced,
+  COUNT(*) FILTER (WHERE event_type = 'complained')           AS complained,
+  MIN(occurred_at) AS first_event_at,
+  MAX(occurred_at) AS last_event_at
+FROM email_events
+WHERE campaign_subject IS NOT NULL
+GROUP BY campaign_subject;
+GRANT SELECT ON campaign_email_stats TO anon, authenticated, service_role;
+
 -- 7. PERFORMANCE INDEXING
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_spoke_uuid ON profiles (spoke_uuid);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email_unique ON profiles (email);
@@ -1040,7 +1102,7 @@ export const N8N_BLUEPRINTS = {
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const body=($input.first().json.body)||$input.first().json; const recipients=(body.recipients||[]).filter(r=>r&&r.email); const subject=body.subject||''; const template=body.html_template||body.html_body||''; const from=body.from||'ATL Urban Farms <sheree@atlurbanfarms.com>'; const CHUNK=100; const fill=r=>template.split('{{first_name}}').join(r.first_name||'Friend'); const out=[]; for(let i=0;i<recipients.length;i+=CHUNK){const chunk=recipients.slice(i,i+CHUNK); out.push({json:{batch:chunk.map(r=>({from,to:[r.email],subject,html:fill(r)})),campaign_id:body.campaign_id}});} return out;"
+        "jsCode": "const body=($input.first().json.body)||$input.first().json; const recipients=(body.recipients||[]).filter(r=>r&&r.email); const subject=body.subject||''; const template=body.html_template||body.html_body||''; const from=body.from||'ATL Urban Farms <sheree@atlurbanfarms.com>'; const CHUNK=100; const fill=r=>template.split('{{first_name}}').join(r.first_name||'Friend').split('{{unsubscribe_url}}').join('https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email='+encodeURIComponent(r.email)+'&source=global'); const out=[]; for(let i=0;i<recipients.length;i+=CHUNK){const chunk=recipients.slice(i,i+CHUNK); out.push({json:{batch:chunk.map(r=>({from,to:[r.email],subject,html:fill(r)})),campaign_id:body.campaign_id}});} return out;"
       },
       "name": "Build Resend Batches",
       "type": "n8n-nodes-base.code",

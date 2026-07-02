@@ -3,6 +3,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport, ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import { generateText } from '../services/aiService';
+import EmailPerformancePanel from '../components/EmailPerformancePanel';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
   Activity, ShieldCheck, AlertTriangle, Crown,
@@ -29,6 +30,7 @@ const DEFAULT_KEYS: ApiKeyConfig = {
   woo_consumer_key: '',
   woo_consumer_secret: '',
   resend_token: '',
+  resend_from_address: '',
   twilio_sid: '',
   twilio_token: '',
 };
@@ -371,6 +373,11 @@ Format as a concise strategic brief. Use specific percentages and metrics (simul
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* LIVE EMAIL PERFORMANCE (Resend delivery events + suppression)    */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      <EmailPerformancePanel />
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* PREBUILT ANALYTICS CARDS - 2x2 Grid */}

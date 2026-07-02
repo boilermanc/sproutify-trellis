@@ -13,6 +13,7 @@ import { sendEmail, renderCampaignHtml, SendEmailResult } from '../src/services/
 import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { triggerEmailCampaign } from '../services/n8nService';
+import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchTemplatesForBranch } from '../brandRepository';
 import { WEBHOOK_SPECS, BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import {
@@ -152,6 +153,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
   const [selectedSavedSegments, setSelectedSavedSegments] = useState<string[]>([]);
   const [showAudiencePreview, setShowAudiencePreview] = useState(false);
+  const [suppressedEmails, setSuppressedEmails] = useState<Set<string>>(new Set());
   const [selectedTags] = useState<string[]>([]);
   const [triggerType, setTriggerType] = useState<'immediate' | 'scheduled' | 'staggered'>('immediate');
 
@@ -363,9 +365,10 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const consentFiltered = useMemo(() => {
     if (selectedBranches.length === 0) return [];
     return scopedProfiles.filter(p =>
-      isSubscribedForAnyBranch(p, selectedBranches)
+      isSubscribedForAnyBranch(p, selectedBranches) &&
+      !suppressedEmails.has((p.email || '').toLowerCase())
     );
-  }, [scopedProfiles, selectedBranches]);
+  }, [scopedProfiles, selectedBranches, suppressedEmails]);
 
   // Saved Segments — the same rule-based library managed on the Segments page
   // (built-in presets + user-created custom segments from localStorage). These are
@@ -484,6 +487,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         : [...prev, segmentId]
     );
   };
+
+  // Load the Hub suppression list (unsubscribes + hard bounces + complaints) once,
+  // so suppressed addresses are excluded from every audience count and send.
+  useEffect(() => {
+    fetchSuppressedEmails().then(setSuppressedEmails);
+  }, []);
 
   // One-time handoff from the Segments page "Send Campaign" button: pre-select the
   // handed-off segment and scope to all branches so it's immediately addressable.

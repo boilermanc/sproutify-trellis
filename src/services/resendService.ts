@@ -97,7 +97,7 @@ export function renderCampaignHtml(params: {
   const safeSubject = escapeHtml(subject);
   const safeThemeColor = safeColor(themeColor);
   const safeCampaignName = campaignName ? escapeHtml(campaignName) : '';
-  const unsubUrl = `https://trellis.sproutify.app/unsubscribe?email=${encodeURIComponent(profile.email)}&source=${encodeURIComponent(profile.branches[0] || 'global')}`;
+  const unsubUrl = `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&source=${encodeURIComponent(profile.branches[0] || 'global')}`;
 
   // Simple responsive HTML email
   return `<!DOCTYPE html>
