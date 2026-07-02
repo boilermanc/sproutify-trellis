@@ -1,5 +1,5 @@
 {
-  "name": "Trellis: Campaign Dispatch Gateway",
+  "name": "Trellis: Campaign Dispatch Gateway (Resend Batch)",
   "nodes": [
     {
       "parameters": {
@@ -15,38 +15,18 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://povudgtvzggnxwgtjexa.supabase.co/rest/v1/rpc/resolve_newsletter_audience",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "YOUR_ATL_SPOKE_SERVICE_ROLE_KEY" },
-            { "name": "Authorization", "value": "Bearer YOUR_ATL_SPOKE_SERVICE_ROLE_KEY" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ p_tags: $json.tags || null }) }}"
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Build Resend batch payloads from the audience the Trellis builder sent.\n// Trellis posts the EXACT segment audience (already deduped + consent-filtered)\n// plus an html_template with {{first_name}} / {{unsubscribe_url}} tokens.\n// We personalize per recipient and chunk into arrays of <=100 for /emails/batch.\nconst input = $input.first().json;\nconst body = input.body || input;\nconst recipients = Array.isArray(body.recipients) ? body.recipients : [];\nconst subject = body.subject || '';\nconst template = body.html_template || body.html_body || '';\nconst from = body.from || 'ATL Urban Farms <sheree@atlurbanfarms.com>';\nconst campaignId = body.campaign_id || null;\nconst CHUNK = 100; // Resend /emails/batch hard limit is 100 messages per call\n\nconst personalize = (r) => {\n  const email = r.email || '';\n  const unsub = 'https://trellis.sproutify.app/unsubscribe?email=' + encodeURIComponent(email);\n  return template\n    .replace(/\\{\\{\\s*first_name\\s*\\}\\}/g, r.first_name || 'Friend')\n    .replace(/\\{\\{\\s*email\\s*\\}\\}/g, email)\n    .replace(/\\{\\{\\s*unsubscribe_url\\s*\\}\\}/g, unsub);\n};\n\n// Drop rows without an email; if nothing is left, emit no items (no send).\nconst clean = recipients.filter(r => r && r.email);\nif (clean.length === 0) return [];\n\nconst out = [];\nfor (let i = 0; i < clean.length; i += CHUNK) {\n  const chunk = clean.slice(i, i + CHUNK);\n  const batch = chunk.map(r => ({ from, to: [r.email], subject, html: personalize(r) }));\n  out.push({ json: { batch, batch_index: out.length, count: chunk.length, campaign_id: campaignId } });\n}\nreturn out;"
       },
-      "name": "Resolve Audience",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "name": "Build Resend Batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [500, 300]
     },
     {
       "parameters": {
-        "batchSize": 50,
-        "options": { "reset": false }
-      },
-      "name": "Batch Splitter",
-      "type": "n8n-nodes-base.splitInBatches",
-      "position": [750, 300]
-    },
-    {
-      "parameters": {
         "method": "POST",
-        "url": "https://api.resend.com/emails",
+        "url": "https://api.resend.com/emails/batch",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -56,17 +36,18 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ from: 'Sproutify <campaigns@sproutify.me>', to: [$json.email], subject: $node['Campaign Webhook'].json.subject, html: $node['Campaign Webhook'].json.html_body }) }}"
+        "jsonBody": "={{ JSON.stringify($json.batch) }}",
+        "options": { "batching": { "batch": { "batchSize": 1, "batchInterval": 600 } } }
       },
-      "name": "Resend Dispatch",
+      "name": "Resend Batch Dispatch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1000, 300]
+      "position": [780, 300]
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/campaigns?id=eq.{{ $node['Campaign Webhook'].json.campaign_id }}",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/campaigns?id=eq.{{ $node['Campaign Webhook'].json.body.campaign_id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -83,31 +64,28 @@
       "name": "Mark Complete",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1250, 300]
+      "position": [1060, 300]
     },
     {
       "parameters": {
-        "content": "## Trellis: Campaign Dispatch Gateway\n\n**What it does:** Receives a campaign payload via webhook, resolves the target audience from ATL spoke `newsletter_subscribers` table (active subscribers, optional tag filtering), batches emails through Resend, then marks the campaign complete on the Hub.\n\n> **TODO:** This queries ATL spoke `newsletter_subscribers` directly as a launch-phase shortcut. Once all spokes sync subscribers to the Hub `profiles` table, retarget the Resolve Audience node back to Hub Supabase with the unified profiles query.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-campaign-dispatch`\n\n**Expected POST body:**\n```json\n{\n  \"campaign_id\": \"uuid\",\n  \"branches\": [\"atl-urban-farms\"],\n  \"tags\": null,\n  \"subject\": \"Spring Sale!\",\n  \"html_body\": \"<html>...</html>\"\n}\n```\n\n`tags`: Pass `null` to send to all active subscribers, or an array like `[\"seedlings\", \"spring\"]` to filter by tag overlap.\n\n---\n\n### SETUP REQUIRED\n\n**Resolve Audience node:**\n- Replace `YOUR_ATL_SPOKE_SERVICE_ROLE_KEY` in both headers with the ATL spoke Supabase service role key\n- Requires the `resolve_newsletter_audience` RPC deployed to ATL spoke (see SQL below)\n\n**Resend Dispatch node:**\n- Replace `YOUR_RESEND_API_KEY` with your Resend token (starts with `re_`)\n\n**Mark Complete node:**\n- Replace `YOUR_HUB_SERVICE_ROLE_KEY` in both headers with the Hub Supabase service role key\n- Only needed if you have a `campaigns` table on the Hub; skip if using localStorage only\n\n**Prerequisite SQL (run in ATL Spoke Supabase SQL Editor — povudgtvzggnxwgtjexa.supabase.co):**\n```sql\nCREATE OR REPLACE FUNCTION resolve_newsletter_audience(\n  p_tags TEXT[] DEFAULT NULL\n) RETURNS TABLE(email TEXT, first_name TEXT, last_name TEXT, tags TEXT[], customer_id UUID)\nLANGUAGE plpgsql SECURITY DEFINER SET search_path = public\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT ns.email, ns.first_name, ns.last_name, ns.tags, ns.customer_id\n  FROM newsletter_subscribers ns\n  WHERE ns.status = 'active'\n    AND (p_tags IS NULL OR ns.tags && p_tags);\nEND;\n$$;\n```",
-        "width": 520,
-        "height": 740
+        "content": "## Trellis: Campaign Dispatch Gateway (Resend Batch)\n\n**What changed:** Trellis now sends the **exact segment audience** it built (already deduped by email, consent-filtered, narrowed to the selected segments/branches) plus a personalizable HTML template. This workflow chunks that audience into groups of **100** and sends each via Resend's **`/emails/batch`** endpoint — one HTTP call per 100 recipients instead of one per person.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-campaign-dispatch`\n\n**Expected POST body (from Trellis CampaignBuilder):**\n```json\n{\n  \"campaign_id\": \"uuid\",\n  \"subject\": \"Spring Sale!\",\n  \"from\": \"ATL Urban Farms <sheree@atlurbanfarms.com>\",\n  \"html_template\": \"<html>... {{first_name}} ... {{unsubscribe_url}} ...</html>\",\n  \"recipients\": [ { \"email\": \"a@x.com\", \"first_name\": \"Ada\" }, ... ],\n  \"recipient_count\": 1234\n}\n```\n\n### FLOW\nWebhook → **Build Resend Batches** (Code: personalize `{{first_name}}` / `{{unsubscribe_url}}` per recipient, chunk into <=100) → **Resend Batch Dispatch** (`POST /emails/batch`, runs once per chunk) → **Mark Complete** (PATCH Hub `campaigns` → completed).\n\n### SETUP REQUIRED\n**Resend Batch Dispatch node:**\n- Replace `YOUR_RESEND_API_KEY` with your Resend token (`re_...`). Prefer a **Header Auth credential** over pasting the key.\n- Batching is set to 1 request / 600ms to stay under Resend's default 2 req/s. Raise the interval if you see **429**s, or lower it if your plan allows more.\n\n**Mark Complete node:**\n- Replace `YOUR_HUB_SERVICE_ROLE_KEY` (both headers) with the Hub Supabase service_role key. Skip/disable this node if you only track campaigns in localStorage.\n\n### NOTES\n- **No audience RPC anymore.** The old `resolve_newsletter_audience` shortcut (blasted ALL active ATL subscribers, ignoring your segments) is gone — the audience is now whatever Trellis targeted. If you ever want a server-resolved fallback, add a branch that calls a Hub audience RPC when `recipients` is empty.\n- **Batch limits:** `/emails/batch` accepts up to 100 messages/call and does not support per-message `attachments`, `tags`, or `scheduled_at` — we only use `from`/`to`/`subject`/`html`, which are fully supported.\n- **Empty audience:** if `recipients` is empty, the Code node emits nothing and no email is sent (campaign is not marked complete).",
+        "width": 560,
+        "height": 760
       },
       "name": "Setup Notes",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [100, -280]
+      "position": [100, -300]
     }
   ],
   "connections": {
     "Campaign Webhook": {
-      "main": [[{ "node": "Resolve Audience", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Build Resend Batches", "type": "main", "index": 0 }]]
     },
-    "Resolve Audience": {
-      "main": [[{ "node": "Batch Splitter", "type": "main", "index": 0 }]]
+    "Build Resend Batches": {
+      "main": [[{ "node": "Resend Batch Dispatch", "type": "main", "index": 0 }]]
     },
-    "Batch Splitter": {
-      "main": [[{ "node": "Resend Dispatch", "type": "main", "index": 0 }]]
-    },
-    "Resend Dispatch": {
+    "Resend Batch Dispatch": {
       "main": [[{ "node": "Mark Complete", "type": "main", "index": 0 }]]
     }
   }

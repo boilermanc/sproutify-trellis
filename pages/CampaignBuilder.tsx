@@ -697,17 +697,32 @@ Return ONLY the post content, no explanations or labels.`,
       setSavedCampaigns(prev => [newCampaign, ...prev]);
     }
 
-    // Fire n8n campaign dispatch webhook for immediate campaigns
+    // Fire n8n campaign dispatch webhook for immediate campaigns.
+    // We send the EXACT audience the builder computed (segmentProfiles): already
+    // deduped by email, consent-filtered, and narrowed to the selected segments/
+    // branches. The html is sent as a template with {{first_name}} / {{unsubscribe_url}}
+    // tokens intact so n8n personalizes per recipient and batch-sends via Resend's
+    // /emails/batch endpoint (up to 100 messages per call).
     if (newCampaign && triggerType === 'immediate') {
-      const dispatchHtml = buildDispatchHtml({ email: '', first_name: '' } as Profile);
+      const htmlTemplate = buildDispatchHtml({ email: '', first_name: '' } as Profile);
+      const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
+      const recipients = segmentProfiles.map(p => ({
+        email: p.email,
+        first_name: p.first_name || '',
+      }));
 
       const webhookResult = await triggerEmailCampaign(
         WEBHOOK_SPECS.campaign_dispatch,
         {
           campaign_id: newCampaign.id,
-          tags: null, // All active subscribers — tag filtering added later
           subject: emailSubject,
-          html_body: dispatchHtml,
+          html_template: htmlTemplate,
+          from: activeBranch?.resend_from_address || undefined,
+          recipients,
+          recipient_count: recipients.length,
+          // legacy fields retained for backward-compat with older dispatch workflows
+          tags: null,
+          html_body: htmlTemplate,
         }
       );
 

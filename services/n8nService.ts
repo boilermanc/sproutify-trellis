@@ -54,6 +54,12 @@ export async function triggerEmailCampaign(
     tags: string[] | null;
     subject: string;
     html_body: string;
+    // Segment-honoring batch dispatch (Resend /emails/batch): the app sends the
+    // exact deduped audience + a personalizable template. Optional for back-compat.
+    html_template?: string;
+    from?: string;
+    recipients?: Array<{ email: string; first_name: string }>;
+    recipient_count?: number;
   }
 ): Promise<WebhookResult> {
   if (!webhookUrl) {

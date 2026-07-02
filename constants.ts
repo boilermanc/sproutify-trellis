@@ -1018,10 +1018,12 @@ export const N8N_BLUEPRINTS = {
     }
   ]
 }`,
-  // TODO: Resolve Audience queries ATL spoke newsletter_subscribers directly as a launch-phase shortcut.
-  // Once all spokes sync subscribers to the Hub profiles table, retarget back to Hub with unified profiles query.
+  // Trellis posts the EXACT segment audience (deduped + consent-filtered) plus a
+  // personalizable html_template. This workflow personalizes per recipient and sends
+  // via Resend's /emails/batch endpoint (<=100 messages per call). Canonical importable
+  // file: n8n-blueprints/B2-campaign-dispatch.json.
   campaign_dispatch: `{
-  "name": "Trellis: Campaign Dispatch Gateway",
+  "name": "Trellis: Campaign Dispatch Gateway (Resend Batch)",
   "nodes": [
     {
       "parameters": {
@@ -1037,44 +1039,39 @@ export const N8N_BLUEPRINTS = {
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT ns.email, ns.first_name, ns.last_name, ns.tags, ns.customer_id FROM newsletter_subscribers ns WHERE ns.status = 'active' AND ($1::text[] IS NULL OR ns.tags && $1::text[])",
-        "additionalFields": {}
+        "mode": "runOnceForAllItems",
+        "jsCode": "const body=($input.first().json.body)||$input.first().json; const recipients=(body.recipients||[]).filter(r=>r&&r.email); const subject=body.subject||''; const template=body.html_template||body.html_body||''; const from=body.from||'ATL Urban Farms <sheree@atlurbanfarms.com>'; const CHUNK=100; const fill=r=>template.split('{{first_name}}').join(r.first_name||'Friend'); const out=[]; for(let i=0;i<recipients.length;i+=CHUNK){const chunk=recipients.slice(i,i+CHUNK); out.push({json:{batch:chunk.map(r=>({from,to:[r.email],subject,html:fill(r)})),campaign_id:body.campaign_id}});} return out;"
       },
-      "name": "Resolve Audience (ATL Spoke)",
-      "type": "n8n-nodes-base.supabase",
+      "name": "Build Resend Batches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [500, 300]
     },
     {
       "parameters": {
-        "batchSize": 50,
-        "options": { "reset": false }
+        "method": "POST",
+        "url": "https://api.resend.com/emails/batch",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "Bearer YOUR_RESEND_API_KEY" }, { "name": "Content-Type", "value": "application/json" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.batch) }}"
       },
-      "name": "Batch Splitter",
-      "type": "n8n-nodes-base.splitInBatches",
-      "position": [750, 300]
-    },
-    {
-      "parameters": {
-        "fromEmail": "campaigns@sproutify.me",
-        "toEmail": "={{ $json.email }}",
-        "subject": "={{ $node['Campaign Webhook'].json.subject }}",
-        "html": "={{ $node['Campaign Webhook'].json.html_body }}"
-      },
-      "name": "Resend Dispatch",
-      "type": "n8n-nodes-base.resend",
-      "position": [1000, 300]
+      "name": "Resend Batch Dispatch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 300]
     },
     {
       "parameters": {
         "operation": "update",
         "table": "campaigns",
-        "id": "={{ $node['Campaign Webhook'].json.campaign_id }}",
+        "id": "={{ $json.campaign_id }}",
         "columns": { "status": "completed", "updated_at": "={{ $now }}" }
       },
       "name": "Mark Complete",
       "type": "n8n-nodes-base.supabase",
-      "position": [1250, 300]
+      "position": [1040, 300]
     }
   ]
 }`,
