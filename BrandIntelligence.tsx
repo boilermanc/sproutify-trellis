@@ -36,6 +36,9 @@ const FALLBACK_SITES = ['farm.sproutify.app', 'school.sproutify.app', 'micro.spr
 
 const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, geminiApiKey = '', branchContext }) => {
   const branchSlugs = branchContext?.allBranches.map(b => b.slug) || FALLBACK_SITES;
+  // Email templates are keyed by the stable branch UUID; resolve the
+  // (now-immutable) slug to it. Falls back to the slug if unresolved.
+  const resolveBranchId = (slug: string) => branchContext?.allBranches.find(b => b.slug === slug)?.id || slug;
   // State
   const [brands, setBrands] = useState<BrandIdentity[]>(MOCK_BRAND_IDENTITIES);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -131,9 +134,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
   useEffect(() => {
     if (activeTab === 'templates' && templateBranchFilter) {
-      loadTemplates(templateBranchFilter);
+      loadTemplates(resolveBranchId(templateBranchFilter));
     }
-  }, [activeTab, templateBranchFilter, loadTemplates]);
+  }, [activeTab, templateBranchFilter, loadTemplates, branchContext]);
 
   // Debounce HTML preview
   useEffect(() => {
@@ -234,7 +237,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       setTemplateHtml(exportedHtml);
       const payload: Partial<EmailTemplate> = {
         ...(selectedTemplate?.id ? { id: selectedTemplate.id } : {}),
-        branch_id: templateBranchFilter,
+        branch_id: resolveBranchId(templateBranchFilter),
         brand_identity_id: brands.find(b => b.branch_id === templateBranchFilter && b.status === 'active')?.id,
         name: templateName.trim(),
         description: templateDescription.trim() || undefined,
@@ -243,7 +246,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       const saved = await upsertTemplate(payload);
       setSelectedTemplate(saved);
       setTemplateDirty(false);
-      await loadTemplates(templateBranchFilter);
+      await loadTemplates(resolveBranchId(templateBranchFilter));
     } catch (err) {
       console.error('Failed to save template:', err);
     } finally {
@@ -261,7 +264,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
         setTemplateHtml('');
         setTemplateDirty(false);
       }
-      await loadTemplates(templateBranchFilter);
+      await loadTemplates(resolveBranchId(templateBranchFilter));
     } catch (err) {
       console.error('Failed to delete template:', err);
     }

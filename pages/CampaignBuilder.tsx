@@ -238,7 +238,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         return;
       }
       try {
-        const branchTemplates = await fetchTemplatesForBranch(selectedBranches[0]);
+        // Templates are keyed by the stable branch UUID; resolve the slug to it.
+        const branchId = branchContext?.allBranches.find(b => b.slug === selectedBranches[0])?.id || selectedBranches[0];
+        const branchTemplates = await fetchTemplatesForBranch(branchId);
         setCustomTemplates(branchTemplates);
       } catch (err) {
         console.error('Failed to load custom templates:', err);
