@@ -1,0 +1,98 @@
+{
+  "name": "Trellis: Episode Artwork (image gen)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-episode-artwork", "responseMode": "onReceived", "options": {} },
+      "name": "Artwork Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episode_assets?id=eq.{{ $node['Artwork Webhook'].json.body.asset_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "application/json" }
+        ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'processing', updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0:predict",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "x-goog-api-key", "value": "YOUR_GEMINI_API_KEY" },
+          { "name": "Content-Type", "value": "application/json" }
+        ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: $node['Artwork Webhook'].json.body.prompt, aspectRatio: ($node['Artwork Webhook'].json.body.width >= $node['Artwork Webhook'].json.body.height ? '16:9' : '9:16') }) }}"
+      },
+      "name": "Image Model (VERIFY endpoint)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [710, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/episode-assets/{{ $node['Artwork Webhook'].json.body.episode_id }}/{{ $node['Artwork Webhook'].json.body.asset_type }}.png",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "image/png" },
+          { "name": "x-upsert", "value": "true" }
+        ] },
+        "sendBody": true, "contentType": "binaryData", "inputDataFieldName": "data"
+      },
+      "name": "Upload Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episode_assets?id=eq.{{ $node['Artwork Webhook'].json.body.asset_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "application/json" }
+        ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'ready', storage_bucket: 'episode-assets', storage_path: $node['Artwork Webhook'].json.body.episode_id + '/' + $node['Artwork Webhook'].json.body.asset_type + '.png', url: 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/' + $node['Artwork Webhook'].json.body.episode_id + '/' + $node['Artwork Webhook'].json.body.asset_type + '.png', updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Ready",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1170, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Episode Artwork\n\nGenerates cover_art (1920x1080), thumbnail (1280x720) or vertical (1080x1920) for an episode. Called by `episodeService.generateArtwork`.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-episode-artwork`\n**POST body:** `{ asset_id, episode_id, branch, asset_type, width, height, prompt }`\n\n### SETUP\n1. Replace `YOUR_SERVICE_ROLE_KEY` (3 nodes) + `YOUR_GEMINI_API_KEY`.\n2. **⚠️ Image node is a SCAFFOLD** — verify the current Imagen/Gemini image endpoint + response shape (https://ai.google.dev/gemini-api/docs/imagen). Decode the returned base64 image to a binary field `data` before Upload.\n3. Uploads to `episode-assets/{episode_id}/{asset_type}.png` (public bucket → url directly usable).\n4. Add a failure path: PATCH asset `status='failed'` + `error_message`.\n\n**Prereqs done:** `trellis_episode_assets` table + `episode-assets` public bucket exist (2026-07-02).",
+        "width": 540, "height": 460
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -220]
+    }
+  ],
+  "connections": {
+    "Artwork Webhook": { "main": [[{ "node": "Mark Processing", "type": "main", "index": 0 }]] },
+    "Mark Processing": { "main": [[{ "node": "Image Model (VERIFY endpoint)", "type": "main", "index": 0 }]] },
+    "Image Model (VERIFY endpoint)": { "main": [[{ "node": "Upload Image", "type": "main", "index": 0 }]] },
+    "Upload Image": { "main": [[{ "node": "Mark Ready", "type": "main", "index": 0 }]] }
+  }
+}

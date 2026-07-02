@@ -360,7 +360,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'trellis-episodes';
 
 export interface TrellisReport {
   id: string;
@@ -1030,6 +1030,86 @@ export interface CreateSessionConfig {
   track_count?: number;
   avg_track_length_seconds?: number;
   vocal_style?: string;
+}
+
+// ─── Trellis Episodes (top-level AI content production pipeline) ─────
+export type EpisodeStatus =
+  | 'draft' | 'music' | 'master' | 'artwork' | 'video' | 'metadata' | 'publishing' | 'published' | 'archived' | 'failed';
+export type AssetType = 'master_mp3' | 'master_wav' | 'cover_art' | 'thumbnail' | 'vertical' | 'video_mp4';
+export type AssetStatus = 'queued' | 'processing' | 'ready' | 'failed';
+export type PublishPlatform = 'youtube' | 'spotify' | 'apple_podcasts' | 'rekkrd' | 'social';
+export type PublishStatus = 'pending' | 'uploading' | 'processing' | 'live' | 'failed';
+
+export interface Episode {
+  id: string;
+  branch: string | null;
+  created_by: string | null;
+  title: string;
+  show_name: string | null;
+  theme: string | null;
+  session_id: string | null;
+  status: EpisodeStatus;
+  publish_status: string | null;
+  youtube_url: string | null;
+  analytics: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EpisodeAsset {
+  id: string;
+  episode_id: string;
+  asset_type: AssetType;
+  status: AssetStatus;
+  approved: boolean;
+  version: number;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  url: string | null;
+  width: number | null;
+  height: number | null;
+  duration_seconds: number | null;
+  file_size_bytes: number | null;
+  metadata: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EpisodeChapter { time: string; title: string; }
+
+export interface EpisodeMetadata {
+  id: string;
+  episode_id: string;
+  title: string | null;
+  description: string | null;
+  tags: string[];
+  chapters: EpisodeChapter[];
+  hashtags: string[];
+  status: 'draft' | 'ready' | 'approved';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EpisodePublication {
+  id: string;
+  episode_id: string;
+  platform: PublishPlatform;
+  status: PublishStatus;
+  external_id: string | null;
+  external_url: string | null;
+  response: Record<string, unknown>;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateEpisodeConfig {
+  branch: string;
+  title: string;
+  show_name?: string;
+  theme?: string;
+  session_id?: string | null;
 }
 
 export interface VideoAdBatchRequest {

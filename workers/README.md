@@ -1,3 +1,20 @@
+# Trellis Workers (IONOS VPS)
+
+Two Flask workers back the heavy media steps of the AI content pipeline:
+
+| Worker | Port | Endpoint | Job |
+|--------|------|----------|-----|
+| `stitch_worker.py` | 8099 | `POST /stitch` | crossfade approved session tracks → master mp3 (bucket `music-sessions`) |
+| `video_worker.py`  | 8100 | `POST /video`  | ffmpeg: master audio + cover image → mp4 (bucket `episode-assets`) |
+
+Both: `pip install -r requirements.txt` (needs **ffmpeg**), set `SUPABASE_URL` +
+`SUPABASE_SERVICE_ROLE_KEY`, run. Both are CORS-enabled and respond 202
+(background thread). `video_worker.py` uses `ASSET_BUCKET=episode-assets`; wire
+its `/video` to `EPISODE_VIDEO_WEBHOOK` (directly or via n8n forward). Give it
+its own systemd unit (`trellis-video`) mirroring the one below.
+
+---
+
 # Trellis Sessions — Audio Stitch Worker
 
 Stitches approved AI-generated tracks into a single master (crossfades, fades,

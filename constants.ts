@@ -802,6 +802,98 @@ CREATE INDEX IF NOT EXISTS idx_tms_branch ON trellis_music_sessions (branch);
 CREATE INDEX IF NOT EXISTS idx_tms_status ON trellis_music_sessions (status);
 CREATE INDEX IF NOT EXISTS idx_tmt_session ON trellis_music_tracks (session_id, track_number);
 CREATE INDEX IF NOT EXISTS idx_tmr_session ON trellis_music_renders (session_id);
+
+-- 18. TRELLIS EPISODES (top-level AI content production pipeline)
+ALTER TABLE trellis_music_sessions ADD COLUMN IF NOT EXISTS episode_id UUID;
+
+CREATE TABLE IF NOT EXISTS trellis_episodes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch TEXT,
+  created_by UUID,
+  title TEXT NOT NULL,
+  show_name TEXT,
+  theme TEXT,
+  session_id UUID REFERENCES trellis_music_sessions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','music','master','artwork','video','metadata','publishing','published','archived','failed')),
+  publish_status TEXT DEFAULT 'unpublished',
+  youtube_url TEXT,
+  analytics JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_episode_assets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  episode_id UUID NOT NULL REFERENCES trellis_episodes(id) ON DELETE CASCADE,
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('master_mp3','master_wav','cover_art','thumbnail','vertical','video_mp4')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','ready','failed')),
+  approved BOOLEAN DEFAULT false,
+  version INTEGER DEFAULT 1,
+  storage_bucket TEXT,
+  storage_path TEXT,
+  url TEXT,
+  width INTEGER,
+  height INTEGER,
+  duration_seconds INTEGER,
+  file_size_bytes BIGINT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_episode_metadata (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  episode_id UUID NOT NULL REFERENCES trellis_episodes(id) ON DELETE CASCADE UNIQUE,
+  title TEXT,
+  description TEXT,
+  tags JSONB DEFAULT '[]'::jsonb,
+  chapters JSONB DEFAULT '[]'::jsonb,
+  hashtags JSONB DEFAULT '[]'::jsonb,
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft','ready','approved')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_episode_publications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  episode_id UUID NOT NULL REFERENCES trellis_episodes(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('youtube','spotify','apple_podcasts','rekkrd','social')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','uploading','processing','live','failed')),
+  external_id TEXT,
+  external_url TEXT,
+  response JSONB DEFAULT '{}'::jsonb,
+  published_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE trellis_episodes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_episode_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_episode_metadata ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_episode_publications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anon Full Access" ON trellis_episodes FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_episodes FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_episodes FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_episode_assets FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_episode_assets FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_episode_assets FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_episode_metadata FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_episode_metadata FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_episode_metadata FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_episode_publications FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_episode_publications FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_episode_publications FOR ALL TO service_role USING (true) WITH CHECK (true);
+GRANT ALL ON trellis_episodes TO anon, authenticated, service_role;
+GRANT ALL ON trellis_episode_assets TO anon, authenticated, service_role;
+GRANT ALL ON trellis_episode_metadata TO anon, authenticated, service_role;
+GRANT ALL ON trellis_episode_publications TO anon, authenticated, service_role;
+
+CREATE INDEX IF NOT EXISTS idx_tep_branch ON trellis_episodes (branch);
+CREATE INDEX IF NOT EXISTS idx_tep_status ON trellis_episodes (status);
+CREATE INDEX IF NOT EXISTS idx_tea_episode ON trellis_episode_assets (episode_id, asset_type);
+CREATE INDEX IF NOT EXISTS idx_tepub_episode ON trellis_episode_publications (episode_id);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
@@ -820,7 +912,10 @@ export const WEBHOOK_SPECS = {
   reddit_post_comment: "https://n8n.sproutify.app/webhook/reddit-post-comment",
   music_generate: "https://n8n.sproutify.app/webhook/trellis-music-generate",
   session_track_generate: "https://n8n.sproutify.app/webhook/trellis-session-track-generate",
-  music_stitch: "https://n8n.sproutify.app/webhook/trellis-music-stitch"
+  music_stitch: "https://n8n.sproutify.app/webhook/trellis-music-stitch",
+  episode_artwork: "https://n8n.sproutify.app/webhook/trellis-episode-artwork",
+  episode_video: "https://n8n.sproutify.app/webhook/trellis-episode-video",
+  episode_publish: "https://n8n.sproutify.app/webhook/trellis-episode-publish"
 };
 
 export const MOCK_BRIEFING: DailyBriefing = {
@@ -1280,3 +1375,40 @@ export const SESSION_STATUS_META: Record<string, { label: string; cls: string }>
   failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700' },
   archived: { label: 'Archived', cls: 'bg-slate-100 text-slate-400' },
 };
+
+// ─── Trellis Episodes (AI content production pipeline) ──────────────
+export const EPISODE_ARTWORK_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-episode-artwork';
+export const EPISODE_VIDEO_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-episode-video';
+export const EPISODE_PUBLISH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-episode-publish';
+
+// Ordered pipeline phases (top-level production stepper)
+export const EPISODE_PHASES = [
+  { key: 'music', label: 'Music' },
+  { key: 'master', label: 'Master' },
+  { key: 'artwork', label: 'Artwork' },
+  { key: 'video', label: 'Video' },
+  { key: 'metadata', label: 'Metadata' },
+  { key: 'publishing', label: 'Publish' },
+  { key: 'published', label: 'Live' },
+] as const;
+
+export const EPISODE_STATUS_META: Record<string, { label: string; cls: string }> = {
+  draft: { label: 'Draft', cls: 'bg-slate-100 text-slate-500' },
+  music: { label: 'Music', cls: 'bg-amber-100 text-amber-700' },
+  master: { label: 'Master', cls: 'bg-blue-100 text-blue-700' },
+  artwork: { label: 'Artwork', cls: 'bg-violet-100 text-violet-700' },
+  video: { label: 'Video', cls: 'bg-indigo-100 text-indigo-700' },
+  metadata: { label: 'Metadata', cls: 'bg-cyan-100 text-cyan-700' },
+  publishing: { label: 'Publishing', cls: 'bg-amber-100 text-amber-700' },
+  published: { label: 'Live', cls: 'bg-emerald-100 text-emerald-700' },
+  archived: { label: 'Archived', cls: 'bg-slate-100 text-slate-400' },
+  failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700' },
+};
+
+export const PUBLISH_PLATFORMS = [
+  { id: 'youtube', label: 'YouTube', available: true },
+  { id: 'rekkrd', label: 'Rekkrd Site', available: true },
+  { id: 'social', label: 'Social Clips', available: true },
+  { id: 'spotify', label: 'Spotify', available: false },
+  { id: 'apple_podcasts', label: 'Apple Podcasts', available: false },
+] as const;

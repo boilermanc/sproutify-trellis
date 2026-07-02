@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music
+  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -58,6 +58,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'social-hub', label: 'Social Hub', icon: Share2 },
     { id: 'video-ad-lab', label: 'Video Ad Lab', icon: Video },
     { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },
+    { id: 'trellis-episodes', label: 'Trellis Episodes', icon: Clapperboard },
     { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },
     { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
     { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },

@@ -1,0 +1,66 @@
+{
+  "name": "Trellis: Episode Publish (YouTube)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-episode-publish", "responseMode": "onReceived", "options": {} },
+      "name": "Publish Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": { "string": [{ "value1": "={{ $json.body.platform }}", "operation": "equals", "value2": "youtube" }] }
+      },
+      "name": "Is YouTube?",
+      "type": "n8n-nodes-base.if",
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $node['Publish Webhook'].json.body.metadata.title }}",
+        "regionCode": "US",
+        "options": {}
+      },
+      "name": "YouTube Upload",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [710, 220]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episode_publications?id=eq.{{ $node['Publish Webhook'].json.body.publication_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "application/json" }
+        ] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'live', external_id: $json.id, external_url: 'https://youtu.be/' + $json.id, published_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Live",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [940, 220]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Episode Publish (YouTube)\n\nUploads the rendered episode video to YouTube (and later Spotify / Apple / Rekkrd / social). Called by `episodeService.publishEpisode`.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-episode-publish`\n**POST body:** `{ publication_id, episode_id, branch, platform, video_url, metadata:{ title, description, tags, chapters, hashtags } }`\n\n### SETUP (biggest lift of the pipeline)\n1. **YouTube OAuth** — add a YouTube Data API credential in n8n (Google Cloud project + OAuth consent + channel authorization). This is the gating step.\n2. Download `video_url` (the rendered mp4 from the video worker) to a binary field for the YouTube Upload node, OR upload by URL if your node supports it.\n3. Map: title, description (append chapters + hashtags), tags, playlist, privacy from the `metadata` payload.\n4. On success PATCH `trellis_episode_publications` → `status='live'`, `external_url` (also mirror to `trellis_episodes.youtube_url`).\n5. Add branches for the other platforms; `spotify` / `apple_podcasts` are marked unavailable in the UI for now.\n\n**Prereqs done:** `trellis_episode_publications` table exists (2026-07-02). The `n8n-nodes-base.youTube` node here is illustrative — wire real fields once OAuth is connected.",
+        "width": 560, "height": 520
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -260]
+    }
+  ],
+  "connections": {
+    "Publish Webhook": { "main": [[{ "node": "Is YouTube?", "type": "main", "index": 0 }]] },
+    "Is YouTube?": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }], []] },
+    "YouTube Upload": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] }
+  }
+}
