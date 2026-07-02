@@ -37,8 +37,12 @@ const FALLBACK_SITES = ['farm.sproutify.app', 'school.sproutify.app', 'micro.spr
 const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, geminiApiKey = '', branchContext }) => {
   const branchSlugs = branchContext?.allBranches.map(b => b.slug) || FALLBACK_SITES;
   // Email templates are keyed by the stable branch UUID; resolve the
-  // (now-immutable) slug to it. Falls back to the slug if unresolved.
-  const resolveBranchId = (slug: string) => branchContext?.allBranches.find(b => b.slug === slug)?.id || slug;
+  // (now-immutable) slug to it, normalizing slug/domain/hyphen variants.
+  const resolveBranchId = (slug: string) => {
+    const norm = (s: string) => (s || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
+    const target = norm(slug);
+    return branchContext?.allBranches.find(b => norm(b.slug) === target)?.id || slug;
+  };
   // State
   const [brands, setBrands] = useState<BrandIdentity[]>(MOCK_BRAND_IDENTITIES);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);

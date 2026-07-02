@@ -12,7 +12,7 @@ import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { triggerEmailCampaign } from '../services/n8nService';
 import { fetchTemplatesForBranch } from '../brandRepository';
-import { WEBHOOK_SPECS } from '../constants';
+import { WEBHOOK_SPECS, BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
   ChevronLeft, CheckCircle2, Target,
@@ -238,8 +238,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         return;
       }
       try {
-        // Templates are keyed by the stable branch UUID; resolve the slug to it.
-        const branchId = branchContext?.allBranches.find(b => b.slug === selectedBranches[0])?.id || selectedBranches[0];
+        // Templates are keyed by the stable branch UUID. Resolve the selected
+        // branch to it, normalizing slug/domain/hyphen variants (atl-urban-farms,
+        // atlurbanfarms.com, atlurbanfarms all match the same branch).
+        const norm = (s: string) => (s || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
+        const target = norm(selectedBranches[0]);
+        const branchId = branchContext?.allBranches.find(b => norm(b.slug) === target)?.id || selectedBranches[0];
         const branchTemplates = await fetchTemplatesForBranch(branchId);
         setCustomTemplates(branchTemplates);
       } catch (err) {
@@ -467,27 +471,23 @@ Return ONLY the post content, no explanations or labels.`,
     );
   };
 
-  // Build HTML for the selected template (custom or built-in)
+  // Build HTML for the selected template (custom OR built-in — both editable)
   const buildDispatchHtml = (profile: Profile): string => {
+    const fill = (html: string) => html
+      .replace(/\{\{headline\}\}/g, customTemplateFields.headline || '')
+      .replace(/\{\{body_copy\}\}/g, customTemplateFields.body_copy || '')
+      .replace(/\{\{cta_text\}\}/g, customTemplateFields.cta_text || 'Learn more')
+      .replace(/\{\{cta_url\}\}/g, customTemplateFields.cta_url || '#')
+      .replace(/\{\{first_name\}\}/g, profile.first_name || '{{first_name}}')
+      .replace(/\{\{unsubscribe_url\}\}/g, '{{unsubscribe_url}}');
+
     if (isCustomTemplate) {
-      const customId = emailTemplate.replace('custom:', '');
-      const ct = customTemplates.find(t => t.id === customId);
-      if (ct) {
-        return ct.html_body
-          .replace(/\{\{headline\}\}/g, customTemplateFields.headline)
-          .replace(/\{\{body_copy\}\}/g, customTemplateFields.body_copy)
-          .replace(/\{\{cta_text\}\}/g, customTemplateFields.cta_text)
-          .replace(/\{\{cta_url\}\}/g, customTemplateFields.cta_url)
-          .replace(/\{\{first_name\}\}/g, profile.first_name || '{{first_name}}')
-          .replace(/\{\{unsubscribe_url\}\}/g, '{{unsubscribe_url}}');
-      }
+      const ct = customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''));
+      if (ct) return fill(ct.html_body);
+    } else if (BUILTIN_EMAIL_TEMPLATES[emailTemplate]) {
+      return fill(BUILTIN_EMAIL_TEMPLATES[emailTemplate]);
     }
-    return renderCampaignHtml({
-      profile,
-      subject: emailSubject,
-      templateId: emailTemplate,
-      campaignName: campaignName,
-    });
+    return renderCampaignHtml({ profile, subject: emailSubject, templateId: emailTemplate, campaignName });
   };
 
   const handleSendTest = async () => {
@@ -1164,35 +1164,13 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 </div>
 
-                {/* No custom template — block + guide */}
-                {customTemplates.length === 0 && (
-                  <div className="bg-amber-50 border-2 border-amber-200 rounded-[2rem] p-6 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-                      <h4 className="font-black text-amber-900 uppercase tracking-widest text-xs">Create an email template first</h4>
-                    </div>
-                    <p className="text-xs text-amber-800 leading-relaxed">
-                      There's no custom email template for <b>{selectedBranches[0] ? formatBranchName(selectedBranches[0]) : 'this branch'}</b> yet. The built-in layouts below can't hold your own copy, so you'll need to create one before you can compose and send.
-                    </p>
-                    <div className="text-xs text-amber-800 leading-relaxed">
-                      <p className="font-black mb-1">What to do:</p>
-                      <ol className="list-decimal ml-5 space-y-1">
-                        <li>Open <b>Brand Intelligence</b> (left sidebar &rarr; <b>Brand DNA</b>).</li>
-                        <li>Go to <b>Email Templates</b> and select the <b>{selectedBranches[0] ? formatBranchName(selectedBranches[0]) : 'target'}</b> branch.</li>
-                        <li>Design your template, then click <b>Save</b>.</li>
-                      </ol>
-                      <p className="mt-2">Back here, it appears in a <b className="text-violet-600">violet &ldquo;Custom Templates&rdquo;</b> row below &mdash; select it and the <b>Headline / Body Copy / CTA</b> editor unlocks. <b>Continue</b> stays disabled until a custom template is selected.</p>
-                    </div>
-                  </div>
-                )}
-                {customTemplates.length > 0 && !isCustomTemplate && (
-                  <div className="flex items-start gap-2 rounded-2xl bg-amber-50 border border-amber-200 p-4">
-                    <Info size={16} className="mt-0.5 text-amber-600 shrink-0" />
-                    <p className="text-xs text-amber-800 leading-relaxed font-medium">
-                      Select your <b className="text-violet-600">Custom Template</b> below to continue &mdash; built-in layouts don't include your own copy.
-                    </p>
-                  </div>
-                )}
+                {/* All layouts are editable — soft guidance */}
+                <div className="flex items-start gap-2 rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                  <Info size={16} className="mt-0.5 text-slate-400 shrink-0" />
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Pick any layout below and fill in your <b>Headline / Body Copy / CTA</b> &mdash; every layout is ready to use. Want a fully branded template? Build one in <b>Brand Intelligence &rarr; Brand DNA &rarr; Email Templates</b> and it'll show up in the violet <b className="text-violet-600">Custom Templates</b> row.
+                  </p>
+                </div>
 
                 {/* Template Picker */}
                 <div className="space-y-6">
@@ -1264,8 +1242,8 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 </div>
 
-                {/* Custom Template Content Fields */}
-                {isCustomTemplate && (
+                {/* Template Content Fields — for built-in and custom templates alike */}
+                {!!emailTemplate && (
                   <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
                     <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">
                       <Mail size={16} className="mr-3 text-violet-500" />
@@ -1853,7 +1831,8 @@ Return ONLY the post content, no explanations or labels.`,
   // Gate: when Email is a selected channel, a custom template must be chosen
   // before leaving Compose. Built-in layouts can't hold custom copy, so a
   // real send requires a template created in Brand Intelligence.
-  const emailComposeIncomplete = enabledChannels.has('email') && !isCustomTemplate;
+  // Any layout (built-in or custom) works — just require body copy to be written.
+  const emailComposeIncomplete = enabledChannels.has('email') && !customTemplateFields.body_copy?.trim();
 
   // Synthetic recipient used to render the in-page email preview modal.
   const previewProfile: Profile = {
