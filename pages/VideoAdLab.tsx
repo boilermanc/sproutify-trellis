@@ -16,7 +16,9 @@ import {
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
 } from 'lucide-react';
 
-// ─── Supabase REST helpers for templates (spoke-side) ────────────────
+// ─── Template helpers ────────────────────────────────────────────────
+// video_ad_templates is Trellis orchestration data on the HUB (like
+// video_ad_jobs), keyed by branch — read/written with the Hub client directly.
 
 interface VideoAdTemplate {
   id: string;
@@ -26,33 +28,32 @@ interface VideoAdTemplate {
   created_at: string;
 }
 
-// Templates live on the spoke (video_ad_templates). We reach them through the
-// spoke-query Edge Function by connection id, so the spoke key stays server-side.
-async function fetchTemplates(connectionId: string | null, branch: string): Promise<VideoAdTemplate[]> {
-  if (!connectionId) return [];
-  try {
-    const { data, error } = await supabase.functions.invoke('spoke-query', {
-      body: { op: 'template_list', connection_id: connectionId, branch },
-    });
-    if (error || data?.error) return [];
-    return data?.templates || [];
-  } catch {
+async function fetchTemplates(branch: string): Promise<VideoAdTemplate[]> {
+  if (!branch) return [];
+  const { data, error } = await supabase
+    .from('video_ad_templates')
+    .select('*')
+    .eq('branch', branch)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('[videoAd] fetchTemplates failed:', error.message);
     return [];
   }
+  return (data as VideoAdTemplate[]) || [];
 }
 
-async function saveTemplate(connectionId: string | null, branch: string, name: string, settings: Record<string, any>): Promise<void> {
-  if (!connectionId) return;
-  await supabase.functions.invoke('spoke-query', {
-    body: { op: 'template_save', connection_id: connectionId, branch, template_name: name, settings },
-  });
+async function saveTemplate(branch: string, name: string, settings: Record<string, any>): Promise<void> {
+  if (!branch || !name) return;
+  const { error } = await supabase
+    .from('video_ad_templates')
+    .insert({ branch, template_name: name, settings });
+  if (error) console.error('[videoAd] saveTemplate failed:', error.message);
 }
 
-async function deleteTemplate(connectionId: string | null, id: string): Promise<void> {
-  if (!connectionId) return;
-  await supabase.functions.invoke('spoke-query', {
-    body: { op: 'template_delete', connection_id: connectionId, id },
-  });
+async function deleteTemplate(id: string): Promise<void> {
+  if (!id) return;
+  const { error } = await supabase.from('video_ad_templates').delete().eq('id', id);
+  if (error) console.error('[videoAd] deleteTemplate failed:', error.message);
 }
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -84,11 +85,6 @@ const VOICE_NAMES: Record<string, string> = {
 
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext }) => {
-  // ── Active spoke connection (templates are read/written server-side by id) ──
-  const templateConnectionId = useMemo<string | null>(() => {
-    return spokeConnections.find(c => c.status === 'active')?.id ?? null;
-  }, [spokeConnections]);
-
   // ── Branch options — pulled from the real branches (fall back to the static
   //    ecosystem list only if branch context hasn't loaded). ──
   const branchOptions = useMemo(() => {
@@ -217,11 +213,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     })();
   }, []);
 
-  // ── Load templates when branch changes (spoke-side) ──
+  // ── Load templates when branch changes (Hub) ──
   useEffect(() => {
     if (!branch) return;
-    fetchTemplates(templateConnectionId, branch).then(setTemplates).catch(() => setTemplates([]));
-  }, [branch, templateConnectionId]);
+    fetchTemplates(branch).then(setTemplates).catch(() => setTemplates([]));
+  }, [branch]);
 
   // ── Poller ──
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
@@ -344,11 +340,11 @@ STRICT RULES:
     try {
       // Save template if requested
       if (saveAsTemplate && newTemplateName.trim()) {
-        await saveTemplate(templateConnectionId, branch, newTemplateName.trim(), {
+        await saveTemplate(branch, newTemplateName.trim(), {
           pipeline, actorGender, actorStyle, aspectRatio, tone,
           setting, lighting, mood, customVisualNotes,
         });
-        const refreshed = await fetchTemplates(templateConnectionId, branch);
+        const refreshed = await fetchTemplates(branch);
         setTemplates(refreshed);
         addToast(`Template "${newTemplateName}" saved`, 'success');
       }
