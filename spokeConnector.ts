@@ -1,6 +1,32 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase as hubClient } from './lib/supabase';
 import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress } from './types';
 import { loadNameCache, predictDemographicsSync } from './demographicsService';
+
+// ── Server-side spoke reads ─────────────────────────────────────────
+// All runtime data reads go through the `spoke-query` Edge Function so the
+// spoke's key is decrypted server-side and NEVER reaches the browser. The
+// function returns raw rows + the field_mapping per configured table; we
+// normalize client-side (pure transforms, no key needed).
+type SpokeTableType = 'customers' | 'orders' | 'order_items' | 'subscriptions';
+
+interface SpokeFetchTable {
+  table_name: string;
+  field_mapping: Record<string, string>;
+  rows: Record<string, unknown>[];
+}
+
+async function spokeFetch(
+  connectionId: string,
+  tableType: SpokeTableType,
+): Promise<{ tables: SpokeFetchTable[]; errors: string[] }> {
+  const { data, error } = await hubClient.functions.invoke('spoke-query', {
+    body: { op: 'fetch', connection_id: connectionId, table_type: tableType },
+  });
+  if (error) throw new Error(error.message || 'spoke-query request failed');
+  if (data?.error) throw new Error(data.error);
+  return { tables: data?.tables || [], errors: data?.errors || [] };
+}
 
 // Cache spoke clients by URL to avoid duplicate GoTrueClient instances
 const spokeClientCache = new Map<string, SupabaseClient>();
@@ -291,87 +317,54 @@ export const autoMapFields = (
 export async function fetchSpokeProfiles(
   connection: SpokeConnection
 ): Promise<NormalizedSpokeProfile[]> {
-  // Find the customers table config
+  // Only fetch when a customers table is configured + enabled.
   const tableConfig = connection.tables.find(t => t.table_type === 'customers' && t.enabled);
   if (!tableConfig) return [];
 
   try {
-    const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-
-    // Build the select string from field_mapping
-    const fieldMapping = tableConfig.field_mapping;
-    const fields = Object.values(fieldMapping).filter(Boolean);
-    const selectString = fields.join(',');
-
-    // Fetch all records using pagination
-    const { data, error } = await fetchAllRows<Record<string, unknown>>(
-      client,
-      tableConfig.table_name,
-      selectString
-    );
-
-    if (error) {
-      // Provide a more descriptive error message
-      let errorMessage = `${connection.name}: ${error}`;
-
-      // Check for common error patterns and add helpful hints
-      if (error.includes('does not exist')) {
-        errorMessage += ' - check your field mapping or table name';
-      } else if (error.includes('permission denied') || error.includes('not authorized')) {
-        errorMessage += ' - check your API key permissions';
-      } else if (error.includes('relation') && error.includes('does not exist')) {
-        errorMessage += ' - table not found, verify the table name';
-      }
-
-      console.error(`Error fetching from spoke ${connection.name}:`, error);
-      throw new Error(errorMessage);
+    // Server-side read — the spoke key never touches the browser.
+    const { tables, errors } = await spokeFetch(connection.id, 'customers');
+    if (tables.length === 0 && errors.length > 0) {
+      throw new Error(`${connection.name}: ${errors[0]}`);
     }
 
-    if (!data) {
-      return [];
+    const profiles: NormalizedSpokeProfile[] = [];
+    for (const t of tables) {
+      const mapping = t.field_mapping;
+      for (const row of t.rows) {
+        const profile: NormalizedSpokeProfile = {
+          email: String(row[mapping.email] ?? ''),
+          _spoke_id: connection.id,
+          _spoke_name: connection.name,
+        };
+
+        // Include id if mapped (needed for order linking)
+        if (mapping.id && row[mapping.id] !== undefined) {
+          profile.id = String(row[mapping.id]);
+        }
+        if (mapping.first_name && row[mapping.first_name] !== undefined) {
+          profile.first_name = String(row[mapping.first_name]);
+        }
+        if (mapping.last_name && row[mapping.last_name] !== undefined) {
+          profile.last_name = String(row[mapping.last_name]);
+        }
+        if (mapping.phone && row[mapping.phone] !== undefined) {
+          profile.phone = String(row[mapping.phone]);
+        }
+        if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
+          profile.subscribed = Boolean(row[mapping.subscribed]);
+        }
+        if (mapping.created_at && row[mapping.created_at] !== undefined) {
+          profile.created_at = String(row[mapping.created_at]);
+        }
+
+        profiles.push(profile);
+      }
     }
-
-    // Normalize the data to our standard profile shape
-    const mapping = fieldMapping;
-    return data.map((row: Record<string, unknown>) => {
-      const profile: NormalizedSpokeProfile = {
-        email: String(row[mapping.email] ?? ''),
-        _spoke_id: connection.id,
-        _spoke_name: connection.name,
-      };
-
-      // Include id if mapped (needed for order linking)
-      if (mapping.id && row[mapping.id] !== undefined) {
-        profile.id = String(row[mapping.id]);
-      }
-
-      if (mapping.first_name && row[mapping.first_name] !== undefined) {
-        profile.first_name = String(row[mapping.first_name]);
-      }
-
-      if (mapping.last_name && row[mapping.last_name] !== undefined) {
-        profile.last_name = String(row[mapping.last_name]);
-      }
-
-      if (mapping.phone && row[mapping.phone] !== undefined) {
-        profile.phone = String(row[mapping.phone]);
-      }
-
-      if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
-        profile.subscribed = Boolean(row[mapping.subscribed]);
-      }
-
-      if (mapping.created_at && row[mapping.created_at] !== undefined) {
-        profile.created_at = String(row[mapping.created_at]);
-      }
-
-      return profile;
-    });
+    return profiles;
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     console.error(`Error fetching from spoke ${connection.name}:`, errorMessage);
-
-    // Re-throw with spoke name context if not already included
     if (errorMessage.startsWith(connection.name)) {
       throw err;
     }
@@ -425,26 +418,18 @@ export const fetchSpokeOrders = async (
 
   const allOrders: NormalizedOrder[] = [];
 
-  for (const tableConfig of orderTableConfigs) {
+  // Server-side read — returns raw rows per configured order table.
+  let fetchedTables: SpokeFetchTable[] = [];
+  try {
+    ({ tables: fetchedTables } = await spokeFetch(connection.id, 'orders'));
+  } catch (err) {
+    console.error(`Error fetching orders from ${connection.name}:`, err);
+    return [];
+  }
+
+  for (const tableConfig of fetchedTables) {
     try {
-      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-
-      // Build select string from field mapping
-      const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
-      const selectString = fields.join(',');
-
-      // Fetch all orders using pagination for full order history
-      const { data, error } = await fetchAllRows<Record<string, unknown>>(
-        client,
-        tableConfig.table_name,
-        selectString
-      );
-
-      if (error) {
-        console.error(`Error fetching from ${tableConfig.table_name}:`, error);
-        continue; // Skip this table but continue with others
-      }
-
+      const data = tableConfig.rows;
       if (!data || data.length === 0) continue;
 
       // Normalize the data
@@ -536,25 +521,18 @@ export const fetchSpokeOrderItems = async (
 
   const allItems: NormalizedOrderItem[] = [];
 
-  for (const tableConfig of itemTableConfigs) {
+  // Server-side read — returns raw rows per configured order_items table.
+  let fetchedTables: SpokeFetchTable[] = [];
+  try {
+    ({ tables: fetchedTables } = await spokeFetch(connection.id, 'order_items'));
+  } catch (err) {
+    console.error(`Error fetching order items from ${connection.name}:`, err);
+    return [];
+  }
+
+  for (const tableConfig of fetchedTables) {
     try {
-      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-
-      const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
-      const selectString = fields.join(',');
-
-      // Fetch all order items using pagination for complete product purchase history
-      const { data, error } = await fetchAllRows<Record<string, unknown>>(
-        client,
-        tableConfig.table_name,
-        selectString
-      );
-
-      if (error) {
-        console.error(`Error fetching from ${tableConfig.table_name}:`, error);
-        continue;
-      }
-
+      const data = tableConfig.rows;
       if (!data || data.length === 0) continue;
 
       const mapping = tableConfig.field_mapping;
@@ -617,25 +595,15 @@ export const fetchSpokeSubscriptions = async (
   if (!tableConfig) return [];
 
   try {
-    const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-
-    // Build select string from field mapping
-    const fields = Object.values(tableConfig.field_mapping).filter(Boolean);
-    const selectString = fields.join(',');
-
-    // Fetch all subscriptions using pagination
-    const { data, error } = await fetchAllRows<Record<string, unknown>>(
-      client,
-      tableConfig.table_name,
-      selectString
+    // Server-side read — the spoke key never touches the browser.
+    const { tables } = await spokeFetch(connection.id, 'subscriptions');
+    const data = tables.flatMap(t =>
+      t.rows.map(row => ({ row, mapping: t.field_mapping })),
     );
-
-    if (error) throw new Error(error);
-    if (!data || data.length === 0) return [];
+    if (data.length === 0) return [];
 
     // Normalize the data
-    const mapping = tableConfig.field_mapping;
-    return data.map((row: any) => ({
+    return data.map(({ row, mapping }: { row: any; mapping: Record<string, string> }) => ({
       id: row[mapping.id] || '',
       customer_id: row[mapping.customer_id],
       email: row[mapping.email],
