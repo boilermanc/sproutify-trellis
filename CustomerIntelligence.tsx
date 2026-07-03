@@ -4,7 +4,7 @@ import {
   Crown, Clock, Repeat, UserPlus, UserX, AlertTriangle,
   ChevronRight, ArrowUp, ArrowDown, BarChart3, PieChart
 } from 'lucide-react';
-import { EnrichedProfile, BranchStatsResult } from './types';
+import { EnrichedProfile, BranchStatsResult, BranchContext } from './types';
 import { SpokeConnection } from './types';
 import { PRESET_SEGMENTS } from './segmentTypes';
 import { countProfilesInSegment, filterProfilesBySegment } from './segmentEngine';
@@ -20,11 +20,22 @@ import {
 interface CustomerIntelligenceProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
+  branchContext?: BranchContext;
 }
 
-export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spokeConnections, branchStats }) => {
-  // Use shared branchStats data instead of fetching independently
-  const profiles = branchStats.enrichedProfiles;
+export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spokeConnections, branchStats, branchContext }) => {
+  // Use shared branchStats data, filtered by the global branch context picker
+  // (same filtering as Reports so both pages agree).
+  const profiles = useMemo(() => {
+    const all = branchStats.enrichedProfiles;
+    if (!branchContext || branchContext.isAllSelected) return all;
+    const activeNames = new Set(
+      branchContext.allBranches
+        .filter(b => branchContext.activeBranchSlugs.includes(b.slug))
+        .map(b => b.name)
+    );
+    return all.filter(p => activeNames.has(p._spoke_name));
+  }, [branchStats.enrichedProfiles, branchContext]);
   const isLoading = branchStats.isLoading;
   const [demographicsLoaded, setDemographicsLoaded] = useState(false);
 
