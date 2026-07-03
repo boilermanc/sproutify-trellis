@@ -288,6 +288,43 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // ── Video Ad Lab templates (video_ad_templates lives on the spoke) ──
+    // Fixed table name (not caller-chosen) → no arbitrary-table exposure.
+    if (op === "template_list" || op === "template_save" || op === "template_delete") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+
+      if (op === "template_list") {
+        const { data, error } = await spoke
+          .from("video_ad_templates")
+          .select("*")
+          .eq("branch", body.branch)
+          .order("created_at", { ascending: false });
+        if (error) return json({ error: error.message }, 400);
+        return json({ templates: data || [] });
+      }
+
+      if (op === "template_save") {
+        if (!body.branch || !body.template_name) {
+          return json({ error: "branch and template_name are required" }, 400);
+        }
+        const { error } = await spoke
+          .from("video_ad_templates")
+          .insert({ branch: body.branch, template_name: body.template_name, settings: body.settings || {} });
+        if (error) return json({ error: error.message }, 400);
+        return json({ success: true });
+      }
+
+      // template_delete
+      if (!body.id) return json({ error: "id is required" }, 400);
+      const { error } = await spoke.from("video_ad_templates").delete().eq("id", body.id);
+      if (error) return json({ error: error.message }, 400);
+      return json({ success: true });
+    }
+
     return json({ error: `Unknown op: ${op}` }, 400);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

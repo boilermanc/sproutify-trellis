@@ -368,8 +368,10 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       created_at: new Date().toISOString(),
       last_tested_at: new Date().toISOString(),
     };
-    // Persist the full key (encrypted server-side by the BEFORE trigger).
-    upsertSpokeConnection(SPROUTIFY_ORG_ID, connection);
+    // Persist the full key (encrypted server-side by the BEFORE trigger) and WAIT
+    // for it to commit — the snapshot + branch-link below resolve the connection
+    // server-side by id, so the row must exist first.
+    await upsertSpokeConnection(SPROUTIFY_ORG_ID, connection);
     // Keep only a masked copy in app state — the full key never lingers client-side.
     const masked: SpokeConnection = {
       ...connection,

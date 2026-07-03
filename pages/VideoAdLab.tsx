@@ -18,11 +18,6 @@ import {
 
 // ─── Supabase REST helpers for templates (spoke-side) ────────────────
 
-interface TemplateCreds {
-  url: string;
-  key: string;
-}
-
 interface VideoAdTemplate {
   id: string;
   branch: string;
@@ -31,42 +26,32 @@ interface VideoAdTemplate {
   created_at: string;
 }
 
-function supabaseHeaders(key: string): Record<string, string> {
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-async function fetchTemplates(creds: TemplateCreds | null, branch: string): Promise<VideoAdTemplate[]> {
-  if (!creds?.url || !creds?.key) return [];
+// Templates live on the spoke (video_ad_templates). We reach them through the
+// spoke-query Edge Function by connection id, so the spoke key stays server-side.
+async function fetchTemplates(connectionId: string | null, branch: string): Promise<VideoAdTemplate[]> {
+  if (!connectionId) return [];
   try {
-    const res = await fetch(
-      `${creds.url}/rest/v1/video_ad_templates?branch=eq.${branch}&order=created_at.desc&select=*`,
-      { headers: supabaseHeaders(creds.key) },
-    );
-    if (!res.ok) return [];
-    return res.json();
+    const { data, error } = await supabase.functions.invoke('spoke-query', {
+      body: { op: 'template_list', connection_id: connectionId, branch },
+    });
+    if (error || data?.error) return [];
+    return data?.templates || [];
   } catch {
     return [];
   }
 }
 
-async function saveTemplate(creds: TemplateCreds | null, branch: string, name: string, settings: Record<string, any>): Promise<void> {
-  if (!creds?.url || !creds?.key) return;
-  await fetch(`${creds.url}/rest/v1/video_ad_templates`, {
-    method: 'POST',
-    headers: { ...supabaseHeaders(creds.key), Prefer: 'return=minimal' },
-    body: JSON.stringify({ branch, template_name: name, settings }),
+async function saveTemplate(connectionId: string | null, branch: string, name: string, settings: Record<string, any>): Promise<void> {
+  if (!connectionId) return;
+  await supabase.functions.invoke('spoke-query', {
+    body: { op: 'template_save', connection_id: connectionId, branch, template_name: name, settings },
   });
 }
 
-async function deleteTemplate(creds: TemplateCreds | null, id: string): Promise<void> {
-  if (!creds?.url || !creds?.key) return;
-  await fetch(`${creds.url}/rest/v1/video_ad_templates?id=eq.${id}`, {
-    method: 'DELETE',
-    headers: { ...supabaseHeaders(creds.key), Prefer: 'return=minimal' },
+async function deleteTemplate(connectionId: string | null, id: string): Promise<void> {
+  if (!connectionId) return;
+  await supabase.functions.invoke('spoke-query', {
+    body: { op: 'template_delete', connection_id: connectionId, id },
   });
 }
 
@@ -98,11 +83,9 @@ const VOICE_NAMES: Record<string, string> = {
 
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast }) => {
-  // ── Derive spoke credentials for templates only ──
-  const spokeCreds = useMemo<TemplateCreds | null>(() => {
-    const active = spokeConnections.find(c => c.status === 'active');
-    if (!active?.supabase_url || !active?.supabase_key) return null;
-    return { url: active.supabase_url, key: active.supabase_key };
+  // ── Active spoke connection (templates are read/written server-side by id) ──
+  const templateConnectionId = useMemo<string | null>(() => {
+    return spokeConnections.find(c => c.status === 'active')?.id ?? null;
   }, [spokeConnections]);
 
   // ── Wizard step ──
@@ -220,8 +203,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // ── Load templates when branch changes (spoke-side) ──
   useEffect(() => {
     if (!branch) return;
-    fetchTemplates(spokeCreds, branch).then(setTemplates).catch(() => setTemplates([]));
-  }, [branch, spokeCreds]);
+    fetchTemplates(templateConnectionId, branch).then(setTemplates).catch(() => setTemplates([]));
+  }, [branch, templateConnectionId]);
 
   // ── Poller ──
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
@@ -344,11 +327,11 @@ STRICT RULES:
     try {
       // Save template if requested
       if (saveAsTemplate && newTemplateName.trim()) {
-        await saveTemplate(spokeCreds, branch, newTemplateName.trim(), {
+        await saveTemplate(templateConnectionId, branch, newTemplateName.trim(), {
           pipeline, actorGender, actorStyle, aspectRatio, tone,
           setting, lighting, mood, customVisualNotes,
         });
-        const refreshed = await fetchTemplates(spokeCreds, branch);
+        const refreshed = await fetchTemplates(templateConnectionId, branch);
         setTemplates(refreshed);
         addToast(`Template "${newTemplateName}" saved`, 'success');
       }
