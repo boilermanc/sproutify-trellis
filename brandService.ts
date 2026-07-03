@@ -45,6 +45,27 @@ function safeParseJSON<T>(text: string | undefined, fallback: T): T {
   }
 }
 
+// Grounded (Google Search) responses can't use responseSchema, so the model
+// returns free text that may wrap the JSON in ```fences``` or prose. Pull the
+// JSON object out defensively.
+function extractJSON<T>(text: string | undefined, fallback: T): T {
+  if (!text) return fallback;
+  let s = text.trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) s = fence[1].trim();
+  if (!s.startsWith('{')) {
+    const first = s.indexOf('{');
+    const last = s.lastIndexOf('}');
+    if (first !== -1 && last > first) s = s.slice(first, last + 1);
+  }
+  try {
+    return JSON.parse(s) as T;
+  } catch (err) {
+    console.error('JSON parse error (grounded):', err);
+    return fallback;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // BRAND EXTRACTION
 // ═══════════════════════════════════════════════════════════════
@@ -85,69 +106,40 @@ export async function extractBrandFromUrl(
   const ai = getAIClient(apiKey);
   const formattedUrl = formatUrl(websiteUrl);
 
-  const prompt = `You are a brand strategist analyzing the website at: "${formattedUrl}".
+  const prompt = `You are a brand strategist. Use Google Search to research the website "${formattedUrl}" and the product/brand behind it. First determine what this product ACTUALLY is, what it does, and who it's for — do NOT guess from the domain name alone, and do NOT invent an unrelated business.
 
-ANALYZE AND EXTRACT:
-1. Brand name and tagline from the site
-2. Mission statement or core purpose (infer if not explicit)
-3. Core values (3-5 values the brand embodies)
-4. Target audience description
-5. Brand voice/tone description
-6. Color palette - extract ACTUAL hex codes used on the site:
-   - primary: main brand color
-   - secondary: supporting color
-   - accent: CTA/highlight color
-   - neutral: background/text color
-7. Typography - identify font families for headings and body text
-8. Image prompt - describe visuals that would match this brand's aesthetic
-9. Marketing hooks - 3 compelling campaign angles for this brand
-10. Site preview - one sentence describing the homepage layout and feel
+Then return a SINGLE JSON object (no markdown, no commentary, no code fences) with EXACTLY these keys:
+{
+  "name": "the real brand/product name",
+  "tagline": "short tagline that fits what it actually does",
+  "mission": "mission or core purpose grounded in what the product really is",
+  "values": ["3-5 values"],
+  "targetAudience": "who actually uses this product",
+  "voice": "brand voice/tone",
+  "colorPalette": { "primary": "#hex", "secondary": "#hex", "accent": "#hex", "neutral": "#hex" },
+  "typography": { "heading": "font family", "body": "font family" },
+  "imagePrompt": "visual direction that matches this specific product",
+  "marketingHooks": ["3 campaign angles SPECIFIC to what this product does"],
+  "sitePreviewDescription": "one sentence on the site's look and feel"
+}
 
-If the site is a placeholder or minimal, infer a professional identity based on the domain name and any available content.`;
+Every field must reflect what the product genuinely is based on your research. If you cannot find the exact brand colors, choose a palette that authentically fits the product's category and aesthetic (not random). Respond with ONLY the JSON object.`;
 
   try {
     const response = await ai.models.generateContent({
       model: MODELS.TEXT,
       contents: prompt,
       config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            tagline: { type: Type.STRING },
-            mission: { type: Type.STRING },
-            values: { type: Type.ARRAY, items: { type: Type.STRING } },
-            targetAudience: { type: Type.STRING },
-            voice: { type: Type.STRING },
-            colorPalette: {
-              type: Type.OBJECT,
-              properties: {
-                primary: { type: Type.STRING },
-                secondary: { type: Type.STRING },
-                accent: { type: Type.STRING },
-                neutral: { type: Type.STRING }
-              },
-              required: ['primary', 'secondary', 'accent', 'neutral']
-            },
-            typography: {
-              type: Type.OBJECT,
-              properties: {
-                heading: { type: Type.STRING },
-                body: { type: Type.STRING }
-              },
-              required: ['heading', 'body']
-            },
-            imagePrompt: { type: Type.STRING },
-            marketingHooks: { type: Type.ARRAY, items: { type: Type.STRING } },
-            sitePreviewDescription: { type: Type.STRING }
-          },
-          required: ['name', 'tagline', 'mission', 'values', 'targetAudience', 'voice', 'colorPalette', 'typography', 'imagePrompt', 'marketingHooks']
-        }
+        // Google Search grounding so the model reads real info about the site
+        // instead of hallucinating from the domain name. NOTE: grounding is
+        // incompatible with responseSchema/responseMimeType, so we parse the
+        // JSON out of the text response ourselves.
+        tools: [{ googleSearch: {} }],
+        temperature: 0.4,
       }
     });
 
-    const data = safeParseJSON<ExtractedBrandData>(response.text, EMPTY_BRAND_DATA);
+    const data = extractJSON<ExtractedBrandData>(response.text, EMPTY_BRAND_DATA);
 
     return {
       branch_id: branchId,
