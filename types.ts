@@ -361,7 +361,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'trellis-episodes';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'trellis-episodes' | 'clip-studio';
 
 export interface TrellisReport {
   id: string;
@@ -1111,6 +1111,162 @@ export interface CreateEpisodeConfig {
   show_name?: string;
   theme?: string;
   session_id?: string | null;
+}
+
+// ─── Clip Studio (short-form video: script → B-roll → publish) ───────
+export type ClipProjectStatus =
+  | 'draft' | 'scripting' | 'approved' | 'broll' | 'production' | 'publishing' | 'published' | 'archived' | 'failed';
+export type ClipSourceKind = 'url' | 'pasted_text' | 'file';
+export type ClipBeatLane = 'aroll' | 'sot';
+export type ClipFormat = 'interview' | 'promotion';
+
+export interface ClipProject {
+  id: string;
+  branch: string | null;
+  created_by: string | null;
+  title: string;
+  hook_line: string | null;
+  status: ClipProjectStatus;
+  format: { kinds: ClipFormat[]; sponsor?: string; talking_points?: string };
+  steering: string | null;
+  target_seconds: number;
+  rating: number | null;
+  current_generation_id: string | null;
+  final_video_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClipSource {
+  id: string;
+  project_id: string;
+  kind: ClipSourceKind;
+  label: string;            // S1, S2… — referenced by beat receipts
+  url: string | null;
+  filename: string | null;
+  raw_text: string | null;
+  created_at: string;
+}
+
+export interface ClipScriptBeat {
+  lane: ClipBeatLane;
+  speaker: string;          // 'YOU' for A-roll, quoted speaker's name for SOT
+  text: string;             // A-roll: line to record. SOT: verbatim quote.
+  rationale: string;        // why this cut / what was trimmed / risk flags
+  source_label: string | null; // receipt link (S1, S2…)
+}
+
+export interface ClipFactCheck {
+  claim: string;
+  advice: string;           // verify / soften / omit guidance
+}
+
+export interface ClipHookAlternative {
+  archetype: string;        // e.g. 'question · Naive Question to Mechanism'
+  text: string;
+  rationale: string;
+}
+
+export interface ClipReceipt {
+  source_label: string;
+  claim: string;            // paraphrase of what the script asserts
+  quote: string;            // exact verbatim excerpt backing it
+}
+
+export interface ClipGeneration {
+  id: string;
+  project_id: string;
+  version: number;
+  model: string;
+  script: ClipScriptBeat[];
+  fact_checks: ClipFactCheck[];
+  hooks: ClipHookAlternative[];
+  receipts: ClipReceipt[];
+  formula: string | null;   // the learned-formula summary this script follows
+  feedback_prompt: string | null; // what the user asked for (null for v1)
+  word_count: number;
+  est_seconds: number;
+  tokens_used: number | null;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface CreateClipConfig {
+  branch: string;
+  steering?: string;
+  target_seconds: number;
+  format: { kinds: ClipFormat[]; sponsor?: string; talking_points?: string };
+  sources: Array<{ kind: ClipSourceKind; url?: string; filename?: string; raw_text?: string }>;
+}
+
+// ─── Clip Studio: B-roll, rendering, publish (Phases C2–C4) ──────────
+export type ClipBeatType =
+  | 'motion_graphic' | 'kinetic_quote_card' | 'animation' | 'ui_callout'
+  | 'timeline' | 'source_receipt_card' | 'text_highlight';
+export type ClipTriage = 'undecided' | 'kept' | 'rejected' | 'winner' | 'edited';
+export type ClipRenderJobStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+// One flexible param bag drives all 7 Remotion templates — the planner
+// fills the fields the chosen template needs.
+export interface ClipTemplateParams {
+  headline?: string;
+  subtext?: string;
+  quote?: string;
+  attribution?: string;
+  accent?: string;            // hex
+  bg?: string;                // hex
+  items?: Array<{ label: string; sublabel?: string }>;
+  highlight_words?: string[];
+}
+
+export interface ClipBrollBeat {
+  id: string;
+  project_id: string;
+  generation_id: string | null;
+  position: number;
+  time_start: number;
+  time_end: number;
+  beat_type: ClipBeatType;
+  headline: string;           // the script line this beat covers
+  rationale: string | null;
+  remotion_prompt: string | null; // human-readable direction (editable)
+  template_params: ClipTemplateParams;
+  footage_prompts: string[];  // Seedance/Veo real-footage lane
+  triage: ClipTriage;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClipRenderJob {
+  id: string;
+  project_id: string;
+  beat_id: string | null;     // null for assemble jobs
+  job_type: 'beat' | 'assemble';
+  status: ClipRenderJobStatus;
+  attempts: number;
+  payload: Record<string, unknown>; // assemble: { clip_urls: string[] }
+  qa: Record<string, unknown>;
+  output_url: string | null;
+  storage_path: string | null;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClipPublication {
+  id: string;
+  project_id: string;
+  platform: 'youtube' | 'social';
+  status: 'pending' | 'uploading' | 'processing' | 'live' | 'failed';
+  external_id: string | null;
+  external_url: string | null;
+  response: Record<string, unknown>;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface VideoAdBatchRequest {

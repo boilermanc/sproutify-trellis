@@ -1,0 +1,19 @@
+{
+  "name": "trellis-clip-render-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Polls trellis_clip_render_jobs, renders B-roll beats with Remotion templates, stitches final Shorts with ffmpeg, uploads to the clip-assets bucket.",
+  "scripts": {
+    "start": "node worker.mjs",
+    "studio": "remotion studio remotion/index.ts"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.243",
+    "@remotion/cli": "4.0.243",
+    "@remotion/renderer": "4.0.243",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.243"
+  }
+}

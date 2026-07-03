@@ -1,0 +1,139 @@
+{
+  "name": "Trellis: Clip Publish (YouTube Shorts)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-clip-publish", "responseMode": "onReceived", "options": {} },
+      "name": "Publish Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 340]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Shape the Clip Studio publish payload into YouTube-ready fields.\nconst b = $json.body || $json;\nconst m = b.metadata || {};\nconst hashtags = Array.isArray(m.hashtags) ? m.hashtags.join(' ') : '';\nconst description = [m.description || '', hashtags ? '\\n\\n' + hashtags : ''].join('').trim().slice(0, 4900);\nconst tags = Array.isArray(m.tags) ? m.tags.join(',').slice(0, 450) : '';\n// #Shorts in title or description helps Shorts classification for vertical <3min uploads\nlet title = (m.title || 'Untitled Short').slice(0, 95);\nreturn { json: {\n  publication_id: b.publication_id,\n  project_id: b.project_id,\n  video_url: b.video_url,\n  title,\n  description: description || '#Shorts',\n  tags,\n} };"
+      },
+      "name": "Build Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 340]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "trellis_clip_publications",
+        "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Metadata').item.json.publication_id }}" } ] },
+        "dataToSend": "defineBelow",
+        "fieldsUi": { "fieldValues": [
+          { "fieldId": "status", "fieldValue": "uploading" },
+          { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
+        ] }
+      },
+      "name": "Mark Uploading",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [640, 340],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Metadata').item.json.video_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
+      },
+      "name": "Download Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 340]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Build Metadata').item.json.title }}",
+        "categoryId": "22",
+        "binaryProperty": "data",
+        "options": {
+          "description": "={{ $('Build Metadata').item.json.description }}",
+          "privacyStatus": "public",
+          "tags": "={{ $('Build Metadata').item.json.tags }}"
+        }
+      },
+      "name": "YouTube Upload",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [1080, 340],
+      "credentials": { "youTubeOAuth2Api": { "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL", "name": "YouTube account" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pull the YouTube video id out of the upload response regardless of shape\n// (top-level id / id.videoId / snippet.resourceId.videoId), with a last-resort\n// scan for an 11-char YouTube-id-shaped token.\nconst y = $json || {};\nlet id = (y.id && typeof y.id === 'object') ? y.id.videoId : y.id;\nid = id || y?.snippet?.resourceId?.videoId || y.videoId;\nif (!id) { const m = JSON.stringify(y).match(/\"([A-Za-z0-9_-]{11})\"/); id = m ? m[1] : null; }\nreturn { json: { video_id: id, youtube_url: id ? ('https://youtube.com/shorts/' + id) : null } };"
+      },
+      "name": "Extract Video ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 520]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "trellis_clip_publications",
+        "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Metadata').item.json.publication_id }}" } ] },
+        "dataToSend": "defineBelow",
+        "fieldsUi": { "fieldValues": [
+          { "fieldId": "status", "fieldValue": "live" },
+          { "fieldId": "external_id", "fieldValue": "={{ $('Extract Video ID').item.json.video_id }}" },
+          { "fieldId": "external_url", "fieldValue": "={{ $('Extract Video ID').item.json.youtube_url }}" },
+          { "fieldId": "published_at", "fieldValue": "={{ $now.toISO() }}" },
+          { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
+        ] }
+      },
+      "name": "Mark Live",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1300, 240],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "trellis_clip_projects",
+        "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Metadata').item.json.project_id }}" } ] },
+        "dataToSend": "defineBelow",
+        "fieldsUi": { "fieldValues": [
+          { "fieldId": "status", "fieldValue": "published" },
+          { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
+        ] }
+      },
+      "name": "Update Project",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1300, 420],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Clip Publish (YouTube Shorts)\n\nLast phase of the Clip Studio pipeline. Downloads the stitched final Short, uploads it to YouTube, then writes the URL back and marks the publication **live**.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-clip-publish` (= `CLIP_PUBLISH_WEBHOOK` in constants.ts)\n**Fired by:** `clipService.publishClip` with `{ publication_id, project_id, branch, platform:'youtube', video_url, metadata:{title,description,tags,hashtags} }`.\n\n### FLOW\nWebhook → **Build Metadata** (title / description+hashtags / tags trimmed to YT limits) → **Mark Uploading** → **Download Video** → **YouTube Upload** (category 22 = People & Blogs) → **Mark Live** (publication live + shorts URL) → **Update Project** (status published).\n\n### SETUP (mirrors E4-episode-publish — same credentials)\n1. **YouTube Upload node** → set **Credential → the same Google/YouTube OAuth2 account** you connected for Episode publish.\n2. **The 3 Supabase nodes** → set **Credential → your Trellis (Hub) Supabase account** (`trellis_clip_publications` / `trellis_clip_projects` live on the Hub).\n3. Verify the YouTube node field names after import (they vary by n8n version) — same caveat as E4.\n\n### NOTES\n- Vertical video ≤3 minutes is auto-classified as a Short; `#Shorts` is appended to the description as a belt-and-braces signal.\n- Same unverified-app caveat as E4: while the Google OAuth app is in Testing, uploads are forced private+locked until verified.\n- Add an error branch setting the publication to `failed` if you want upload errors surfaced in the Clip Studio UI.",
+        "width": 620,
+        "height": 620
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [120, -340]
+    }
+  ],
+  "connections": {
+    "Publish Webhook": { "main": [[{ "node": "Build Metadata", "type": "main", "index": 0 }]] },
+    "Build Metadata": { "main": [[{ "node": "Mark Uploading", "type": "main", "index": 0 }]] },
+    "Mark Uploading": { "main": [[{ "node": "Download Video", "type": "main", "index": 0 }]] },
+    "Download Video": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
+    "YouTube Upload": { "main": [[{ "node": "Extract Video ID", "type": "main", "index": 0 }]] },
+    "Extract Video ID": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] },
+    "Mark Live": { "main": [[{ "node": "Update Project", "type": "main", "index": 0 }]] }
+  }
+}

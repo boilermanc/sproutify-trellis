@@ -956,6 +956,153 @@ CREATE INDEX IF NOT EXISTS idx_tep_branch ON trellis_episodes (branch);
 CREATE INDEX IF NOT EXISTS idx_tep_status ON trellis_episodes (status);
 CREATE INDEX IF NOT EXISTS idx_tea_episode ON trellis_episode_assets (episode_id, asset_type);
 CREATE INDEX IF NOT EXISTS idx_tepub_episode ON trellis_episode_publications (episode_id);
+
+-- 19. CLIP STUDIO (short-form video: script → B-roll → publish)
+CREATE TABLE IF NOT EXISTS trellis_clip_projects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch TEXT,
+  created_by UUID,
+  title TEXT NOT NULL DEFAULT 'Untitled Short',
+  hook_line TEXT,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft','scripting','approved','broll','production','publishing','published','archived','failed')),
+  format JSONB DEFAULT '{"kinds":[]}'::jsonb,
+  steering TEXT,
+  target_seconds INTEGER NOT NULL DEFAULT 60,
+  rating SMALLINT CHECK (rating BETWEEN 1 AND 5),
+  current_generation_id UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_clip_sources (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('url','pasted_text','file')),
+  label TEXT NOT NULL,
+  url TEXT,
+  filename TEXT,
+  raw_text TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_clip_generations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL DEFAULT 1,
+  model TEXT,
+  script JSONB DEFAULT '[]'::jsonb,
+  fact_checks JSONB DEFAULT '[]'::jsonb,
+  hooks JSONB DEFAULT '[]'::jsonb,
+  receipts JSONB DEFAULT '[]'::jsonb,
+  formula TEXT,
+  feedback_prompt TEXT,
+  word_count INTEGER DEFAULT 0,
+  est_seconds INTEGER DEFAULT 0,
+  tokens_used INTEGER,
+  is_current BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE trellis_clip_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_clip_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_clip_generations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anon Full Access" ON trellis_clip_projects FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_clip_projects FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_clip_projects FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_clip_sources FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_clip_sources FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_clip_sources FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_clip_generations FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_clip_generations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_clip_generations FOR ALL TO service_role USING (true) WITH CHECK (true);
+GRANT ALL ON trellis_clip_projects TO anon, authenticated, service_role;
+GRANT ALL ON trellis_clip_sources TO anon, authenticated, service_role;
+GRANT ALL ON trellis_clip_generations TO anon, authenticated, service_role;
+
+CREATE INDEX IF NOT EXISTS idx_tcp_branch ON trellis_clip_projects (branch);
+CREATE INDEX IF NOT EXISTS idx_tcp_status ON trellis_clip_projects (status);
+CREATE INDEX IF NOT EXISTS idx_tcs_project ON trellis_clip_sources (project_id);
+CREATE INDEX IF NOT EXISTS idx_tcg_project ON trellis_clip_generations (project_id, version);
+
+-- 20. CLIP STUDIO: B-ROLL, RENDER QUEUE, PUBLICATIONS (Phases C2-C4)
+ALTER TABLE trellis_clip_projects ADD COLUMN IF NOT EXISTS final_video_url TEXT;
+
+CREATE TABLE IF NOT EXISTS trellis_clip_broll_beats (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  generation_id UUID REFERENCES trellis_clip_generations(id) ON DELETE SET NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  time_start NUMERIC NOT NULL DEFAULT 0,
+  time_end NUMERIC NOT NULL DEFAULT 6,
+  beat_type TEXT NOT NULL DEFAULT 'motion_graphic'
+    CHECK (beat_type IN ('motion_graphic','kinetic_quote_card','animation','ui_callout','timeline','source_receipt_card','text_highlight')),
+  headline TEXT NOT NULL DEFAULT '',
+  rationale TEXT,
+  remotion_prompt TEXT,
+  template_params JSONB DEFAULT '{}'::jsonb,
+  footage_prompts JSONB DEFAULT '[]'::jsonb,
+  triage TEXT NOT NULL DEFAULT 'undecided'
+    CHECK (triage IN ('undecided','kept','rejected','winner','edited')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_clip_render_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  beat_id UUID REFERENCES trellis_clip_broll_beats(id) ON DELETE CASCADE,
+  job_type TEXT NOT NULL DEFAULT 'beat' CHECK (job_type IN ('beat','assemble')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','completed','failed')),
+  attempts INTEGER DEFAULT 0,
+  payload JSONB DEFAULT '{}'::jsonb,
+  qa JSONB DEFAULT '{}'::jsonb,
+  output_url TEXT,
+  storage_path TEXT,
+  duration_seconds NUMERIC,
+  width INTEGER,
+  height INTEGER,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trellis_clip_publications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('youtube','social')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','uploading','processing','live','failed')),
+  external_id TEXT,
+  external_url TEXT,
+  response JSONB DEFAULT '{}'::jsonb,
+  published_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE trellis_clip_broll_beats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_clip_render_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_clip_publications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Anon Full Access" ON trellis_clip_broll_beats FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_clip_broll_beats FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_clip_broll_beats FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_clip_render_jobs FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_clip_render_jobs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_clip_render_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_clip_publications FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_clip_publications FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_clip_publications FOR ALL TO service_role USING (true) WITH CHECK (true);
+GRANT ALL ON trellis_clip_broll_beats TO anon, authenticated, service_role;
+GRANT ALL ON trellis_clip_render_jobs TO anon, authenticated, service_role;
+GRANT ALL ON trellis_clip_publications TO anon, authenticated, service_role;
+
+CREATE INDEX IF NOT EXISTS idx_tcbb_project ON trellis_clip_broll_beats (project_id, position);
+CREATE INDEX IF NOT EXISTS idx_tcrj_status ON trellis_clip_render_jobs (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_tcrj_project ON trellis_clip_render_jobs (project_id);
+CREATE INDEX IF NOT EXISTS idx_tcpub_project ON trellis_clip_publications (project_id);
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('clip-assets','clip-assets', true)
+ON CONFLICT (id) DO NOTHING;
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
@@ -1441,6 +1588,7 @@ export const SESSION_STATUS_META: Record<string, { label: string; cls: string }>
 export const EPISODE_ARTWORK_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-episode-artwork';
 export const EPISODE_VIDEO_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-episode-video';
 export const EPISODE_PUBLISH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-episode-publish';
+export const CLIP_PUBLISH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-clip-publish';
 
 // Selectable art styles for episode artwork. `prompt` is the full style descriptor sent
 // to the image model; `setting` steers the Gemini scene writer so a jungle style doesn't
