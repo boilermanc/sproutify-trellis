@@ -69,9 +69,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [selectedSpokeIds, setSelectedSpokeIds] = useState<Set<string>>(new Set());
   const [selectedFederatedProfile, setSelectedFederatedProfile] = useState<EnrichedProfile | null>(null);
 
-  // Derive federated profiles from branchStats filtered by selected spokes
+  // Derive federated profiles from branchStats filtered by selected spokes.
+  // Nothing is shown until the user picks at least one branch — an empty
+  // selection means "no branch chosen yet", not "show everything".
   const federatedProfiles = useMemo(() => {
-    if (selectedSpokeIds.size === 0) return branchStats.enrichedProfiles;
+    if (selectedSpokeIds.size === 0) return [];
     return branchStats.enrichedProfiles.filter(p => selectedSpokeIds.has(p._spoke_id));
   }, [branchStats.enrichedProfiles, selectedSpokeIds]);
   const isFederating = branchStats.isLoading;
@@ -144,13 +146,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     fetchData();
   }, [branchContext]);
 
-  // Auto-select all active spokes on mount
-  useEffect(() => {
-    const activeConnections = spokeConnections.filter(c => c.status === 'active');
-    if (activeConnections.length > 0) {
-      setSelectedSpokeIds(new Set(activeConnections.map(c => c.id)));
-    }
-  }, [spokeConnections]);
+  // NOTE: We intentionally do NOT auto-select spokes on mount. With multiple
+  // branches now live, the user must explicitly pick which branch(es) to load
+  // before any profiles are shown (see the empty-selection gate below).
 
   const toggleSpokeSelection = (id: string) => {
     setSelectedSpokeIds(prev => {
@@ -510,6 +508,26 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         </div>
       </div>
 
+      {/* Empty-selection gate: in federated mode, require a branch pick before loading profiles */}
+      {dataSource === 'federated' && activeConnectionCount > 0 && selectedSpokeIds.size === 0 ? (
+        <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm p-12 sm:p-20 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5">
+            <GitBranch size={28} className="text-emerald-600" />
+          </div>
+          <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Select a branch to load profiles</h3>
+          <p className="mt-2 max-w-md text-sm font-bold text-slate-400">
+            Pick one or more data sources from <span className="text-slate-600">Select Data Sources</span> above. Nothing is queried until you choose which branch you want to look at.
+          </p>
+          {activeConnectionCount > 1 && (
+            <button
+              onClick={selectAllSpokes}
+              className="mt-6 flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+            >
+              <DatabaseZap size={14} /> Load all {activeConnectionCount} branches
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
         {/* Mobile cards — the full table is unreadable on a phone */}
         <div className="lg:hidden divide-y divide-slate-50">
@@ -800,6 +818,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           </div>
         </div>
       </div>
+      )}
 
       {selectedProfile && (
         <>

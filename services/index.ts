@@ -49,9 +49,13 @@ export { fetchSecrets, saveSecrets } from './secretsService';
 // Social Services
 export {
   saveCredential,
+  saveAppCredentials,
+  openSocialOAuthPopup,
   checkConnections,
+  testConnection,
   disconnectPlatform,
   publishToSocial,
+  publishToFacebook,
   ingestSocialSignal,
   fetchSocialSignals,
   updateSignalStatus,

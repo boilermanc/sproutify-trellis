@@ -4,7 +4,7 @@ import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Bran
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
-import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook } from '../services/socialService';
+import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook, checkConnections } from '../services/socialService';
 import { uploadSocialImage, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
@@ -34,6 +34,7 @@ interface SocialHubProps {
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   apiKeys?: ApiKeyConfig;
   onOpenArticle?: (article: Article) => void;
+  onNavigate?: (view: string) => void;
 }
 
 const INTENT_ICONS: Record<string, any> = {
@@ -182,7 +183,7 @@ const generateWithFallback = async <T,>(
   throw lastErr;
 };
 
-const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle }) => {
+const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle, onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline' | 'reports'>('lab');
 
   // ─── Reports tab: published posts from marketing_events ─────────────
@@ -369,6 +370,34 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     (branches || []).filter(b => selectedBranchIds.includes(b.id)),
     [branches, selectedBranchIds]
   );
+
+  // ─── Live social-connection status per branch ─────────────────────
+  // Maps branchId → Set of connected platform keys (from social_credentials).
+  // A branch with no live credentials shows a "Connect" prompt instead of a
+  // Publish button, so a brand-new branch never *looks* connected.
+  const [branchConnections, setBranchConnections] = useState<Record<string, Set<string>>>({});
+  const [connectionsLoading, setConnectionsLoading] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    selectedBranchIds.forEach(async (branchId) => {
+      // Re-fetch each time the branch is selected so freshly connected/disconnected
+      // platforms reflect immediately when you return to the Lab.
+      setConnectionsLoading(prev => ({ ...prev, [branchId]: true }));
+      const result = await checkConnections(branchId);
+      if (cancelled) return;
+      const connected = new Set(
+        (result.connections || []).filter(c => c.is_connected).map(c => c.platform)
+      );
+      setBranchConnections(prev => ({ ...prev, [branchId]: connected }));
+      setConnectionsLoading(prev => ({ ...prev, [branchId]: false }));
+    });
+    return () => { cancelled = true; };
+  }, [selectedBranchIds]);
+
+  // Has this branch connected the given platform's live credentials?
+  const isBranchPlatformConnected = (branchId: string | undefined | null, platform: string) =>
+    !!branchId && !!branchConnections[branchId]?.has(platform);
 
   const toggleBranch = (branchId: string) => {
     setSelectedBranchIds(prev =>
@@ -881,6 +910,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     const label = PLATFORM_LABEL[platform];
 
     if (!draft.branch_id) { addToast?.('Select a brand before publishing.', 'error'); setPublishConfirm(null); return; }
+    if (!isBranchPlatformConnected(draft.branch_id, platform)) {
+      addToast?.(`${label} isn't connected for this brand. Connect it under Branches → Social Accounts.`, 'error');
+      setPublishConfirm(null);
+      onNavigate?.('branches');
+      return;
+    }
     // Instagram requires an image; Facebook does not.
     if (platform === 'instagram' && !imageUrl) { addToast?.('Instagram requires an image to publish.', 'error'); setPublishConfirm(null); return; }
 
@@ -912,8 +947,39 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         </span>
       );
     }
-    const hasImage = !!(draft.image_urls && draft.image_urls.length > 0);
     const hasBranch = !!draft.branch_id;
+    const loadingConn = hasBranch && connectionsLoading[draft.branch_id!];
+    const connected = isBranchPlatformConnected(draft.branch_id, platform);
+
+    // Still checking — show a neutral spinner so we never flash a Publish button
+    // for a branch we haven't verified yet.
+    if (hasBranch && loadingConn && !connected) {
+      return (
+        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-wider cursor-default">
+          <Loader2 size={12} className="animate-spin" /> Checking
+        </span>
+      );
+    }
+
+    // Not connected — direct the user to the Branch editor to connect this platform.
+    if (hasBranch && !connected) {
+      const brandName = getBranchForDraft(draft)?.name || 'this brand';
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            addToast?.(`${PLATFORM_LABEL[platform]} isn't connected for ${brandName}. Connect it under Branches → Social Accounts.`, 'info');
+            onNavigate?.('branches');
+          }}
+          title={`${PLATFORM_LABEL[platform]} isn't connected for ${brandName} — click to connect it in the Branch editor`}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 text-[10px] font-black uppercase tracking-wider transition"
+        >
+          <AlertTriangle size={12} /> Connect {PLATFORM_LABEL[platform]}
+        </button>
+      );
+    }
+
+    const hasImage = !!(draft.image_urls && draft.image_urls.length > 0);
     const publishing = publishingKey === `${draft.id}_${platform}`;
     const needsImage = platform === 'instagram' && !hasImage;
     const disabled = !hasBranch || needsImage || publishing;
@@ -1237,6 +1303,31 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                             </button>
                           </div>
                         </div>
+                        {(() => {
+                          // Connection banner: which wired platforms (IG/FB) is this brand missing?
+                          if (!draft.branch_id) return null;
+                          if (connectionsLoading[draft.branch_id]) return null;
+                          const missing = WIRED_PUBLISH_PLATFORMS.filter(p => !isBranchPlatformConnected(draft.branch_id, p));
+                          if (missing.length === 0) return null;
+                          const noneConnected = missing.length === WIRED_PUBLISH_PLATFORMS.length;
+                          return (
+                            <div className="mb-6 flex flex-wrap items-center gap-3 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200">
+                              <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+                              <p className="text-[12px] font-bold text-amber-800 flex-1 min-w-[180px]">
+                                {noneConnected
+                                  ? `No social platforms are connected for ${brand?.name || 'this brand'}. Connect Instagram or Facebook to publish directly — you can still copy the text for Meta Business Suite.`
+                                  : `${missing.map(p => PLATFORM_LABEL[p]).join(' & ')} ${missing.length > 1 ? 'are' : 'is'} not connected for ${brand?.name || 'this brand'}. Connect to publish directly.`}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => { addToast?.('Connect platforms under Branches → Social Accounts.', 'info'); onNavigate?.('branches'); }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black uppercase tracking-wider transition shrink-0"
+                              >
+                                <ExternalLink size={12} /> Connect Platforms
+                              </button>
+                            </div>
+                          );
+                        })()}
                         <div className="space-y-6">
                           {Object.entries(draft.versions).map(([plat, rawText]) => {
                             const text = String(rawText);

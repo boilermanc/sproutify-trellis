@@ -46,8 +46,76 @@ export async function saveCredential(
   return { success: true };
 }
 
+// ─── 1b. saveAppCredentials ─────────────────────────────────────────
+// Persists the developer-app credentials (App ID + App Secret) for a
+// branch+platform so the OAuth flow can read them via get_social_credential().
+// Saved with status='pending' and NO access token — the row only becomes
+// 'active' (connected) once the OAuth popup completes and stores a user token.
+// The deployed upsert merges on (branch_id, platform) and preserves app creds
+// on later OAuth writes, so this is safe to call before connecting.
+export async function saveAppCredentials(
+  branchId: string,
+  platform: SocialPlatform,
+  appId: string,
+  appSecret: string
+): Promise<ServiceResult> {
+  if (!branchId || !platform) {
+    return { success: false, error: 'Branch and platform are required' };
+  }
+  if (!appId?.trim() || !appSecret?.trim()) {
+    return { success: false, error: 'App ID and App Secret are required' };
+  }
+
+  const { error } = await supabase.rpc('upsert_social_credential', {
+    p_branch_id: branchId,
+    p_platform: platform,
+    p_access_token: null,        // app creds only — no user token yet
+    p_app_id: appId.trim(),
+    p_app_secret: appSecret.trim(),
+    p_status: 'pending',
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+// ─── 1c. openSocialOAuthPopup ───────────────────────────────────────
+// Opens the social-oauth Edge Function in a popup for a branch+platform and
+// polls until the popup closes, then invokes onDone(). Shared by the Platform
+// Setup wizard and the Branch editor so the OAuth handshake lives in one place.
+// A CSRF state nonce is stashed in sessionStorage and verified on return.
+export function openSocialOAuthPopup(
+  branchId: string,
+  platform: SocialPlatform,
+  supabaseUrl: string,
+  onDone: () => void
+): void {
+  if (!branchId || !platform || !supabaseUrl) return;
+  const oauthState = crypto.randomUUID();
+  sessionStorage.setItem('oauth_state', oauthState);
+  const oauthUrl =
+    `${supabaseUrl}/functions/v1/social-oauth` +
+    `?branch_id=${encodeURIComponent(branchId)}` +
+    `&platform=${encodeURIComponent(platform)}` +
+    `&state=${encodeURIComponent(oauthState)}`;
+  const popup = window.open(oauthUrl, `connect_${platform}`, 'width=600,height=700');
+
+  const interval = setInterval(() => {
+    if (popup?.closed) {
+      clearInterval(interval);
+      sessionStorage.removeItem('oauth_state');
+      onDone();
+    }
+  }, 1000);
+}
+
 // ─── 2. checkConnections ────────────────────────────────────────────
-// Calls SECURITY DEFINER RPC — returns non-sensitive connection data.
+// Calls the deployed SECURITY DEFINER RPC `list_social_connections`, which
+// returns a jsonb array of credential rows for the branch. A platform counts
+// as connected only when its row's status is 'active'. A branch with no rows
+// (e.g. a brand-new branch) returns an empty array → nothing shows connected.
 export async function checkConnections(branchId: string): Promise<{
   success: boolean;
   connections: SocialConnectionStatus[];
@@ -57,7 +125,7 @@ export async function checkConnections(branchId: string): Promise<{
     return { success: false, connections: [], error: 'Branch ID is required' };
   }
 
-  const { data, error } = await supabase.rpc('check_social_connections', {
+  const { data, error } = await supabase.rpc('list_social_connections', {
     p_branch_id: branchId,
   });
 
@@ -65,14 +133,40 @@ export async function checkConnections(branchId: string): Promise<{
     return { success: false, connections: [], error: error.message };
   }
 
-  const connections: SocialConnectionStatus[] = (data || []).map((row: any) => ({
+  // RPC returns a jsonb array (or [] when the branch has no credentials).
+  const rows: any[] = Array.isArray(data) ? data : [];
+  const connections: SocialConnectionStatus[] = rows.map((row: any) => ({
     platform: row.platform as SocialPlatform,
-    is_connected: row.is_connected,
-    platform_username: row.platform_username || undefined,
-    connected_at: row.connected_at || undefined,
+    is_connected: row.status === 'active',
+    platform_username: row.platform_username || row.platform_metadata?.username || undefined,
+    connected_at: row.created_at || undefined,
   }));
 
   return { success: true, connections };
+}
+
+// ─── 2b. testConnection ─────────────────────────────────────────────
+// Calls the test-social-connection Edge Function, which makes one minimal
+// authenticated API call using the branch's stored token. Returns whether the
+// live connection actually works (not just whether a row exists).
+export async function testConnection(
+  branchId: string,
+  platform: SocialPlatform
+): Promise<{ ok: boolean; username?: string; error?: string }> {
+  if (!branchId || !platform) {
+    return { ok: false, error: 'Branch and platform are required' };
+  }
+  const { data, error } = await supabase.functions.invoke('test-social-connection', {
+    body: { branch_id: branchId, platform },
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return {
+    ok: !!data?.ok,
+    username: data?.username,
+    error: data?.error,
+  };
 }
 
 // ─── 3. disconnectPlatform ──────────────────────────────────────────
@@ -85,7 +179,7 @@ export async function disconnectPlatform(
     return { success: false, error: 'Branch ID and platform are required' };
   }
 
-  const { error } = await supabase.rpc('disconnect_social_platform', {
+  const { error } = await supabase.rpc('revoke_social_credential', {
     p_branch_id: branchId,
     p_platform: platform,
   });

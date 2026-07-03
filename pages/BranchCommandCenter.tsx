@@ -12,7 +12,7 @@ import { fetchAllBranches, createBranch, updateBranch, deleteBranch } from '../l
 import { fetchAllBrands } from '../brandRepository';
 import { mergeBranchData, linkConnectionToBranch, unlinkConnectionFromBranch } from '../services/branchLinker';
 import { generateSnapshot, saveSnapshot } from '../services/branchSnapshotService';
-import { checkConnections, disconnectPlatform } from '../services/socialService';
+import { checkConnections, disconnectPlatform, openSocialOAuthPopup } from '../services/socialService';
 import { SOCIAL_PLATFORM_META, getSocialUrl, PLATFORM_ICONS, PLATFORM_COLORS } from '../utils';
 import { upsertSpokeConnection, deleteSpokeConnection } from '../services/spokeConnectionsService';
 
@@ -360,25 +360,16 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     setEditedSocialAccounts(prev => prev.map((acc, i) => i === index ? { ...acc, handle, profile_url: getSocialUrl({ platform: acc.platform, handle }) } : acc));
   };
 
-  // Phase 3: Connect platform (opens OAuth popup)
+  // Phase 3: Connect platform (opens OAuth popup via shared helper)
   const handleConnectPlatform = (platform: SocialPlatform) => {
     if (!editingBranch?.branchId) return;
     const branchId = editingBranch.branchId;
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    // CSRF protection: generate random state nonce and verify on return
-    const oauthState = crypto.randomUUID();
-    sessionStorage.setItem('oauth_state', oauthState);
-    const oauthUrl = `${supabaseUrl}/functions/v1/social-oauth?branch_id=${encodeURIComponent(branchId)}&platform=${encodeURIComponent(platform)}&state=${encodeURIComponent(oauthState)}`;
-    const popup = window.open(oauthUrl, `connect_${platform}`, 'width=600,height=700');
-
-    // Poll for popup close, then recheck connections
-    const interval = setInterval(() => {
-      if (popup?.closed) {
-        clearInterval(interval);
-        sessionStorage.removeItem('oauth_state');
-        fetchConnectionStatuses(branchId);
-      }
-    }, 1000);
+    openSocialOAuthPopup(
+      branchId,
+      platform,
+      import.meta.env.VITE_SUPABASE_URL,
+      () => fetchConnectionStatuses(branchId),
+    );
   };
 
   // Phase 3: Disconnect platform (deletes credential via RPC)

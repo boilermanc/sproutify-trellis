@@ -400,9 +400,9 @@ const AppContent: React.FC = () => {
       case 'platform-wizard': return (
         <PlatformSetupWizard
           supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
-          onComplete={(platform, credentials) => {
-            addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} credentials saved successfully.`);
-            setActiveView('social-hub');
+          branches={branches}
+          onComplete={(platform) => {
+            addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully.`);
           }}
           onClose={() => setActiveView('social-hub')}
         />
