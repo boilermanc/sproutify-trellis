@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { BrandIdentity, BrandColorPalette, BrandTypography, GeneratedBrandAsset } from './types';
+import { supabase as hubClient } from './lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -98,6 +99,77 @@ const EMPTY_BRAND_DATA: ExtractedBrandData = {
   sitePreviewDescription: ''
 };
 
+// Shape returned by the scrape-site Edge Function.
+interface ScrapedSite {
+  url: string;
+  title: string;
+  description: string;
+  themeColor: string;
+  ogImage: string;
+  colors: string[];
+  fonts: string[];
+  text: string;
+  error?: string;
+}
+
+// Reusable response schema for the (non-grounded) accurate path.
+const BRAND_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING },
+    tagline: { type: Type.STRING },
+    mission: { type: Type.STRING },
+    values: { type: Type.ARRAY, items: { type: Type.STRING } },
+    targetAudience: { type: Type.STRING },
+    voice: { type: Type.STRING },
+    colorPalette: {
+      type: Type.OBJECT,
+      properties: {
+        primary: { type: Type.STRING },
+        secondary: { type: Type.STRING },
+        accent: { type: Type.STRING },
+        neutral: { type: Type.STRING },
+      },
+      required: ['primary', 'secondary', 'accent', 'neutral'],
+    },
+    typography: {
+      type: Type.OBJECT,
+      properties: { heading: { type: Type.STRING }, body: { type: Type.STRING } },
+      required: ['heading', 'body'],
+    },
+    imagePrompt: { type: Type.STRING },
+    marketingHooks: { type: Type.ARRAY, items: { type: Type.STRING } },
+    sitePreviewDescription: { type: Type.STRING },
+  },
+  required: ['name', 'tagline', 'mission', 'values', 'targetAudience', 'voice', 'colorPalette', 'typography', 'imagePrompt', 'marketingHooks'],
+};
+
+function buildBrand(
+  branchId: string,
+  formattedUrl: string,
+  data: ExtractedBrandData,
+  site: ScrapedSite | null,
+): Omit<BrandIdentity, 'id' | 'created_at' | 'updated_at'> {
+  return {
+    branch_id: branchId,
+    name: data.name || site?.title || 'Unnamed Brand',
+    tagline: data.tagline || '',
+    mission: data.mission || '',
+    values: Array.isArray(data.values) ? data.values : [],
+    target_audience: data.targetAudience || '',
+    voice: data.voice || '',
+    website_url: formattedUrl,
+    screenshot_url: getScreenshotUrl(formattedUrl),
+    color_palette: data.colorPalette || EMPTY_BRAND_DATA.colorPalette,
+    typography: data.typography || EMPTY_BRAND_DATA.typography,
+    image_prompt: data.imagePrompt || '',
+    marketing_hooks: Array.isArray(data.marketingHooks) ? data.marketingHooks : [],
+    site_preview_description: data.sitePreviewDescription || '',
+    extracted_images: site?.ogImage ? [site.ogImage] : [],
+    status: 'draft',
+  };
+}
+
 export async function extractBrandFromUrl(
   websiteUrl: string,
   branchId: string,
@@ -106,59 +178,62 @@ export async function extractBrandFromUrl(
   const ai = getAIClient(apiKey);
   const formattedUrl = formatUrl(websiteUrl);
 
-  const prompt = `You are a brand strategist. Use Google Search to research the website "${formattedUrl}" and the product/brand behind it. First determine what this product ACTUALLY is, what it does, and who it's for — do NOT guess from the domain name alone, and do NOT invent an unrelated business.
+  // 1. Server-side scrape for the REAL page content — colors, fonts, copy.
+  //    (The browser can't fetch arbitrary cross-origin sites; the Edge Function can.)
+  let site: ScrapedSite | null = null;
+  try {
+    const { data, error } = await hubClient.functions.invoke('scrape-site', {
+      body: { url: formattedUrl },
+    });
+    if (!error && data && !data.error) site = data as ScrapedSite;
+  } catch (e) {
+    console.warn('scrape-site unavailable, falling back to search grounding:', e);
+  }
 
-Then return a SINGLE JSON object (no markdown, no commentary, no code fences) with EXACTLY these keys:
-{
-  "name": "the real brand/product name",
-  "tagline": "short tagline that fits what it actually does",
-  "mission": "mission or core purpose grounded in what the product really is",
-  "values": ["3-5 values"],
-  "targetAudience": "who actually uses this product",
-  "voice": "brand voice/tone",
-  "colorPalette": { "primary": "#hex", "secondary": "#hex", "accent": "#hex", "neutral": "#hex" },
-  "typography": { "heading": "font family", "body": "font family" },
-  "imagePrompt": "visual direction that matches this specific product",
-  "marketingHooks": ["3 campaign angles SPECIFIC to what this product does"],
-  "sitePreviewDescription": "one sentence on the site's look and feel"
-}
-
-Every field must reflect what the product genuinely is based on your research. If you cannot find the exact brand colors, choose a palette that authentically fits the product's category and aesthetic (not random). Respond with ONLY the JSON object.`;
+  const scraped = !!site && (((site.text?.length || 0) > 120) || ((site.colors?.length || 0) > 0));
 
   try {
+    if (scraped && site) {
+      // ACCURATE path — build strictly from the scraped content; colors chosen
+      // from the real on-page palette. Strict JSON schema (grounding not needed).
+      const prompt = `You are a brand strategist. Build a brand identity STRICTLY from this real content scraped from ${formattedUrl}. Do NOT invent an unrelated business.
+
+TITLE: ${site.title || '(none)'}
+META DESCRIPTION: ${site.description || '(none)'}
+THEME COLOR: ${site.themeColor || '(none)'}
+ON-PAGE COLORS (most frequent first): ${site.colors.join(', ') || '(none)'}
+ON-PAGE FONTS: ${site.fonts.join(', ') || '(none)'}
+PAGE TEXT (truncated):
+"""${site.text}"""
+
+Rules:
+- name, tagline, mission, values, targetAudience, voice, marketingHooks, imagePrompt and sitePreviewDescription must reflect what this product ACTUALLY is per the content above.
+- colorPalette: pick primary/secondary/accent from the ON-PAGE COLORS (prefer the theme color for primary); use white/near-white or a light grey for neutral — never a random color.
+- typography: use the ON-PAGE FONTS when present (heading = the display/primary font, body = a readable one).
+- marketingHooks: exactly 3 angles specific to what this product does.`;
+
+      const response = await ai.models.generateContent({
+        model: MODELS.TEXT,
+        contents: prompt,
+        config: { responseMimeType: 'application/json', responseSchema: BRAND_SCHEMA },
+      });
+      const data = safeParseJSON<ExtractedBrandData>(response.text, EMPTY_BRAND_DATA);
+      return buildBrand(branchId, formattedUrl, data, site);
+    }
+
+    // FALLBACK — the site couldn't be scraped (blocked, or JS-only render):
+    // use Google Search grounding so the model still reasons from real info.
+    const prompt = `You are a brand strategist. Use Google Search to research "${formattedUrl}" and the product behind it. Determine what it ACTUALLY is — do not guess from the domain or invent an unrelated business.
+
+Return ONLY a single JSON object (no markdown) with keys: name, tagline, mission, values (3-5), targetAudience, voice, colorPalette {primary, secondary, accent, neutral as #hex}, typography {heading, body}, imagePrompt, marketingHooks (3, specific to the product), sitePreviewDescription. If exact brand colors are unknown, choose a palette that authentically fits the product's category.`;
+
     const response = await ai.models.generateContent({
       model: MODELS.TEXT,
       contents: prompt,
-      config: {
-        // Google Search grounding so the model reads real info about the site
-        // instead of hallucinating from the domain name. NOTE: grounding is
-        // incompatible with responseSchema/responseMimeType, so we parse the
-        // JSON out of the text response ourselves.
-        tools: [{ googleSearch: {} }],
-        temperature: 0.4,
-      }
+      config: { tools: [{ googleSearch: {} }], temperature: 0.4 },
     });
-
     const data = extractJSON<ExtractedBrandData>(response.text, EMPTY_BRAND_DATA);
-
-    return {
-      branch_id: branchId,
-      name: data.name || 'Unnamed Brand',
-      tagline: data.tagline || '',
-      mission: data.mission || '',
-      values: Array.isArray(data.values) ? data.values : [],
-      target_audience: data.targetAudience || '',
-      voice: data.voice || '',
-      website_url: formattedUrl,
-      screenshot_url: getScreenshotUrl(formattedUrl),
-      color_palette: data.colorPalette || EMPTY_BRAND_DATA.colorPalette,
-      typography: data.typography || EMPTY_BRAND_DATA.typography,
-      image_prompt: data.imagePrompt || '',
-      marketing_hooks: Array.isArray(data.marketingHooks) ? data.marketingHooks : [],
-      site_preview_description: data.sitePreviewDescription || '',
-      extracted_images: [],
-      status: 'draft'
-    };
+    return buildBrand(branchId, formattedUrl, data, site);
 
   } catch (err) {
     console.error('Brand extraction failed:', err);
