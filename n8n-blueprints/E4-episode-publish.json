@@ -6,61 +6,126 @@
       "name": "Publish Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [200, 340]
     },
     {
       "parameters": {
-        "conditions": { "string": [{ "value1": "={{ $json.body.platform }}", "operation": "equals", "value2": "youtube" }] }
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Shape the Trellis publish payload into YouTube-ready fields.\nconst b = $json.body || $json;\nconst m = b.metadata || {};\nconst chapters = Array.isArray(m.chapters) ? m.chapters : [];\nconst chapterLines = chapters.map(c => `${c.time || '0:00'} ${c.title || ''}`.trim()).filter(Boolean).join('\\n');\nconst hashtags = Array.isArray(m.hashtags) ? m.hashtags.join(' ') : '';\nconst descParts = [\n  m.description || '',\n  chapterLines ? '\\n\\nChapters:\\n' + chapterLines : '',\n  hashtags ? '\\n\\n' + hashtags : '',\n];\nconst description = descParts.join('').trim().slice(0, 4900); // YT desc limit ~5000\nconst tags = Array.isArray(m.tags) ? m.tags.join(',').slice(0, 450) : ''; // YT tags total ~500\nreturn { json: {\n  publication_id: b.publication_id,\n  episode_id: b.episode_id,\n  video_url: b.video_url,\n  title: (m.title || 'Untitled Episode').slice(0, 95), // YT title max 100\n  description,\n  tags,\n} };"
       },
-      "name": "Is YouTube?",
-      "type": "n8n-nodes-base.if",
-      "position": [480, 300]
+      "name": "Build Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 340]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episode_publications?id=eq.{{ $json.publication_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "YOUR_HUB_SERVICE_ROLE_KEY" },
+          { "name": "Authorization", "value": "Bearer YOUR_HUB_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "application/json" },
+          { "name": "Prefer", "value": "return=minimal" }
+        ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'uploading', updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Mark Uploading",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [640, 340]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Build Metadata').item.json.video_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
+      },
+      "name": "Download Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 340]
     },
     {
       "parameters": {
         "resource": "video",
         "operation": "upload",
-        "title": "={{ $node['Publish Webhook'].json.body.metadata.title }}",
-        "regionCode": "US",
-        "options": {}
+        "title": "={{ $('Build Metadata').item.json.title }}",
+        "categoryId": "10",
+        "binaryProperty": "data",
+        "options": {
+          "description": "={{ $('Build Metadata').item.json.description }}",
+          "privacyStatus": "public",
+          "tags": "={{ $('Build Metadata').item.json.tags }}"
+        }
       },
       "name": "YouTube Upload",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [710, 220]
+      "position": [1080, 340],
+      "credentials": { "youTubeOAuth2Api": { "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL", "name": "YouTube account" } }
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episode_publications?id=eq.{{ $node['Publish Webhook'].json.body.publication_id }}",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episode_publications?id=eq.{{ $('Build Metadata').item.json.publication_id }}",
         "sendHeaders": true,
         "headerParameters": { "parameters": [
-          { "name": "apikey", "value": "YOUR_SERVICE_ROLE_KEY" },
-          { "name": "Authorization", "value": "Bearer YOUR_SERVICE_ROLE_KEY" },
-          { "name": "Content-Type", "value": "application/json" }
+          { "name": "apikey", "value": "YOUR_HUB_SERVICE_ROLE_KEY" },
+          { "name": "Authorization", "value": "Bearer YOUR_HUB_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "application/json" },
+          { "name": "Prefer", "value": "return=minimal" }
         ] },
-        "sendBody": true, "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ status: 'live', external_id: $json.id, external_url: 'https://youtu.be/' + $json.id, published_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }}"
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'live', external_url: 'https://youtu.be/' + $('YouTube Upload').item.json.id, updated_at: new Date().toISOString() }) }}"
       },
       "name": "Mark Live",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [940, 220]
+      "position": [1300, 240]
     },
     {
       "parameters": {
-        "content": "## Trellis: Episode Publish (YouTube)\n\nUploads the rendered episode video to YouTube (and later Spotify / Apple / Rekkrd / social). Called by `episodeService.publishEpisode`.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-episode-publish`\n**POST body:** `{ publication_id, episode_id, branch, platform, video_url, metadata:{ title, description, tags, chapters, hashtags } }`\n\n### SETUP (biggest lift of the pipeline)\n1. **YouTube OAuth** — add a YouTube Data API credential in n8n (Google Cloud project + OAuth consent + channel authorization). This is the gating step.\n2. Download `video_url` (the rendered mp4 from the video worker) to a binary field for the YouTube Upload node, OR upload by URL if your node supports it.\n3. Map: title, description (append chapters + hashtags), tags, playlist, privacy from the `metadata` payload.\n4. On success PATCH `trellis_episode_publications` → `status='live'`, `external_url` (also mirror to `trellis_episodes.youtube_url`).\n5. Add branches for the other platforms; `spotify` / `apple_podcasts` are marked unavailable in the UI for now.\n\n**Prereqs done:** `trellis_episode_publications` table exists (2026-07-02). The `n8n-nodes-base.youTube` node here is illustrative — wire real fields once OAuth is connected.",
-        "width": 560, "height": 520
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/trellis_episodes?id=eq.{{ $('Build Metadata').item.json.episode_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "apikey", "value": "YOUR_HUB_SERVICE_ROLE_KEY" },
+          { "name": "Authorization", "value": "Bearer YOUR_HUB_SERVICE_ROLE_KEY" },
+          { "name": "Content-Type", "value": "application/json" },
+          { "name": "Prefer", "value": "return=minimal" }
+        ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ youtube_url: 'https://youtu.be/' + $('YouTube Upload').item.json.id, status: 'published', publish_status: 'published', updated_at: new Date().toISOString() }) }}"
+      },
+      "name": "Update Episode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 420]
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Episode Publish (YouTube)\n\nLast phase of the Episode pipeline. Downloads the rendered `video.mp4`, uploads it to YouTube, then writes the URL back to Trellis and marks the publication **live**.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-episode-publish` (= `EPISODE_PUBLISH_WEBHOOK`)\n**Fired by:** `episodeService.publishEpisode` with `{ publication_id, episode_id, branch, platform:'youtube', video_url, metadata:{title,description,tags,chapters,hashtags} }`.\n\n### FLOW\nWebhook → **Build Metadata** (Code: title / description+chapters+hashtags / tags, trimmed to YT limits) → **Mark Uploading** → **Download Video** (GET video_url → binary `data`) → **YouTube Upload** (category 10 = Music) → **Mark Live** (publication → live + external_url) → **Update Episode** (youtube_url + status published).\n\n### SETUP\n1. **YouTube Upload node** → set **Credential → your Google/YouTube OAuth2 account** (the one you connected). Category is 10 (Music) — change if needed.\n2. Replace **`YOUR_HUB_SERVICE_ROLE_KEY`** (both headers) on the 3 HTTP PATCH nodes with the Hub Supabase service_role key.\n3. **Verify node fields after import** — the YouTube node's field names can vary by n8n version (title / categoryId / binaryProperty / options.privacyStatus / options.description / options.tags). Re-map any that didn't import.\n\n### NOTES\n- **Unverified app caveat:** while your Google OAuth app is in Testing / unverified, uploads using the `youtube.upload` scope are forced **private and locked** by YouTube regardless of `privacyStatus`, until the app is verified. For your own channel you can flip them public in YouTube Studio, or submit the app for verification.\n- The whole video is buffered in memory for the upload — fine for short/medium tracks; very long (multi-hour) renders may need a resumable-upload approach.\n- No failure branch here for brevity — add an error path that PATCHes the publication to `status:'failed'` if you want the UI to reflect upload errors.",
+        "width": 620,
+        "height": 660
       },
       "name": "Setup Notes",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [100, -260]
+      "position": [120, -380]
     }
   ],
   "connections": {
-    "Publish Webhook": { "main": [[{ "node": "Is YouTube?", "type": "main", "index": 0 }]] },
-    "Is YouTube?": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }], []] },
-    "YouTube Upload": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] }
+    "Publish Webhook": { "main": [[{ "node": "Build Metadata", "type": "main", "index": 0 }]] },
+    "Build Metadata": { "main": [[{ "node": "Mark Uploading", "type": "main", "index": 0 }]] },
+    "Mark Uploading": { "main": [[{ "node": "Download Video", "type": "main", "index": 0 }]] },
+    "Download Video": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
+    "YouTube Upload": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] },
+    "Mark Live": { "main": [[{ "node": "Update Episode", "type": "main", "index": 0 }]] }
   }
 }
