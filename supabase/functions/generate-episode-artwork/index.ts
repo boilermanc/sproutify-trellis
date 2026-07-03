@@ -11,6 +11,14 @@ const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
 const TEXT_MODEL = Deno.env.get("TEXT_MODEL") || "gemini-2.5-flash";
 const BUCKET = "episode-assets";
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
+
 // Default house style + setting if the caller doesn't pass one (see EPISODE_ART_STYLES).
 const DEFAULT_STYLE =
   "1960s mid-century illustrated cover art, hand-painted gouache figures with cinematic contrast, " +
@@ -36,9 +44,9 @@ async function gemini(path: string, body: unknown, key: string): Promise<any> {
     headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Google ${res.status}: ${JSON.stringify(json).slice(0, 400)}`);
-  return json;
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Google ${res.status}: ${JSON.stringify(j).slice(0, 400)}`);
+  return j;
 }
 
 async function writeScene(title: string, theme: string, extra: string, setting: string, key: string): Promise<string> {
@@ -49,8 +57,7 @@ async function writeScene(title: string, theme: string, extra: string, setting: 
       `${extra ? extra + " " : ""}Set it in ${setting} — describe the setting, one or two evocative subjects, ` +
       `and a period-appropriate detail. Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
     const j = await gemini(`models/${TEXT_MODEL}:generateContent`, { contents: [{ parts: [{ text: prompt }] }] }, key);
-    const txt = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    return txt || "";
+    return j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
   } catch (e) {
     console.error("scene expansion failed (non-fatal):", (e as Error).message);
     return "";
@@ -81,7 +88,8 @@ async function upload(supabase: any, path: string, bytes: Uint8Array): Promise<s
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method !== "POST") return new Response("ok", { status: 200 });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ ok: true });
   const body = await req.json().catch(() => ({}));
   const {
     asset_id, episode_id, asset_type = "cover_art", width, height,
@@ -93,7 +101,7 @@ Deno.serve(async (req: Request) => {
   const fail = async (msg: string) => {
     console.error("artwork error:", msg);
     if (asset_id) await supabase.from("trellis_episode_assets").update({ status: "failed", error_message: msg.slice(0, 500) }).eq("id", asset_id);
-    return new Response(JSON.stringify({ ok: false, error: msg }), { status: 500, headers: { "content-type": "application/json" } });
+    return json({ ok: false, error: msg }, 500);
   };
 
   try {
@@ -118,9 +126,7 @@ Deno.serve(async (req: Request) => {
       }).eq("id", asset_id);
     }
 
-    return new Response(JSON.stringify({ ok: true, url, aspect, model: IMAGE_MODEL, scene }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
+    return json({ ok: true, url, aspect, model: IMAGE_MODEL, scene });
   } catch (e) {
     return await fail((e as Error).message);
   }

@@ -6,6 +6,14 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const STORAGE_JWT = Deno.env.get("STORAGE_JWT") || SERVICE_KEY;
 const BUCKET = "episode-assets";
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
+
 // Saves a client-rendered PNG (e.g. a titled thumbnail composited in the browser)
 // to the episode-assets bucket and records a ready asset row.
 async function upload(supabase: any, path: string, bytes: Uint8Array): Promise<string> {
@@ -22,13 +30,12 @@ async function upload(supabase: any, path: string, bytes: Uint8Array): Promise<s
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method !== "POST") return new Response("ok", { status: 200 });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ ok: true });
   const body = await req.json().catch(() => ({}));
   const { episode_id, asset_type = "thumbnail", image_base64, width = 1280, height = 720, metadata = {} } = body;
 
-  if (!episode_id || !image_base64) {
-    return new Response(JSON.stringify({ ok: false, error: "episode_id and image_base64 required" }), { status: 400, headers: { "content-type": "application/json" } });
-  }
+  if (!episode_id || !image_base64) return json({ ok: false, error: "episode_id and image_base64 required" }, 400);
 
   try {
     const b64 = String(image_base64).replace(/^data:image\/\w+;base64,/, "");
@@ -44,8 +51,8 @@ Deno.serve(async (req: Request) => {
     }).select("*").single();
     if (error) throw new Error(error.message);
 
-    return new Response(JSON.stringify({ ok: true, url, asset }), { status: 200, headers: { "content-type": "application/json" } });
+    return json({ ok: true, url, asset });
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: (e as Error).message }), { status: 500, headers: { "content-type": "application/json" } });
+    return json({ ok: false, error: (e as Error).message }, 500);
   }
 });
