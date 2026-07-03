@@ -4,7 +4,7 @@ import {
   Unplug, PlugZap, Loader2, Settings2, AlertTriangle, AlertCircle,
   Package, Layers, CreditCard, Link2, Unlink, Palette, Type, Mail,
   Building2, ExternalLink, Plus, X, ArrowLeft, Archive, ChevronDown,
-  Crown, Repeat, Activity, Clock, Pause, Share2, Trash2,
+  Crown, Repeat, Activity, Clock, Pause, Share2, Trash2, Info,
 } from 'lucide-react';
 import { SpokeConnection, Branch, BrandIdentity, BranchStatsResult, MergedBranch, SocialAccount, SocialPlatform, BranchSocialAccountsMap, SocialConnectionStatus } from '../types';
 import { getSpokeClient } from '../spokeConnector';
@@ -1200,12 +1200,23 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   placeholder="My Branch" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold" />
               </div>
               <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Type</label>
+                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                  Type
+                  <span className="group relative inline-flex">
+                    <Info className="w-3 h-3 text-slate-300 hover:text-emerald-500 cursor-help" />
+                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-xl bg-slate-800 px-3 py-2 text-[11px] font-medium normal-case tracking-normal text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 z-10">
+                      <b>Internal</b> — a Sproutify-owned property you operate directly (e.g. farm.sproutify.app).<br />
+                      <b>External</b> — a partner or third-party brand you market on behalf of.<br />
+                      This tags the branch across Trellis so you can filter and report on owned vs. partner properties.
+                    </span>
+                  </span>
+                </label>
                 <select value={newBranch.type || 'external'} onChange={(e) => setNewBranch({ ...newBranch, type: e.target.value as 'internal' | 'external' })}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold">
                   <option value="internal">Internal</option>
                   <option value="external">External</option>
                 </select>
+                <p className="text-[10px] text-slate-400 mt-1"><b>Internal</b> = you own it; <b>External</b> = a partner brand you market for.</p>
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Tagline</label>
