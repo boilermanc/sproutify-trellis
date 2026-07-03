@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus } from '../types';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, BranchContext } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
 import {
@@ -61,6 +61,7 @@ interface VideoAdLabProps {
   spokeConnections: SpokeConnection[];
   geminiApiKey: string;
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
+  branchContext?: BranchContext;
 }
 
 const TERMINAL_STATUSES: VideoAdStatus[] = ['completed', 'failed', 'cancelled'];
@@ -82,18 +83,34 @@ const VOICE_NAMES: Record<string, string> = {
 };
 
 // ─── Component ───────────────────────────────────────────────────────
-const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast }) => {
+const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext }) => {
   // ── Active spoke connection (templates are read/written server-side by id) ──
   const templateConnectionId = useMemo<string | null>(() => {
     return spokeConnections.find(c => c.status === 'active')?.id ?? null;
   }, [spokeConnections]);
+
+  // ── Branch options — pulled from the real branches (fall back to the static
+  //    ecosystem list only if branch context hasn't loaded). ──
+  const branchOptions = useMemo(() => {
+    if (branchContext?.allBranches?.length) {
+      return branchContext.allBranches.map(b => ({ value: b.slug, label: b.name }));
+    }
+    return BRANCH_KEYS.map(k => ({ value: k, label: BRANCH_DISPLAY_NAMES[k] }));
+  }, [branchContext]);
+  // Prefer the real branch name for display; fall back to the slug formatter.
+  const branchName = (slug: string) =>
+    branchContext?.allBranches.find(b => b.slug === slug)?.name || formatBranchName(slug);
 
   // ── Wizard step ──
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // ── Form fields ──
-  const [branch, setBranch] = useState(BRANCH_KEYS[4] ?? BRANCH_KEYS[0] ?? '');
+  const [branch, setBranch] = useState('');
+  // Default to the first real branch once branch options are available.
+  useEffect(() => {
+    if (!branch && branchOptions.length > 0) setBranch(branchOptions[0].value);
+  }, [branchOptions, branch]);
   const [productDescription, setProductDescription] = useState('');
   const [targetSegment, setTargetSegment] = useState('');
   const [tone, setTone] = useState<string>(TONE_PRESETS[0]);
@@ -293,7 +310,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
       const prompt = `You are a video ad scriptwriter for Sproutify. Write a spoken-word script for a ${pipeline === 'talking_head' ? 'talking-head' : 'full scene'} video ad.
 
 PRODUCT: ${productDescription}
-BRAND: ${formatBranchName(branch)}
+BRAND: ${branchName(branch)}
 TARGET AUDIENCE: ${targetSegment || 'general audience'}
 TONE: ${tone}
 CTA: ${cta || 'Visit our website'}
@@ -471,8 +488,9 @@ STRICT RULES:
                 onChange={e => setBranch(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
               >
-                {BRANCH_KEYS.map(key => (
-                  <option key={key} value={key}>{BRANCH_DISPLAY_NAMES[key]}</option>
+                {branchOptions.length === 0 && <option value="">No branches available</option>}
+                {branchOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
               <p className="text-xs text-slate-400 mt-1">Which brand is this video for?</p>
@@ -761,7 +779,7 @@ STRICT RULES:
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-8">
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Branch</span>
-              <p className="text-sm text-slate-700">{formatBranchName(branch)}</p>
+              <p className="text-sm text-slate-700">{branchName(branch)}</p>
             </div>
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Product</span>
