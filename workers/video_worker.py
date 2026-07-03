@@ -43,6 +43,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _duration(path: str) -> float:
+    """Audio duration in seconds via ffprobe (0.0 if it can't be read)."""
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, check=True,
+        )
+        return float(out.stdout.strip())
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 @app.after_request
 def _cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -97,11 +110,27 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                 subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x0A0E27:s=1920x1080", "-frames:v", "1", cover], check=True)
 
             out = os.path.join(tmp, "video.mp4")
+            # Ken Burns: a slow continuous zoom across the WHOLE track so the still
+            # cover feels alive (real scene motion needs a video model like Veo).
+            # zoompan with d=1 + a duration-derived rate keyed off the output frame
+            # counter (on) gives a smooth zoom regardless of track length.
+            fps = 25
+            dur = _duration(audio) or 180.0
+            total = max(1, int(dur * fps))
+            zmax = 1.12
+            zrate = (zmax - 1.0) / total
+            vf = (
+                "scale=2560:1440:force_original_aspect_ratio=increase,crop=2560:1440,"
+                f"zoompan=z='min(1+{zrate:.9f}*on,{zmax})':d=1:"
+                "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"s=1920x1080:fps={fps}"
+            )
             subprocess.run([
                 "ffmpeg", "-y", "-loop", "1", "-i", cover, "-i", audio,
-                "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
-                "-pix_fmt", "yuv420p", "-shortest",
-                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                "-filter_complex", f"[0:v]{vf}[v]",
+                "-map", "[v]", "-map", "1:a",
+                "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p", "-r", str(fps), "-shortest",
                 out,
             ], check=True)
 
