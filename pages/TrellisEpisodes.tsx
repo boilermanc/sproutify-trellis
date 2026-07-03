@@ -38,6 +38,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [artStyleId, setArtStyleId] = useState(EPISODE_ART_STYLES[0].id);
+  const [videoMotion, setVideoMotion] = useState<'ken_burns' | 'none'>('ken_burns');
 
   const [branch, setBranch] = useState(branches[0]?.slug || '');
   const [title, setTitle] = useState('');
@@ -283,8 +284,21 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             {/* Phase 4: Video */}
             <div className={card}>
               <h4 className={phaseHead}><Film size={15} className="text-indigo-500" /> Video</h4>
+
+              {/* Motion: Ken Burns (slow zoom) or a plain static image */}
+              <div className="mt-3 flex gap-2">
+                {([['ken_burns', 'Ken Burns (slow zoom)'], ['none', 'Static (no movement)']] as const).map(([m, label]) => (
+                  <button key={m} type="button" disabled={!!busy} onClick={() => setVideoMotion(m)}
+                    className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-tight transition disabled:opacity-40 ${
+                      videoMotion === m ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="mt-3">
-                <button type="button" disabled={!masterUrl || !!busy} onClick={() => run('video', () => buildVideo(selected, masterUrl!, cover?.url || null).then(() => {}))}
+                <button type="button" disabled={!masterUrl || !!busy} onClick={() => run('video', () => buildVideo(selected, masterUrl!, cover?.url || null, videoMotion).then(() => {}))}
                   className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-indigo-700 transition disabled:opacity-40">
                   <Film size={13} /> Build Video (master + cover)
                 </button>

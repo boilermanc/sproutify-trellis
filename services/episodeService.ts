@@ -111,7 +111,7 @@ export async function generateArtwork(episode: Episode, assetType: AssetType, ex
 }
 
 // ─── Video (fire ffmpeg worker: master audio + cover → mp4) ─────────
-export async function buildVideo(episode: Episode, masterAudioUrl: string, coverUrl: string | null): Promise<EpisodeAsset> {
+export async function buildVideo(episode: Episode, masterAudioUrl: string, coverUrl: string | null, motion: 'ken_burns' | 'none' = 'ken_burns'): Promise<EpisodeAsset> {
   const { data: asset, error } = await supabase.from('trellis_episode_assets').insert({
     episode_id: episode.id, asset_type: 'video_mp4', status: 'queued', width: 1920, height: 1080,
   }).select('*').single();
@@ -121,7 +121,7 @@ export async function buildVideo(episode: Episode, masterAudioUrl: string, cover
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       asset_id: asset.id, episode_id: episode.id, branch: episode.branch,
-      master_audio_url: masterAudioUrl, cover_image_url: coverUrl,
+      master_audio_url: masterAudioUrl, cover_image_url: coverUrl, motion,
     }),
   }).catch(() => {});
   await setEpisodeStatus(episode.id, 'video');

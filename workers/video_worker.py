@@ -96,7 +96,7 @@ def _upload(path_in_bucket: str, data: bytes, content_type: str) -> str:
     return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path_in_bucket}"
 
 
-def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: str | None):
+def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: str | None, motion: str = "ken_burns"):
     try:
         _patch("trellis_episode_assets", asset_id, {"status": "processing"})
         with tempfile.TemporaryDirectory() as tmp:
@@ -110,21 +110,26 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                 subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x0A0E27:s=1920x1080", "-frames:v", "1", cover], check=True)
 
             out = os.path.join(tmp, "video.mp4")
-            # Ken Burns: a slow continuous zoom across the WHOLE track so the still
-            # cover feels alive (real scene motion needs a video model like Veo).
-            # zoompan with d=1 + a duration-derived rate keyed off the output frame
-            # counter (on) gives a smooth zoom regardless of track length.
             fps = 25
-            dur = _duration(audio) or 180.0
-            total = max(1, int(dur * fps))
-            zmax = 1.12
-            zrate = (zmax - 1.0) / total
-            vf = (
-                "scale=2560:1440:force_original_aspect_ratio=increase,crop=2560:1440,"
-                f"zoompan=z='min(1+{zrate:.9f}*on,{zmax})':d=1:"
-                "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"s=1920x1080:fps={fps}"
-            )
+            still = str(motion).lower() in ("none", "static", "off", "still")
+            if still:
+                # Plain static image — no camera motion.
+                vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+            else:
+                # Ken Burns: a slow continuous zoom across the WHOLE track so the still
+                # cover feels alive (real scene motion needs a video model like Veo).
+                # zoompan with d=1 + a duration-derived rate keyed off the output frame
+                # counter (on) gives a smooth zoom regardless of track length.
+                dur = _duration(audio) or 180.0
+                total = max(1, int(dur * fps))
+                zmax = 1.12
+                zrate = (zmax - 1.0) / total
+                vf = (
+                    "scale=2560:1440:force_original_aspect_ratio=increase,crop=2560:1440,"
+                    f"zoompan=z='min(1+{zrate:.9f}*on,{zmax})':d=1:"
+                    "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"s=1920x1080:fps={fps}"
+                )
             subprocess.run([
                 "ffmpeg", "-y", "-loop", "1", "-i", cover, "-i", audio,
                 "-filter_complex", f"[0:v]{vf}[v]",
@@ -157,7 +162,7 @@ def video():
     b = request.get_json(force=True, silent=True) or {}
     if not b.get("asset_id") or not b.get("episode_id") or not b.get("master_audio_url"):
         return jsonify({"error": "asset_id, episode_id, master_audio_url required"}), 400
-    threading.Thread(target=_render, args=(b["asset_id"], b["episode_id"], b["master_audio_url"], b.get("cover_image_url")), daemon=True).start()
+    threading.Thread(target=_render, args=(b["asset_id"], b["episode_id"], b["master_audio_url"], b.get("cover_image_url"), b.get("motion", "ken_burns")), daemon=True).start()
     return jsonify({"accepted": True, "asset_id": b["asset_id"]}), 202
 
 
