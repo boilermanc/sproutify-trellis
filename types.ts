@@ -139,7 +139,8 @@ export interface SpokeConnection {
   id: string;
   name: string;                    // Display name: "ATL Urban Farms"
   supabase_url: string;            // https://xxxxx.supabase.co
-  supabase_key: string;            // anon key
+  supabase_key: string;            // service_role key — only set in the wizard before save; '' for stored connections (decrypted server-side)
+  key_preview?: string;            // masked first-chars preview of the stored key, for display only
   tables: SpokeTableConfig[];      // Multiple tables per connection
   status: 'active' | 'disconnected' | 'error';
   last_tested_at?: string;

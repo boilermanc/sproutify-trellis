@@ -14,7 +14,7 @@ export async function fetchSpokeConnections(
   // spoke-query Edge Function and used there. The client works off connection.id.
   const { data, error } = await supabase
     .from('spoke_connections')
-    .select('id, name, supabase_url, tables, status, last_tested_at, last_error, branch_skipped, created_at')
+    .select('id, name, supabase_url, key_preview, tables, status, last_tested_at, last_error, branch_skipped, created_at')
     .eq('organization_id', organizationId)
     .order('created_at', { ascending: true });
 
@@ -28,6 +28,7 @@ export async function fetchSpokeConnections(
     name: row.name,
     supabase_url: row.supabase_url,
     supabase_key: '', // never exposed to the client
+    key_preview: row.key_preview || undefined,
     tables: row.tables || [],
     status: row.status,
     last_tested_at: row.last_tested_at || undefined,

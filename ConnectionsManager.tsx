@@ -28,6 +28,9 @@ import {
   Check,
   X,
   GitBranch,
+  Lock,
+  Info,
+  KeyRound,
 } from 'lucide-react';
 
 interface ConnectionsManagerProps {
@@ -365,8 +368,15 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       created_at: new Date().toISOString(),
       last_tested_at: new Date().toISOString(),
     };
-    onConnectionsChange([...connections, connection]);
+    // Persist the full key (encrypted server-side by the BEFORE trigger).
     upsertSpokeConnection(SPROUTIFY_ORG_ID, connection);
+    // Keep only a masked copy in app state — the full key never lingers client-side.
+    const masked: SpokeConnection = {
+      ...connection,
+      supabase_key: '',
+      key_preview: (connection.supabase_key || '').slice(0, 12) + '…',
+    };
+    onConnectionsChange([...connections, masked]);
 
     // Link to branch if one was selected
     const savedBranchId = selectedBranchId;
@@ -779,13 +789,14 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
               {/* API Key */}
               <div className="relative">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                  API Key (anon)
+                <label className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  <KeyRound size={12} />
+                  Service Role Key (secret)
                 </label>
                 <input
                   type={visibleKeys['new_key'] ? 'text' : 'password'}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
-                  placeholder="Enter your anon key..."
+                  placeholder="sb_secret_…  (or a service_role eyJ… key)"
                   value={newConnection.supabase_key}
                   onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_key: e.target.value }))}
                 />
@@ -795,6 +806,17 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 >
                   {visibleKeys['new_key'] ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
+                <div className="mt-2 flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <Lock size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Use the <span className="font-bold text-slate-700">service_role</span> secret key
+                    (Supabase → Project Settings → API). It's needed to read RLS-protected tables like{' '}
+                    <span className="font-mono">profiles</span>. The key is{' '}
+                    <span className="font-bold text-emerald-700">encrypted before it's stored</span>, runs only
+                    server-side, and is <span className="font-bold text-slate-700">never shown in full again</span> —
+                    afterward you'll only see the first few characters.
+                  </p>
+                </div>
               </div>
 
               {/* Test Result */}
@@ -934,8 +956,24 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </select>
               </div>
 
+              {/* No columns could be read */}
+              {customerTableConfig.table_name && customerTableConfig.columns.length === 0 && (
+                <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-700">Couldn't read this table's columns</p>
+                    <p className="text-[11px] text-amber-600 mt-0.5 leading-relaxed">
+                      The table is likely protected by Row Level Security (so the key can't see any rows), or
+                      it isn't exposed via the API. Connect with the{' '}
+                      <span className="font-bold">service_role</span> secret key — it's required to read
+                      RLS-protected tables like <span className="font-mono">profiles</span>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Field Mapping */}
-              {customerTableConfig.table_name && (
+              {customerTableConfig.table_name && customerTableConfig.columns.length > 0 && (
                 <>
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-400 uppercase">Field Mapping</span>
@@ -990,9 +1028,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <span className="text-sm font-black uppercase">Step 4: What other data does this spoke have?</span>
               </div>
 
-              <p className="text-sm text-slate-600 mb-4">
+              <p className="text-sm text-slate-600 mb-2">
                 Select any additional data types available in this database:
               </p>
+              <div className="mb-4 flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                <Info size={13} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Trellis scanned this spoke for standard <span className="font-mono">orders</span>,{' '}
+                  <span className="font-mono">order_items</span>, and <span className="font-mono">subscriptions</span>{' '}
+                  tables. A greyed-out card means no matching table was found (or the key can't read it). Your
+                  customer data is already connected — these are optional extras.
+                </p>
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Orders Card */}
@@ -1024,6 +1071,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     }`}>
                       {selectedDataTypes.orders && <Check size={12} className="text-white" />}
                     </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                    {discoveredTables.some(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item')) ? (
+                      <>
+                        <Check size={11} className="text-emerald-500 flex-shrink-0" />
+                        <span className="text-[9px] font-bold text-emerald-600 truncate">
+                          Found: {discoveredTables.find(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item'))}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[9px] font-bold text-slate-400">Not found in this database</span>
+                    )}
                   </div>
                 </button>
 
@@ -1057,6 +1116,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                       {selectedDataTypes.orderItems && <Check size={12} className="text-white" />}
                     </div>
                   </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                    {discoveredTables.some(t => t.toLowerCase().includes('item')) ? (
+                      <>
+                        <Check size={11} className="text-emerald-500 flex-shrink-0" />
+                        <span className="text-[9px] font-bold text-emerald-600 truncate">
+                          Found: {discoveredTables.find(t => t.toLowerCase().includes('item'))}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[9px] font-bold text-slate-400">Not found in this database</span>
+                    )}
+                  </div>
                 </button>
 
                 {/* Subscriptions Card */}
@@ -1088,6 +1159,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     }`}>
                       {selectedDataTypes.subscriptions && <Check size={12} className="text-white" />}
                     </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                    {discoveredTables.some(t => t.toLowerCase().includes('subscription')) ? (
+                      <>
+                        <Check size={11} className="text-emerald-500 flex-shrink-0" />
+                        <span className="text-[9px] font-bold text-emerald-600 truncate">
+                          Found: {discoveredTables.find(t => t.toLowerCase().includes('subscription'))}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[9px] font-bold text-slate-400">Not found in this database</span>
+                    )}
                   </div>
                 </button>
               </div>
@@ -1733,6 +1816,12 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     )}
                   </div>
                   <p className="text-xs text-slate-500 font-mono mt-1">{connection.supabase_url}</p>
+                  {connection.key_preview && (
+                    <p className="flex items-center gap-1 text-[10px] text-slate-400 font-mono mt-0.5" title="Stored key (encrypted) — masked for security">
+                      <Lock size={10} className="text-emerald-500" />
+                      {connection.key_preview}
+                    </p>
+                  )}
                   <div className="flex items-center space-x-4 mt-2">
                     <span className="text-[9px] text-slate-400 font-bold">
                       Last tested: {formatTimestamp(connection.last_tested_at)}
