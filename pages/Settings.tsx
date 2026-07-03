@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiKeyConfig, LlmProvider, Integration, SpokeConnection, Branch, BranchContext } from '../types';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
@@ -23,6 +23,7 @@ interface SettingsProps {
   branches: Branch[];
   branchContext?: BranchContext;
   onOpenArticle?: (article: Article) => void;
+  initialTab?: 'integrations' | 'spokes' | 'api' | 'social' | 'team';
 }
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
@@ -45,8 +46,13 @@ const Settings: React.FC<SettingsProps> = ({
   onSpokeConnectionsChange,
   branches,
   onOpenArticle,
+  initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team'>('integrations');
+  const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team'>(initialTab ?? 'integrations');
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);

@@ -26,9 +26,10 @@ interface BranchCommandCenterProps {
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branchSocialAccounts?: BranchSocialAccountsMap;
   onBranchSocialAccountsChange?: (accounts: BranchSocialAccountsMap) => void;
+  onAddConnection?: () => void;
 }
 
-export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange, branchSocialAccounts, onBranchSocialAccountsChange }: BranchCommandCenterProps) {
+export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange, branchSocialAccounts, onBranchSocialAccountsChange, onAddConnection }: BranchCommandCenterProps) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [brands, setBrands] = useState<BrandIdentity[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
@@ -752,9 +753,20 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               )}
               {mb.linkStatus === 'branch-only' && (
                 <div className="px-5 pt-3">
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2">
-                    <Database className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    <span className="text-[10px] font-bold text-slate-500">No data connection</span>
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2">
+                    <Database className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-slate-500">No data connection</span>
+                      {onAddConnection && (
+                        <button
+                          onClick={onAddConnection}
+                          className="mt-0.5 flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          Add a new connection
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -889,6 +901,15 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                                 {c.name}
                               </button>
                             ))
+                          )}
+                          {onAddConnection && (
+                            <div className="border-t border-slate-100 mt-1 pt-1">
+                              <button onClick={() => { setLinkingCardId(null); onAddConnection(); }}
+                                className="w-full text-left px-3 py-2 text-sm font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-2">
+                                <Plus className="w-3.5 h-3.5" />
+                                Add New Connection
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}
