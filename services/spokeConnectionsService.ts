@@ -9,9 +9,12 @@ const LS_KEY = 'trellis_spoke_connections';
 export async function fetchSpokeConnections(
   organizationId: string,
 ): Promise<SpokeConnection[]> {
+  // NB: we intentionally do NOT select supabase_key / supabase_key_encrypted.
+  // The spoke key never leaves the server — it's decrypted inside the
+  // spoke-query Edge Function and used there. The client works off connection.id.
   const { data, error } = await supabase
     .from('spoke_connections')
-    .select('*')
+    .select('id, name, supabase_url, tables, status, last_tested_at, last_error, branch_skipped, created_at')
     .eq('organization_id', organizationId)
     .order('created_at', { ascending: true });
 
@@ -24,7 +27,7 @@ export async function fetchSpokeConnections(
     id: row.id,
     name: row.name,
     supabase_url: row.supabase_url,
-    supabase_key: row.supabase_key,
+    supabase_key: '', // never exposed to the client
     tables: row.tables || [],
     status: row.status,
     last_tested_at: row.last_tested_at || undefined,
@@ -45,25 +48,30 @@ export async function upsertSpokeConnection(
   organizationId: string,
   connection: SpokeConnection,
 ): Promise<boolean> {
+  // Only include the plaintext key when one is actually supplied (i.e. a brand-new
+  // connection captured in the wizard). A BEFORE trigger encrypts it into
+  // supabase_key_encrypted. For updates coming from the client the key is '' —
+  // we omit it so the stored (encrypted) key is preserved untouched.
+  const row: Record<string, unknown> = {
+    id: connection.id,
+    organization_id: organizationId,
+    name: connection.name,
+    supabase_url: connection.supabase_url,
+    tables: connection.tables,
+    status: connection.status,
+    last_tested_at: connection.last_tested_at || null,
+    last_error: connection.last_error || null,
+    branch_skipped: connection.branch_skipped || false,
+    created_at: connection.created_at,
+    updated_at: new Date().toISOString(),
+  };
+  if (connection.supabase_key) {
+    row.supabase_key = connection.supabase_key;
+  }
+
   const { error } = await supabase
     .from('spoke_connections')
-    .upsert(
-      {
-        id: connection.id,
-        organization_id: organizationId,
-        name: connection.name,
-        supabase_url: connection.supabase_url,
-        supabase_key: connection.supabase_key,
-        tables: connection.tables,
-        status: connection.status,
-        last_tested_at: connection.last_tested_at || null,
-        last_error: connection.last_error || null,
-        branch_skipped: connection.branch_skipped || false,
-        created_at: connection.created_at,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' },
-    );
+    .upsert(row, { onConflict: 'id' });
 
   if (error) {
     console.error('[spokeConnections] Upsert failed:', error.message);
@@ -122,5 +130,7 @@ function loadFromLocalStorage(): SpokeConnection[] {
 }
 
 function saveToLocalStorage(connections: SpokeConnection[]): void {
-  localStorage.setItem(LS_KEY, JSON.stringify(connections));
+  // Never cache the spoke key in localStorage — strip it defensively.
+  const safe = connections.map(({ supabase_key, ...rest }) => ({ ...rest, supabase_key: '' }));
+  localStorage.setItem(LS_KEY, JSON.stringify(safe));
 }

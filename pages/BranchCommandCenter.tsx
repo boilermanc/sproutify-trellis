@@ -7,7 +7,7 @@ import {
   Crown, Repeat, Activity, Clock, Pause, Share2, Trash2, Info,
 } from 'lucide-react';
 import { SpokeConnection, Branch, BrandIdentity, BranchStatsResult, MergedBranch, SocialAccount, SocialPlatform, BranchSocialAccountsMap, SocialConnectionStatus } from '../types';
-import { getSpokeClient } from '../spokeConnector';
+import { testSpokeConnectionById } from '../spokeConnector';
 import { fetchAllBranches, createBranch, updateBranch, deleteBranch } from '../lib/supabaseService';
 import { fetchAllBrands } from '../brandRepository';
 import { mergeBranchData, linkConnectionToBranch, unlinkConnectionFromBranch } from '../services/branchLinker';
@@ -106,19 +106,8 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
 
   // Connection management handlers (absorbed from Branches.tsx)
   const fireSnapshotForConnection = (connection: SpokeConnection) => {
-    const customerTable = connection.tables.find(t => t.table_type === 'customers');
-    const orderTables = connection.tables.filter(t => t.table_type === 'orders');
-    generateSnapshot({
-      id: connection.id,
-      name: connection.name,
-      supabase_url: connection.supabase_url,
-      supabase_key: connection.supabase_key,
-      tables: {
-        customers: customerTable?.table_name,
-        orders: orderTables.find(t => t.table_name === 'orders')?.table_name,
-        legacy_orders: orderTables.find(t => t.table_name !== 'orders')?.table_name,
-      },
-    }, 'on_connect').then(snapshot => {
+    // Aggregates are computed server-side; the spoke key never reaches the browser.
+    generateSnapshot(connection.id, 'on_connect').then(snapshot => {
       saveSnapshot(snapshot);
       console.log('[branchSnapshot] Snapshot saved:', snapshot.branch_name,
         '| Profiles:', snapshot.total_profiles,
@@ -140,13 +129,10 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   const handleRetest = async (connection: SpokeConnection) => {
     setIsTesting(prev => ({ ...prev, [connection.id]: true }));
     try {
-      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-      const customerTable = connection.tables.find(t => t.table_type === 'customers');
-      const tableName = customerTable?.table_name || 'profiles';
-      const { error } = await client.from(tableName).select('id', { count: 'exact', head: true });
-      if (error) {
+      const result = await testSpokeConnectionById(connection.id);
+      if (!result.success) {
         const updated = spokeConnections.map(c =>
-          c.id === connection.id ? { ...c, status: 'error' as const, last_error: error.message, last_tested_at: new Date().toISOString() } : c
+          c.id === connection.id ? { ...c, status: 'error' as const, last_error: result.error, last_tested_at: new Date().toISOString() } : c
         );
         onSpokeConnectionsChange(updated);
         const persistConn = updated.find(c => c.id === connection.id);
@@ -177,12 +163,9 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     setIsTesting(prev => ({ ...prev, [connection.id]: true }));
     setReconnectErrors(prev => { const u = { ...prev }; delete u[connection.id]; return u; });
     try {
-      const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-      const customerTable = connection.tables.find(t => t.table_type === 'customers');
-      const tableName = customerTable?.table_name || 'profiles';
-      const { error } = await client.from(tableName).select('id', { count: 'exact', head: true });
-      if (error) {
-        setReconnectErrors(prev => ({ ...prev, [connection.id]: error.message }));
+      const result = await testSpokeConnectionById(connection.id);
+      if (!result.success) {
+        setReconnectErrors(prev => ({ ...prev, [connection.id]: result.error }));
       } else {
         const updated = spokeConnections.map(c =>
           c.id === connection.id ? { ...c, status: 'active' as const, last_error: undefined, last_tested_at: new Date().toISOString() } : c

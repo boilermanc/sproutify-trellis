@@ -13,10 +13,12 @@
 //     user from proxying arbitrary-table reads with a privileged spoke key.
 //
 // Call: POST /spoke-query { op, ... }
-//   { op: "test",     supabase_url, supabase_key, table_name }
-//   { op: "discover", supabase_url, supabase_key }
-//   { op: "columns",  supabase_url, supabase_key, table_name }
-//   { op: "fetch",    connection_id, table_type }   // customers|orders|order_items|subscriptions
+//   { op: "test",     supabase_url, supabase_key, table_name }   // setup
+//   { op: "test",     connection_id, table_name? }               // runtime
+//   { op: "discover", supabase_url, supabase_key }               // setup
+//   { op: "columns",  supabase_url, supabase_key, table_name }   // setup
+//   { op: "fetch",    connection_id, table_type }                // runtime
+//   { op: "snapshot", connection_id }                            // runtime
 //
 // SECRETS (auto-set by Supabase): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy spoke-query   (verify_jwt = true)
@@ -26,6 +28,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const HUB_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BATCH_SIZE = 1000;
+const SNAPSHOT_NAME_SAMPLE = 500;
+const SNAPSHOT_TOTAL_SAMPLE = 5000;
+const SNAPSHOT_PRODUCT_SAMPLE = 2000;
 
 // Tables the discovery step probes for (mirrors the old client behavior).
 const COMMON_TABLES = [
@@ -97,6 +102,22 @@ async function fetchAllRows(client: any, table: string, select: string) {
   return { rows: all, error: null as string | null };
 }
 
+// Resolve a saved connection + its decrypted key (RUNTIME ops).
+async function resolveConnection(hub: any, connectionId: string) {
+  const { data: conn, error: connErr } = await hub
+    .from("spoke_connections")
+    .select("id, name, supabase_url, tables, status")
+    .eq("id", connectionId)
+    .single();
+  if (connErr || !conn) return { error: "Connection not found" as string };
+
+  const { data: key, error: keyErr } = await hub
+    .rpc("get_spoke_connection_key", { p_connection_id: connectionId });
+  if (keyErr || !key) return { error: "Could not resolve connection key" as string };
+
+  return { conn, key };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -112,22 +133,41 @@ Deno.serve(async (req: Request) => {
   if (!op) return json({ error: "op is required" }, 400);
 
   try {
-    // ── SETUP ops: use caller-supplied creds, store nothing ──────────
-    if (op === "test" || op === "discover" || op === "columns") {
+    // ── test: SETUP (url+key) OR RUNTIME (connection_id, decrypt) ─────
+    if (op === "test") {
+      let url = body.supabase_url;
+      let key = body.supabase_key;
+      let table = body.table_name;
+
+      if (body.connection_id) {
+        const hub = createClient(HUB_URL, SERVICE_KEY);
+        const resolved = await resolveConnection(hub, body.connection_id);
+        if ("error" in resolved) return json({ success: false, error: resolved.error });
+        url = resolved.conn.supabase_url;
+        key = resolved.key;
+        if (!table) {
+          const cust = (resolved.conn.tables || []).find((t: any) => t.table_type === "customers");
+          table = cust?.table_name || "profiles";
+        }
+      }
+
+      if (!url || !key) return json({ success: false, error: "supabase_url and supabase_key (or connection_id) are required" });
+      table = table || "profiles";
+      const spoke = createClient(url, key);
+      const { data, error, count } = await spoke
+        .from(table).select("*", { count: "exact", head: false }).limit(1);
+      if (error) return json({ success: false, error: error.message });
+      let columns = data && data.length > 0 ? Object.keys(data[0]) : [];
+      if (columns.length === 0) columns = await getColumns(spoke, url, key, table);
+      return json({ success: true, rowCount: count ?? data?.length ?? 0, columns });
+    }
+
+    // ── discover / columns: SETUP only (caller-supplied creds) ───────
+    if (op === "discover" || op === "columns") {
       const url = body.supabase_url;
       const key = body.supabase_key;
       if (!url || !key) return json({ error: "supabase_url and supabase_key are required" }, 400);
       const spoke = createClient(url, key);
-
-      if (op === "test") {
-        const table = body.table_name || "profiles";
-        const { data, error, count } = await spoke
-          .from(table).select("*", { count: "exact", head: false }).limit(1);
-        if (error) return json({ success: false, error: error.message });
-        let columns = data && data.length > 0 ? Object.keys(data[0]) : [];
-        if (columns.length === 0) columns = await getColumns(spoke, url, key, table);
-        return json({ success: true, rowCount: count ?? data?.length ?? 0, columns });
-      }
 
       if (op === "discover") {
         const found: string[] = [];
@@ -138,59 +178,114 @@ Deno.serve(async (req: Request) => {
         return json({ tables: found });
       }
 
-      if (op === "columns") {
-        if (!body.table_name) return json({ error: "table_name is required" }, 400);
-        const columns = await getColumns(spoke, url, key, body.table_name);
-        return json({ columns });
-      }
+      // columns
+      if (!body.table_name) return json({ error: "table_name is required" }, 400);
+      const columns = await getColumns(spoke, url, key, body.table_name);
+      return json({ columns });
     }
 
-    // ── RUNTIME op: saved connection, key decrypted server-side ───────
+    // ── fetch: RUNTIME bulk read (raw rows + field_mapping per table) ──
     if (op === "fetch") {
-      const connectionId = body.connection_id;
       const tableType = body.table_type;
       const validTypes = ["customers", "orders", "order_items", "subscriptions"];
-      if (!connectionId || !validTypes.includes(tableType)) {
+      if (!body.connection_id || !validTypes.includes(tableType)) {
         return json({ error: "connection_id and a valid table_type are required" }, 400);
       }
 
       const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
 
-      // Load the connection (tables/field-maps come from HERE, not the caller).
-      const { data: conn, error: connErr } = await hub
-        .from("spoke_connections")
-        .select("id, name, supabase_url, tables, status")
-        .eq("id", connectionId)
-        .single();
-      if (connErr || !conn) return json({ error: "Connection not found" }, 404);
-
-      // Decrypt this connection's key (service_role-only RPC).
-      const { data: spokeKey, error: keyErr } = await hub
-        .rpc("get_spoke_connection_key", { p_connection_id: connectionId });
-      if (keyErr || !spokeKey) {
-        return json({ error: "Could not resolve connection key" }, 400);
-      }
-
-      const spoke = createClient(conn.supabase_url, spokeKey);
-      const configs = (conn.tables || []).filter(
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+      const configs = (resolved.conn.tables || []).filter(
         (t: any) => t.table_type === tableType && t.enabled,
       );
 
       const tables: Array<{ table_name: string; field_mapping: Record<string, string>; rows: unknown[] }> = [];
       const errors: string[] = [];
-
       for (const cfg of configs) {
         const fields = Object.values(cfg.field_mapping || {}).filter(Boolean) as string[];
         if (fields.length === 0) continue;
         const { rows, error } = await fetchAllRows(spoke, cfg.table_name, fields.join(","));
-        if (error) {
-          errors.push(`${conn.name}/${cfg.table_name}: ${error}`);
-          continue;
-        }
+        if (error) { errors.push(`${resolved.conn.name}/${cfg.table_name}: ${error}`); continue; }
         tables.push({ table_name: cfg.table_name, field_mapping: cfg.field_mapping, rows });
       }
+      return json({ connection_id: body.connection_id, name: resolved.conn.name, tables, errors });
+    }
 
-      return json({ connection_id: connectionId, name: conn.name, tables, errors });
+    // ── snapshot: RUNTIME aggregate bundle (client builds the snapshot) ─
+    if (op === "snapshot") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+      const allTables = resolved.conn.tables || [];
+
+      let total_profiles = 0;
+      let active_subscribers = 0;
+      const first_names: string[] = [];
+
+      const custCfg = allTables.find((t: any) => t.table_type === "customers" && t.enabled);
+      if (custCfg) {
+        const fm = custCfg.field_mapping || {};
+        const { count } = await spoke.from(custCfg.table_name).select("*", { count: "exact", head: true });
+        total_profiles = count ?? 0;
+
+        if (fm.first_name) {
+          const { data } = await spoke.from(custCfg.table_name).select(fm.first_name).limit(SNAPSHOT_NAME_SAMPLE);
+          for (const r of data || []) {
+            const v = (r as any)[fm.first_name];
+            if (v) first_names.push(String(v));
+          }
+        }
+        if (fm.subscribed) {
+          const { count: subCount } = await spoke
+            .from(custCfg.table_name).select("*", { count: "exact", head: true }).eq(fm.subscribed, true);
+          active_subscribers = subCount ?? 0;
+        }
+      }
+
+      let total_orders = 0;
+      const order_totals: number[] = [];
+      for (const cfg of allTables.filter((t: any) => t.table_type === "orders" && t.enabled)) {
+        const fm = cfg.field_mapping || {};
+        const { count } = await spoke.from(cfg.table_name).select("*", { count: "exact", head: true });
+        total_orders += count ?? 0;
+        if (fm.total && order_totals.length < SNAPSHOT_TOTAL_SAMPLE) {
+          const { data } = await spoke.from(cfg.table_name).select(fm.total).limit(SNAPSHOT_TOTAL_SAMPLE - order_totals.length);
+          for (const r of data || []) {
+            const v = parseFloat((r as any)[fm.total]);
+            if (!isNaN(v)) order_totals.push(v);
+          }
+        }
+      }
+
+      const product_names: string[] = [];
+      for (const cfg of allTables.filter((t: any) => t.table_type === "order_items" && t.enabled)) {
+        const fm = cfg.field_mapping || {};
+        if (fm.product_name && product_names.length < SNAPSHOT_PRODUCT_SAMPLE) {
+          const { data } = await spoke.from(cfg.table_name).select(fm.product_name).limit(SNAPSHOT_PRODUCT_SAMPLE - product_names.length);
+          for (const r of data || []) {
+            const v = (r as any)[fm.product_name];
+            if (v) product_names.push(String(v));
+          }
+        }
+      }
+
+      return json({
+        connection_id: body.connection_id,
+        name: resolved.conn.name,
+        supabase_url: resolved.conn.supabase_url,
+        total_profiles,
+        active_subscribers,
+        first_names,
+        total_orders,
+        order_totals,
+        product_names,
+      });
     }
 
     return json({ error: `Unknown op: ${op}` }, 400);

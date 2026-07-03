@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SpokeConnection, SpokeTableConfig, Branch } from './types';
-import { testSpokeConnection, discoverTables, autoMapFields, disconnectSpoke } from './spokeConnector';
+import { testSpokeConnection, testSpokeConnectionById, discoverTables, autoMapFields, disconnectSpoke } from './spokeConnector';
 import { generateSnapshot, saveSnapshot } from './services/branchSnapshotService';
 import { fetchAllBranches } from './lib/supabaseService';
 import { linkConnectionToBranch } from './services/branchLinker';
@@ -332,11 +332,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       return;
     }
 
-    const result = await testSpokeConnection({
-      supabase_url: connection.supabase_url,
-      supabase_key: connection.supabase_key,
-      table_name: firstTable.table_name,
-    });
+    const result = await testSpokeConnectionById(connection.id, firstTable.table_name);
 
     const updatedConnections = connections.map((c) => {
       if (c.id === connection.id) {
@@ -383,21 +379,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       });
     }
 
-    // Generate and save analytics snapshot on successful connection (fire-and-forget)
-    const customerTable = connection.tables.find(t => t.table_type === 'customers');
-    const orderTables = connection.tables.filter(t => t.table_type === 'orders');
-    generateSnapshot({
-      id: connection.id,
-      name: connection.name,
-      supabase_url: connection.supabase_url,
-      supabase_key: connection.supabase_key,
-      tables: {
-        customers: customerTable?.table_name,
-        orders: orderTables.find(t => t.table_name === 'orders')?.table_name,
-        legacy_orders: orderTables.find(t => t.table_name !== 'orders')?.table_name,
-      },
-      customerColumns: customerTable ? Object.values(customerTable.field_mapping).filter(Boolean) : [],
-    }, 'on_connect').then(snapshot => {
+    // Generate and save analytics snapshot on successful connection (fire-and-forget).
+    // Aggregates are computed server-side; the spoke key stays server-side.
+    generateSnapshot(connection.id, 'on_connect').then(snapshot => {
       saveSnapshot(snapshot);
       console.log('[branchSnapshot] Snapshot saved:', snapshot.branch_name,
         '| Profiles:', snapshot.total_profiles,

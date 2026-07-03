@@ -1,6 +1,4 @@
-import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as hubClient } from '../lib/supabase';
-import { getSpokeClient } from '../spokeConnector';
 import { predictGenderSync, loadNameCache } from '../demographicsService';
 
 // ---------------------------------------------------------------------------
@@ -24,128 +22,72 @@ export interface BranchSnapshot {
   created_at?: string;
 }
 
-interface ConnectionInput {
-  id: string;
-  name: string;
-  supabase_url: string;
-  supabase_key: string;
-  tables: { customers?: string; orders?: string; legacy_orders?: string };
-  /** Known columns on the customers table (from field_mapping values) */
-  customerColumns?: string[];
-}
-
 // ---------------------------------------------------------------------------
 // generateSnapshot
 // ---------------------------------------------------------------------------
+// Spoke aggregates (counts, name/total/product samples) are computed
+// SERVER-SIDE by the spoke-query Edge Function `snapshot` op, so the spoke key
+// never reaches the browser. We finish demographic prediction, revenue scaling,
+// and top-product counting client-side.
 export async function generateSnapshot(
-  connection: ConnectionInput,
+  connectionId: string,
   source: 'manual' | 'on_connect' = 'on_connect',
 ): Promise<BranchSnapshot> {
-  const spoke = getSpokeClient(connection.supabase_url, connection.supabase_key);
+  const { data, error } = await hubClient.functions.invoke('spoke-query', {
+    body: { op: 'snapshot', connection_id: connectionId },
+  });
+  if (error) throw new Error(error.message || 'Snapshot fetch failed');
+  if (data?.error) throw new Error(data.error);
 
-  // ---- Customers / Profiles ------------------------------------------------
-  let totalProfiles = 0;
-  let activeSubscribers = 0;
+  const totalProfiles: number = data.total_profiles || 0;
+  const activeSubscribers: number = data.active_subscribers || 0;
+  const firstNames: string[] = data.first_names || [];
+  const totalOrders: number = data.total_orders || 0;
+  const orderTotals: number[] = data.order_totals || [];
+  const productNames: string[] = data.product_names || [];
+
+  // ---- Gender breakdown from sampled first names (scaled to total) ---------
   const genderBreakdown: Record<string, number> = { male: 0, female: 0, unknown: 0 };
-
-  if (connection.tables.customers) {
-    const table = connection.tables.customers;
-
-    // Total count
-    const { count } = await spoke
-      .from(table)
-      .select('*', { count: 'exact', head: true });
-    totalProfiles = count ?? 0;
-
-    // First names for gender prediction (limit 500)
-    const { data: nameRows } = await spoke
-      .from(table)
-      .select('first_name')
-      .limit(500);
-
-    if (nameRows && nameRows.length > 0) {
-      await loadNameCache();
-      for (const row of nameRows) {
-        const prediction = predictGenderSync(row.first_name);
-        genderBreakdown[prediction.gender] =
-          (genderBreakdown[prediction.gender] || 0) + 1;
-      }
-      // Scale up if we sampled
-      if (totalProfiles > nameRows.length) {
-        const scale = totalProfiles / nameRows.length;
-        for (const key of Object.keys(genderBreakdown)) {
-          genderBreakdown[key] = Math.round(genderBreakdown[key] * scale);
-        }
-      }
+  if (firstNames.length > 0) {
+    await loadNameCache();
+    for (const name of firstNames) {
+      const prediction = predictGenderSync(name);
+      genderBreakdown[prediction.gender] = (genderBreakdown[prediction.gender] || 0) + 1;
     }
-
-    // Active subscribers — only query columns we know exist from field_mapping
-    const cols = connection.customerColumns || [];
-    const subCol = cols.includes('is_subscribed') ? 'is_subscribed'
-      : cols.includes('newsletter_opt_in') ? 'newsletter_opt_in'
-      : null;
-
-    if (subCol) {
-      const { count: subCount, error: subErr } = await spoke
-        .from(table)
-        .select('*', { count: 'exact', head: true })
-        .eq(subCol, true);
-
-      if (!subErr && subCount !== null) {
-        activeSubscribers = subCount;
+    if (totalProfiles > firstNames.length) {
+      const scale = totalProfiles / firstNames.length;
+      for (const key of Object.keys(genderBreakdown)) {
+        genderBreakdown[key] = Math.round(genderBreakdown[key] * scale);
       }
     }
   }
 
-  // ---- Orders ---------------------------------------------------------------
-  let totalOrders = 0;
+  // ---- Revenue from sampled order totals (scaled to total orders) ----------
   let totalRevenue = 0;
   let avgOrderValue = 0;
-  let topProducts: { name: string; count: number }[] = [];
-
-  const orderTable = connection.tables.orders || connection.tables.legacy_orders;
-  if (orderTable) {
-    try {
-      // Aggregate counts
-      const { count: orderCount } = await spoke
-        .from(orderTable)
-        .select('*', { count: 'exact', head: true });
-      totalOrders = orderCount ?? 0;
-
-      // Revenue: fetch totals (limit 5000 rows for reasonable performance)
-      const { data: orderRows } = await spoke
-        .from(orderTable)
-        .select('total')
-        .limit(5000);
-
-      if (orderRows && orderRows.length > 0) {
-        const sampleRevenue = orderRows.reduce(
-          (sum: number, r: any) => sum + (parseFloat(r.total) || 0),
-          0,
-        );
-        // Scale if we only sampled
-        if (totalOrders > orderRows.length) {
-          const scale = totalOrders / orderRows.length;
-          totalRevenue = sampleRevenue * scale;
-        } else {
-          totalRevenue = sampleRevenue;
-        }
-        avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-      }
-
-      // Top products — try to group from order_items or line_items
-      // If no separate items table, skip
-      topProducts = await fetchTopProducts(spoke, connection.tables);
-    } catch (err) {
-      console.error(`[branchSnapshot] Order fetch error for ${connection.name}:`, err);
-    }
+  if (orderTotals.length > 0) {
+    const sampleRevenue = orderTotals.reduce((sum, v) => sum + (v || 0), 0);
+    totalRevenue = totalOrders > orderTotals.length
+      ? sampleRevenue * (totalOrders / orderTotals.length)
+      : sampleRevenue;
+    avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
   }
 
-  // ---- Build snapshot -------------------------------------------------------
-  const snapshot: BranchSnapshot = {
-    branch_id: connection.id,
-    branch_name: connection.name,
-    branch_url: connection.supabase_url,
+  // ---- Top products from sampled product names -----------------------------
+  const productCounts: Record<string, number> = {};
+  for (const name of productNames) {
+    const n = name || 'Unknown';
+    productCounts[n] = (productCounts[n] || 0) + 1;
+  }
+  const topProducts = Object.entries(productCounts)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  return {
+    branch_id: connectionId,
+    branch_name: data.name || connectionId,
+    branch_url: data.supabase_url,
     total_profiles: totalProfiles,
     gender_breakdown: genderBreakdown,
     age_breakdown: { unknown: totalProfiles },
@@ -157,42 +99,6 @@ export async function generateSnapshot(
     churn_risk_high: 0,
     snapshot_source: source,
   };
-
-  return snapshot;
-}
-
-// ---------------------------------------------------------------------------
-// Top products helper
-// ---------------------------------------------------------------------------
-async function fetchTopProducts(
-  spoke: SupabaseClient,
-  tables: ConnectionInput['tables'],
-): Promise<{ name: string; count: number }[]> {
-  // Try common item table names
-  const candidates = ['order_items', 'line_items'];
-  for (const candidate of candidates) {
-    try {
-      const { data, error } = await spoke
-        .from(candidate)
-        .select('product_name')
-        .limit(2000);
-
-      if (error || !data || data.length === 0) continue;
-
-      const counts: Record<string, number> = {};
-      for (const row of data) {
-        const name = (row as any).product_name || 'Unknown';
-        counts[name] = (counts[name] || 0) + 1;
-      }
-      return Object.entries(counts)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10);
-    } catch {
-      // table doesn't exist, try next
-    }
-  }
-  return [];
 }
 
 // ---------------------------------------------------------------------------

@@ -167,39 +167,43 @@ async function fetchTableColumnsCsv(
   }
 }
 
+// SETUP-mode test: the wizard has just-typed url+key. Routed through the
+// Edge Function (which adds an OpenAPI column fallback for empty/RLS tables).
 export async function testSpokeConnection(
   connection: TestConnectionInput
 ): Promise<TestConnectionResult> {
   try {
-    const client = getSpokeClient(connection.supabase_url, connection.supabase_key);
-
-    const { data, error, count } = await client
-      .from(connection.table_name)
-      .select('*', { count: 'exact', head: false })
-      .limit(1);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    // Extract column names from the first row of data
-    let columns = data && data.length > 0 ? Object.keys(data[0]) : [];
-
-    // Fallback: fetch columns via CSV for empty tables
-    if (columns.length === 0) {
-      columns = await fetchTableColumnsCsv(
-        connection.supabase_url,
-        connection.supabase_key,
-        connection.table_name
-      );
-    }
-
-    return { success: true, rowCount: count ?? data?.length ?? 0, columns };
+    const { data, error } = await hubClient.functions.invoke('spoke-query', {
+      body: {
+        op: 'test',
+        supabase_url: connection.supabase_url,
+        supabase_key: connection.supabase_key,
+        table_name: connection.table_name,
+      },
+    });
+    if (error) return { success: false, error: error.message || 'Connection test failed' };
+    if (data?.success === false) return { success: false, error: data.error || 'Connection test failed' };
+    return { success: true, rowCount: data?.rowCount ?? 0, columns: data?.columns ?? [] };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : 'Unknown error occurred',
-    };
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error occurred' };
+  }
+}
+
+// RUNTIME-mode test for an already-saved connection — the key is decrypted
+// server-side, so the browser never needs it.
+export async function testSpokeConnectionById(
+  connectionId: string,
+  tableName?: string,
+): Promise<TestConnectionResult> {
+  try {
+    const { data, error } = await hubClient.functions.invoke('spoke-query', {
+      body: { op: 'test', connection_id: connectionId, table_name: tableName },
+    });
+    if (error) return { success: false, error: error.message || 'Connection test failed' };
+    if (data?.success === false) return { success: false, error: data.error || 'Connection test failed' };
+    return { success: true, rowCount: data?.rowCount ?? 0, columns: data?.columns ?? [] };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error occurred' };
   }
 }
 
@@ -208,33 +212,12 @@ export const discoverTables = async (
   supabase_key: string
 ): Promise<{ tables: string[]; error?: string }> => {
   try {
-    const client = getSpokeClient(supabase_url, supabase_key);
-
-    const commonTables = [
-      'customers', 'profiles', 'users',
-      'orders', 'order_items', 'legacy_orders', 'legacy_order_items',
-      'subscriptions', 'payments', 'products',
-      'newsletter_subscribers', 'customer_tags', 'customer_addresses'
-    ];
-    const foundTables: string[] = [];
-
-    for (const tableName of commonTables) {
-      try {
-        // Use GET (not HEAD) so errors are properly reported for non-existent tables
-        const { error } = await client
-          .from(tableName)
-          .select('*')
-          .limit(1);
-
-        if (!error) {
-          foundTables.push(tableName);
-        }
-      } catch {
-        // Table doesn't exist or no access, skip silently
-      }
-    }
-
-    return { tables: foundTables };
+    const { data, error } = await hubClient.functions.invoke('spoke-query', {
+      body: { op: 'discover', supabase_url, supabase_key },
+    });
+    if (error) return { tables: [], error: error.message };
+    if (data?.error) return { tables: [], error: data.error };
+    return { tables: data?.tables || [] };
   } catch (err) {
     return { tables: [], error: err instanceof Error ? err.message : 'Discovery failed' };
   }

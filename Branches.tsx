@@ -60,19 +60,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
   const activeCount = spokeConnections.filter(c => c.status === 'active').length;
 
   const fireSnapshotForConnection = (connection: SpokeConnection) => {
-    const customerTable = connection.tables.find(t => t.table_type === 'customers');
-    const orderTables = connection.tables.filter(t => t.table_type === 'orders');
-    generateSnapshot({
-      id: connection.id,
-      name: connection.name,
-      supabase_url: connection.supabase_url,
-      supabase_key: connection.supabase_key,
-      tables: {
-        customers: customerTable?.table_name,
-        orders: orderTables.find(t => t.table_name === 'orders')?.table_name,
-        legacy_orders: orderTables.find(t => t.table_name !== 'orders')?.table_name,
-      },
-    }, 'on_connect').then(snapshot => {
+    generateSnapshot(connection.id, 'on_connect').then(snapshot => {
       saveSnapshot(snapshot);
       console.log('[branchSnapshot] Snapshot saved:', snapshot.branch_name,
         '| Profiles:', snapshot.total_profiles,
