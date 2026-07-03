@@ -13,6 +13,7 @@ import {
   generateArtwork, buildVideo, generateMetadata, approveMetadata, publishEpisode, archiveEpisode,
 } from '../services/episodeService';
 import { getSessions, getSession } from '../services/sessionService';
+import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
 
 interface Props {
   branches: Array<{ slug: string; name: string }>;
@@ -279,6 +280,17 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                   );
                 })}
               </div>
+
+              {/* Titled thumbnail composer — clean type overlay on the cover (not AI text) */}
+              {cover?.status === 'ready' && cover.url && (
+                <TitledThumbnailComposer
+                  episodeId={selected.id}
+                  coverUrl={cover.url}
+                  defaultTitle={selected.title}
+                  defaultSubtitle={selected.show_name || selected.theme || ''}
+                  onSaved={() => loadDetail(selected)}
+                />
+              )}
             </div>
 
             {/* Phase 4: Video */}
