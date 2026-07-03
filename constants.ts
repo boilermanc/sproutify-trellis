@@ -1501,8 +1501,8 @@ export const EPISODE_STATUS_META: Record<string, { label: string; cls: string }>
 
 export const PUBLISH_PLATFORMS = [
   { id: 'youtube', label: 'YouTube', available: true },
-  { id: 'rekkrd', label: 'Rekkrd Site', available: true },
-  { id: 'social', label: 'Social Clips', available: true },
+  { id: 'rekkrd', label: 'Rekkrd Site', available: false },
+  { id: 'social', label: 'Social Clips', available: false },
   { id: 'spotify', label: 'Spotify', available: false },
   { id: 'apple_podcasts', label: 'Apple Podcasts', available: false },
 ] as const;
