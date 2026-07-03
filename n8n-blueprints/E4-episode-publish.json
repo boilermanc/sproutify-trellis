@@ -68,6 +68,16 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Pull the YouTube video id out of the upload response regardless of shape\n// (top-level id / id.videoId / snippet.resourceId.videoId), with a last-resort\n// scan for an 11-char YouTube-id-shaped token.\nconst y = $json || {};\nlet id = (y.id && typeof y.id === 'object') ? y.id.videoId : y.id;\nid = id || y?.snippet?.resourceId?.videoId || y.videoId;\nif (!id) { const m = JSON.stringify(y).match(/\"([A-Za-z0-9_-]{11})\"/); id = m ? m[1] : null; }\nreturn { json: { video_id: id, youtube_url: id ? ('https://youtu.be/' + id) : null } };"
+      },
+      "name": "Extract Video ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 520]
+    },
+    {
+      "parameters": {
         "resource": "row",
         "operation": "update",
         "tableId": "trellis_episode_publications",
@@ -75,7 +85,7 @@
         "dataToSend": "defineBelow",
         "fieldsUi": { "fieldValues": [
           { "fieldId": "status", "fieldValue": "live" },
-          { "fieldId": "external_url", "fieldValue": "={{ 'https://youtu.be/' + $('YouTube Upload').item.json.id }}" },
+          { "fieldId": "external_url", "fieldValue": "={{ $('Extract Video ID').item.json.youtube_url }}" },
           { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
         ] }
       },
@@ -93,7 +103,7 @@
         "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Metadata').item.json.episode_id }}" } ] },
         "dataToSend": "defineBelow",
         "fieldsUi": { "fieldValues": [
-          { "fieldId": "youtube_url", "fieldValue": "={{ 'https://youtu.be/' + $('YouTube Upload').item.json.id }}" },
+          { "fieldId": "youtube_url", "fieldValue": "={{ $('Extract Video ID').item.json.youtube_url }}" },
           { "fieldId": "status", "fieldValue": "published" },
           { "fieldId": "publish_status", "fieldValue": "published" },
           { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
@@ -122,7 +132,8 @@
     "Build Metadata": { "main": [[{ "node": "Mark Uploading", "type": "main", "index": 0 }]] },
     "Mark Uploading": { "main": [[{ "node": "Download Video", "type": "main", "index": 0 }]] },
     "Download Video": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
-    "YouTube Upload": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] },
+    "YouTube Upload": { "main": [[{ "node": "Extract Video ID", "type": "main", "index": 0 }]] },
+    "Extract Video ID": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] },
     "Mark Live": { "main": [[{ "node": "Update Episode", "type": "main", "index": 0 }]] }
   }
 }
