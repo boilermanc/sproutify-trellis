@@ -44,6 +44,12 @@ export interface Segment {
   color?: string;
   rule_groups: SegmentRuleGroup[];
   is_preset?: boolean;
+  // 'rules' (default) evaluates rule_groups against profiles.
+  // 'email_list' is a static test list — membership is the explicit set of
+  // addresses in `email_list`, which are emailed directly (bypassing branch
+  // scope + consent) when used as a campaign audience.
+  kind?: 'rules' | 'email_list';
+  email_list?: string[]; // lowercased addresses when kind === 'email_list'
   created_at: string;
   updated_at: string;
 }

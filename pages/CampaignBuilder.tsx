@@ -396,6 +396,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     const map: Record<string, Set<string>> = {};
     const enriched = branchStats?.enrichedProfiles || [];
     for (const seg of savedSegments) {
+      // Test lists bypass rule evaluation + consent — handled separately (testListEmails).
+      if (seg.kind === 'email_list') continue;
       const emails = new Set<string>();
       for (const ep of enriched) {
         if (ep.email && evaluateSegment(ep, seg)) emails.add(ep.email.toLowerCase());
@@ -416,7 +418,26 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     });
   }, [consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
 
-  const audienceSize = segmentProfiles.length;
+  // Static test-list addresses from any selected 'email_list' segment. These bypass
+  // branch scope + consent entirely and are emailed directly (QA sends).
+  const testListEmails = useMemo(() => {
+    const set = new Set<string>();
+    for (const id of selectedSavedSegments) {
+      const seg = savedSegments.find(s => s.id === id);
+      if (seg?.kind === 'email_list') {
+        for (const e of seg.email_list || []) set.add((e || '').toLowerCase());
+      }
+    }
+    return set;
+  }, [selectedSavedSegments, savedSegments]);
+
+  // Drop any test address already present in the rule-based audience (avoid dupes).
+  const extraTestEmails = useMemo(() => {
+    const inAudience = new Set(segmentProfiles.map(p => (p.email || '').toLowerCase()));
+    return [...testListEmails].filter(e => !inAudience.has(e));
+  }, [testListEmails, segmentProfiles]);
+
+  const audienceSize = segmentProfiles.length + extraTestEmails.length;
 
   // Same selection as segmentProfiles, but BEFORE consent filtering — lets us show
   // exactly where the drop happens (matched → opted-in → excluded for consent).
@@ -446,6 +467,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const savedSegmentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const seg of savedSegments) {
+      if (seg.kind === 'email_list') { counts[seg.id] = seg.email_list?.length || 0; continue; }
       const set = savedSegmentEmails[seg.id];
       counts[seg.id] = set ? scopedProfiles.filter(p => set.has((p.email || '').toLowerCase())).length : 0;
     }
@@ -715,10 +737,14 @@ Return ONLY the post content, no explanations or labels.`,
     if (newCampaign && triggerType === 'immediate') {
       const htmlTemplate = buildDispatchHtml({ email: '', first_name: '' } as Profile);
       const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
-      const recipients = segmentProfiles.map(p => ({
-        email: p.email,
-        first_name: p.first_name || '',
-      }));
+      const recipients = [
+        ...segmentProfiles.map(p => ({
+          email: p.email,
+          first_name: p.first_name || '',
+        })),
+        // Test-list addresses: emailed directly, bypassing branch scope + consent.
+        ...extraTestEmails.map(email => ({ email, first_name: '' })),
+      ];
 
       const webhookResult = await triggerEmailCampaign(
         WEBHOOK_SPECS.campaign_dispatch,
@@ -1228,7 +1254,9 @@ Return ONLY the post content, no explanations or labels.`,
                             <div className="min-w-0">
                               <p className={`text-xs font-black uppercase tracking-tight truncate ${isActive ? 'text-indigo-700' : 'text-slate-700'}`}>
                                 {seg.name}
-                                {!isPreset && <span className="ml-2 text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full align-middle tracking-normal">CUSTOM</span>}
+                                {seg.kind === 'email_list'
+                                  ? <span className="ml-2 text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full align-middle tracking-normal">TEST</span>
+                                  : !isPreset && <span className="ml-2 text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full align-middle tracking-normal">CUSTOM</span>}
                               </p>
                               {seg.description && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{seg.description}</p>}
                             </div>
@@ -1240,6 +1268,16 @@ Return ONLY the post content, no explanations or labels.`,
                         </button>
                       );
                     })}
+                  </div>
+                )}
+
+                {testListEmails.size > 0 && (
+                  <div className="mt-3 flex items-start gap-2 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                    <span>
+                      Test list active — {extraTestEmails.length} {extraTestEmails.length === 1 ? 'address' : 'addresses'} will be emailed
+                      <b> directly, bypassing branch scope and consent</b>. The selected branch still sets the “from” address.
+                    </span>
                   </div>
                 )}
               </div>
@@ -1289,6 +1327,12 @@ Return ONLY the post content, no explanations or labels.`,
                                 <span className="text-emerald-600" title="Lifetime value">${Math.round(p.ltv || 0)}</span>
                                 <span className="text-slate-400" title="Last activity">{p.last_active ? timeAgo(p.last_active) : 'no activity'}</span>
                               </div>
+                            </div>
+                          ))}
+                          {segmentProfiles.length < 8 && extraTestEmails.slice(0, 8 - segmentProfiles.length).map(email => (
+                            <div key={`test-${email}`} className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-amber-50">
+                              <p className="text-xs font-normal text-slate-500 truncate min-w-0 flex-1">{email}</p>
+                              <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full shrink-0">Test</span>
                             </div>
                           ))}
                         </div>

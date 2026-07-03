@@ -156,6 +156,12 @@ const evaluateRuleGroup = (profile: EnrichedProfile, group: SegmentRuleGroup): b
 
 // Evaluate a complete segment against a profile
 export const evaluateSegment = (profile: EnrichedProfile, segment: Segment): boolean => {
+  // Static test list: membership is the explicit set of addresses.
+  if (segment.kind === 'email_list') {
+    const list = segment.email_list || [];
+    return list.includes((profile.email || '').toLowerCase());
+  }
+
   if (segment.rule_groups.length === 0) return true;
 
   // All rule groups are joined by AND
