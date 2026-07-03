@@ -168,7 +168,14 @@ def video():
 
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "bucket": BUCKET})
+    # service_key_is_jwt must be True for Storage uploads to work. If it's False the
+    # process loaded an sb_secret_ key (Storage rejects it as "Invalid Compact JWS") —
+    # restart the worker with the legacy eyJ... service_role JWT.
+    return jsonify({
+        "ok": True,
+        "bucket": BUCKET,
+        "service_key_is_jwt": SERVICE_KEY.startswith("eyJ"),
+    })
 
 
 if __name__ == "__main__":
