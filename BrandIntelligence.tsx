@@ -703,7 +703,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {analysisState === 'idle' && (
         <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
           <button
-            onClick={() => { setActiveTab('create'); setViewingBrand(null); }}
+            onClick={() => { handleReset(); setActiveTab('create'); setViewingBrand(null); }}
             className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
               activeTab === 'create'
                 ? 'bg-white text-violet-600 shadow-md'
@@ -1754,7 +1754,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               {analysisState === 'analyzing_site' ? 'Scanning brand assets' : 'Crafting identity'}
             </div>
 
-            {screenshotUrl && (
+            {analysisState === 'analyzing_site' && (
               <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
                 <div className="h-10 bg-slate-700 flex items-center px-4 gap-2">
                   <div className="w-3 h-3 rounded-full bg-red-400" />
@@ -1766,14 +1766,12 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     </div>
                   </div>
                 </div>
-                <img
-                  src={screenshotUrl}
-                  alt="Website preview"
-                  className="w-full aspect-video object-cover object-top"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent" />
-                <div className="absolute inset-x-0 top-10 h-1 bg-violet-500/50 animate-pulse"
-                     style={{ animation: 'scan 2s linear infinite' }} />
+                {/* Branded scanning panel — no external screenshot service */}
+                <div className="relative aspect-video bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center overflow-hidden">
+                  <Globe className="w-16 h-16 text-violet-500/40 animate-pulse" />
+                  <div className="absolute inset-x-0 top-0 h-1 bg-violet-500/60"
+                       style={{ animation: 'scan 2s linear infinite' }} />
+                </div>
               </div>
             )}
           </div>
