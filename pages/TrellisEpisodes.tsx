@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Clapperboard, Loader2, RefreshCw, Plus, Music, Image as ImageIcon, Film, FileText, Send,
-  CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink,
+  CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink, Upload, RotateCw,
 } from 'lucide-react';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform,
@@ -10,7 +10,7 @@ import { EPISODE_PHASES, EPISODE_STATUS_META, PUBLISH_PLATFORMS, EPISODE_ART_STY
 import {
   createEpisode, getEpisodes, getEpisode, getAssets, getMetadata, getPublications,
   linkSession, setEpisodeStatus, setAssetApproved, getSessionMasterUrl,
-  generateArtwork, buildVideo, generateMetadata, approveMetadata, publishEpisode, archiveEpisode,
+  generateArtwork, buildVideo, generateMetadata, approveMetadata, publishEpisode, archiveEpisode, uploadEpisodeImage,
 } from '../services/episodeService';
 import { getSessions, getSession } from '../services/sessionService';
 import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
@@ -95,7 +95,9 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [selected, active]);
 
-  const latest = (type: AssetType) => assets.filter(a => a.asset_type === type).sort((x, y) => y.version - x.version)[0];
+  // Newest wins: sort by version, then created_at so a fresh regenerate/upload shows.
+  const latest = (type: AssetType) => assets.filter(a => a.asset_type === type)
+    .sort((x, y) => (y.version - x.version) || (new Date(y.created_at || 0).getTime() - new Date(x.created_at || 0).getTime()))[0];
   const cover = latest('cover_art');
   const video = latest('video_mp4');
 
@@ -104,6 +106,31 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
     try { await fn(); if (selected) await loadDetail(selected); }
     catch (e) { addToast(msg(e), 'error'); }
     finally { setBusy(''); }
+  };
+
+  // Upload your own artwork (created outside the app): normalize to PNG in a canvas,
+  // then store it in the chosen slot via the save-episode-asset edge fn.
+  const uploadFileRef = useRef<HTMLInputElement>(null);
+  const [uploadType, setUploadType] = useState<AssetType>('cover_art');
+  const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selected) return;
+    const ep = selected;
+    run(`upload-${uploadType}`, () => new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth; c.height = img.naturalHeight;
+          c.getContext('2d')!.drawImage(img, 0, 0);
+          await uploadEpisodeImage(ep.id, uploadType, c.toDataURL('image/png'), img.naturalWidth, img.naturalHeight);
+          resolve();
+        } catch (err) { reject(err); }
+      };
+      img.onerror = () => reject(new Error('Could not read that image file'));
+      img.src = URL.createObjectURL(file);
+    }));
   };
 
   const handleCreate = async () => {
@@ -256,13 +283,31 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                 </select>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(['cover_art', 'thumbnail', 'vertical'] as AssetType[]).map(t => (
-                  <button key={t} type="button" disabled={!!busy} onClick={() => run(`art-${t}`, () => generateArtwork(selected, t, undefined, EPISODE_ART_STYLES.find(s => s.id === artStyleId)).then(() => {}))}
-                    className="px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-[10px] font-black text-violet-600 uppercase tracking-tight hover:border-violet-400 transition disabled:opacity-40 flex items-center gap-1">
-                    <Wand2 size={11} /> {t.replace('_', ' ')}
-                  </button>
-                ))}
+              <p className="text-[10px] text-slate-400 mt-3">Generate with AI — click again anytime for a fresh take — or upload your own below.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(['cover_art', 'thumbnail', 'vertical'] as AssetType[]).map(t => {
+                  const exists = !!latest(t);
+                  return (
+                    <button key={t} type="button" disabled={!!busy} onClick={() => run(`art-${t}`, () => generateArtwork(selected, t, undefined, EPISODE_ART_STYLES.find(s => s.id === artStyleId)).then(() => {}))}
+                      className="px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-[10px] font-black text-violet-600 uppercase tracking-tight hover:border-violet-400 transition disabled:opacity-40 flex items-center gap-1">
+                      {exists ? <RotateCw size={11} /> : <Wand2 size={11} />} {exists ? 'Regen ' : ''}{t.replace('_', ' ')}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Bring your own image (created outside the app) */}
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Or upload</span>
+                <select value={uploadType} onChange={e => setUploadType(e.target.value as AssetType)} disabled={!!busy}
+                  className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] font-bold outline-none focus:border-slate-400">
+                  {(['cover_art', 'thumbnail', 'vertical'] as AssetType[]).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                </select>
+                <button type="button" disabled={!!busy} onClick={() => uploadFileRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-[10px] font-black uppercase tracking-tight hover:bg-slate-900 transition disabled:opacity-40 flex items-center gap-1">
+                  <Upload size={11} /> Upload Image
+                </button>
+                <input ref={uploadFileRef} type="file" accept="image/*" className="hidden" onChange={handleUploadFile} />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {(['cover_art', 'thumbnail', 'vertical'] as AssetType[]).map(t => {
@@ -270,7 +315,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                   if (!a) return <div key={t} className="aspect-video rounded-xl bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase">{t.replace('_', ' ')}</div>;
                   return (
                     <div key={t} className="relative rounded-xl overflow-hidden border border-slate-200">
-                      {a.status === 'ready' && a.url ? <img src={a.url} alt={t} className="w-full aspect-video object-cover" /> :
+                      {a.status === 'ready' && a.url ? <img src={`${a.url}?v=${a.id}`} alt={t} className="w-full aspect-video object-cover" /> :
                         <div className="w-full aspect-video bg-slate-50 flex items-center justify-center">{a.status === 'failed' ? <span className="text-[9px] text-rose-500 font-black">FAILED</span> : <Loader2 size={16} className="animate-spin text-slate-400" />}</div>}
                       {a.status === 'ready' && (
                         <button type="button" onClick={() => run('approve-art', () => setAssetApproved(a.id, !a.approved))}
@@ -285,7 +330,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
               {cover?.status === 'ready' && cover.url && (
                 <TitledThumbnailComposer
                   episodeId={selected.id}
-                  coverUrl={cover.url}
+                  coverUrl={`${cover.url}?v=${cover.id}`}
                   defaultTitle={selected.title}
                   defaultSubtitle={selected.show_name || selected.theme || ''}
                   onSaved={() => loadDetail(selected)}

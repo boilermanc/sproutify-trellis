@@ -110,6 +110,17 @@ export async function generateArtwork(episode: Episode, assetType: AssetType, ex
   return asset as EpisodeAsset;
 }
 
+// ─── Bring-your-own artwork (upload an image made outside the app) ───
+// Reuses the save-episode-asset edge fn: uploads the PNG to episode-assets and
+// records a ready asset row for the given slot (cover_art / thumbnail / vertical).
+export async function uploadEpisodeImage(episodeId: string, assetType: AssetType, imageBase64: string, width: number, height: number): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('save-episode-asset', {
+    body: { episode_id: episodeId, asset_type: assetType, image_base64: imageBase64, width, height, metadata: { uploaded: true } },
+  });
+  if (error) throw error;
+  if (data && data.ok === false) throw new Error(data.error || 'Upload failed');
+}
+
 // ─── Video (fire ffmpeg worker: master audio + cover → mp4) ─────────
 export async function buildVideo(episode: Episode, masterAudioUrl: string, coverUrl: string | null, motion: 'ken_burns' | 'none' = 'ken_burns'): Promise<EpisodeAsset> {
   const { data: asset, error } = await supabase.from('trellis_episode_assets').insert({
