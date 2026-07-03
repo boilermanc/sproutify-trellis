@@ -397,14 +397,18 @@ Deno.serve(async (req: Request) => {
     if (path.includes("/callback")) {
       const code = url.searchParams.get("code");
       const stateParam = url.searchParams.get("state");
-      const error = url.searchParams.get("error");
-      const errorDesc = url.searchParams.get("error_description");
+      // Meta returns error_code/error_message (non-standard); OAuth2 spec uses
+      // error/error_description. Read both so the real reason is never masked.
+      const error = url.searchParams.get("error") || url.searchParams.get("error_code");
+      const errorDesc = url.searchParams.get("error_description") || url.searchParams.get("error_message");
 
-      // Platform denied or user cancelled
+      // Platform denied, cancelled, or (Meta) redirect/domain misconfiguration
       if (error) {
         return errorPage(
-          "Authorization Denied",
-          errorDesc || `The platform returned an error: ${error}. The user may have cancelled the authorization.`
+          "Authorization Error",
+          errorDesc
+            ? `${errorDesc} (code ${error})`
+            : `The platform returned an error: ${error}. The user may have cancelled, or the app's OAuth settings are incomplete.`
         );
       }
 
@@ -633,9 +637,13 @@ async function fetchPlatformMetadata(
           const igProfile = await igProfileRes.json();
 
           return {
+            // Keep both keys: test-social-connection + meta-insights read
+            // instagram_business_account_id; older code read ig_user_id.
+            instagram_business_account_id: igData.instagram_business_account.id,
             ig_user_id: igData.instagram_business_account.id,
             page_id: page.id,
             page_name: page.name,
+            page_access_token: pageToken,
             username: igProfile.username || null,
             display_name: igProfile.name || null,
             profile_picture_url: igProfile.profile_picture_url || null,
@@ -649,13 +657,17 @@ async function fetchPlatformMetadata(
     }
 
     case "facebook": {
-      // Get user's pages
+      // Get user's pages (include the page access token for publishing/testing)
       const pagesRes = await fetch(
-        `https://graph.facebook.com/v21.0/me/accounts?fields=name,id,picture,fan_count&access_token=${accessToken}`
+        `https://graph.facebook.com/v21.0/me/accounts?fields=name,id,picture,fan_count,access_token&access_token=${accessToken}`
       );
       const pagesData = await pagesRes.json();
+      const first = pagesData.data?.[0];
 
       return {
+        page_id: first?.id || null,
+        page_name: first?.name || null,
+        page_access_token: first?.access_token || null,
         pages: (pagesData.data || []).map((p: any) => ({
           id: p.id,
           name: p.name,
@@ -696,6 +708,7 @@ async function fetchPlatformMetadata(
 
       return {
         li_sub: meData.sub || null,
+        username: meData.name || null,
         display_name: meData.name || null,
         email: meData.email || null,
         profile_picture_url: meData.picture || null,
