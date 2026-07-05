@@ -86,13 +86,14 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
       const [t, r] = await Promise.all([getTracks(selected.id), getRenders(selected.id)]);
       setTracks(t); setRenders(r);
       // Render finished → session ready
-      const ready = r.find(x => x.status === 'ready');
+      const active = r.find(x => x.status === 'queued' || x.status === 'processing');
+      const ready = !active ? r.find(x => x.status === 'ready') : undefined;
       if (ready && selected.status !== 'ready') {
         setSelected(prev => prev ? { ...prev, status: 'ready', final_audio_url: ready.final_audio_url } : prev);
         setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'ready', final_audio_url: ready.final_audio_url } : s));
       }
       // Render failed -> surface the worker error in the session UI.
-      const failed = r.find(x => x.status === 'failed');
+      const failed = !active && !ready ? r.find(x => x.status === 'failed') : undefined;
       if (failed && selected.status !== 'failed') {
         const message = failed.error_message || 'Stitching failed';
         setSelected(prev => prev ? { ...prev, status: 'failed', error_message: message } : prev);
@@ -171,7 +172,8 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     setBusy(true);
     try {
       await stitchSession(selected, approvedCompleted);
-      setSelected(prev => prev ? { ...prev, status: 'stitching' } : prev);
+      setSelected(prev => prev ? { ...prev, status: 'stitching', error_message: null, final_audio_url: null } : prev);
+      setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'stitching', error_message: null, final_audio_url: null } : s));
       const r = await getRenders(selected.id); setRenders(r);
       addToast(`Stitching ${approvedCompleted.length} tracks into a master`, 'success');
     } catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
@@ -185,8 +187,8 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const latestReadyRender = renders.find(r => r.status === 'ready');
   const activeRender = renders.find(r => r.status === 'queued' || r.status === 'processing');
-  const latestFailedRender = renders.find(r => r.status === 'failed');
-  const sessionFailure = latestFailedRender?.error_message || selected?.error_message || null;
+  const latestFailedRender = !activeRender && !latestReadyRender ? renders.find(r => r.status === 'failed') : undefined;
+  const sessionFailure = !activeRender && !latestReadyRender ? (latestFailedRender?.error_message || selected?.error_message || null) : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">

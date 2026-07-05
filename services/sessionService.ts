@@ -281,7 +281,12 @@ export async function stitchSession(session: MusicSession, approvedTracks: Music
   }).catch(() => { /* fire-and-forget: worker gets it even if response unreadable */ });
 
   await supabase.from('trellis_music_sessions')
-    .update({ status: 'stitching', updated_at: new Date().toISOString() }).eq('id', session.id);
+    .update({
+      status: 'stitching',
+      final_audio_url: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', session.id);
 
   return { render_id: render.id };
 }
