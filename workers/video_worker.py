@@ -35,6 +35,12 @@ SUPABASE_URL = os.environ["SUPABASE_URL"].strip().rstrip("/")
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"].strip()  # strip: trailing newline breaks Storage's JWT parse
 BUCKET = os.environ.get("ASSET_BUCKET", "episode-assets").strip()
 PORT = int(os.environ.get("PORT", "8100"))
+VIDEO_WIDTH = int(os.environ.get("VIDEO_WIDTH", "1280"))
+VIDEO_HEIGHT = int(os.environ.get("VIDEO_HEIGHT", "720"))
+VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "12"))
+VIDEO_CRF = os.environ.get("VIDEO_CRF", "32").strip()
+VIDEO_AUDIO_BITRATE = os.environ.get("VIDEO_AUDIO_BITRATE", "96k").strip()
+MAX_STANDARD_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_STANDARD_UPLOAD_MB", "48"))
 
 app = Flask(__name__)
 
@@ -86,12 +92,25 @@ def _download(url: str, path: str):
 
 
 def _upload(path_in_bucket: str, data: bytes, content_type: str) -> str:
+    size_mb = len(data) / (1024 * 1024)
+    if size_mb > MAX_STANDARD_UPLOAD_MB:
+        raise RuntimeError(
+            f"Video is {size_mb:.1f} MB, above the configured standard upload limit "
+            f"of {MAX_STANDARD_UPLOAD_MB} MB. Lower VIDEO_WIDTH/VIDEO_HEIGHT/VIDEO_FPS, "
+            "raise VIDEO_CRF, or switch the worker to Supabase resumable uploads."
+        )
+
     r = requests.post(
         f"{SUPABASE_URL}/storage/v1/object/{BUCKET}/{path_in_bucket}",
         headers={"Authorization": f"Bearer {SERVICE_KEY}", "Content-Type": content_type, "x-upsert": "true"},
         data=data, timeout=300,
     )
     if r.status_code not in (200, 201):
+        if r.status_code == 413:
+            raise RuntimeError(
+                f"Upload failed 413: video is {size_mb:.1f} MB. "
+                "Use smaller video render settings or configure resumable uploads for long videos."
+            )
         raise RuntimeError(f"Upload failed {r.status_code}: {r.text}")
     return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path_in_bucket}"
 
@@ -110,11 +129,14 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                 subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x0A0E27:s=1920x1080", "-frames:v", "1", cover], check=True)
 
             out = os.path.join(tmp, "video.mp4")
-            fps = 25
+            fps = VIDEO_FPS
             still = str(motion).lower() in ("none", "static", "off", "still")
             if still:
                 # Plain static image — no camera motion.
-                vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+                vf = (
+                    f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,"
+                    f"pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
+                )
             else:
                 # Ken Burns: a slow continuous zoom across the WHOLE track so the still
                 # cover feels alive (real scene motion needs a video model like Veo).
@@ -124,23 +146,30 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                 total = max(1, int(dur * fps))
                 zmax = 1.12
                 zrate = (zmax - 1.0) / total
+                source_w = VIDEO_WIDTH * 4 // 3
+                source_h = VIDEO_HEIGHT * 4 // 3
                 vf = (
-                    "scale=2560:1440:force_original_aspect_ratio=increase,crop=2560:1440,"
+                    f"scale={source_w}:{source_h}:force_original_aspect_ratio=increase,crop={source_w}:{source_h},"
                     f"zoompan=z='min(1+{zrate:.9f}*on,{zmax})':d=1:"
                     "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"s=1920x1080:fps={fps}"
+                    f"s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
                 )
             subprocess.run([
                 "ffmpeg", "-y", "-loop", "1", "-i", cover, "-i", audio,
                 "-filter_complex", f"[0:v]{vf}[v]",
                 "-map", "[v]", "-map", "1:a",
-                "-c:v", "libx264", "-c:a", "aac", "-b:a", "192k",
+                "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", VIDEO_CRF,
+                "-c:a", "aac", "-b:a", VIDEO_AUDIO_BITRATE,
                 "-pix_fmt", "yuv420p", "-r", str(fps), "-shortest",
                 out,
             ], check=True)
 
             with open(out, "rb") as f:
                 data = f.read()
+            print(
+                f"[video] asset {asset_id} export {VIDEO_WIDTH}x{VIDEO_HEIGHT}@{VIDEO_FPS}fps "
+                f"crf={VIDEO_CRF} audio={VIDEO_AUDIO_BITRATE} size={len(data)/(1024*1024):.1f}MB"
+            )
             path = f"{episode_id}/video.mp4"
             url = _upload(path, data, "video/mp4")
 

@@ -73,11 +73,12 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   // ── Polling: refetch detail while tracks generating or a render is in flight ──
   const pollRef = useRef<number | null>(null);
+  const reportedFailureRef = useRef<Set<string>>(new Set());
   const activeWork = useMemo(() => {
     const trackActive = tracks.some(t => t.status === 'generating' || t.status === 'queued');
     const renderActive = renders.some(r => r.status === 'queued' || r.status === 'processing');
-    return trackActive || renderActive;
-  }, [tracks, renders]);
+    return trackActive || renderActive || selected?.status === 'generating' || selected?.status === 'stitching';
+  }, [tracks, renders, selected?.status]);
 
   useEffect(() => {
     if (!selected || !activeWork) { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } return; }
@@ -90,6 +91,17 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
         setSelected(prev => prev ? { ...prev, status: 'ready', final_audio_url: ready.final_audio_url } : prev);
         setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'ready', final_audio_url: ready.final_audio_url } : s));
       }
+      // Render failed -> surface the worker error in the session UI.
+      const failed = r.find(x => x.status === 'failed');
+      if (failed && selected.status !== 'failed') {
+        const message = failed.error_message || 'Stitching failed';
+        setSelected(prev => prev ? { ...prev, status: 'failed', error_message: message } : prev);
+        setSessions(prev => prev.map(s => s.id === selected.id ? { ...s, status: 'failed', error_message: message } : s));
+        if (!reportedFailureRef.current.has(failed.id)) {
+          reportedFailureRef.current.add(failed.id);
+          addToast(`Stitching failed: ${message}`, 'error');
+        }
+      }
       // All tracks done generating → move session to Review (once)
       const allDone = t.length > 0 && t.every(x => x.status === 'completed' || x.status === 'failed');
       if (allDone && t.some(x => x.status === 'completed') && selected.status === 'generating') {
@@ -99,7 +111,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
       }
     }, 5000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [selected, activeWork]);
+  }, [selected, activeWork, addToast]);
 
   const applyPreset = (p: typeof SESSION_PRESETS[number]) => {
     setTitle(p.name); setGenre(p.genre); setMood(p.mood); setVocalStyle(p.vocal_style);
@@ -173,6 +185,8 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const latestReadyRender = renders.find(r => r.status === 'ready');
   const activeRender = renders.find(r => r.status === 'queued' || r.status === 'processing');
+  const latestFailedRender = renders.find(r => r.status === 'failed');
+  const sessionFailure = latestFailedRender?.error_message || selected?.error_message || null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
@@ -305,15 +319,28 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
             </div>
 
             {/* Final master */}
-            {(latestReadyRender || activeRender) && (
-              <div className="bg-white p-6 rounded-[2rem] border-2 border-emerald-200 shadow-sm">
-                <h4 className="text-xs font-black text-emerald-700 uppercase tracking-widest flex items-center gap-2 mb-3"><Layers size={15} /> Final Master</h4>
+            {(latestReadyRender || activeRender || latestFailedRender || selected.status === 'failed') && (
+              <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-sm ${sessionFailure ? 'border-rose-200' : 'border-emerald-200'}`}>
+                <h4 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 mb-3 ${sessionFailure ? 'text-rose-700' : 'text-emerald-700'}`}>
+                  {sessionFailure ? <AlertCircle size={15} /> : <Layers size={15} />}
+                  Final Master
+                </h4>
                 {latestReadyRender?.final_audio_url ? (
                   <div className="space-y-3">
                     <audio controls src={latestReadyRender.final_audio_url} className="w-full" />
                     <a href={latestReadyRender.final_audio_url} download className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700">
                       <Download size={14} /> Download master
                     </a>
+                  </div>
+                ) : sessionFailure ? (
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2 text-xs text-rose-700 bg-rose-50 rounded-xl p-3">
+                      <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                      <span className="font-medium">{sessionFailure}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      You can adjust the worker upload settings, then run Stitch Approved again.
+                    </p>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl p-3">

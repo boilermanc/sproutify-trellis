@@ -16,6 +16,53 @@ const PLAN_MODEL = 'gemini-3-flash-preview';
 
 interface PlannedTrack { title: string; prompt: string; }
 
+const POLICY_SENSITIVE_MUSIC_TERMS = [
+  /\bafter\s+dark\b/gi,
+  /\blate[-\s]?night\b/gi,
+  /\bmidnight\b/gi,
+  /\bromantic\b/gi,
+  /\bintimate\b/gi,
+  /\bsensual\b/gi,
+  /\bseductive\b/gi,
+  /\bpassionate\b/gi,
+  /\blove\b/gi,
+  /\bwhisper\w*\b/gi,
+  /\bcandlelight\b/gi,
+  /\bvelvet\b/gi,
+  /\bsatin\b/gi,
+  /\bsmoky\b/gi,
+  /\bsmoke\b/gi,
+  /\balcohol\b/gi,
+  /\bdrugs?\b/gi,
+];
+
+function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: string | null, trackNumber?: number): string {
+  const fallbackBpm = 68 + (((trackNumber ?? 1) - 1) % 5) * 3;
+  const bpm = prompt.match(/\b([5-9]\d|1[0-6]\d)\s*BPM\b/i)?.[1] ?? String(fallbackBpm);
+  const normalizedGenre = (genre || 'instrumental jazz').toLowerCase();
+  const normalizedMood = (mood || 'mellow').toLowerCase();
+
+  let safe = prompt;
+  for (const pattern of POLICY_SENSITIVE_MUSIC_TERMS) safe = safe.replace(pattern, '');
+  safe = safe
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.])/g, '$1')
+    .replace(/,\s*,/g, ',')
+    .trim();
+
+  const hasInstruments = /\b(piano|bass|drums|guitar|saxophone|trumpet|flute|vibraphone|rhodes|organ|cello|percussion|cymbals)\b/i.test(safe);
+  if (!hasInstruments || safe.length < 50) {
+    safe = `${normalizedGenre} instrumental arrangement with piano, upright bass, brushed drums, and warm lead melody, ${normalizedMood} clean studio sound at ${bpm} BPM.`;
+  }
+
+  return safe
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.])/g, '$1')
+    .replace(/,\s*,/g, ',')
+    .slice(0, 240)
+    .trim();
+}
+
 // ─── 1. Generate a track plan with Gemini (client-side) ─────────────
 async function generateTrackPlan(
   config: CreateSessionConfig,
@@ -45,7 +92,7 @@ For each track return a short title and a CONCISE prompt for an AI music model. 
 - be ONE sentence, ~15-30 words max (no multi-part stories or timelines)
 - describe only instruments, genre, mood, and tempo (a BPM)
 - NOT reference any real artist, band, song, label, or brand name
-- avoid narrative/story language and any mention of smoking, drugs, alcohol, violence, or explicit or edgy themes
+- avoid narrative/story language, romance/relationship language, nightlife language, sensual descriptors, and any mention of smoking, drugs, alcohol, violence, or explicit or edgy themes
 Keep the set stylistically consistent.
 
 Return ONLY a raw JSON array, no markdown, no commentary:
@@ -99,7 +146,7 @@ export async function createSessionWithPlan(
     session_id: session.id,
     track_number: i + 1,
     title: t.title,
-    prompt: t.prompt,
+    prompt: sanitizeMusicPrompt(t.prompt, config.genre, config.mood, i + 1),
     genre: config.genre ?? null,
     mood: config.mood ?? null,
     vocal_style: config.vocal_style ?? null,
@@ -165,7 +212,15 @@ export async function generateSessionTracks(session: MusicSession, tracks: Music
   const pending = tracks.filter(t => t.status === 'planned' || t.status === 'failed');
   if (pending.length === 0) return;
 
-  // Fire ONE session-level webhook. n8n fetches the session's tracks and
+  // Queue the pending tracks before starting n8n. The session workflow reads
+  // queued rows only, so completed tracks are never picked up again.
+  await supabase.from('trellis_music_tracks')
+    .update({ status: 'queued', updated_at: new Date().toISOString() })
+    .in('id', pending.map(t => t.id));
+  await supabase.from('trellis_music_sessions')
+    .update({ status: 'generating', updated_at: new Date().toISOString() }).eq('id', session.id);
+
+  // Fire ONE session-level webhook. n8n fetches the queued tracks and
   // generates them ONE AT A TIME (Split In Batches + Wait) so we never flood
   // Lyria's preview quota, regardless of how many tracks the session has.
   fetch(MUSIC_SESSION_GENERATE_WEBHOOK, {
@@ -173,14 +228,6 @@ export async function generateSessionTracks(session: MusicSession, tracks: Music
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: session.id, branch: session.branch }),
   }).catch(() => { /* fire-and-forget */ });
-
-  // Queue the pending tracks + mark the session generating. n8n flips each
-  // track queued → generating → completed as the loop reaches it.
-  await supabase.from('trellis_music_tracks')
-    .update({ status: 'queued', updated_at: new Date().toISOString() })
-    .in('id', pending.map(t => t.id));
-  await supabase.from('trellis_music_sessions')
-    .update({ status: 'generating', updated_at: new Date().toISOString() }).eq('id', session.id);
 }
 
 export async function setTrackApproved(trackId: string, approved: boolean): Promise<void> {
@@ -198,7 +245,8 @@ export async function regenerateTrack(session: MusicSession, track: MusicTrack):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       track_id: track.id, session_id: session.id, branch: session.branch,
-      track_number: track.track_number, title: track.title, prompt: track.prompt,
+      track_number: track.track_number, title: track.title,
+      prompt: sanitizeMusicPrompt(track.prompt, track.genre, track.mood, track.track_number),
       genre: track.genre, mood: track.mood, vocal_style: track.vocal_style,
       duration_seconds: track.duration_seconds,
     }),

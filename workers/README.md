@@ -13,6 +13,12 @@ Both: `pip install -r requirements.txt` (needs **ffmpeg**), set `SUPABASE_URL` +
 its `/video` to `EPISODE_VIDEO_WEBHOOK` (directly or via n8n forward). Give it
 its own systemd unit (`trellis-video`) mirroring the one below.
 
+For long-form video, the default worker settings favor reliable upload over
+maximum quality: 720p, 12 fps, CRF 32, and 96 kbps audio. A one-hour static or
+slow-zoom music video should usually fit under common standard upload limits.
+If you need 1080p+ high-bitrate one-hour video, use Supabase resumable uploads
+or external object storage instead of the standard upload endpoint.
+
 ---
 
 # Trellis Sessions — Audio Stitch Worker
@@ -45,6 +51,8 @@ pip install -r requirements.txt
 export SUPABASE_URL=https://horvjqqifgrzxesuxtfm.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=<HUB service_role key>   # keep secret
 export STITCH_BUCKET=music-sessions
+export STITCH_MP3_BITRATE=96k                # 1-hour masters stay under common upload limits
+export STITCH_MAX_STANDARD_UPLOAD_MB=48
 python stitch_worker.py        # serves on :8099  (GET /health, POST /stitch)
 ```
 
@@ -62,6 +70,8 @@ WorkingDirectory=/opt/trellis/workers
 Environment=SUPABASE_URL=https://horvjqqifgrzxesuxtfm.supabase.co
 Environment=SUPABASE_SERVICE_ROLE_KEY=REPLACE_ME
 Environment=STITCH_BUCKET=music-sessions
+Environment=STITCH_MP3_BITRATE=96k
+Environment=STITCH_MAX_STANDARD_UPLOAD_MB=48
 ExecStart=/opt/trellis/workers/.venv/bin/python stitch_worker.py
 Restart=always
 
@@ -71,6 +81,18 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload && sudo systemctl enable --now trellis-stitch
+```
+
+For the video worker, add the same style of environment tuning:
+
+```ini
+Environment=ASSET_BUCKET=episode-assets
+Environment=VIDEO_WIDTH=1280
+Environment=VIDEO_HEIGHT=720
+Environment=VIDEO_FPS=12
+Environment=VIDEO_CRF=32
+Environment=VIDEO_AUDIO_BITRATE=96k
+Environment=VIDEO_MAX_STANDARD_UPLOAD_MB=48
 ```
 
 ## Wiring the webhook
@@ -88,7 +110,13 @@ sudo systemctl daemon-reload && sudo systemctl enable --now trellis-stitch
 ## Notes
 
 - Tuning constants at the top of `stitch_worker.py`: `CROSSFADE_MS`,
-  `FADE_IN_MS`, `FADE_OUT_MS`, bitrate, and the `-14 dBFS` normalize target.
+  `FADE_IN_MS`, `FADE_OUT_MS`, `STITCH_MP3_BITRATE`, and the `-14 dBFS`
+  normalize target.
+- The worker defaults to `STITCH_MP3_BITRATE=96k`. A 60-minute MP3 at 96 kbps
+  is roughly 42-45 MB, which avoids the `413 Payload too large` failure seen
+  with 192 kbps masters. If longer/higher-quality masters are required, switch
+  the worker to Supabase resumable uploads instead of the standard object
+  upload endpoint.
 - Upload uses `x-upsert: true`, so re-stitching a session overwrites its master.
 - The `music-sessions` bucket is public → the stored `final_audio_url` is
   directly playable in the Trellis review panel.

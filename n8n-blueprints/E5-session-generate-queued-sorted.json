@@ -1,5 +1,5 @@
 {
-  "name": "Trellis: Session Generate (paced, one at a time)",
+  "name": "Trellis: Session Generate (queued, sorted)",
   "nodes": [
     {
       "parameters": { "httpMethod": "POST", "path": "trellis-session-generate", "responseMode": "onReceived", "options": {} },
@@ -21,18 +21,28 @@
           ]
         }
       },
-      "name": "Get Tracks",
+      "name": "Get Queued Tracks",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [400, 340],
+      "position": [420, 340],
       "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return items.sort((a, b) => Number(a.json.track_number || 0) - Number(b.json.track_number || 0));"
+      },
+      "name": "Sort By Track Number",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 340]
     },
     {
       "parameters": { "batchSize": 1, "options": {} },
       "name": "Loop Over Items",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [620, 340]
+      "position": [860, 340]
     },
     {
       "parameters": {
@@ -46,7 +56,7 @@
       "name": "Mark Generating",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [840, 440],
+      "position": [1080, 440],
       "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
     },
     {
@@ -62,7 +72,7 @@
       "name": "Lyria Generate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1060, 440]
+      "position": [1300, 440]
     },
     {
       "parameters": {
@@ -72,7 +82,7 @@
       "name": "Audio base64 to Binary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1280, 440]
+      "position": [1520, 440]
     },
     {
       "parameters": {
@@ -87,7 +97,7 @@
       "name": "Upload Track",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1500, 440]
+      "position": [1740, 440]
     },
     {
       "parameters": {
@@ -108,7 +118,7 @@
       "name": "Mark Completed",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1720, 440],
+      "position": [1960, 440],
       "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
     },
     {
@@ -116,7 +126,7 @@
       "name": "Wait",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1940, 440]
+      "position": [2180, 440]
     },
     {
       "parameters": {
@@ -130,14 +140,14 @@
       "name": "Mark Session Review",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [840, 200],
+      "position": [1080, 200],
       "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_CREDENTIAL", "name": "Supabase account" } }
     },
     {
       "parameters": {
-        "content": "## Trellis: Session Generate (paced)\n\nGenerates a whole session's tracks **one at a time** so we never flood Lyria's preview quota. Fired ONCE by `sessionService.generateSessionTracks`.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-session-generate`\n**POST body:** `{ session_id, branch }`\n\n### FLOW\nWebhook → **Get Tracks** (queued rows for the session) → **Loop Over Items (batch 1)** → Mark Generating → Lyria → base64→Binary → Upload → Mark Completed → **Wait 8s** → back to Loop → (when done) **Mark Session Review**.\n\n### SETUP\n1. Set **Credential → your Supabase account** on all 4 Supabase nodes (Get Tracks, Mark Generating, Mark Completed, Mark Session Review).\n2. **Lyria** + **Upload** are HTTP: set Lyria's *Authentication → Predefined Credential Type → your Gemini credential*; set Upload's *Authentication → Predefined Credential Type → your Supabase credential*.\n3. **⚠️ Verify the loop wiring after import** (n8n loop connections are fragile): **Loop Over Items** has two outputs — **done** (top) → *Mark Session Review*, and **loop** (bottom) → *Mark Generating*. And **Wait → back into Loop Over Items**. Re-draw those 3 links if the import didn't keep them.\n4. Tune the **Wait** (8s) up if you still see 429s.\n\n**Naming:** tracks now store as `music-sessions/{session_id}/tracks/{track_id}.mp3` — globally unique (no more `track-1.mp3` collisions).\n\nSingle-track **regenerate** still uses the separate `trellis-session-track-generate` workflow (E2).",
-        "width": 620,
-        "height": 640
+        "content": "## Trellis: Session Generate (queued, sorted)\n\nGenerates only queued tracks for one Trellis session, sorted by `track_number`, one at a time.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-session-generate`\n**POST body:** `{ session_id, branch }`\n\n### FLOW\nWebhook -> Get Queued Tracks -> Sort By Track Number -> Loop Over Items (batch 1) -> Mark Generating -> Lyria -> base64 to Binary -> Upload -> Mark Completed -> Wait 8s -> back to Loop.\n\nWhen the loop is done, Mark Session Review runs.\n\n### SETUP\n1. Set Credential -> your Trellis Supabase account on all Supabase nodes.\n2. Set Lyria Generate -> your Google Gemini/PaLM API credential.\n3. Set Upload Track -> your Trellis Supabase credential or equivalent storage auth.\n4. Verify loop wiring after import: Loop done output goes to Mark Session Review; loop item output goes to Mark Generating; Wait returns to Loop Over Items.\n\nThis workflow intentionally ignores completed/generating tracks and processes queued rows in track number order.",
+        "width": 660,
+        "height": 620
       },
       "name": "Setup Notes",
       "type": "n8n-nodes-base.stickyNote",
@@ -146,8 +156,9 @@
     }
   ],
   "connections": {
-    "Session Webhook": { "main": [[{ "node": "Get Tracks", "type": "main", "index": 0 }]] },
-    "Get Tracks": { "main": [[{ "node": "Loop Over Items", "type": "main", "index": 0 }]] },
+    "Session Webhook": { "main": [[{ "node": "Get Queued Tracks", "type": "main", "index": 0 }]] },
+    "Get Queued Tracks": { "main": [[{ "node": "Sort By Track Number", "type": "main", "index": 0 }]] },
+    "Sort By Track Number": { "main": [[{ "node": "Loop Over Items", "type": "main", "index": 0 }]] },
     "Loop Over Items": { "main": [ [{ "node": "Mark Session Review", "type": "main", "index": 0 }], [{ "node": "Mark Generating", "type": "main", "index": 0 }] ] },
     "Mark Generating": { "main": [[{ "node": "Lyria Generate", "type": "main", "index": 0 }]] },
     "Lyria Generate": { "main": [[{ "node": "Audio base64 to Binary", "type": "main", "index": 0 }]] },

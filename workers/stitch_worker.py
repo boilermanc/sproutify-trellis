@@ -26,6 +26,7 @@ Responds 202 immediately; the stitch runs in a background thread.
 """
 import os
 import io
+import math
 import threading
 import traceback
 from datetime import datetime, timezone
@@ -43,6 +44,8 @@ SUPABASE_URL = os.environ["SUPABASE_URL"].strip().rstrip("/")
 SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"].strip()  # strip: trailing newline breaks Storage's JWT parse
 BUCKET = os.environ.get("STITCH_BUCKET", "music-sessions").strip()
 PORT = int(os.environ.get("PORT", "8099"))
+MASTER_MP3_BITRATE = os.environ.get("STITCH_MP3_BITRATE", "96k").strip()
+MAX_STANDARD_UPLOAD_MB = int(os.environ.get("STITCH_MAX_STANDARD_UPLOAD_MB", "48"))
 
 # Crossfade / fade tuning (ms)
 CROSSFADE_MS = 1500
@@ -50,6 +53,15 @@ FADE_IN_MS = 1000
 FADE_OUT_MS = 2000
 
 app = Flask(__name__)
+
+
+def _bitrate_kbps(value: str) -> int:
+    normalized = value.strip().lower()
+    if normalized.endswith("k"):
+        return int(normalized[:-1])
+    if normalized.endswith("000"):
+        return int(normalized) // 1000
+    return int(normalized)
 
 
 @app.after_request
@@ -91,6 +103,14 @@ def _download(url: str) -> AudioSegment:
 
 
 def _upload_master(path: str, data: bytes) -> str:
+    size_mb = len(data) / (1024 * 1024)
+    if size_mb > MAX_STANDARD_UPLOAD_MB:
+        raise RuntimeError(
+            f"Master audio is {size_mb:.1f} MB, above the configured standard upload limit "
+            f"of {MAX_STANDARD_UPLOAD_MB} MB. Lower STITCH_MP3_BITRATE or switch the worker "
+            "to Supabase resumable uploads for larger masters."
+        )
+
     # Upsert so re-stitching overwrites the master
     url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET}/{path}"
     r = requests.post(
@@ -104,6 +124,11 @@ def _upload_master(path: str, data: bytes) -> str:
         timeout=180,
     )
     if r.status_code not in (200, 201):
+        if r.status_code == 413:
+            raise RuntimeError(
+                f"Storage upload failed 413: final MP3 is {size_mb:.1f} MB. "
+                "Use a lower STITCH_MP3_BITRATE or configure resumable uploads for long masters."
+            )
         raise RuntimeError(f"Storage upload failed {r.status_code}: {r.text}")
     return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path}"
 
@@ -128,8 +153,15 @@ def _stitch(render_id: str, session_id: str, tracks: list):
             master = master.apply_gain(change)
 
         buf = io.BytesIO()
-        master.export(buf, format="mp3", bitrate="192k")
+        master.export(buf, format="mp3", bitrate=MASTER_MP3_BITRATE)
         audio_bytes = buf.getvalue()
+        size_mb = len(audio_bytes) / (1024 * 1024)
+        duration_s = math.ceil(len(master) / 1000)
+        expected_mb = duration_s * _bitrate_kbps(MASTER_MP3_BITRATE) / 8 / 1024
+        print(
+            f"[stitch] render {render_id} export bitrate={MASTER_MP3_BITRATE} "
+            f"duration={duration_s}s size={size_mb:.1f}MB expected~{expected_mb:.1f}MB"
+        )
 
         path = f"{session_id}/renders/final-master.mp3"
         public_url = _upload_master(path, audio_bytes)
