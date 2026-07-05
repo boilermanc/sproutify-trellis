@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Music, Loader2, RefreshCw, Archive, AlertCircle, CheckCircle2, XCircle, Wand2,
-  Sparkles, ListMusic, Layers, Download, Plus, Check,
+  Sparkles, ListMusic, Layers, Download, Plus, Check, ArrowRight,
 } from 'lucide-react';
 import { MusicSession, MusicTrack, MusicRender, CreateSessionConfig } from '../types';
 import {
@@ -17,6 +17,7 @@ interface TrellisStudioProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   userId?: string | null;
   geminiApiKey?: string;
+  onNavigate?: (view: 'trellis-episodes') => void;
 }
 
 const TRACK_BADGE: Record<MusicTrack['status'], { label: string; cls: string; spin?: boolean }> = {
@@ -40,7 +41,7 @@ function formatSessionDate(value?: string | null): string {
   });
 }
 
-const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey }) => {
+const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey, onNavigate }) => {
   const [sessions, setSessions] = useState<MusicSession[]>([]);
   const [selected, setSelected] = useState<MusicSession | null>(null);
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
@@ -202,6 +203,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const activeRender = renders.find(r => r.status === 'queued' || r.status === 'processing');
   const latestFailedRender = !activeRender && !latestReadyRender ? renders.find(r => r.status === 'failed') : undefined;
   const sessionFailure = !activeRender && !latestReadyRender ? (latestFailedRender?.error_message || selected?.error_message || null) : null;
+  const masterReady = !!latestReadyRender?.final_audio_url;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
@@ -324,10 +326,27 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                     <Wand2 size={15} /> Generate Tracks
                   </button>
                 )}
-                <button type="button" onClick={handleStitch} disabled={busy || approvedCompleted.length === 0}
-                  className="px-5 py-2.5 bg-violet-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-violet-700 transition disabled:opacity-40">
-                  <Layers size={15} /> Stitch Approved ({approvedCompleted.length})
-                </button>
+                {masterReady ? (
+                  <>
+                    <button type="button" disabled
+                      className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 opacity-90">
+                      <CheckCircle2 size={15} /> Master Ready
+                    </button>
+                    <button type="button" onClick={() => onNavigate?.('trellis-episodes')}
+                      className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition">
+                      <ArrowRight size={15} /> Open Episodes
+                    </button>
+                    <button type="button" onClick={handleStitch} disabled={busy || approvedCompleted.length === 0}
+                      className="px-4 py-2.5 text-violet-600 bg-violet-50 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-violet-100 transition disabled:opacity-40">
+                      <Layers size={15} /> Re-stitch
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={handleStitch} disabled={busy || approvedCompleted.length === 0}
+                    className="px-5 py-2.5 bg-violet-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-violet-700 transition disabled:opacity-40">
+                    <Layers size={15} /> Stitch Approved ({approvedCompleted.length})
+                  </button>
+                )}
                 <button type="button" onClick={() => handleArchive(selected)} className="px-4 py-2.5 text-slate-400 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition flex items-center gap-1">
                   <Archive size={14} /> Archive
                 </button>
@@ -344,9 +363,18 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                 {latestReadyRender?.final_audio_url ? (
                   <div className="space-y-3">
                     <audio controls src={latestReadyRender.final_audio_url} className="w-full" />
-                    <a href={latestReadyRender.final_audio_url} download className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700">
-                      <Download size={14} /> Download master
-                    </a>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <a href={latestReadyRender.final_audio_url} download className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700">
+                        <Download size={14} /> Download master
+                      </a>
+                      <button type="button" onClick={() => onNavigate?.('trellis-episodes')}
+                        className="inline-flex items-center gap-1 text-[11px] font-black text-slate-700 uppercase tracking-widest hover:text-emerald-700">
+                        <ArrowRight size={14} /> Use in episode
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      No extra approval is needed here. The approved tracks have been stitched into the final master; attach this session to an episode next.
+                    </p>
                   </div>
                 ) : sessionFailure ? (
                   <div className="space-y-3">
