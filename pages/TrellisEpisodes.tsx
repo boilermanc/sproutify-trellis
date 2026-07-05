@@ -27,6 +27,19 @@ const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking
 const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
 const phaseHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';
 
+function formatEpisodeDate(value?: string | null): string {
+  if (!value) return 'No date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No date';
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey }) => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selected, setSelected] = useState<Episode | null>(null);
@@ -193,6 +206,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                     <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${m.cls}`}>{m.label}</span>
                   </div>
                   <p className="text-[10px] text-slate-400 font-medium mt-1 truncate">{ep.show_name || 'No show'}</p>
+                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest mt-1">{formatEpisodeDate(ep.created_at)}</p>
                 </button>
               );
             })}
