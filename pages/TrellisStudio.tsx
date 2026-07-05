@@ -27,6 +27,19 @@ const TRACK_BADGE: Record<MusicTrack['status'], { label: string; cls: string; sp
   failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700' },
 };
 
+function formatSessionDate(value?: string | null): string {
+  if (!value) return 'No date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No date';
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey }) => {
   const [sessions, setSessions] = useState<MusicSession[]>([]);
   const [selected, setSelected] = useState<MusicSession | null>(null);
@@ -272,6 +285,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                   <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${meta.cls}`}>{meta.label}</span>
                 </div>
                 <p className="text-[10px] text-slate-400 font-medium mt-1">{[s.genre, s.mood, `${s.track_count || '?'} tracks`].filter(Boolean).join(' · ')}</p>
+                <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest mt-1">{formatSessionDate(s.created_at)}</p>
               </button>
             );
           })}
