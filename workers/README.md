@@ -19,6 +19,11 @@ slow-zoom music video should usually fit under common standard upload limits.
 If you need 1080p+ high-bitrate one-hour video, use Supabase resumable uploads
 or external object storage instead of the standard upload endpoint.
 
+The video worker writes heartbeat details into `trellis_episode_assets.metadata.worker`
+while rendering. The Episodes UI reads that field to show current stage, ffmpeg
+progress, elapsed time, and last worker update. If you deploy a new worker build,
+restart `trellis-video` so heartbeat updates start on future renders.
+
 ---
 
 # Trellis Sessions — Audio Stitch Worker

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Clapperboard, Loader2, RefreshCw, Plus, Music, Image as ImageIcon, Film, FileText, Send,
-  CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink, Upload, RotateCw,
+  CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink, Upload, RotateCw, Activity,
 } from 'lucide-react';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform,
@@ -38,6 +38,48 @@ function formatEpisodeDate(value?: string | null): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function minutesSince(value?: string | null): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+}
+
+function formatAge(value?: string | null): string {
+  const mins = minutesSince(value);
+  if (mins === null) return 'unknown';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours}h ${rem}m ago` : `${hours}h ago`;
+}
+
+function formatElapsed(value?: string | null): string {
+  const mins = minutesSince(value);
+  if (mins === null) return 'unknown';
+  if (mins < 1) return '<1m';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+type WorkerInfo = {
+  stage?: string;
+  message?: string;
+  heartbeat_at?: string;
+  progress?: number;
+  rendered_seconds?: number;
+  duration_seconds?: number;
+  file_size_mb?: number;
+};
+
+function getWorkerInfo(asset?: EpisodeAsset | null): WorkerInfo | null {
+  const worker = asset?.metadata?.worker;
+  return worker && typeof worker === 'object' ? worker as WorkerInfo : null;
 }
 
 const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey }) => {
@@ -382,7 +424,52 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                       <video controls src={video.url} className="w-full rounded-xl bg-black" />
                       <a href={video.url} download className="text-[11px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1"><Download size={13} /> MP4</a>
                     </div>
-                  ) : <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl p-3"><Loader2 size={13} className="animate-spin" /> Rendering video…</div>}
+                  ) : video.status === 'failed' ? (
+                    <div className="flex items-start gap-2 text-xs text-rose-700 bg-rose-50 rounded-xl p-3">
+                      <span className="font-medium">{video.error_message || 'Video render failed.'}</span>
+                    </div>
+                  ) : (() => {
+                    const worker = getWorkerInfo(video);
+                    const progress = typeof worker?.progress === 'number' ? worker.progress : null;
+                    const lastUpdate = worker?.heartbeat_at || video.updated_at;
+                    const heartbeatMins = minutesSince(lastUpdate);
+                    const stale = heartbeatMins !== null && heartbeatMins >= 15;
+                    return (
+                      <div className={`rounded-xl p-3 border ${stale ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
+                        <div className="flex items-start gap-2">
+                          {stale ? <Activity size={14} className="mt-0.5 shrink-0" /> : <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin" />}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-xs font-black uppercase tracking-widest">
+                                {worker?.message || (video.status === 'queued' ? 'Waiting for worker' : 'Rendering video')}
+                              </p>
+                              <span className="text-[10px] font-black uppercase tracking-widest opacity-70">{video.status}</span>
+                            </div>
+                            {progress !== null && (
+                              <div className="mt-2 h-2 rounded-full bg-white/70 overflow-hidden">
+                                <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${Math.max(3, Math.min(100, progress))}%` }} />
+                              </div>
+                            )}
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-bold opacity-80">
+                              <span>Elapsed: {formatElapsed(video.created_at)}</span>
+                              <span>Last update: {formatAge(lastUpdate)}</span>
+                              <span>{progress !== null ? `Progress: ${Math.round(progress)}%` : `Stage: ${worker?.stage || video.status}`}</span>
+                            </div>
+                            {worker?.rendered_seconds != null && worker?.duration_seconds != null && (
+                              <p className="mt-1 text-[10px] font-medium opacity-70">
+                                Rendered {Math.round(worker.rendered_seconds)}s of {Math.round(worker.duration_seconds)}s.
+                              </p>
+                            )}
+                            {stale && (
+                              <p className="mt-2 text-[10px] font-black uppercase tracking-widest">
+                                No heartbeat for 15+ minutes. Check the video worker before starting another render.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>

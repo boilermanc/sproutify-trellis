@@ -25,6 +25,7 @@ import io
 import subprocess
 import tempfile
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 
@@ -84,6 +85,32 @@ def _patch(table: str, row_id: str, body: dict):
     r.raise_for_status()
 
 
+def _heartbeat(asset_id: str, stage: str, progress: float | None = None, message: str | None = None, extra: dict | None = None):
+    try:
+        worker = {
+            "stage": stage,
+            "message": message or stage,
+            "heartbeat_at": _now(),
+            "settings": {
+                "width": VIDEO_WIDTH,
+                "height": VIDEO_HEIGHT,
+                "fps": VIDEO_FPS,
+                "crf": VIDEO_CRF,
+                "audio_bitrate": VIDEO_AUDIO_BITRATE,
+            },
+        }
+        if progress is not None:
+            worker["progress"] = max(0, min(100, round(progress, 1)))
+        if extra:
+            worker.update(extra)
+        _patch("trellis_episode_assets", asset_id, {
+            "metadata": {"worker": worker},
+            "updated_at": _now(),
+        })
+    except Exception as e:  # noqa: BLE001
+        print(f"[video] heartbeat failed for {asset_id}: {e}")
+
+
 def _download(url: str, path: str):
     r = requests.get(url, timeout=180)
     r.raise_for_status()
@@ -115,22 +142,61 @@ def _upload(path_in_bucket: str, data: bytes, content_type: str) -> str:
     return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path_in_bucket}"
 
 
+def _run_ffmpeg(cmd: list[str], asset_id: str, duration_s: float):
+    last_emit = 0.0
+    tail: list[str] = []
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    assert proc.stdout is not None
+
+    for raw in proc.stdout:
+        line = raw.strip()
+        if line:
+            tail.append(line)
+            tail = tail[-20:]
+        if line.startswith("out_time_ms=") and duration_s > 0:
+            try:
+                out_s = int(line.split("=", 1)[1]) / 1_000_000
+                progress = (out_s / duration_s) * 100
+                now = time.time()
+                if now - last_emit >= 15:
+                    last_emit = now
+                    _heartbeat(
+                        asset_id,
+                        "rendering",
+                        progress,
+                        f"Rendering video with ffmpeg ({progress:.0f}%)",
+                        {"rendered_seconds": round(out_s, 1), "duration_seconds": round(duration_s, 1)},
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
+    code = proc.wait()
+    if code != 0:
+        raise RuntimeError(f"ffmpeg failed with exit code {code}: {' | '.join(tail[-8:])}")
+
+
 def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: str | None, motion: str = "ken_burns"):
     try:
-        _patch("trellis_episode_assets", asset_id, {"status": "processing"})
+        _patch("trellis_episode_assets", asset_id, {"status": "processing", "updated_at": _now()})
+        _heartbeat(asset_id, "starting", 0, "Worker accepted the video job")
         with tempfile.TemporaryDirectory() as tmp:
             audio = os.path.join(tmp, "master.mp3")
+            _heartbeat(asset_id, "downloading-audio", 2, "Downloading master audio")
             _download(master_audio_url, audio)
             cover = os.path.join(tmp, "cover.png")
             if cover_url:
+                _heartbeat(asset_id, "downloading-cover", 5, "Downloading cover image")
                 _download(cover_url, cover)
             else:
                 # solid dark background if no cover was supplied
+                _heartbeat(asset_id, "creating-cover", 5, "Creating fallback cover image")
                 subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=0x0A0E27:s=1920x1080", "-frames:v", "1", cover], check=True)
 
             out = os.path.join(tmp, "video.mp4")
             fps = VIDEO_FPS
             still = str(motion).lower() in ("none", "static", "off", "still")
+            _heartbeat(asset_id, "probing-audio", 8, "Reading master duration")
+            dur = _duration(audio) or 180.0
             if still:
                 # Plain static image — no camera motion.
                 vf = (
@@ -142,7 +208,6 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                 # cover feels alive (real scene motion needs a video model like Veo).
                 # zoompan with d=1 + a duration-derived rate keyed off the output frame
                 # counter (on) gives a smooth zoom regardless of track length.
-                dur = _duration(audio) or 180.0
                 total = max(1, int(dur * fps))
                 zmax = 1.12
                 zrate = (zmax - 1.0) / total
@@ -154,16 +219,18 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                     "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
                     f"s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
                 )
-            subprocess.run([
-                "ffmpeg", "-y", "-loop", "1", "-i", cover, "-i", audio,
+            _heartbeat(asset_id, "rendering", 10, "Rendering video with ffmpeg", {"duration_seconds": round(dur, 1), "motion": motion})
+            _run_ffmpeg([
+                "ffmpeg", "-y", "-nostats", "-progress", "pipe:1", "-loop", "1", "-i", cover, "-i", audio,
                 "-filter_complex", f"[0:v]{vf}[v]",
                 "-map", "[v]", "-map", "1:a",
                 "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", VIDEO_CRF,
                 "-c:a", "aac", "-b:a", VIDEO_AUDIO_BITRATE,
                 "-pix_fmt", "yuv420p", "-r", str(fps), "-shortest",
                 out,
-            ], check=True)
+            ], asset_id, dur)
 
+            _heartbeat(asset_id, "reading-output", 96, "Reading rendered video file")
             with open(out, "rb") as f:
                 data = f.read()
             print(
@@ -171,17 +238,39 @@ def _render(asset_id: str, episode_id: str, master_audio_url: str, cover_url: st
                 f"crf={VIDEO_CRF} audio={VIDEO_AUDIO_BITRATE} size={len(data)/(1024*1024):.1f}MB"
             )
             path = f"{episode_id}/video.mp4"
+            _heartbeat(asset_id, "uploading", 98, "Uploading MP4 to storage", {"file_size_mb": round(len(data) / (1024 * 1024), 1)})
             url = _upload(path, data, "video/mp4")
 
         _patch("trellis_episode_assets", asset_id, {
             "status": "ready", "url": url, "storage_bucket": BUCKET, "storage_path": path,
-            "file_size_bytes": len(data), "updated_at": _now(),
+            "file_size_bytes": len(data), "duration_seconds": round(dur), "metadata": {
+                "worker": {
+                    "stage": "ready",
+                    "message": "Video render complete",
+                    "progress": 100,
+                    "heartbeat_at": _now(),
+                    "duration_seconds": round(dur, 1),
+                    "file_size_mb": round(len(data) / (1024 * 1024), 1),
+                    "settings": {
+                        "width": VIDEO_WIDTH,
+                        "height": VIDEO_HEIGHT,
+                        "fps": VIDEO_FPS,
+                        "crf": VIDEO_CRF,
+                        "audio_bitrate": VIDEO_AUDIO_BITRATE,
+                    },
+                }
+            }, "updated_at": _now(),
         })
         print(f"[video] asset {asset_id} ready -> {url}")
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         try:
-            _patch("trellis_episode_assets", asset_id, {"status": "failed", "error_message": str(e)[:500]})
+            _patch("trellis_episode_assets", asset_id, {
+                "status": "failed",
+                "error_message": str(e)[:500],
+                "metadata": {"worker": {"stage": "failed", "message": str(e)[:500], "heartbeat_at": _now()}},
+                "updated_at": _now(),
+            })
         except Exception:  # noqa: BLE001
             pass
 
