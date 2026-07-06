@@ -1018,6 +1018,7 @@ export interface MusicRender {
   storage_path: string | null;
   duration_seconds: number | null;
   error_message: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

@@ -840,9 +840,12 @@ CREATE TABLE IF NOT EXISTS trellis_music_renders (
   storage_path TEXT,
   duration_seconds INTEGER,
   error_message TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE trellis_music_renders ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 
 ALTER TABLE trellis_music_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_music_tracks ENABLE ROW LEVEL SECURITY;

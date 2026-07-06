@@ -96,6 +96,42 @@ def _patch(table: str, row_id: str, body: dict):
     r.raise_for_status()
 
 
+def _patch_render(render_id: str, body: dict):
+    try:
+        _patch("trellis_music_renders", render_id, body)
+    except Exception:
+        if "metadata" not in body:
+            raise
+        fallback = dict(body)
+        fallback.pop("metadata", None)
+        _patch("trellis_music_renders", render_id, fallback)
+
+
+def _heartbeat(render_id: str, stage: str, progress: float | None = None, message: str | None = None, extra: dict | None = None):
+    try:
+        worker = {
+            "stage": stage,
+            "message": message or stage,
+            "heartbeat_at": _now(),
+            "settings": {
+                "bitrate": MASTER_MP3_BITRATE,
+                "crossfade_ms": CROSSFADE_MS,
+                "fade_in_ms": FADE_IN_MS,
+                "fade_out_ms": FADE_OUT_MS,
+            },
+        }
+        if progress is not None:
+            worker["progress"] = max(0, min(100, round(progress, 1)))
+        if extra:
+            worker.update(extra)
+        _patch_render(render_id, {
+            "metadata": {"worker": worker},
+            "updated_at": _now(),
+        })
+    except Exception as e:  # noqa: BLE001
+        print(f"[stitch] heartbeat failed for {render_id}: {e}")
+
+
 def _download(url: str) -> AudioSegment:
     resp = requests.get(url, timeout=120)
     resp.raise_for_status()
@@ -135,23 +171,44 @@ def _upload_master(path: str, data: bytes) -> str:
 
 def _stitch(render_id: str, session_id: str, tracks: list):
     try:
-        _patch("trellis_music_renders", render_id, {"status": "processing"})
+        _patch_render(render_id, {"status": "processing", "updated_at": _now()})
+        _heartbeat(render_id, "starting", 0, "Worker accepted the master rebuild")
 
         ordered = sorted(tracks, key=lambda t: t.get("track_number", 0))
-        segments = [_download(t["audio_url"]) for t in ordered if t.get("audio_url")]
+        segments = []
+        total_tracks = len([t for t in ordered if t.get("audio_url")])
+        for idx, track in enumerate([t for t in ordered if t.get("audio_url")], start=1):
+            _heartbeat(
+                render_id,
+                "downloading-tracks",
+                5 + (idx - 1) / max(1, total_tracks) * 25,
+                f"Downloading track {idx} of {total_tracks}",
+                {"track_number": track.get("track_number"), "downloaded_tracks": idx - 1, "total_tracks": total_tracks},
+            )
+            segments.append(_download(track["audio_url"]))
         if not segments:
             raise RuntimeError("No playable track URLs to stitch")
 
+        _heartbeat(render_id, "stitching", 35, "Combining approved tracks", {"total_tracks": len(segments)})
         master = segments[0].fade_in(FADE_IN_MS)
-        for seg in segments[1:]:
+        for idx, seg in enumerate(segments[1:], start=2):
+            _heartbeat(
+                render_id,
+                "stitching",
+                35 + (idx - 1) / max(1, len(segments) - 1) * 35,
+                f"Stitching track {idx} of {len(segments)}",
+                {"stitched_tracks": idx - 1, "total_tracks": len(segments)},
+            )
             master = master.append(seg.fade_in(FADE_IN_MS), crossfade=CROSSFADE_MS)
         master = master.fade_out(FADE_OUT_MS)
 
         # Loudness normalize to ~ -14 dBFS (streaming-ish target)
+        _heartbeat(render_id, "normalizing", 75, "Normalizing master loudness")
         change = -14.0 - master.dBFS
         if change < 0:
             master = master.apply_gain(change)
 
+        _heartbeat(render_id, "exporting", 82, "Exporting MP3 master")
         buf = io.BytesIO()
         master.export(buf, format="mp3", bitrate=MASTER_MP3_BITRATE)
         audio_bytes = buf.getvalue()
@@ -164,15 +221,30 @@ def _stitch(render_id: str, session_id: str, tracks: list):
         )
 
         path = f"{session_id}/renders/final-master.mp3"
+        _heartbeat(render_id, "uploading", 95, "Uploading master audio", {"file_size_mb": round(size_mb, 1), "duration_seconds": duration_s})
         public_url = _upload_master(path, audio_bytes)
         duration_s = int(len(master) / 1000)
 
-        _patch("trellis_music_renders", render_id, {
+        _patch_render(render_id, {
             "status": "ready",
             "final_audio_url": public_url,
             "storage_bucket": BUCKET,
             "storage_path": path,
             "duration_seconds": duration_s,
+            "metadata": {"worker": {
+                "stage": "ready",
+                "message": "Master rebuild complete",
+                "progress": 100,
+                "heartbeat_at": _now(),
+                "duration_seconds": duration_s,
+                "file_size_mb": round(size_mb, 1),
+                "settings": {
+                    "bitrate": MASTER_MP3_BITRATE,
+                    "crossfade_ms": CROSSFADE_MS,
+                    "fade_in_ms": FADE_IN_MS,
+                    "fade_out_ms": FADE_OUT_MS,
+                },
+            }},
             "updated_at": _now(),
         })
         _patch("trellis_music_sessions", session_id, {
@@ -188,8 +260,13 @@ def _stitch(render_id: str, session_id: str, tracks: list):
         traceback.print_exc()
         msg = str(e)[:500]
         try:
-            _patch("trellis_music_renders", render_id, {"status": "failed", "error_message": msg})
-            _patch("trellis_music_sessions", session_id, {"status": "failed", "error_message": msg})
+            _patch_render(render_id, {
+                "status": "failed",
+                "error_message": msg,
+                "metadata": {"worker": {"stage": "failed", "message": msg, "heartbeat_at": _now()}},
+                "updated_at": _now(),
+            })
+            _patch("trellis_music_sessions", session_id, {"status": "failed", "error_message": msg, "updated_at": _now()})
         except Exception:  # noqa: BLE001
             pass
 

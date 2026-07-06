@@ -24,6 +24,11 @@ while rendering. The Episodes UI reads that field to show current stage, ffmpeg
 progress, elapsed time, and last worker update. If you deploy a new worker build,
 restart `trellis-video` so heartbeat updates start on future renders.
 
+The stitch worker writes the same style of heartbeat details into
+`trellis_music_renders.metadata.worker` while rebuilding a master. The Studio UI
+uses that field for Rebuild Master progress. Apply the schema addition for
+`trellis_music_renders.metadata` before restarting `trellis-stitch`.
+
 ---
 
 # Trellis Sessions — Audio Stitch Worker

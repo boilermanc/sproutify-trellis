@@ -86,6 +86,23 @@ function estimateTrackProgress(track: MusicTrack): number {
   return Math.min(95, 15 + (mins / 12) * 75);
 }
 
+type WorkerInfo = {
+  stage?: string;
+  message?: string;
+  heartbeat_at?: string;
+  progress?: number;
+  stitched_tracks?: number;
+  downloaded_tracks?: number;
+  total_tracks?: number;
+  duration_seconds?: number;
+  file_size_mb?: number;
+};
+
+function getRenderWorkerInfo(render?: MusicRender | null): WorkerInfo | null {
+  const worker = render?.metadata?.worker;
+  return worker && typeof worker === 'object' ? worker as WorkerInfo : null;
+}
+
 const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey, onNavigate }) => {
   const [sessions, setSessions] = useState<MusicSession[]>([]);
   const [selected, setSelected] = useState<MusicSession | null>(null);
@@ -259,6 +276,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const latestReadyRender = renders.find(r => r.status === 'ready');
   const activeRender = renders.find(r => r.status === 'queued' || r.status === 'processing');
+  const activeRenderWorker = getRenderWorkerInfo(activeRender);
   const latestFailedRender = !activeRender && !latestReadyRender ? renders.find(r => r.status === 'failed') : undefined;
   const sessionFailure = !activeRender && !latestReadyRender ? (latestFailedRender?.error_message || selected?.error_message || null) : null;
   const masterReady = !!latestReadyRender?.final_audio_url;
@@ -478,9 +496,46 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                     </p>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-xl p-3">
-                    <Loader2 size={14} className="animate-spin" /> Stitching in progress — this updates automatically when the master is ready.
-                  </div>
+                  (() => {
+                    const progress = typeof activeRenderWorker?.progress === 'number' ? activeRenderWorker.progress : null;
+                    const lastUpdate = activeRenderWorker?.heartbeat_at || activeRender?.updated_at;
+                    const stale = (minutesSince(lastUpdate) ?? 0) >= 15;
+                    return (
+                      <div className={`rounded-xl p-3 border ${stale ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
+                        <div className="flex items-start gap-2">
+                          {stale ? <Activity size={14} className="mt-0.5 shrink-0" /> : <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin" />}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-xs font-black uppercase tracking-widest">
+                                {activeRenderWorker?.message || 'Rebuilding master audio'}
+                              </p>
+                              <span className="text-[10px] font-black uppercase tracking-widest opacity-70">{activeRender?.status || selected.status}</span>
+                            </div>
+                            {progress !== null && (
+                              <div className="mt-2 h-2 rounded-full bg-white/70 overflow-hidden">
+                                <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${Math.max(3, Math.min(100, progress))}%` }} />
+                              </div>
+                            )}
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-bold opacity-80">
+                              <span>Elapsed: {formatElapsed(activeRender?.created_at)}</span>
+                              <span>Last update: {formatAge(lastUpdate)}</span>
+                              <span>{progress !== null ? `Progress: ${Math.round(progress)}%` : `Stage: ${activeRenderWorker?.stage || activeRender?.status || 'stitching'}`}</span>
+                            </div>
+                            {activeRenderWorker?.total_tracks != null && (
+                              <p className="mt-1 text-[10px] font-medium opacity-70">
+                                Tracks: {activeRenderWorker.stitched_tracks ?? activeRenderWorker.downloaded_tracks ?? 0} / {activeRenderWorker.total_tracks}
+                              </p>
+                            )}
+                            {stale && (
+                              <p className="mt-2 text-[10px] font-black uppercase tracking-widest">
+                                No heartbeat for 15+ minutes. Check the stitch worker before starting another rebuild.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             )}
