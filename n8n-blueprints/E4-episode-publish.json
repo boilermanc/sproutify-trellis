@@ -84,10 +84,11 @@
         "filters": { "conditions": [ { "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Metadata').item.json.publication_id }}" } ] },
         "dataToSend": "defineBelow",
         "fieldsUi": { "fieldValues": [
-          { "fieldId": "status", "fieldValue": "live" },
-          { "fieldId": "external_url", "fieldValue": "={{ $('Extract Video ID').item.json.youtube_url }}" },
-          { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
-        ] }
+            { "fieldId": "status", "fieldValue": "live" },
+            { "fieldId": "external_url", "fieldValue": "={{ $('Extract Video ID').item.json.youtube_url }}" },
+            { "fieldId": "published_at", "fieldValue": "={{ $now.toISO() }}" },
+            { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }
+          ] }
       },
       "name": "Mark Live",
       "type": "n8n-nodes-base.supabase",

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Clapperboard, Loader2, RefreshCw, Plus, Music, Image as ImageIcon, Film, FileText, Send,
   CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink, Upload, RotateCw, Activity,
-  AlertCircle,
+  AlertCircle, Copy,
 } from 'lucide-react';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform,
@@ -201,6 +201,15 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
     try { await fn(); if (selected) await loadDetail(selected); }
     catch (e) { addToast(msg(e), 'error'); }
     finally { setBusy(''); }
+  };
+
+  const copyPublicationUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      addToast('Publish link copied.', 'success');
+    } catch {
+      addToast('Could not copy the link from the browser.', 'error');
+    }
   };
 
   // Upload your own artwork (created outside the app): normalize to PNG in a canvas,
@@ -582,14 +591,27 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
               {pubs.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {pubs.map(p => (
-                    <div key={p.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-2">
-                      <span>
+                    <div key={p.id} className="flex items-center justify-between gap-3 text-xs bg-slate-50 rounded-xl px-3 py-2">
+                      <span className="min-w-0">
                         <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
                         <span className="mt-0.5 block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatPublicationStamp(p)}</span>
+                        {p.external_url && (
+                          <a href={p.external_url} target="_blank" rel="noreferrer"
+                            className="mt-1 block max-w-[220px] truncate text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                            title={p.external_url}>
+                            {p.external_url.replace(/^https?:\/\//, '')}
+                          </a>
+                        )}
                       </span>
-                      <span className="flex items-center gap-2">
+                      <span className="flex shrink-0 items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
                         {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}
+                        {p.external_url && (
+                          <button type="button" onClick={() => copyPublicationUrl(p.external_url!)}
+                            className="text-slate-400 transition hover:text-emerald-600" title="Copy publish link">
+                            <Copy size={13} />
+                          </button>
+                        )}
                       </span>
                     </div>
                   ))}
