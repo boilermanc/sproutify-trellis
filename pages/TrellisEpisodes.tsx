@@ -29,6 +29,14 @@ const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-
 const phaseHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';
 type EpisodeListTab = 'ready' | 'review' | 'archived';
 const EPISODE_PAGE_SIZE = 8;
+const YOUTUBE_SEARCH_TERMS = [
+  'jazz', 'smooth jazz', 'instrumental jazz', 'relaxing jazz', 'focus', 'study',
+  'work', 'reading', 'dinner', 'lounge', 'coffee', 'midnight', 'night',
+];
+const PUBLISH_WORDING_FLAGS = ['smoky', 'smoking', 'cigarette', 'cigar', 'tobacco', 'romantic', 'sensual', 'intimate'];
+
+type ChecklistStatus = 'pass' | 'warn' | 'todo';
+type ChecklistItem = { label: string; detail: string; status: ChecklistStatus };
 
 function episodeInTab(episode: Episode, tab: EpisodeListTab): boolean {
   if (tab === 'ready') return episode.status === 'published';
@@ -57,6 +65,16 @@ function formatPublicationStamp(pub: EpisodePublication): string {
       ? pub.updated_at || pub.created_at
       : pub.created_at;
   return `${label} ${formatEpisodeDate(value)}`;
+}
+
+function hasSearchTerm(value?: string | null): boolean {
+  const text = (value || '').toLowerCase();
+  return YOUTUBE_SEARCH_TERMS.some(term => text.includes(term));
+}
+
+function hasFlaggedPublishWording(value?: string | null): boolean {
+  const text = (value || '').toLowerCase();
+  return PUBLISH_WORDING_FLAGS.some(term => text.includes(term));
 }
 
 function minutesSince(value?: string | null): number | null {
@@ -179,6 +197,49 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const videoWorker = getWorkerInfo(video);
   const videoDurationSeconds = video?.duration_seconds ?? videoWorker?.duration_seconds ?? null;
   const videoNeedsYouTubeLongUploadAccess = typeof videoDurationSeconds === 'number' && videoDurationSeconds > 900;
+  const metadataText = [metadata?.title, metadata?.description, ...(metadata?.tags || []), ...(metadata?.hashtags || [])].filter(Boolean).join(' ');
+  const seoChecklist: ChecklistItem[] = [
+    {
+      label: 'Metadata approved',
+      detail: metadata?.status === 'approved' ? 'Ready for publishing.' : metadata ? 'Review and approve metadata before publishing.' : 'Generate metadata first.',
+      status: metadata?.status === 'approved' ? 'pass' : 'todo',
+    },
+    {
+      label: 'Searchable title',
+      detail: metadata?.title
+        ? hasSearchTerm(metadata.title) ? 'Title includes search language people already use.' : 'Add plain words like smooth jazz, relaxing jazz, focus, study, or lounge.'
+        : 'Needs a YouTube title.',
+      status: metadata?.title && hasSearchTerm(metadata.title) ? 'pass' : 'todo',
+    },
+    {
+      label: 'Clean wording',
+      detail: hasFlaggedPublishWording(metadataText) ? 'Regenerate or edit metadata to remove smoking/romance terms.' : 'No flagged wording found.',
+      status: metadataText && !hasFlaggedPublishWording(metadataText) ? 'pass' : 'todo',
+    },
+    {
+      label: 'Description depth',
+      detail: (metadata?.description || '').length >= 180 ? 'Enough description text for search context.' : 'Use a fuller description with mood, use case, and listening context.',
+      status: (metadata?.description || '').length >= 180 ? 'pass' : 'todo',
+    },
+    {
+      label: 'Tags and hashtags',
+      detail: (metadata?.tags?.length || 0) >= 8 && (metadata?.hashtags?.length || 0) >= 3 ? 'Tags and hashtags are filled in.' : 'Aim for at least 8 tags and 3 hashtags.',
+      status: (metadata?.tags?.length || 0) >= 8 && (metadata?.hashtags?.length || 0) >= 3 ? 'pass' : 'todo',
+    },
+    {
+      label: 'Cover and video',
+      detail: cover?.status === 'ready' && video?.status === 'ready' ? 'Visual and final MP4 are ready.' : 'Finish cover art and video render before publishing.',
+      status: cover?.status === 'ready' && video?.status === 'ready' ? 'pass' : 'todo',
+    },
+    {
+      label: 'Long-video access',
+      detail: videoNeedsYouTubeLongUploadAccess ? 'Confirm YouTube Intermediate features are enabled for 15+ minute uploads.' : 'No long-video account gate expected.',
+      status: videoNeedsYouTubeLongUploadAccess ? 'warn' : 'pass',
+    },
+  ];
+  const seoRequiredItems = seoChecklist.filter(item => item.status !== 'warn');
+  const seoPassedItems = seoRequiredItems.filter(item => item.status === 'pass').length;
+  const seoReady = seoPassedItems === seoRequiredItems.length;
   const episodeTabCounts: Record<EpisodeListTab, number> = {
     ready: episodes.filter(ep => episodeInTab(ep, 'ready')).length,
     review: episodes.filter(ep => episodeInTab(ep, 'review')).length,
@@ -568,17 +629,41 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             {/* Phase 6: Publish */}
             <div className={card}>
               <h4 className={phaseHead}><Send size={15} className="text-emerald-500" /> Publish</h4>
-              {videoNeedsYouTubeLongUploadAccess && (
-                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <div className={`mt-3 rounded-2xl border p-3 ${seoReady ? 'border-emerald-100 bg-emerald-50/60' : 'border-amber-100 bg-amber-50/60'}`}>
+                <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-black uppercase tracking-widest text-[10px]">YouTube long-video access needed</p>
-                    <p className="mt-1 font-medium">
-                      This video is over 15 minutes. Make sure the YouTube channel has phone verification / Intermediate features enabled before publishing.
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">YouTube SEO checklist</p>
+                    <p className="mt-0.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      {seoPassedItems}/{seoRequiredItems.length} essentials ready
                     </p>
                   </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${seoReady ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {seoReady ? 'Ready' : 'Review'}
+                  </span>
                 </div>
-              )}
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {seoChecklist.map(item => {
+                    const pass = item.status === 'pass';
+                    const warn = item.status === 'warn';
+                    const tone = pass
+                      ? 'border-emerald-100 bg-white text-emerald-700'
+                      : warn
+                        ? 'border-amber-100 bg-white text-amber-700'
+                        : 'border-slate-200 bg-white text-slate-500';
+                    return (
+                      <div key={item.label} className={`rounded-xl border p-2.5 ${tone}`}>
+                        <div className="flex items-start gap-2">
+                          {pass ? <CheckCircle2 size={14} className="mt-0.5 shrink-0" /> : <AlertCircle size={14} className="mt-0.5 shrink-0" />}
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-widest">{item.label}</p>
+                            <p className="mt-0.5 text-[10px] font-medium leading-snug text-slate-500">{item.detail}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {PUBLISH_PLATFORMS.map(p => (
                   <button key={p.id} type="button" disabled={!p.available || !!busy}
