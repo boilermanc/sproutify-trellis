@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Clapperboard, Loader2, RefreshCw, Plus, Music, Image as ImageIcon, Film, FileText, Send,
   CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink, Upload, RotateCw, Activity,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform,
@@ -165,6 +166,9 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
     .sort((x, y) => (y.version - x.version) || (new Date(y.created_at || 0).getTime() - new Date(x.created_at || 0).getTime()))[0];
   const cover = latest('cover_art');
   const video = latest('video_mp4');
+  const videoWorker = getWorkerInfo(video);
+  const videoDurationSeconds = video?.duration_seconds ?? videoWorker?.duration_seconds ?? null;
+  const videoNeedsYouTubeLongUploadAccess = typeof videoDurationSeconds === 'number' && videoDurationSeconds > 900;
   const episodeTabCounts: Record<EpisodeListTab, number> = {
     ready: episodes.filter(ep => episodeInTab(ep, 'ready')).length,
     review: episodes.filter(ep => episodeInTab(ep, 'review')).length,
@@ -545,6 +549,17 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             {/* Phase 6: Publish */}
             <div className={card}>
               <h4 className={phaseHead}><Send size={15} className="text-emerald-500" /> Publish</h4>
+              {videoNeedsYouTubeLongUploadAccess && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-black uppercase tracking-widest text-[10px]">YouTube long-video access needed</p>
+                    <p className="mt-1 font-medium">
+                      This video is over 15 minutes. Make sure the YouTube channel has phone verification / Intermediate features enabled before publishing.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="mt-3 flex flex-wrap gap-2">
                 {PUBLISH_PLATFORMS.map(p => (
                   <button key={p.id} type="button" disabled={!p.available || !!busy}

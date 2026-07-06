@@ -34,6 +34,45 @@ function sanitizeArtworkText(value?: string | null): string {
     .trim();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sanitizePublishingText(value?: string | null): string {
+  return (value || '')
+    .replace(/\bsmoky\b/gi, 'moody')
+    .replace(/\bsmoke[-\s]?filled\b/gi, 'low-lit')
+    .replace(/\bsmoke\b/gi, 'atmosphere')
+    .replace(/\bsmoking\b/gi, '')
+    .replace(/\bcigarettes?\b/gi, '')
+    .replace(/\bcigars?\b/gi, '')
+    .replace(/\btobacco\b/gi, '')
+    .replace(/\bashtrays?\b/gi, '')
+    .replace(/\bromantic\b/gi, 'mellow')
+    .replace(/\bsensual\b/gi, 'smooth')
+    .replace(/\bintimate\b/gi, 'relaxed')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function sanitizePublishingTitle(value: string, showName?: string | null): string {
+  let clean = sanitizePublishingText(value);
+  const show = sanitizePublishingText(showName);
+  if (show) {
+    const escaped = escapeRegExp(show);
+    clean = clean
+      .replace(new RegExp(`^${escaped}\\s+[—-]\\s+${escaped}\\s+[—-]\\s+`, 'i'), `${show} — `)
+      .replace(new RegExp(`^${escaped}\\s+[—-]\\s+${escaped}\\b`, 'i'), show);
+  }
+  return clean;
+}
+
+function sanitizePublishingList(values: unknown): string[] {
+  return Array.isArray(values)
+    ? values.map(v => sanitizePublishingText(String(v))).filter(Boolean)
+    : [];
+}
+
 // ─── CRUD ───────────────────────────────────────────────────────────
 export async function createEpisode(config: CreateEpisodeConfig, createdBy?: string | null): Promise<Episode> {
   const { data, error } = await supabase.from('trellis_episodes').insert({
@@ -169,22 +208,37 @@ export async function generateMetadata(episode: Episode, session: MusicSession |
     }
   }
 
-  let title = episode.title, description = '', tags: string[] = [], hashtags: string[] = [];
+  const cleanEpisodeTitle = sanitizePublishingTitle(episode.title, episode.show_name);
+  const cleanShowName = sanitizePublishingText(episode.show_name);
+  const cleanTheme = sanitizePublishingText(episode.theme);
+  const cleanGenre = sanitizePublishingText(session?.genre || 'music') || 'music';
+  const cleanMood = sanitizePublishingText(session?.mood || '');
+
+  let title = cleanEpisodeTitle, description = '', tags: string[] = [], hashtags: string[] = [];
   if (geminiApiKey) {
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-      const prompt = `Write YouTube publishing metadata for a ${session?.genre || 'music'} ${session?.mood || ''} session titled "${episode.title}"${episode.show_name ? ` for the show "${episode.show_name}"` : ''}. Theme: ${episode.theme || 'n/a'}.
+      const prompt = `Write YouTube publishing metadata for a ${cleanGenre} ${cleanMood} session titled "${cleanEpisodeTitle}"${cleanShowName ? ` for the show "${cleanShowName}"` : ''}. Theme: ${cleanTheme || 'n/a'}.
+Keep the title readable and do not repeat the show name twice.
+Avoid smoking references and avoid the words smoky, romantic, sensual, and intimate.
 Return ONLY raw JSON, no markdown:
 {"title":"catchy SEO title","description":"long SEO description (audience, style, what to expect)","tags":["20-30 search tags"],"hashtags":["6-10 #hashtags"]}`;
       const resp = await ai.models.generateContent({ model: META_MODEL, contents: prompt });
       const raw = (resp.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
       const j = JSON.parse(raw);
-      title = j.title || title;
-      description = j.description || '';
-      tags = Array.isArray(j.tags) ? j.tags.map(String) : [];
-      hashtags = Array.isArray(j.hashtags) ? j.hashtags.map(String) : [];
+      title = sanitizePublishingTitle(j.title || title, cleanShowName);
+      description = sanitizePublishingText(j.description || '');
+      tags = sanitizePublishingList(j.tags);
+      hashtags = sanitizePublishingList(j.hashtags).map(h => h.startsWith('#') ? h : `#${h.replace(/^#+/, '')}`);
     } catch (e) { console.warn('[episodes] metadata gen failed, using minimal fallback', e); }
   }
+  title = sanitizePublishingTitle(title, cleanShowName);
+  description = sanitizePublishingText(description);
+  tags = tags.map(t => sanitizePublishingText(t)).filter(Boolean);
+  hashtags = hashtags.map(h => {
+    const clean = sanitizePublishingText(h).replace(/\s+/g, '');
+    return clean ? (clean.startsWith('#') ? clean : `#${clean.replace(/^#+/, '')}`) : '';
+  }).filter(Boolean);
 
   const { data, error } = await supabase.from('trellis_episode_metadata').upsert({
     episode_id: episode.id, title, description, tags, chapters, hashtags, status: 'ready', updated_at: new Date().toISOString(),
