@@ -26,6 +26,14 @@ const card = 'bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm';
 const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
 const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
 const phaseHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';
+type EpisodeListTab = 'ready' | 'review' | 'archived';
+const EPISODE_PAGE_SIZE = 8;
+
+function episodeInTab(episode: Episode, tab: EpisodeListTab): boolean {
+  if (tab === 'ready') return episode.status === 'published';
+  if (tab === 'archived') return episode.status === 'archived';
+  return episode.status !== 'published' && episode.status !== 'archived';
+}
 
 function formatEpisodeDate(value?: string | null): string {
   if (!value) return 'No date';
@@ -93,6 +101,8 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const [masterUrl, setMasterUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [episodeTab, setEpisodeTab] = useState<EpisodeListTab>('review');
+  const [episodePage, setEpisodePage] = useState(1);
   const [artStyleId, setArtStyleId] = useState(EPISODE_ART_STYLES[0].id);
   const [videoMotion, setVideoMotion] = useState<'ken_burns' | 'none'>('ken_burns');
 
@@ -155,6 +165,22 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
     .sort((x, y) => (y.version - x.version) || (new Date(y.created_at || 0).getTime() - new Date(x.created_at || 0).getTime()))[0];
   const cover = latest('cover_art');
   const video = latest('video_mp4');
+  const episodeTabCounts: Record<EpisodeListTab, number> = {
+    ready: episodes.filter(ep => episodeInTab(ep, 'ready')).length,
+    review: episodes.filter(ep => episodeInTab(ep, 'review')).length,
+    archived: episodes.filter(ep => episodeInTab(ep, 'archived')).length,
+  };
+  const filteredEpisodes = episodes.filter(ep => episodeInTab(ep, episodeTab));
+  const episodePageCount = Math.max(1, Math.ceil(filteredEpisodes.length / EPISODE_PAGE_SIZE));
+  const visibleEpisodes = filteredEpisodes.slice((episodePage - 1) * EPISODE_PAGE_SIZE, episodePage * EPISODE_PAGE_SIZE);
+
+  useEffect(() => {
+    setEpisodePage(1);
+  }, [episodeTab]);
+
+  useEffect(() => {
+    setEpisodePage(page => Math.min(page, episodePageCount));
+  }, [episodePageCount]);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -237,8 +263,16 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Episodes</h3>
             <button onClick={loadEpisodes} className="text-slate-400 hover:text-emerald-600 transition"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>
-          {episodes.length === 0 && !loading ? <p className="text-xs text-slate-400 px-1 py-4">No episodes yet.</p> :
-            episodes.map(ep => {
+          <div className="grid grid-cols-3 gap-1 bg-slate-100 rounded-xl p-1">
+            {(['ready', 'review', 'archived'] as EpisodeListTab[]).map(tab => (
+              <button key={tab} type="button" onClick={() => setEpisodeTab(tab)}
+                className={`py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition ${episodeTab === tab ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                {tab} ({episodeTabCounts[tab]})
+              </button>
+            ))}
+          </div>
+          {filteredEpisodes.length === 0 && !loading ? <p className="text-xs text-slate-400 px-1 py-4">No {episodeTab} episodes.</p> :
+            visibleEpisodes.map(ep => {
               const m = EPISODE_STATUS_META[ep.status] || EPISODE_STATUS_META.draft;
               return (
                 <button key={ep.id} type="button" onClick={() => select(ep)}
@@ -252,6 +286,15 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                 </button>
               );
             })}
+          {filteredEpisodes.length > EPISODE_PAGE_SIZE && (
+            <div className="flex items-center justify-between px-1 pt-1">
+              <button type="button" disabled={episodePage <= 1} onClick={() => setEpisodePage(p => Math.max(1, p - 1))}
+                className="text-[10px] font-black uppercase tracking-widest text-slate-400 disabled:opacity-30 hover:text-emerald-600">Prev</button>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Page {episodePage} / {episodePageCount}</span>
+              <button type="button" disabled={episodePage >= episodePageCount} onClick={() => setEpisodePage(p => Math.min(episodePageCount, p + 1))}
+                className="text-[10px] font-black uppercase tracking-widest text-slate-400 disabled:opacity-30 hover:text-emerald-600">Next</button>
+            </div>
+          )}
         </div>
       </div>
 

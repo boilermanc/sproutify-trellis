@@ -28,6 +28,15 @@ const TRACK_BADGE: Record<MusicTrack['status'], { label: string; cls: string; sp
   failed: { label: 'Failed', cls: 'bg-rose-100 text-rose-700' },
 };
 
+type SessionListTab = 'ready' | 'review' | 'archived';
+const SESSION_PAGE_SIZE = 8;
+
+function sessionInTab(session: MusicSession, tab: SessionListTab): boolean {
+  if (tab === 'ready') return session.status === 'ready';
+  if (tab === 'archived') return session.status === 'archived';
+  return session.status !== 'ready' && session.status !== 'archived';
+}
+
 function formatSessionDate(value?: string | null): string {
   if (!value) return 'No date';
   const date = new Date(value);
@@ -85,6 +94,8 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sessionTab, setSessionTab] = useState<SessionListTab>('ready');
+  const [sessionPage, setSessionPage] = useState(1);
 
   // Create form
   const [branch, setBranch] = useState(branches[0]?.slug || '');
@@ -251,6 +262,22 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const latestFailedRender = !activeRender && !latestReadyRender ? renders.find(r => r.status === 'failed') : undefined;
   const sessionFailure = !activeRender && !latestReadyRender ? (latestFailedRender?.error_message || selected?.error_message || null) : null;
   const masterReady = !!latestReadyRender?.final_audio_url;
+  const sessionTabCounts: Record<SessionListTab, number> = {
+    ready: sessions.filter(s => sessionInTab(s, 'ready')).length,
+    review: sessions.filter(s => sessionInTab(s, 'review')).length,
+    archived: sessions.filter(s => sessionInTab(s, 'archived')).length,
+  };
+  const filteredSessions = sessions.filter(s => sessionInTab(s, sessionTab));
+  const sessionPageCount = Math.max(1, Math.ceil(filteredSessions.length / SESSION_PAGE_SIZE));
+  const visibleSessions = filteredSessions.slice((sessionPage - 1) * SESSION_PAGE_SIZE, sessionPage * SESSION_PAGE_SIZE);
+
+  useEffect(() => {
+    setSessionPage(1);
+  }, [sessionTab]);
+
+  useEffect(() => {
+    setSessionPage(page => Math.min(page, sessionPageCount));
+  }, [sessionPageCount]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
@@ -322,9 +349,17 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sessions</h3>
             <button onClick={loadSessions} className="text-slate-400 hover:text-emerald-600 transition"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
           </div>
-          {sessions.length === 0 && !loading ? (
-            <p className="text-xs text-slate-400 px-1 py-4">No sessions yet.</p>
-          ) : sessions.map(s => {
+          <div className="grid grid-cols-3 gap-1 bg-slate-100 rounded-xl p-1">
+            {(['ready', 'review', 'archived'] as SessionListTab[]).map(tab => (
+              <button key={tab} type="button" onClick={() => setSessionTab(tab)}
+                className={`py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition ${sessionTab === tab ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                {tab} ({sessionTabCounts[tab]})
+              </button>
+            ))}
+          </div>
+          {filteredSessions.length === 0 && !loading ? (
+            <p className="text-xs text-slate-400 px-1 py-4">No {sessionTab} sessions.</p>
+          ) : visibleSessions.map(s => {
             const meta = SESSION_STATUS_META[s.status] || SESSION_STATUS_META.draft;
             return (
               <button key={s.id} type="button" onClick={() => selectSession(s)}
@@ -338,6 +373,15 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
               </button>
             );
           })}
+          {filteredSessions.length > SESSION_PAGE_SIZE && (
+            <div className="flex items-center justify-between px-1 pt-1">
+              <button type="button" disabled={sessionPage <= 1} onClick={() => setSessionPage(p => Math.max(1, p - 1))}
+                className="text-[10px] font-black uppercase tracking-widest text-slate-400 disabled:opacity-30 hover:text-emerald-600">Prev</button>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Page {sessionPage} / {sessionPageCount}</span>
+              <button type="button" disabled={sessionPage >= sessionPageCount} onClick={() => setSessionPage(p => Math.min(sessionPageCount, p + 1))}
+                className="text-[10px] font-black uppercase tracking-widest text-slate-400 disabled:opacity-30 hover:text-emerald-600">Next</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -385,7 +429,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                     </button>
                     <button type="button" onClick={handleStitch} disabled={busy || approvedCompleted.length === 0}
                       className="px-4 py-2.5 text-violet-600 bg-violet-50 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-violet-100 transition disabled:opacity-40">
-                      <Layers size={15} /> Re-stitch
+                      <Layers size={15} /> Rebuild Master
                     </button>
                   </>
                 ) : (
