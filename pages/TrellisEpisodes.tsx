@@ -49,6 +49,16 @@ function formatEpisodeDate(value?: string | null): string {
   });
 }
 
+function formatPublicationStamp(pub: EpisodePublication): string {
+  const label = pub.status === 'live' ? 'Live' : pub.status === 'failed' ? 'Failed' : 'Pushed';
+  const value = pub.status === 'live'
+    ? pub.published_at || pub.updated_at || pub.created_at
+    : pub.status === 'failed'
+      ? pub.updated_at || pub.created_at
+      : pub.created_at;
+  return `${label} ${formatEpisodeDate(value)}`;
+}
+
 function minutesSince(value?: string | null): number | null {
   if (!value) return null;
   const date = new Date(value);
@@ -573,7 +583,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                 <div className="mt-3 space-y-1.5">
                   {pubs.map(p => (
                     <div key={p.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-2">
-                      <span className="font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                      <span>
+                        <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                        <span className="mt-0.5 block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatPublicationStamp(p)}</span>
+                      </span>
                       <span className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
                         {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}
