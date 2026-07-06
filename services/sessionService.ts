@@ -2,17 +2,18 @@ import { GoogleGenAI } from '@google/genai';
 import {
   MusicSession, MusicTrack, MusicRender, CreateSessionConfig, SessionStatus,
 } from '../types';
-import { MUSIC_SESSION_TRACK_WEBHOOK, MUSIC_SESSION_GENERATE_WEBHOOK, MUSIC_STITCH_WEBHOOK } from '../constants';
+import { MUSIC_STITCH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 
 // ─── Trellis Sessions Service ───────────────────────────────────────
 // A "session" is a set of AI-generated tracks stitched into one master.
 // Plan generation uses client-side Gemini (same pattern as Video Ad Lab).
-// Track generation (Lyria) and stitching (Python worker) are heavy/long,
-// so they run behind fire-and-forget webhooks. All rows live on the Hub.
+// Track generation (Lyria) runs through a Supabase Edge Function queue worker.
+// Stitching remains in the Python worker behind a fire-and-forget webhook.
 // ─────────────────────────────────────────────────────────────────────
 
 const PLAN_MODEL = 'gemini-3-flash-preview';
+const SESSION_TRACK_WORKER = 'generate-session-track';
 
 interface PlannedTrack { title: string; prompt: string; }
 const DEFAULT_VOCAL_STYLE = 'Instrumental only';
@@ -251,7 +252,12 @@ export async function pollRender(id: string): Promise<MusicRender | null> {
   return data as MusicRender | null;
 }
 
-// ─── 4. Generate tracks (fire n8n Lyria worker per planned track) ───
+// ─── 4. Generate tracks (Edge Function queue worker) ────────────────
+async function startTrackWorker(body: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.functions.invoke(SESSION_TRACK_WORKER, { body });
+  if (error) throw new Error(`Music worker is not available: ${error.message}`);
+}
+
 export async function generateSessionTracks(session: MusicSession, tracks: MusicTrack[]): Promise<void> {
   const pending = tracks.filter(t => t.status === 'planned' || t.status === 'failed');
   if (pending.length === 0) return;
@@ -264,14 +270,7 @@ export async function generateSessionTracks(session: MusicSession, tracks: Music
   await supabase.from('trellis_music_sessions')
     .update({ status: 'generating', updated_at: new Date().toISOString() }).eq('id', session.id);
 
-  // Fire ONE session-level webhook. n8n fetches the queued tracks and
-  // generates them ONE AT A TIME (Split In Batches + Wait) so we never flood
-  // Lyria's preview quota, regardless of how many tracks the session has.
-  fetch(MUSIC_SESSION_GENERATE_WEBHOOK, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: session.id, branch: session.branch }),
-  }).catch(() => { /* fire-and-forget */ });
+  await startTrackWorker({ session_id: session.id, branch: session.branch, continue_queue: true });
 }
 
 export async function resumeSessionGeneration(session: MusicSession, tracks: MusicTrack[]): Promise<void> {
@@ -297,11 +296,7 @@ export async function resumeSessionGeneration(session: MusicSession, tracks: Mus
   await supabase.from('trellis_music_sessions')
     .update({ status: 'generating', error_message: null, updated_at: new Date().toISOString() }).eq('id', session.id);
 
-  fetch(MUSIC_SESSION_GENERATE_WEBHOOK, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: session.id, branch: session.branch }),
-  }).catch(() => { /* fire-and-forget */ });
+  await startTrackWorker({ session_id: session.id, branch: session.branch, continue_queue: true });
 }
 
 export async function setTrackApproved(trackId: string, approved: boolean): Promise<void> {
@@ -313,7 +308,7 @@ export async function setTrackApproved(trackId: string, approved: boolean): Prom
 export async function regenerateTrack(session: MusicSession, track: MusicTrack): Promise<void> {
   const { error } = await supabase.from('trellis_music_tracks')
     .update({
-      status: 'generating',
+      status: 'queued',
       approved: false,
       audio_url: null,
       storage_bucket: null,
@@ -325,17 +320,7 @@ export async function regenerateTrack(session: MusicSession, track: MusicTrack):
     })
     .eq('id', track.id);
   if (error) throw new Error(`Failed to reset track: ${error.message}`);
-  fetch(MUSIC_SESSION_TRACK_WEBHOOK, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      track_id: track.id, session_id: session.id, branch: session.branch,
-      track_number: track.track_number, title: track.title,
-      prompt: sanitizeMusicPrompt(track.prompt, track.genre, track.mood, track.track_number, track.title, track.vocal_style),
-      genre: track.genre, mood: track.mood, vocal_style: track.vocal_style,
-      duration_seconds: track.duration_seconds,
-    }),
-  }).catch(() => {});
+  await startTrackWorker({ session_id: session.id, track_id: track.id, branch: session.branch, continue_queue: false });
 }
 
 // ─── 5. Stitch approved tracks (fire Python worker) ─────────────────
