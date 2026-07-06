@@ -237,9 +237,20 @@ export async function setTrackApproved(trackId: string, approved: boolean): Prom
 }
 
 export async function regenerateTrack(session: MusicSession, track: MusicTrack): Promise<void> {
-  await supabase.from('trellis_music_tracks')
-    .update({ status: 'generating', approved: false, error_message: null, updated_at: new Date().toISOString() })
+  const { error } = await supabase.from('trellis_music_tracks')
+    .update({
+      status: 'generating',
+      approved: false,
+      audio_url: null,
+      storage_bucket: null,
+      storage_path: null,
+      audio_mime_type: null,
+      file_size_bytes: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', track.id);
+  if (error) throw new Error(`Failed to reset track: ${error.message}`);
   fetch(MUSIC_SESSION_TRACK_WEBHOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

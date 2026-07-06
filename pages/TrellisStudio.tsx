@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Music, Loader2, RefreshCw, Archive, AlertCircle, CheckCircle2, XCircle, Wand2,
-  Sparkles, ListMusic, Layers, Download, Plus, Check, ArrowRight,
+  Sparkles, ListMusic, Layers, Download, Plus, Check, ArrowRight, Activity,
 } from 'lucide-react';
 import { MusicSession, MusicTrack, MusicRender, CreateSessionConfig } from '../types';
 import {
@@ -39,6 +39,42 @@ function formatSessionDate(value?: string | null): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function minutesSince(value?: string | null): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+}
+
+function formatAge(value?: string | null): string {
+  const mins = minutesSince(value);
+  if (mins === null) return 'unknown';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours}h ${rem}m ago` : `${hours}h ago`;
+}
+
+function formatElapsed(value?: string | null): string {
+  const mins = minutesSince(value);
+  if (mins === null) return 'unknown';
+  if (mins < 1) return '<1m';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+function estimateTrackProgress(track: MusicTrack): number {
+  if (track.status === 'completed') return 100;
+  if (track.status === 'failed') return 100;
+  if (track.status === 'queued') return 8;
+  if (track.status !== 'generating') return 0;
+  const mins = minutesSince(track.updated_at) ?? 0;
+  return Math.min(95, 15 + (mins / 12) * 75);
 }
 
 const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey, onNavigate }) => {
@@ -174,7 +210,18 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const handleRegenerate = async (t: MusicTrack) => {
     if (!selected) return;
-    setTracks(prev => prev.map(x => x.id === t.id ? { ...x, status: 'generating', approved: false } : x));
+    setTracks(prev => prev.map(x => x.id === t.id ? {
+      ...x,
+      status: 'generating',
+      approved: false,
+      audio_url: null,
+      storage_bucket: null,
+      storage_path: null,
+      audio_mime_type: null,
+      file_size_bytes: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    } : x));
     try { await regenerateTrack(selected, t); addToast(`Regenerating "${t.title}"`, 'info'); }
     catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
   };
@@ -401,6 +448,10 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                 <div className="py-10 text-center bg-white rounded-2xl border border-slate-100"><Loader2 className="w-6 h-6 animate-spin text-emerald-500 mx-auto" /></div>
               ) : tracks.map(t => {
                 const b = TRACK_BADGE[t.status];
+                const activeTrack = t.status === 'queued' || t.status === 'generating';
+                const trackProgress = activeTrack ? estimateTrackProgress(t) : null;
+                const trackUpdatedMins = minutesSince(t.updated_at);
+                const trackStale = activeTrack && trackUpdatedMins !== null && trackUpdatedMins >= 20;
                 return (
                   <div key={t.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
@@ -425,6 +476,39 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                       <div className="mt-3 flex items-center gap-3">
                         <audio controls src={t.audio_url} className="w-full h-9" />
                         <button type="button" onClick={() => handleRegenerate(t)} title="Regenerate" className="text-slate-300 hover:text-emerald-600 transition shrink-0"><RefreshCw size={15} /></button>
+                      </div>
+                    )}
+                    {activeTrack && (
+                      <div className={`mt-3 rounded-xl border p-3 ${trackStale ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
+                        <div className="flex items-start gap-2">
+                          {trackStale ? <Activity size={14} className="mt-0.5 shrink-0" /> : <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin" />}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-[11px] font-black uppercase tracking-widest">
+                                {t.status === 'queued' ? 'Waiting for generator' : 'Generating replacement'}
+                              </p>
+                              <span className="text-[9px] font-black uppercase tracking-widest opacity-70">Track #{t.track_number}</span>
+                            </div>
+                            {trackProgress !== null && (
+                              <div className="mt-2 h-2 rounded-full bg-white/70 overflow-hidden">
+                                <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${Math.max(3, Math.min(100, trackProgress))}%` }} />
+                              </div>
+                            )}
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] font-bold opacity-80">
+                              <span>Elapsed: {formatElapsed(t.updated_at)}</span>
+                              <span>Last update: {formatAge(t.updated_at)}</span>
+                              <span>{trackProgress !== null ? `Estimate: ${Math.round(trackProgress)}%` : `Status: ${t.status}`}</span>
+                            </div>
+                            <p className="mt-1 text-[10px] font-medium opacity-70">
+                              This is an estimate from the last status update. Exact progress needs heartbeat updates from the n8n/Lyria workflow.
+                            </p>
+                            {trackStale && (
+                              <p className="mt-2 text-[10px] font-black uppercase tracking-widest">
+                                No update for 20+ minutes. Retry this track if it does not complete soon.
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                     {t.status === 'failed' && (
