@@ -25,8 +25,25 @@ const DEFAULT_STYLE =
   "expressive visible brushwork, glamorous Riviera scene, elegant figures in vintage haute couture, " +
   "classic European sports car, warm sun-drenched palette with bold teal and crimson accents, romantic " +
   "and sophisticated, in the style of vintage Robert McGinnis paperback covers and 1960s film posters. " +
-  "No text, no words, no lettering, no logos, no watermark, no signature.";
+  "No text, no words, no lettering, no logos, no watermark, no signature. " +
+  "No smoking, no cigarettes, no cigars, no tobacco, no smoke, no vapor, no ashtrays, no drug references.";
 const DEFAULT_SETTING = "the glamorous 1960s Mediterranean / Riviera world";
+
+const NO_SMOKING =
+  "No smoking, no cigarettes, no cigars, no tobacco, no smoke, no vapor, no ashtrays, no drug references.";
+
+function sanitizeSceneText(value?: string): string {
+  return (value || "")
+    .replace(/\bsmoky\b/gi, "moody")
+    .replace(/\bsmoke[-\s]?filled\b/gi, "low-lit")
+    .replace(/\bsmoke\b/gi, "atmosphere")
+    .replace(/\bcigarettes?\b/gi, "")
+    .replace(/\bcigars?\b/gi, "")
+    .replace(/\btobacco\b/gi, "")
+    .replace(/\bashtrays?\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 function aspectFor(w?: number, h?: number): string {
   if (!w || !h) return "16:9";
@@ -51,13 +68,16 @@ async function gemini(path: string, body: unknown, key: string): Promise<any> {
 
 async function writeScene(title: string, theme: string, extra: string, setting: string, key: string): Promise<string> {
   try {
+    const cleanTitle = sanitizeSceneText(title);
+    const cleanTheme = sanitizeSceneText(theme);
+    const cleanExtra = sanitizeSceneText(extra);
     const prompt =
       `Write ONE vivid visual scene (a single sentence, no preamble, no quotes) for the cover art of a ` +
-      `music episode titled "${title}"${theme ? ` with the theme "${theme}"` : ""}. ` +
-      `${extra ? extra + " " : ""}Set it in ${setting} — describe the setting, one or two evocative subjects, ` +
-      `and a period-appropriate detail. Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
+      `music episode titled "${cleanTitle}"${cleanTheme ? ` with the theme "${cleanTheme}"` : ""}. ` +
+      `${cleanExtra ? cleanExtra + " " : ""}Set it in ${setting} — describe the setting, one or two evocative subjects, ` +
+      `and a period-appropriate detail. ${NO_SMOKING} Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
     const j = await gemini(`models/${TEXT_MODEL}:generateContent`, { contents: [{ parts: [{ text: prompt }] }] }, key);
-    return j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    return sanitizeSceneText(j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "");
   } catch (e) {
     console.error("scene expansion failed (non-fatal):", (e as Error).message);
     return "";
@@ -112,7 +132,7 @@ Deno.serve(async (req: Request) => {
     if (!key) return await fail("No gemini_api_key in tenant_secrets");
 
     const scene = await writeScene(title, theme, extra, setting, key);
-    const finalPrompt = `${scene || extra || title || "A glamorous vintage scene"}. ${style_prompt}`;
+    const finalPrompt = `${scene || sanitizeSceneText(extra) || sanitizeSceneText(title) || "A glamorous vintage scene"}. ${style_prompt} ${NO_SMOKING}`;
     const aspect = aspectFor(width, height);
     const bytes = await renderImage(finalPrompt, aspect, key);
 

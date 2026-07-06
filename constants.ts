@@ -1595,31 +1595,33 @@ export const CLIP_PUBLISH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-c
 // get a Riviera scene. Add new looks here — the generator + picker pick them up automatically.
 export interface EpisodeArtStyle { id: string; name: string; desc: string; prompt: string; setting: string; }
 const NO_TEXT = ' No text, no words, no lettering, no logos, no watermark, no signature.';
+const BRAND_SAFE_ART =
+  ' No smoking, no cigarettes, no cigars, no tobacco, no smoke, no vapor, no ashtrays, no drug references.';
 export const EPISODE_ART_STYLES: EpisodeArtStyle[] = [
   {
     id: 'mid_century_blend', name: 'Mid-Century Blend', desc: 'Gouache + cinematic — the McGinnis/Bond illustrated look',
     setting: 'the glamorous 1960s Mediterranean / Riviera world',
-    prompt: '1960s mid-century illustrated cover art, hand-painted gouache figures with cinematic contrast, expressive visible brushwork, glamorous Riviera scene, elegant figures in vintage haute couture, classic European sports car, warm sun-drenched palette with bold teal and crimson accents, romantic and sophisticated, in the style of vintage Robert McGinnis paperback covers and 1960s film posters.' + NO_TEXT,
+    prompt: '1960s mid-century illustrated cover art, hand-painted gouache figures with cinematic contrast, expressive visible brushwork, glamorous Riviera scene, elegant figures in vintage haute couture, classic European sports car, warm sun-drenched palette with bold teal and crimson accents, stylish and sophisticated, in the style of vintage Robert McGinnis paperback covers and 1960s film posters.' + NO_TEXT + BRAND_SAFE_ART,
   },
   {
     id: 'watercolor_pulp', name: 'Watercolor Pulp', desc: 'Soft hand-painted vintage romance paperback',
     setting: 'the glamorous 1960s Mediterranean / Riviera world',
-    prompt: '1960s paperback cover illustration, soft gouache and watercolor, delicate painterly brushwork, glamorous Mediterranean resort scene, elegant figures, classic sports car, sun-drenched palette with teal and ochre, in the style of Robert McGinnis vintage romance covers, nostalgic and cinematic.' + NO_TEXT,
+    prompt: '1960s paperback cover illustration, soft gouache and watercolor, delicate painterly brushwork, glamorous Mediterranean resort scene, elegant figures, classic sports car, sun-drenched palette with teal and ochre, in the style of Robert McGinnis vintage covers, nostalgic and cinematic.' + NO_TEXT + BRAND_SAFE_ART,
   },
   {
     id: 'bold_cinematic', name: 'Bold Cinematic', desc: 'High-contrast digital painting, poster punch',
     setting: 'the glamorous 1960s Mediterranean / Riviera world',
-    prompt: '1960s mid-century cinematic illustrated poster, bold digital painting, expressive palette-knife background strokes, high-contrast dramatic lighting, glamorous figures in vintage couture with sunglasses, classic sports car, rich saturated teal, yellow and crimson, striking editorial composition.' + NO_TEXT,
+    prompt: '1960s mid-century cinematic illustrated poster, bold digital painting, expressive palette-knife background strokes, high-contrast dramatic lighting, glamorous figures in vintage couture with sunglasses, classic sports car, rich saturated teal, yellow and crimson, striking editorial composition.' + NO_TEXT + BRAND_SAFE_ART,
   },
   {
     id: 'photoreal_60s', name: 'Photoreal Film Still', desc: 'Kodachrome cinematic photo — the Como/Riva look',
     setting: 'the glamorous 1960s Italian lakes and Riviera (Lake Como, classic Riva speedboats, lakeside villas, grand hotels)',
-    prompt: '1960s color film still, Kodachrome photography, cinematic and glamorous, natural golden light, shallow depth of field, subtle film grain, shot on a vintage lens, editorial fashion photography, richly saturated, timeless and elegant. No text, no watermark, no logo.',
+    prompt: '1960s color film still, Kodachrome photography, cinematic and glamorous, natural golden light, shallow depth of field, subtle film grain, shot on a vintage lens, editorial fashion photography, richly saturated, timeless and elegant. No text, no watermark, no logo.' + BRAND_SAFE_ART,
   },
   {
     id: 'exotica_poster', name: 'Exotica Poster', desc: 'Retro screen-print tiki album cover',
-    setting: 'a lush 1960s tropical tiki exotica world of jungles, waterfalls, palms, carved idols and cocktail lounges',
-    prompt: 'vintage 1960s exotica album cover, retro screen-print poster illustration, flat limited warm palette of burnt orange, terracotta and cream, bold graphic shapes, tropical jungle and tiki motifs, palm trees and waterfalls, wood-block texture, mid-century modern travel poster style, nostalgic and warm.' + NO_TEXT,
+    setting: 'a lush 1960s tropical exotica world of jungles, waterfalls, palms, carved idols and moonlit resort lounges',
+    prompt: 'vintage 1960s exotica album cover, retro screen-print poster illustration, flat limited warm palette of burnt orange, terracotta and cream, bold graphic shapes, tropical jungle motifs, palm trees and waterfalls, wood-block texture, mid-century modern travel poster style, nostalgic and warm.' + NO_TEXT + BRAND_SAFE_ART,
   },
 ];
 

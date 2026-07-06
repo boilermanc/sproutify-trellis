@@ -21,6 +21,19 @@ const ASSET_DIMS: Partial<Record<AssetType, { width: number; height: number }>> 
   vertical: { width: 1080, height: 1920 },
 };
 
+function sanitizeArtworkText(value?: string | null): string {
+  return (value || '')
+    .replace(/\bsmoky\b/gi, 'moody')
+    .replace(/\bsmoke[-\s]?filled\b/gi, 'low-lit')
+    .replace(/\bsmoke\b/gi, 'atmosphere')
+    .replace(/\bcigarettes?\b/gi, '')
+    .replace(/\bcigars?\b/gi, '')
+    .replace(/\btobacco\b/gi, '')
+    .replace(/\bashtrays?\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 // ─── CRUD ───────────────────────────────────────────────────────────
 export async function createEpisode(config: CreateEpisodeConfig, createdBy?: string | null): Promise<Episode> {
   const { data, error } = await supabase.from('trellis_episodes').insert({
@@ -89,6 +102,8 @@ export async function getSessionMasterUrl(sessionId: string): Promise<string | n
 // ─── Artwork (Gemini scene → image model → episode-assets) ──────────
 export async function generateArtwork(episode: Episode, assetType: AssetType, extraPrompt?: string, style?: EpisodeArtStyle): Promise<EpisodeAsset> {
   const dims = ASSET_DIMS[assetType] ?? { width: 1920, height: 1080 };
+  const cleanTheme = sanitizeArtworkText(episode.theme);
+  const cleanPrompt = sanitizeArtworkText(`${episode.show_name ? episode.show_name + '. ' : ''}${extraPrompt || ''}`.trim());
   const { data: asset, error } = await supabase.from('trellis_episode_assets').insert({
     episode_id: episode.id, asset_type: assetType, status: 'queued', width: dims.width, height: dims.height,
   }).select('*').single();
@@ -101,8 +116,8 @@ export async function generateArtwork(episode: Episode, assetType: AssetType, ex
     body: {
       asset_id: asset.id, episode_id: episode.id, branch: episode.branch, asset_type: assetType,
       width: dims.width, height: dims.height,
-      title: episode.title, theme: episode.theme || '',
-      prompt: `${episode.show_name ? episode.show_name + '. ' : ''}${extraPrompt || ''}`.trim(),
+      title: sanitizeArtworkText(episode.title), theme: cleanTheme,
+      prompt: cleanPrompt,
       ...(style ? { style_prompt: style.prompt, setting: style.setting } : {}),
     },
   }).catch(() => {});

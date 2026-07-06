@@ -182,7 +182,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             <input className={inputCls} value={showName} onChange={e => setShowName(e.target.value)} placeholder="Rekkrd After Dark" />
           </div>
           <div><label className={labelCls}>Theme</label>
-            <input className={inputCls} value={theme} onChange={e => setTheme(e.target.value)} placeholder="smoky late-night jazz lounge" />
+            <input className={inputCls} value={theme} onChange={e => setTheme(e.target.value)} placeholder="moody late-night instrumental jazz lounge" />
           </div>
           <button type="button" onClick={handleCreate} disabled={busy === 'create' || !branch || !title.trim()}
             className="w-full py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">

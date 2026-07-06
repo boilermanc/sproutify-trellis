@@ -20,18 +20,66 @@ type Pos = typeof POSITIONS[number]['id'];
 const W = 1280;
 const H = 720;
 
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function initialText(defaultTitle: string, defaultSubtitle: string): { title: string; subtitle: string } {
+  const title = defaultTitle.trim();
+  const subtitle = defaultSubtitle.trim();
+  if (!title || !subtitle) return { title, subtitle };
+
+  const normalizedTitle = normalizeText(title);
+  const normalizedSubtitle = normalizeText(subtitle);
+  if (!normalizedSubtitle || !normalizedTitle.includes(normalizedSubtitle)) return { title, subtitle };
+
+  const escaped = subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const stripped = title
+    .replace(new RegExp(`^\\s*${escaped}\\s*(?:[-–—:|]+)\\s*`, 'i'), '')
+    .trim();
+
+  return {
+    title: stripped || title,
+    subtitle,
+  };
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = '';
+  for (const word of words) {
+    const test = cur ? `${cur} ${word}` : word;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      cur = word;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 // Composites clean title typography over the generated cover in the browser (real
 // fonts, live preview), then saves the flattened PNG via the save-episode-asset fn.
 // Text is a proper overlay — never AI-rendered letters.
 export const TitledThumbnailComposer: React.FC<Props> = ({ episodeId, coverUrl, defaultTitle, defaultSubtitle = '', onSaved }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bmpRef = useRef<ImageBitmap | null>(null);
-  const [title, setTitle] = useState(defaultTitle);
-  const [subtitle, setSubtitle] = useState(defaultSubtitle);
+  const defaults = initialText(defaultTitle, defaultSubtitle);
+  const [title, setTitle] = useState(defaults.title);
+  const [subtitle, setSubtitle] = useState(defaults.subtitle);
   const [position, setPosition] = useState<Pos>('bottom-left');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = initialText(defaultTitle, defaultSubtitle);
+    setTitle(next.title);
+    setSubtitle(next.subtitle);
+  }, [defaultTitle, defaultSubtitle]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -62,34 +110,31 @@ export const TitledThumbnailComposer: React.FC<Props> = ({ episodeId, coverUrl, 
       ctx.fillRect(0, 0, W, H);
     }
 
-    const pad = 66;
+    const pad = 76;
     const align: CanvasTextAlign = position === 'bottom-left' ? 'left' : 'center';
     const cx = align === 'left' ? pad : W / 2;
     ctx.textAlign = align;
     ctx.textBaseline = 'alphabetic';
 
-    // Word-wrap the title
-    const titleSize = 92;
-    const lineH = titleSize * 1.06;
-    ctx.font = `700 ${titleSize}px Georgia, 'Times New Roman', serif`;
-    const maxW = W - pad * 2;
-    const words = (title || '').trim().split(/\s+/).filter(Boolean);
-    const lines: string[] = [];
-    let cur = '';
-    for (const w of words) {
-      const t = cur ? `${cur} ${w}` : w;
-      if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+    const maxW = position === 'bottom-left' ? W * 0.62 : W - pad * 2;
+    let titleSize = position === 'center' ? 86 : 78;
+    let lines: string[] = [];
+    while (titleSize >= 50) {
+      ctx.font = `700 ${titleSize}px Georgia, 'Times New Roman', serif`;
+      lines = wrapText(ctx, title || '', maxW);
+      if (lines.length <= 2 && lines.every(line => ctx.measureText(line).width <= maxW)) break;
+      titleSize -= 4;
     }
-    if (cur) lines.push(cur);
+    const lineH = titleSize * 1.04;
     const n = Math.max(1, lines.length);
 
     const firstBaseline = position === 'center'
       ? (H - n * lineH) / 2 + titleSize * 0.8
-      : H - pad - (n - 1) * lineH;
+      : H - 86 - (n - 1) * lineH;
 
     // Subtitle (gold, above the title block)
     if (subtitle.trim()) {
-      ctx.font = `600 30px Georgia, serif`;
+      ctx.font = `600 28px Georgia, serif`;
       ctx.fillStyle = '#e8c88a';
       ctx.fillText(subtitle.toUpperCase(), cx, firstBaseline - lineH * 0.72);
     }
