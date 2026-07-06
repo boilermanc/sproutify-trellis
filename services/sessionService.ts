@@ -274,6 +274,36 @@ export async function generateSessionTracks(session: MusicSession, tracks: Music
   }).catch(() => { /* fire-and-forget */ });
 }
 
+export async function resumeSessionGeneration(session: MusicSession, tracks: MusicTrack[]): Promise<void> {
+  const queued = tracks.filter(t => t.status === 'queued');
+  const staleGenerating = tracks.filter(t => {
+    if (t.status !== 'generating') return false;
+    const updated = new Date(t.updated_at || 0).getTime();
+    return Number.isFinite(updated) && Date.now() - updated >= 20 * 60 * 1000;
+  });
+  const resetIds = staleGenerating.map(t => t.id);
+
+  if (queued.length === 0 && resetIds.length === 0) {
+    throw new Error('No queued or stale tracks to resume.');
+  }
+
+  if (resetIds.length > 0) {
+    const { error } = await supabase.from('trellis_music_tracks')
+      .update({ status: 'queued', error_message: null, updated_at: new Date().toISOString() })
+      .in('id', resetIds);
+    if (error) throw new Error(`Failed to reset stale tracks: ${error.message}`);
+  }
+
+  await supabase.from('trellis_music_sessions')
+    .update({ status: 'generating', error_message: null, updated_at: new Date().toISOString() }).eq('id', session.id);
+
+  fetch(MUSIC_SESSION_GENERATE_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: session.id, branch: session.branch }),
+  }).catch(() => { /* fire-and-forget */ });
+}
+
 export async function setTrackApproved(trackId: string, approved: boolean): Promise<void> {
   const { error } = await supabase.from('trellis_music_tracks')
     .update({ approved, updated_at: new Date().toISOString() }).eq('id', trackId);

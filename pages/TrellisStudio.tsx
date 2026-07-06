@@ -9,7 +9,7 @@ import {
 } from '../constants';
 import {
   createSessionWithPlan, getSessions, getTracks, getRenders,
-  generateSessionTracks, setTrackApproved, regenerateTrack, stitchSession, archiveSession, updateSessionStatus,
+  generateSessionTracks, resumeSessionGeneration, setTrackApproved, regenerateTrack, stitchSession, archiveSession, updateSessionStatus,
 } from '../services/sessionService';
 
 interface TrellisStudioProps {
@@ -292,6 +292,23 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     finally { setBusy(false); }
   };
 
+  const handleResumeGenerate = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      await resumeSessionGeneration(selected, tracks);
+      setTracks(prev => prev.map(t => {
+        const mins = t.status === 'generating' ? minutesSince(t.updated_at) : null;
+        return t.status === 'queued' || (t.status === 'generating' && mins !== null && mins >= 20)
+          ? { ...t, status: 'queued', error_message: null, updated_at: new Date().toISOString() }
+          : t;
+      }));
+      setSelected(prev => prev ? { ...prev, status: 'generating', error_message: null } : prev);
+      addToast('Generation queue resumed', 'success');
+    } catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
+    finally { setBusy(false); }
+  };
+
   const toggleApprove = async (t: MusicTrack) => {
     const next = !t.approved;
     setTracks(prev => prev.map(x => x.id === t.id ? { ...x, approved: next } : x));
@@ -343,6 +360,10 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const latestFailedRender = !activeRender && !latestReadyRender ? renders.find(r => r.status === 'failed') : undefined;
   const sessionFailure = !activeRender && !latestReadyRender ? (latestFailedRender?.error_message || selected?.error_message || null) : null;
   const masterReady = !!latestReadyRender?.final_audio_url;
+  const queuedTracks = tracks.filter(t => t.status === 'queued');
+  const generatingTracks = tracks.filter(t => t.status === 'generating');
+  const staleGeneratingTracks = generatingTracks.filter(t => (minutesSince(t.updated_at) ?? 0) >= 20);
+  const canResumeQueue = queuedTracks.length > 0 && (generatingTracks.length === 0 || staleGeneratingTracks.length > 0);
   const sessionTabCounts: Record<SessionListTab, number> = {
     ready: sessions.filter(s => sessionInTab(s, 'ready')).length,
     review: sessions.filter(s => sessionInTab(s, 'review')).length,
@@ -517,6 +538,12 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                   <button type="button" onClick={handleGenerate} disabled={busy}
                     className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition disabled:opacity-50">
                     <Wand2 size={15} /> Generate Tracks
+                  </button>
+                )}
+                {canResumeQueue && (
+                  <button type="button" onClick={handleResumeGenerate} disabled={busy}
+                    className="px-5 py-2.5 bg-amber-500 text-white rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-amber-600 transition disabled:opacity-50">
+                    <RefreshCw size={15} /> Resume Queue ({queuedTracks.length + staleGeneratingTracks.length})
                   </button>
                 )}
                 {masterReady ? (
