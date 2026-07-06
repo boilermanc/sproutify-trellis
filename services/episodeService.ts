@@ -50,7 +50,7 @@ export async function createEpisode(config: CreateEpisodeConfig, createdBy?: str
 }
 
 export async function getEpisodes(branch?: string, limit = 50): Promise<Episode[]> {
-  let q = supabase.from('trellis_episodes').select('*').order('created_at', { ascending: false }).limit(limit);
+  let q = supabase.from('trellis_episodes').select('*').order('updated_at', { ascending: false }).limit(limit);
   if (branch) q = q.eq('branch', branch);
   const { data, error } = await q;
   if (error) throw new Error(`Failed to list episodes: ${error.message}`);

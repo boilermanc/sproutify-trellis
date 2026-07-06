@@ -282,7 +282,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                     <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${m.cls}`}>{m.label}</span>
                   </div>
                   <p className="text-[10px] text-slate-400 font-medium mt-1 truncate">{ep.show_name || 'No show'}</p>
-                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest mt-1">{formatEpisodeDate(ep.created_at)}</p>
+                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-widest mt-1">Updated {formatEpisodeDate(ep.updated_at)}</p>
+                  {ep.created_at !== ep.updated_at && (
+                    <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest mt-0.5">Created {formatEpisodeDate(ep.created_at)}</p>
+                  )}
                 </button>
               );
             })}

@@ -182,7 +182,7 @@ export async function createSessionWithPlan(
 
 // ─── 3. Reads ───────────────────────────────────────────────────────
 export async function getSessions(branch?: string, limit = 50): Promise<MusicSession[]> {
-  let q = supabase.from('trellis_music_sessions').select('*').order('created_at', { ascending: false }).limit(limit);
+  let q = supabase.from('trellis_music_sessions').select('*').order('updated_at', { ascending: false }).limit(limit);
   if (branch) q = q.eq('branch', branch);
   const { data, error } = await q;
   if (error) throw new Error(`Failed to list sessions: ${error.message}`);
