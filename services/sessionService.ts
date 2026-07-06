@@ -36,11 +36,19 @@ const POLICY_SENSITIVE_MUSIC_TERMS = [
   /\bdrugs?\b/gi,
 ];
 
-function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: string | null, trackNumber?: number): string {
+function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: string | null, trackNumber?: number, title?: string | null): string {
   const fallbackBpm = 68 + (((trackNumber ?? 1) - 1) % 5) * 3;
   const bpm = prompt.match(/\b([5-9]\d|1[0-6]\d)\s*BPM\b/i)?.[1] ?? String(fallbackBpm);
   const normalizedGenre = (genre || 'instrumental jazz').toLowerCase();
   const normalizedMood = (mood || 'mellow').toLowerCase();
+  const checkText = `${title || ''} ${prompt}`;
+  const hadSensitiveTerms = POLICY_SENSITIVE_MUSIC_TERMS.some(pattern => {
+    pattern.lastIndex = 0;
+    return pattern.test(checkText);
+  });
+
+  const safeSmoothJazz = `${normalizedGenre} instrumental smooth jazz quartet with tenor saxophone lead, Rhodes electric piano comping, upright bass, brushed drums, clean studio mix, relaxed ${normalizedMood} feel, ${bpm} BPM.`;
+  if (hadSensitiveTerms) return safeSmoothJazz.slice(0, 240);
 
   let safe = prompt;
   for (const pattern of POLICY_SENSITIVE_MUSIC_TERMS) safe = safe.replace(pattern, '');
@@ -52,7 +60,7 @@ function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: strin
 
   const hasInstruments = /\b(piano|bass|drums|guitar|saxophone|trumpet|flute|vibraphone|rhodes|organ|cello|percussion|cymbals)\b/i.test(safe);
   if (!hasInstruments || safe.length < 50) {
-    safe = `${normalizedGenre} instrumental arrangement with piano, upright bass, brushed drums, and warm lead melody, ${normalizedMood} clean studio sound at ${bpm} BPM.`;
+    safe = safeSmoothJazz;
   }
 
   return safe
@@ -93,10 +101,12 @@ For each track return a short title and a CONCISE prompt for an AI music model. 
 - describe only instruments, genre, mood, and tempo (a BPM)
 - NOT reference any real artist, band, song, label, or brand name
 - avoid narrative/story language, romance/relationship language, nightlife language, sensual descriptors, and any mention of smoking, drugs, alcohol, violence, or explicit or edgy themes
+- for smooth jazz sessions, prefer tenor saxophone, Rhodes electric piano, upright bass, brushed drums, muted trumpet, and clean guitar
+- avoid classical piano solo, concert hall, orchestral, soundtrack, solo recital, big band, and vocals unless vocals were requested
 Keep the set stylistically consistent.
 
 Return ONLY a raw JSON array, no markdown, no commentary:
-[{"title":"...","prompt":"A smooth late-night jazz piece with upright bass, brushed drums, and soft Rhodes piano, mellow and warm, around 80 BPM."}]`;
+[{"title":"...","prompt":"Instrumental smooth jazz quartet with tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, mellow clean studio sound, 74 BPM."}]`;
 
     const response = await ai.models.generateContent({ model: PLAN_MODEL, contents: instruction });
     const raw = (response.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
@@ -146,7 +156,7 @@ export async function createSessionWithPlan(
     session_id: session.id,
     track_number: i + 1,
     title: t.title,
-    prompt: sanitizeMusicPrompt(t.prompt, config.genre, config.mood, i + 1),
+    prompt: sanitizeMusicPrompt(t.prompt, config.genre, config.mood, i + 1, t.title),
     genre: config.genre ?? null,
     mood: config.mood ?? null,
     vocal_style: config.vocal_style ?? null,
@@ -257,7 +267,7 @@ export async function regenerateTrack(session: MusicSession, track: MusicTrack):
     body: JSON.stringify({
       track_id: track.id, session_id: session.id, branch: session.branch,
       track_number: track.track_number, title: track.title,
-      prompt: sanitizeMusicPrompt(track.prompt, track.genre, track.mood, track.track_number),
+      prompt: sanitizeMusicPrompt(track.prompt, track.genre, track.mood, track.track_number, track.title),
       genre: track.genre, mood: track.mood, vocal_style: track.vocal_style,
       duration_seconds: track.duration_seconds,
     }),
