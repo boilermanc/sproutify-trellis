@@ -30,6 +30,34 @@ const TRACK_BADGE: Record<MusicTrack['status'], { label: string; cls: string; sp
 
 type SessionListTab = 'ready' | 'review' | 'archived';
 const SESSION_PAGE_SIZE = 8;
+const VOCAL_MIX_OPTIONS = ['Instrumental only', 'Female vocals', 'Male vocals', 'Duet'];
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function calculateTrackCount(targetMinutes: number, avgSeconds: number): number {
+  return clampNumber(Math.round((targetMinutes * 60) / Math.max(15, avgSeconds)), 1, 24);
+}
+
+function calculateAvgSeconds(targetMinutes: number, tracks: number): number {
+  return clampNumber(Math.round((targetMinutes * 60) / Math.max(1, tracks)), 15, 900);
+}
+
+function formatDurationMinutes(seconds: number): string {
+  return `${(seconds / 60).toFixed(seconds % 60 === 0 ? 0 : 1)} min`;
+}
+
+function formatVocalMix(styles: string[]): string {
+  const clean = styles.length ? styles : ['Instrumental only'];
+  return clean.length === 1 ? clean[0] : `Mix: ${clean.join(', ')}`;
+}
+
+function summarizeTrackVocals(tracks: MusicTrack[]): string | null {
+  const unique = Array.from(new Set(tracks.map(t => t.vocal_style).filter(Boolean) as string[]));
+  return unique.length ? formatVocalMix(unique) : null;
+}
 
 function sessionInTab(session: MusicSession, tab: SessionListTab): boolean {
   if (tab === 'ready') return session.status === 'ready';
@@ -119,7 +147,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const [title, setTitle] = useState('');
   const [genre, setGenre] = useState('');
   const [mood, setMood] = useState('');
-  const [vocalStyle, setVocalStyle] = useState<string>(MUSIC_VOCALS[0]);
+  const [vocalStyles, setVocalStyles] = useState<string[]>([MUSIC_VOCALS[0]]);
   const [targetMinutes, setTargetMinutes] = useState(15);
   const [trackCount, setTrackCount] = useState<number | ''>(5);
   const [avgTrackSeconds, setAvgTrackSeconds] = useState(180);
@@ -128,6 +156,11 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
   const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
+  const plannedTrackCount = trackCount === '' ? calculateTrackCount(targetMinutes, avgTrackSeconds) : Number(trackCount);
+  const plannedDurationSeconds = plannedTrackCount * avgTrackSeconds;
+  const plannedDurationDeltaSeconds = plannedDurationSeconds - (targetMinutes * 60);
+  const vocalStyle = formatVocalMix(vocalStyles);
+  const selectedVocalSummary = summarizeTrackVocals(tracks);
 
   const loadSessions = useCallback(async () => {
     try { setLoading(true); setSessions(await getSessions(undefined, 50)); }
@@ -192,10 +225,40 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [selected, activeWork, addToast]);
 
+  const handleTargetMinutesChange = (value: number) => {
+    const next = clampNumber(value, 1, 240);
+    setTargetMinutes(next);
+    if (trackCount === '') setTrackCount(calculateTrackCount(next, avgTrackSeconds));
+    else setAvgTrackSeconds(calculateAvgSeconds(next, Number(trackCount)));
+  };
+
+  const handleTrackCountChange = (value: string) => {
+    if (value === '') { setTrackCount(''); return; }
+    const next = clampNumber(Number(value), 1, 24);
+    setTrackCount(next);
+    setAvgTrackSeconds(calculateAvgSeconds(targetMinutes, next));
+  };
+
+  const handleAvgTrackSecondsChange = (value: number) => {
+    const next = clampNumber(value, 15, 900);
+    setAvgTrackSeconds(next);
+    setTrackCount(calculateTrackCount(targetMinutes, next));
+  };
+
+  const toggleVocalStyle = (style: string) => {
+    setVocalStyles(prev => {
+      const next = prev.includes(style) ? prev.filter(v => v !== style) : [...prev, style];
+      return next.length ? next : ['Instrumental only'];
+    });
+  };
+
   const applyPreset = (p: typeof SESSION_PRESETS[number]) => {
-    setTitle(p.name); setGenre(p.genre); setMood(p.mood); setVocalStyle(p.vocal_style);
-    setTargetMinutes(Math.round(p.target_duration_seconds / 60)); setAvgTrackSeconds(p.avg_track_length_seconds);
-    setTrackCount(Math.max(1, Math.round(p.target_duration_seconds / p.avg_track_length_seconds)));
+    setTitle(p.name); setGenre(p.genre); setMood(p.mood); setVocalStyles([p.vocal_style]);
+    const minutes = Math.round(p.target_duration_seconds / 60);
+    const count = Math.max(1, Math.round(p.target_duration_seconds / p.avg_track_length_seconds));
+    setTargetMinutes(minutes);
+    setAvgTrackSeconds(calculateAvgSeconds(minutes, count));
+    setTrackCount(count);
   };
 
   const handleCreate = async () => {
@@ -339,19 +402,37 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                 <option value="">Any</option>{MUSIC_MOODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            <div><label className={labelCls}>Vocals</label>
-              <select className={inputCls} value={vocalStyle} onChange={e => setVocalStyle(e.target.value)}>
-                {MUSIC_VOCALS.map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
+            <div className="md:col-span-2"><label className={labelCls}>Vocals</label>
+              <div className="grid grid-cols-2 gap-2">
+                {VOCAL_MIX_OPTIONS.map(v => {
+                  const active = vocalStyles.includes(v);
+                  return (
+                    <button key={v} type="button" onClick={() => toggleVocalStyle(v)}
+                      className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-tight transition ${
+                        active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-500 border-slate-200 hover:border-emerald-300'
+                      }`}>
+                      {v}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{vocalStyle}</p>
             </div>
             <div><label className={labelCls}>Target (min)</label>
-              <input type="number" min={1} className={inputCls} value={targetMinutes} onChange={e => setTargetMinutes(Number(e.target.value))} />
+              <input type="number" min={1} className={inputCls} value={targetMinutes} onChange={e => handleTargetMinutesChange(Number(e.target.value))} />
             </div>
             <div><label className={labelCls}>Track Count</label>
-              <input type="number" min={1} className={inputCls} value={trackCount} onChange={e => setTrackCount(e.target.value === '' ? '' : Number(e.target.value))} placeholder="auto" />
+              <input type="number" min={1} max={24} className={inputCls} value={trackCount} onChange={e => handleTrackCountChange(e.target.value)} placeholder="auto" />
             </div>
             <div><label className={labelCls}>Avg Track (sec)</label>
-              <input type="number" min={15} className={inputCls} value={avgTrackSeconds} onChange={e => setAvgTrackSeconds(Number(e.target.value))} />
+              <input type="number" min={15} className={inputCls} value={avgTrackSeconds} onChange={e => handleAvgTrackSecondsChange(Number(e.target.value))} />
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Estimate</p>
+              <p className="mt-1 text-sm font-black text-slate-800">{plannedTrackCount} tracks · {formatDurationMinutes(plannedDurationSeconds)}</p>
+              <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-widest ${Math.abs(plannedDurationDeltaSeconds) <= 30 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {plannedDurationDeltaSeconds === 0 ? 'On target' : `${plannedDurationDeltaSeconds > 0 ? '+' : ''}${Math.round(plannedDurationDeltaSeconds / 60)} min vs target`}
+              </p>
             </div>
           </div>
           <button type="button" onClick={handleCreate} disabled={creating || !branch || !title.trim()}
@@ -422,7 +503,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                 <div>
                   <h3 className="text-xl font-black text-slate-800">{selected.title}</h3>
                   <p className="text-[11px] text-slate-400 font-medium mt-1">
-                    {[selected.genre, selected.mood, selected.vocal_style, `${selected.track_count || tracks.length} tracks`,
+                    {[selected.genre, selected.mood, selectedVocalSummary, `${selected.track_count || tracks.length} tracks`,
                       selected.target_duration_seconds ? `~${Math.round(selected.target_duration_seconds / 60)} min target` : null].filter(Boolean).join(' · ')}
                   </p>
                 </div>
@@ -564,6 +645,11 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${b.cls}`}>
                             {b.spin && <Loader2 size={9} className="animate-spin" />}{b.label}
                           </span>
+                          {t.vocal_style && (
+                            <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 text-[9px] font-black uppercase tracking-widest">
+                              {t.vocal_style}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-400 font-medium mt-1 line-clamp-2">{t.prompt}</p>
                       </div>

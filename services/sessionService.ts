@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 const PLAN_MODEL = 'gemini-3-flash-preview';
 
 interface PlannedTrack { title: string; prompt: string; }
+const DEFAULT_VOCAL_STYLE = 'Instrumental only';
 
 const POLICY_SENSITIVE_MUSIC_TERMS = [
   /\bafter\s+dark\b/gi,
@@ -36,18 +37,47 @@ const POLICY_SENSITIVE_MUSIC_TERMS = [
   /\bdrugs?\b/gi,
 ];
 
-function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: string | null, trackNumber?: number, title?: string | null): string {
+function splitVocalMix(vocalStyle?: string | null): string[] {
+  const raw = (vocalStyle || DEFAULT_VOCAL_STYLE).replace(/^mix:\s*/i, '');
+  const parts = raw.split(',').map(v => v.trim()).filter(Boolean);
+  return parts.length ? parts : [DEFAULT_VOCAL_STYLE];
+}
+
+function vocalStyleForTrack(vocalStyle: string | undefined, index: number): string {
+  const mix = splitVocalMix(vocalStyle);
+  return mix[index % mix.length] || DEFAULT_VOCAL_STYLE;
+}
+
+function vocalPromptFragment(vocalStyle?: string | null): string {
+  const normalized = (vocalStyle || DEFAULT_VOCAL_STYLE).toLowerCase();
+  if (normalized.includes('duet')) return 'subtle wordless male and female vocal harmonies';
+  if (normalized.includes('female')) return 'subtle wordless female vocal texture';
+  if (normalized.includes('male')) return 'subtle wordless male vocal texture';
+  return 'instrumental';
+}
+
+function describeVocalPlan(vocalStyle?: string | null): string {
+  const mix = splitVocalMix(vocalStyle);
+  return mix.length === 1
+    ? mix[0]
+    : `rotate evenly across tracks: ${mix.join(', ')}`;
+}
+
+function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: string | null, trackNumber?: number, title?: string | null, vocalStyle?: string | null): string {
   const fallbackBpm = 68 + (((trackNumber ?? 1) - 1) % 5) * 3;
   const bpm = prompt.match(/\b([5-9]\d|1[0-6]\d)\s*BPM\b/i)?.[1] ?? String(fallbackBpm);
   const normalizedGenre = (genre || 'instrumental jazz').toLowerCase();
   const normalizedMood = (mood || 'mellow').toLowerCase();
+  const vocalFragment = vocalPromptFragment(vocalStyle);
   const checkText = `${title || ''} ${prompt}`;
   const hadSensitiveTerms = POLICY_SENSITIVE_MUSIC_TERMS.some(pattern => {
     pattern.lastIndex = 0;
     return pattern.test(checkText);
   });
 
-  const safeSmoothJazz = `${normalizedGenre} instrumental smooth jazz quartet with tenor saxophone lead, Rhodes electric piano comping, upright bass, brushed drums, clean studio mix, relaxed ${normalizedMood} feel, ${bpm} BPM.`;
+  const safeSmoothJazz = vocalFragment === 'instrumental'
+    ? `${normalizedGenre} instrumental smooth jazz quartet with tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, clean studio mix, relaxed ${normalizedMood} feel, ${bpm} BPM.`
+    : `${normalizedGenre} smooth jazz quartet with ${vocalFragment}, tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, clean studio mix, relaxed ${normalizedMood} feel, ${bpm} BPM.`;
   if (hadSensitiveTerms) return safeSmoothJazz.slice(0, 240);
 
   let safe = prompt;
@@ -81,7 +111,7 @@ async function generateTrackPlan(
   const fallback = (): PlannedTrack[] =>
     Array.from({ length: trackCount }, (_, i) => ({
       title: `${config.title} — Track ${i + 1}`,
-      prompt: `Original ${config.genre || 'instrumental'} track, ${config.mood || 'cohesive'} mood, ~${avgLen}s, part of the "${config.title}" session. Keep the vibe consistent with the rest of the set.`,
+      prompt: `Original ${config.genre || 'instrumental'} track with ${vocalPromptFragment(vocalStyleForTrack(config.vocal_style, i))}, ${config.mood || 'cohesive'} mood, ${avgLen}s, clean studio arrangement, ${70 + (i % 5) * 3} BPM.`,
     }));
 
   if (!geminiApiKey) return fallback();
@@ -92,7 +122,7 @@ async function generateTrackPlan(
 Title: "${config.title}"
 Genre: ${config.genre || 'any'}
 Mood: ${config.mood || 'any'}
-Vocals: ${config.vocal_style || 'instrumental'}
+Vocals: ${describeVocalPlan(config.vocal_style)}
 
 Create exactly ${trackCount} tracks that flow well back-to-back.
 
@@ -102,7 +132,8 @@ For each track return a short title and a CONCISE prompt for an AI music model. 
 - NOT reference any real artist, band, song, label, or brand name
 - avoid narrative/story language, romance/relationship language, nightlife language, sensual descriptors, and any mention of smoking, drugs, alcohol, violence, or explicit or edgy themes
 - for smooth jazz sessions, prefer tenor saxophone, Rhodes electric piano, upright bass, brushed drums, muted trumpet, and clean guitar
-- avoid classical piano solo, concert hall, orchestral, soundtrack, solo recital, big band, and vocals unless vocals were requested
+- avoid classical piano solo, concert hall, orchestral, soundtrack, solo recital, and big band
+- use the requested vocal plan across the set; for Instrumental only tracks, do not include vocals; for vocal tracks, prefer subtle wordless vocals or light vocal texture without lyrics
 Keep the set stylistically consistent.
 
 Return ONLY a raw JSON array, no markdown, no commentary:
@@ -152,17 +183,20 @@ export async function createSessionWithPlan(
 
   // Plan + insert tracks
   const plan = await generateTrackPlan(config, trackCount, avgLen, geminiApiKey);
-  const trackRows = plan.map((t, i) => ({
-    session_id: session.id,
-    track_number: i + 1,
-    title: t.title,
-    prompt: sanitizeMusicPrompt(t.prompt, config.genre, config.mood, i + 1, t.title),
-    genre: config.genre ?? null,
-    mood: config.mood ?? null,
-    vocal_style: config.vocal_style ?? null,
-    duration_seconds: avgLen,
-    status: 'planned' as const,
-  }));
+  const trackRows = plan.map((t, i) => {
+    const trackVocalStyle = vocalStyleForTrack(config.vocal_style, i);
+    return {
+      session_id: session.id,
+      track_number: i + 1,
+      title: t.title,
+      prompt: sanitizeMusicPrompt(t.prompt, config.genre, config.mood, i + 1, t.title, trackVocalStyle),
+      genre: config.genre ?? null,
+      mood: config.mood ?? null,
+      vocal_style: trackVocalStyle,
+      duration_seconds: avgLen,
+      status: 'planned' as const,
+    };
+  });
 
   const { data: tracks, error: tErr } = await supabase
     .from('trellis_music_tracks')
@@ -267,7 +301,7 @@ export async function regenerateTrack(session: MusicSession, track: MusicTrack):
     body: JSON.stringify({
       track_id: track.id, session_id: session.id, branch: session.branch,
       track_number: track.track_number, title: track.title,
-      prompt: sanitizeMusicPrompt(track.prompt, track.genre, track.mood, track.track_number, track.title),
+      prompt: sanitizeMusicPrompt(track.prompt, track.genre, track.mood, track.track_number, track.title, track.vocal_style),
       genre: track.genre, mood: track.mood, vocal_style: track.vocal_style,
       duration_seconds: track.duration_seconds,
     }),
