@@ -274,6 +274,24 @@ export async function publishEpisode(episode: Episode, platform: PublishPlatform
   return pub as EpisodePublication;
 }
 
+export async function markPublicationFailed(publication: EpisodePublication, reason: string): Promise<void> {
+  const response = {
+    ...(publication.response || {}),
+    reason,
+    reset_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('trellis_episode_publications')
+    .update({
+      status: 'failed',
+      response,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', publication.id);
+  if (error) throw new Error(`Could not reset publication: ${error.message}`);
+
+  await setEpisodeStatus(publication.episode_id, 'metadata');
+}
+
 export async function archiveEpisode(id: string): Promise<void> {
   await supabase.from('trellis_episodes').update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', id);
 }

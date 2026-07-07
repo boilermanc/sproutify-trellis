@@ -12,6 +12,7 @@ import {
   createEpisode, getEpisodes, getEpisode, getAssets, getMetadata, getPublications,
   linkSession, setEpisodeStatus, setAssetApproved, getSessionMasterUrl,
   generateArtwork, buildVideo, generateMetadata, approveMetadata, publishEpisode, archiveEpisode, uploadEpisodeImage,
+  markPublicationFailed,
 } from '../services/episodeService';
 import { getSessions, getSession } from '../services/sessionService';
 import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
@@ -29,6 +30,7 @@ const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-
 const phaseHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';
 type EpisodeListTab = 'ready' | 'review' | 'archived';
 const EPISODE_PAGE_SIZE = 8;
+const STUCK_PUBLICATION_MINUTES = 10;
 const YOUTUBE_SEARCH_TERMS = [
   'jazz', 'smooth jazz', 'instrumental jazz', 'relaxing jazz', 'focus', 'study',
   'work', 'reading', 'dinner', 'lounge', 'coffee', 'midnight', 'night',
@@ -119,6 +121,15 @@ function getWorkerInfo(asset?: EpisodeAsset | null): WorkerInfo | null {
   return worker && typeof worker === 'object' ? worker as WorkerInfo : null;
 }
 
+function isPublicationInFlight(pub: EpisodePublication): boolean {
+  return pub.status === 'pending' || pub.status === 'uploading' || pub.status === 'processing';
+}
+
+function isPublicationStuck(pub: EpisodePublication): boolean {
+  const age = minutesSince(pub.updated_at || pub.created_at);
+  return isPublicationInFlight(pub) && age !== null && age >= STUCK_PUBLICATION_MINUTES;
+}
+
 const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey }) => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selected, setSelected] = useState<Episode | null>(null);
@@ -172,7 +183,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const pollRef = useRef<number | null>(null);
   const active = useMemo(() =>
     assets.some(a => a.status === 'queued' || a.status === 'processing') ||
-    pubs.some(p => p.status === 'pending' || p.status === 'uploading' || p.status === 'processing'),
+    pubs.some(isPublicationInFlight),
   [assets, pubs]);
   useEffect(() => {
     if (!selected || !active) { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } return; }
@@ -691,29 +702,49 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
               {pubs.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {pubs.map(p => (
-                    <div key={p.id} className="flex items-center justify-between gap-3 text-xs bg-slate-50 rounded-xl px-3 py-2">
-                      <span className="min-w-0">
-                        <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
-                        <span className="mt-0.5 block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatPublicationStamp(p)}</span>
-                        {p.external_url && (
-                          <a href={p.external_url} target="_blank" rel="noreferrer"
-                            className="mt-1 block max-w-[220px] truncate text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
-                            title={p.external_url}>
-                            {p.external_url.replace(/^https?:\/\//, '')}
-                          </a>
-                        )}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
-                        {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}
-                        {p.external_url && (
-                          <button type="button" onClick={() => copyPublicationUrl(p.external_url!)}
-                            className="text-slate-400 transition hover:text-emerald-600" title="Copy publish link">
-                            <Copy size={13} />
-                          </button>
-                        )}
-                      </span>
-                    </div>
+                    (() => {
+                      const stuck = isPublicationStuck(p);
+                      const age = formatAge(p.updated_at || p.created_at);
+                      const reason = typeof p.response?.reason === 'string' ? p.response.reason : '';
+                      return (
+                        <div key={p.id} className={`flex items-center justify-between gap-3 text-xs rounded-xl px-3 py-2 ${stuck ? 'bg-rose-50 border border-rose-100' : 'bg-slate-50'}`}>
+                          <span className="min-w-0">
+                            <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                            <span className="mt-0.5 block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatPublicationStamp(p)}</span>
+                            {isPublicationInFlight(p) && (
+                              <span className={`mt-0.5 block text-[10px] font-black uppercase tracking-widest ${stuck ? 'text-rose-600' : 'text-amber-600'}`}>
+                                {stuck ? `Stuck: no update for ${age}` : `Working: updated ${age}`}
+                              </span>
+                            )}
+                            {reason && <span className="mt-0.5 block text-[10px] font-medium text-rose-600">{reason}</span>}
+                            {p.external_url && (
+                              <a href={p.external_url} target="_blank" rel="noreferrer"
+                                className="mt-1 block max-w-[220px] truncate text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
+                                title={p.external_url}>
+                                {p.external_url.replace(/^https?:\/\//, '')}
+                              </a>
+                            )}
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' || stuck ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{stuck ? 'stuck' : p.status}</span>
+                            {stuck && (
+                              <button type="button" disabled={!!busy}
+                                onClick={() => run(`reset-pub-${p.id}`, () => markPublicationFailed(p, `Publish stuck at ${p.status}; no update for ${age}. Check n8n execution logs, then retry.`))}
+                                className="px-2 py-1 rounded-lg bg-rose-100 text-[9px] font-black uppercase tracking-widest text-rose-700 transition hover:bg-rose-200 disabled:opacity-40">
+                                Reset
+                              </button>
+                            )}
+                            {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}
+                            {p.external_url && (
+                              <button type="button" onClick={() => copyPublicationUrl(p.external_url!)}
+                                className="text-slate-400 transition hover:text-emerald-600" title="Copy publish link">
+                                <Copy size={13} />
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()
                   ))}
                 </div>
               )}
