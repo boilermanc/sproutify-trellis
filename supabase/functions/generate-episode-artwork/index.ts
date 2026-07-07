@@ -31,9 +31,13 @@ const DEFAULT_SETTING = "the glamorous 1960s Mediterranean / Riviera world";
 
 const NO_SMOKING =
   "No smoking, no cigarettes, no cigars, no tobacco, no smoke, no vapor, no ashtrays, no drug references.";
+const NO_ALCOHOL =
+  "No alcohol, no cocktails, no wine, no beer, no liquor bottles, no bar shelves, no drinking glasses.";
+const ALCOHOL_ALLOWED =
+  "Alcoholic drinks may appear only as elegant background props, such as one cocktail glass or a lounge drink. No drunkenness, intoxication, or irresponsible drinking.";
 
-function sanitizeSceneText(value?: string): string {
-  return (value || "")
+function sanitizeSceneText(value?: string, allowAlcohol = true): string {
+  let clean = (value || "")
     .replace(/\bsmoky\b/gi, "moody")
     .replace(/\bsmoke[-\s]?filled\b/gi, "low-lit")
     .replace(/\bsmoke\b/gi, "atmosphere")
@@ -41,8 +45,23 @@ function sanitizeSceneText(value?: string): string {
     .replace(/\bcigars?\b/gi, "")
     .replace(/\btobacco\b/gi, "")
     .replace(/\bashtrays?\b/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+    .replace(/\bdrugs?\b/gi, "")
+    .replace(/\bnarcotics?\b/gi, "");
+
+  if (!allowAlcohol) {
+    clean = clean
+      .replace(/\balcohol\b/gi, "")
+      .replace(/\bcocktails?\b/gi, "")
+      .replace(/\bwine\b/gi, "")
+      .replace(/\bbeer\b/gi, "")
+      .replace(/\bliquor\b/gi, "")
+      .replace(/\bmartinis?\b/gi, "")
+      .replace(/\bmojitos?\b/gi, "")
+      .replace(/\bbar\b/gi, "lounge")
+      .replace(/\bdrinks?\b/gi, "refreshments");
+  }
+
+  return clean.replace(/\s{2,}/g, " ").trim();
 }
 
 function aspectFor(w?: number, h?: number): string {
@@ -66,18 +85,18 @@ async function gemini(path: string, body: unknown, key: string): Promise<any> {
   return j;
 }
 
-async function writeScene(title: string, theme: string, extra: string, setting: string, key: string): Promise<string> {
+async function writeScene(title: string, theme: string, extra: string, setting: string, alcoholInstruction: string, allowAlcohol: boolean, key: string): Promise<string> {
   try {
-    const cleanTitle = sanitizeSceneText(title);
-    const cleanTheme = sanitizeSceneText(theme);
-    const cleanExtra = sanitizeSceneText(extra);
+    const cleanTitle = sanitizeSceneText(title, allowAlcohol);
+    const cleanTheme = sanitizeSceneText(theme, allowAlcohol);
+    const cleanExtra = sanitizeSceneText(extra, allowAlcohol);
     const prompt =
       `Write ONE vivid visual scene (a single sentence, no preamble, no quotes) for the cover art of a ` +
       `music episode titled "${cleanTitle}"${cleanTheme ? ` with the theme "${cleanTheme}"` : ""}. ` +
       `${cleanExtra ? cleanExtra + " " : ""}Set it in ${setting} — describe the setting, one or two evocative subjects, ` +
-      `and a period-appropriate detail. ${NO_SMOKING} Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
+      `and a period-appropriate detail. ${NO_SMOKING} ${alcoholInstruction} Do NOT mention art style, medium, or the word 'cover'. Just the scene.`;
     const j = await gemini(`models/${TEXT_MODEL}:generateContent`, { contents: [{ parts: [{ text: prompt }] }] }, key);
-    return sanitizeSceneText(j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "");
+    return sanitizeSceneText(j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "", allowAlcohol);
   } catch (e) {
     console.error("scene expansion failed (non-fatal):", (e as Error).message);
     return "";
@@ -115,6 +134,7 @@ Deno.serve(async (req: Request) => {
     asset_id, episode_id, asset_type = "cover_art", width, height,
     title = "", theme = "", prompt: extra = "",
     style_prompt = DEFAULT_STYLE, setting = DEFAULT_SETTING,
+    alcohol_policy = "allow", allow_alcohol,
   } = body;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -131,8 +151,10 @@ Deno.serve(async (req: Request) => {
     const key = sec?.gemini_api_key;
     if (!key) return await fail("No gemini_api_key in tenant_secrets");
 
-    const scene = await writeScene(title, theme, extra, setting, key);
-    const finalPrompt = `${scene || sanitizeSceneText(extra) || sanitizeSceneText(title) || "A glamorous vintage scene"}. ${style_prompt} ${NO_SMOKING}`;
+    const allowsAlcohol = typeof allow_alcohol === "boolean" ? allow_alcohol : alcohol_policy !== "exclude";
+    const alcoholInstruction = allowsAlcohol ? ALCOHOL_ALLOWED : NO_ALCOHOL;
+    const scene = await writeScene(title, theme, extra, setting, alcoholInstruction, allowsAlcohol, key);
+    const finalPrompt = `${scene || sanitizeSceneText(extra, allowsAlcohol) || sanitizeSceneText(title, allowsAlcohol) || "A glamorous vintage scene"}. ${style_prompt} ${NO_SMOKING} ${alcoholInstruction}`;
     const aspect = aspectFor(width, height);
     const bytes = await renderImage(finalPrompt, aspect, key);
 
@@ -142,7 +164,7 @@ Deno.serve(async (req: Request) => {
     if (asset_id) {
       await supabase.from("trellis_episode_assets").update({
         status: "ready", url, storage_bucket: BUCKET, storage_path: path,
-        metadata: { prompt: finalPrompt, aspect, model: IMAGE_MODEL, scene, style_prompt, setting }, updated_at: new Date().toISOString(),
+        metadata: { prompt: finalPrompt, aspect, model: IMAGE_MODEL, scene, style_prompt, setting, alcohol_policy: allowsAlcohol ? "allow" : "exclude" }, updated_at: new Date().toISOString(),
       }).eq("id", asset_id);
     }
 

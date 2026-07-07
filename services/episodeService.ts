@@ -201,8 +201,16 @@ export async function getSessionMasterUrl(sessionId: string): Promise<string | n
   return renders.find(r => r.status === 'ready')?.final_audio_url ?? null;
 }
 
+export type ArtworkAlcoholPolicy = 'allow' | 'exclude';
+
 // ─── Artwork (Gemini scene → image model → episode-assets) ──────────
-export async function generateArtwork(episode: Episode, assetType: AssetType, extraPrompt?: string, style?: EpisodeArtStyle): Promise<EpisodeAsset> {
+export async function generateArtwork(
+  episode: Episode,
+  assetType: AssetType,
+  extraPrompt?: string,
+  style?: EpisodeArtStyle,
+  alcoholPolicy: ArtworkAlcoholPolicy = 'allow',
+): Promise<EpisodeAsset> {
   const dims = ASSET_DIMS[assetType] ?? { width: 1920, height: 1080 };
   const cleanTheme = sanitizeArtworkText(episode.theme);
   const cleanPrompt = sanitizeArtworkText(`${episode.show_name ? episode.show_name + '. ' : ''}${extraPrompt || ''}`.trim());
@@ -220,6 +228,8 @@ export async function generateArtwork(episode: Episode, assetType: AssetType, ex
       width: dims.width, height: dims.height,
       title: sanitizeArtworkText(episode.title), theme: cleanTheme,
       prompt: cleanPrompt,
+      alcohol_policy: alcoholPolicy,
+      allow_alcohol: alcoholPolicy === 'allow',
       ...(style ? { style_prompt: style.prompt, setting: style.setting } : {}),
     },
   }).catch(() => {});

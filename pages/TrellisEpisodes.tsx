@@ -144,6 +144,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const [episodeTab, setEpisodeTab] = useState<EpisodeListTab>('review');
   const [episodePage, setEpisodePage] = useState(1);
   const [artStyleId, setArtStyleId] = useState(EPISODE_ART_STYLES[0].id);
+  const [artworkAlcoholPolicy, setArtworkAlcoholPolicy] = useState<'allow' | 'exclude'>('allow');
   const [videoMotion, setVideoMotion] = useState<'ken_burns' | 'none'>('ken_burns');
 
   const [branch, setBranch] = useState(branches[0]?.slug || '');
@@ -500,13 +501,29 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                   ))}
                 </select>
               </div>
+              <div className="mt-3">
+                <label className={labelCls}>Drinks in Artwork</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['allow', 'Allow Drinks'],
+                    ['exclude', 'No Drinks'],
+                  ] as const).map(([value, label]) => (
+                    <button key={value} type="button" disabled={!!busy} onClick={() => setArtworkAlcoholPolicy(value)}
+                      className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-tight transition disabled:opacity-40 ${
+                        artworkAlcoholPolicy === value ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-500 border-slate-200 hover:border-violet-300'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <p className="text-[10px] text-slate-400 mt-3">Generate with AI — click again anytime for a fresh take — or upload your own below.</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {(['cover_art', 'thumbnail', 'vertical'] as AssetType[]).map(t => {
                   const exists = !!latest(t);
                   return (
-                    <button key={t} type="button" disabled={!!busy} onClick={() => run(`art-${t}`, () => generateArtwork(selected, t, undefined, EPISODE_ART_STYLES.find(s => s.id === artStyleId)).then(() => {}))}
+                    <button key={t} type="button" disabled={!!busy} onClick={() => run(`art-${t}`, () => generateArtwork(selected, t, undefined, EPISODE_ART_STYLES.find(s => s.id === artStyleId), artworkAlcoholPolicy).then(() => {}))}
                       className="px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-[10px] font-black text-violet-600 uppercase tracking-tight hover:border-violet-400 transition disabled:opacity-40 flex items-center gap-1">
                       {exists ? <RotateCw size={11} /> : <Wand2 size={11} />} {exists ? 'Regen ' : ''}{t.replace('_', ' ')}
                     </button>
