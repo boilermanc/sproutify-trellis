@@ -106,6 +106,36 @@ function sanitizeYoutubeTags(values: unknown, maxTags = 15, maxTotalChars = 380)
   return tags;
 }
 
+function publishingFooter(title: string): string {
+  const cleanTitle = sanitizePublishingText(title) || 'this mix';
+  return [
+    'Join the conversation: Which track title, mood, or city should we explore next?',
+    '',
+    'Content note: Sound and visuals are AI-generated. Tracks are curated, selected, and sometimes mixed by a human. Visuals may be refined or edited before publishing.',
+    'How this was made: Made with AI. Sounds or visuals were altered or fully generated.',
+    '',
+    `Subscribe for more long-form instrumental sessions like ${cleanTitle}.`,
+  ].join('\n');
+}
+
+function engagementComment(title: string): string {
+  const cleanTitle = sanitizePublishingText(title) || 'this session';
+  return `Which setting should we explore next after ${cleanTitle}? Drop a city, mood, or track title idea in the comments.`;
+}
+
+function withPublishingFooter(description: string, title: string): string {
+  const clean = sanitizePublishingText(description);
+  const withoutOldNote = clean
+    .replace(/Content note:[\s\S]*$/i, '')
+    .replace(/How this was made[\s\S]*$/i, '')
+    .trim();
+  return [withoutOldNote, publishingFooter(title)]
+    .filter(Boolean)
+    .join('\n\n')
+    .slice(0, 4900)
+    .trim();
+}
+
 // ─── CRUD ───────────────────────────────────────────────────────────
 export async function createEpisode(config: CreateEpisodeConfig, createdBy?: string | null): Promise<Episode> {
   const { data, error } = await supabase.from('trellis_episodes').insert({
@@ -254,6 +284,8 @@ export async function generateMetadata(episode: Episode, session: MusicSession |
       const prompt = `Write YouTube publishing metadata for a ${cleanGenre} ${cleanMood} session titled "${cleanEpisodeTitle}"${cleanShowName ? ` for the show "${cleanShowName}"` : ''}. Theme: ${cleanTheme || 'n/a'}.
 Keep the title readable and do not repeat the show name twice.
 Avoid smoking references and avoid the words smoky, romantic, sensual, and intimate.
+Write the description in an editorial, cinematic style: setting, mood, instruments, listener scenario, and emotional arc. Avoid generic SEO filler.
+Do not include AI disclosure, production notes, hashtags, or chapter text in the description; the app adds those separately.
 Return ONLY raw JSON, no markdown:
 {"title":"catchy SEO title","description":"long SEO description (audience, style, what to expect)","tags":["12-15 short search tags"],"hashtags":["6-10 #hashtags"]}`;
       const resp = await ai.models.generateContent({ model: META_MODEL, contents: prompt });
@@ -266,7 +298,7 @@ Return ONLY raw JSON, no markdown:
     } catch (e) { console.warn('[episodes] metadata gen failed, using minimal fallback', e); }
   }
   title = sanitizePublishingTitle(title, cleanShowName);
-  description = sanitizePublishingText(description);
+  description = withPublishingFooter(description, title);
   tags = sanitizeYoutubeTags(tags);
   hashtags = hashtags.map(h => {
     const clean = sanitizePublishingText(h).replace(/\s+/g, '');
@@ -305,8 +337,10 @@ export async function publishEpisode(
       video_url: videoUrl,
       thumbnail_url: thumbnailUrl || null,
       made_for_kids: false,
+      contains_synthetic_media: true,
+      engagement_comment: engagementComment(metadata?.title || episode.title),
       metadata: metadata ? {
-        title: metadata.title, description: metadata.description,
+        title: metadata.title, description: withPublishingFooter(metadata.description || '', metadata.title || episode.title),
         tags: sanitizeYoutubeTags(metadata.tags), chapters: metadata.chapters, hashtags: metadata.hashtags,
       } : null,
     }),
