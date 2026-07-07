@@ -1555,8 +1555,8 @@ export const VIDEO_AD_STAGES = [
 // ─── Trellis Studio (AI music generation via Lyria) ─────────────────
 export const MUSIC_GEN_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-music-generate';
 
-export const MUSIC_GENRES = ['Jazz', 'Blues', 'Soul', 'Lo-fi', 'Rock', 'Country', 'Pop', 'Electronic', 'Cinematic'] as const;
-export const MUSIC_MOODS = ['Dark', 'Smooth', 'Fun', 'Romantic', 'Mysterious', 'Upbeat', 'Cinematic', 'Warm'] as const;
+export const MUSIC_GENRES = ['Jazz', 'Spy Jazz', 'Blues', 'Soul', 'Lo-fi', 'Rock', 'Country', 'Pop', 'Electronic', 'Cinematic'] as const;
+export const MUSIC_MOODS = ['Dark', 'Smooth', 'Fun', 'Romantic', 'Mysterious', 'Suspenseful', 'Upbeat', 'Cinematic', 'Warm'] as const;
 export const MUSIC_VOCALS = ['Instrumental only', 'Female vocals', 'Male vocals', 'Duet'] as const;
 export const MUSIC_DURATIONS = [
   { label: '30 sec clip', value: 30 },
@@ -1609,6 +1609,7 @@ export const MUSIC_STITCH_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-m
 
 export const SESSION_PRESETS = [
   { id: 'rekkrd_midnight_jazz', name: 'Rekkrd After Dark — Midnight Jazz', genre: 'Jazz', mood: 'Mysterious', vocal_style: 'Instrumental only', target_duration_seconds: 3600, avg_track_length_seconds: 180 },
+  { id: 'velvet_spy_files', name: 'Velvet Spy Files', genre: 'Spy Jazz', mood: 'Suspenseful', vocal_style: 'Instrumental only', target_duration_seconds: 3600, avg_track_length_seconds: 180 },
   { id: 'lofi_study', name: 'Lo-fi Study Hour', genre: 'Lo-fi', mood: 'Smooth', vocal_style: 'Instrumental only', target_duration_seconds: 3600, avg_track_length_seconds: 150 },
   { id: 'soul_lounge', name: 'Soul Lounge Evening', genre: 'Soul', mood: 'Warm', vocal_style: 'Female vocals', target_duration_seconds: 1800, avg_track_length_seconds: 200 },
 ] as const;

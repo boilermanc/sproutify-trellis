@@ -57,6 +57,16 @@ function vocalPromptFragment(vocalStyle?: string | null): string {
   return 'instrumental';
 }
 
+function safeArrangementPrompt(genre: string, mood: string, bpm: string, vocalFragment: string): string {
+  const withVocals = vocalFragment !== 'instrumental' ? ` with ${vocalFragment}` : '';
+  if (genre.includes('spy')) {
+    return `Original spy jazz instrumental${withVocals}, surf guitar lead, muted trumpet, vibraphone, upright bass, brushed drums, dramatic brass stabs, suspenseful ${mood} feel, ${bpm} BPM.`;
+  }
+  return vocalFragment === 'instrumental'
+    ? `${genre} instrumental smooth jazz quartet with tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, clean studio mix, relaxed ${mood} feel, ${bpm} BPM.`
+    : `${genre} smooth jazz quartet with ${vocalFragment}, tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, clean studio mix, relaxed ${mood} feel, ${bpm} BPM.`;
+}
+
 function describeVocalPlan(vocalStyle?: string | null): string {
   const mix = splitVocalMix(vocalStyle);
   return mix.length === 1
@@ -76,10 +86,8 @@ function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: strin
     return pattern.test(checkText);
   });
 
-  const safeSmoothJazz = vocalFragment === 'instrumental'
-    ? `${normalizedGenre} instrumental smooth jazz quartet with tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, clean studio mix, relaxed ${normalizedMood} feel, ${bpm} BPM.`
-    : `${normalizedGenre} smooth jazz quartet with ${vocalFragment}, tenor saxophone lead, Rhodes electric piano, upright bass, brushed drums, clean studio mix, relaxed ${normalizedMood} feel, ${bpm} BPM.`;
-  if (hadSensitiveTerms) return safeSmoothJazz.slice(0, 240);
+  const safePrompt = safeArrangementPrompt(normalizedGenre, normalizedMood, bpm, vocalFragment);
+  if (hadSensitiveTerms) return safePrompt.slice(0, 240);
 
   let safe = prompt;
   for (const pattern of POLICY_SENSITIVE_MUSIC_TERMS) safe = safe.replace(pattern, '');
@@ -91,7 +99,7 @@ function sanitizeMusicPrompt(prompt: string, genre?: string | null, mood?: strin
 
   const hasInstruments = /\b(piano|bass|drums|guitar|saxophone|trumpet|flute|vibraphone|rhodes|organ|cello|percussion|cymbals)\b/i.test(safe);
   if (!hasInstruments || safe.length < 50) {
-    safe = safeSmoothJazz;
+    safe = safePrompt;
   }
 
   return safe
@@ -133,6 +141,8 @@ For each track return a short title and a CONCISE prompt for an AI music model. 
 - NOT reference any real artist, band, song, label, or brand name
 - avoid narrative/story language, romance/relationship language, nightlife language, sensual descriptors, and any mention of smoking, drugs, alcohol, violence, or explicit or edgy themes
 - for smooth jazz sessions, prefer tenor saxophone, Rhodes electric piano, upright bass, brushed drums, muted trumpet, and clean guitar
+- for spy jazz sessions, use original 1960s-inspired cinematic lounge language with surf guitar, muted trumpet, vibraphone, upright bass, brushed drums, and dramatic brass stabs
+- for spy jazz sessions, do not reference James Bond, 007, Mission Impossible, spy films, real franchises, theme songs, or soundtrack names
 - avoid classical piano solo, concert hall, orchestral, soundtrack, solo recital, and big band
 - use the requested vocal plan across the set; for Instrumental only tracks, do not include vocals; for vocal tracks, prefer subtle wordless vocals or light vocal texture without lyrics
 Keep the set stylistically consistent.
