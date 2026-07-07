@@ -304,6 +304,7 @@ export async function publishEpisode(
       publication_id: pub.id, episode_id: episode.id, branch: episode.branch, platform,
       video_url: videoUrl,
       thumbnail_url: thumbnailUrl || null,
+      made_for_kids: false,
       metadata: metadata ? {
         title: metadata.title, description: metadata.description,
         tags: sanitizeYoutubeTags(metadata.tags), chapters: metadata.chapters, hashtags: metadata.hashtags,
