@@ -73,6 +73,39 @@ function sanitizePublishingList(values: unknown): string[] {
     : [];
 }
 
+function sanitizeYoutubeTag(value: string): string {
+  return sanitizePublishingText(value)
+    .replace(/^#+/, '')
+    .replace(/[,|;]/g, ' ')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 45)
+    .trim();
+}
+
+function sanitizeYoutubeTags(values: unknown, maxTags = 15, maxTotalChars = 380): string[] {
+  const source = Array.isArray(values) ? values : [];
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+
+  for (const raw of source) {
+    const tag = sanitizeYoutubeTag(String(raw));
+    const key = tag.toLowerCase();
+    if (tag.length < 2 || seen.has(key)) continue;
+
+    const nextTotal = total + tag.length + (tags.length > 0 ? 1 : 0);
+    if (tags.length >= maxTags || nextTotal > maxTotalChars) break;
+
+    tags.push(tag);
+    seen.add(key);
+    total = nextTotal;
+  }
+
+  return tags;
+}
+
 // ─── CRUD ───────────────────────────────────────────────────────────
 export async function createEpisode(config: CreateEpisodeConfig, createdBy?: string | null): Promise<Episode> {
   const { data, error } = await supabase.from('trellis_episodes').insert({
@@ -222,7 +255,7 @@ export async function generateMetadata(episode: Episode, session: MusicSession |
 Keep the title readable and do not repeat the show name twice.
 Avoid smoking references and avoid the words smoky, romantic, sensual, and intimate.
 Return ONLY raw JSON, no markdown:
-{"title":"catchy SEO title","description":"long SEO description (audience, style, what to expect)","tags":["20-30 search tags"],"hashtags":["6-10 #hashtags"]}`;
+{"title":"catchy SEO title","description":"long SEO description (audience, style, what to expect)","tags":["12-15 short search tags"],"hashtags":["6-10 #hashtags"]}`;
       const resp = await ai.models.generateContent({ model: META_MODEL, contents: prompt });
       const raw = (resp.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
       const j = JSON.parse(raw);
@@ -234,7 +267,7 @@ Return ONLY raw JSON, no markdown:
   }
   title = sanitizePublishingTitle(title, cleanShowName);
   description = sanitizePublishingText(description);
-  tags = tags.map(t => sanitizePublishingText(t)).filter(Boolean);
+  tags = sanitizeYoutubeTags(tags);
   hashtags = hashtags.map(h => {
     const clean = sanitizePublishingText(h).replace(/\s+/g, '');
     return clean ? (clean.startsWith('#') ? clean : `#${clean.replace(/^#+/, '')}`) : '';
@@ -266,7 +299,7 @@ export async function publishEpisode(episode: Episode, platform: PublishPlatform
       video_url: videoUrl,
       metadata: metadata ? {
         title: metadata.title, description: metadata.description,
-        tags: metadata.tags, chapters: metadata.chapters, hashtags: metadata.hashtags,
+        tags: sanitizeYoutubeTags(metadata.tags), chapters: metadata.chapters, hashtags: metadata.hashtags,
       } : null,
     }),
   }).catch(() => {});
