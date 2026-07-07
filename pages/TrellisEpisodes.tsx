@@ -207,7 +207,13 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const latest = (type: AssetType) => assets.filter(a => a.asset_type === type)
     .sort((x, y) => (y.version - x.version) || (new Date(y.created_at || 0).getTime() - new Date(x.created_at || 0).getTime()))[0];
   const cover = latest('cover_art');
+  const thumbnail = latest('thumbnail');
   const video = latest('video_mp4');
+  const publishThumbnailUrl = thumbnail?.status === 'ready' && thumbnail.url
+    ? thumbnail.url
+    : cover?.status === 'ready' && cover.url
+      ? cover.url
+      : null;
   const videoWorker = getWorkerInfo(video);
   const videoDurationSeconds = video?.duration_seconds ?? videoWorker?.duration_seconds ?? null;
   const videoNeedsYouTubeLongUploadAccess = typeof videoDurationSeconds === 'number' && videoDurationSeconds > 900;
@@ -693,7 +699,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
               <div className="mt-3 flex flex-wrap gap-2">
                 {PUBLISH_PLATFORMS.map(p => (
                   <button key={p.id} type="button" disabled={!p.available || !!busy}
-                    onClick={() => run(`pub-${p.id}`, () => publishEpisode(selected, p.id as PublishPlatform, video?.url || null, metadata).then(() => {}))}
+                    onClick={() => run(`pub-${p.id}`, () => publishEpisode(selected, p.id as PublishPlatform, video?.url || null, metadata, publishThumbnailUrl).then(() => {}))}
                     className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-100 text-[10px] font-black text-emerald-700 uppercase tracking-tight hover:border-emerald-400 transition disabled:opacity-40 flex items-center gap-1">
                     <Send size={11} /> {p.label}{!p.available && ' (soon)'}
                   </button>

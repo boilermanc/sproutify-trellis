@@ -286,7 +286,13 @@ export async function approveMetadata(episodeId: string): Promise<void> {
 }
 
 // ─── Publish (fire n8n → platform API) ──────────────────────────────
-export async function publishEpisode(episode: Episode, platform: PublishPlatform, videoUrl: string | null, metadata: EpisodeMetadata | null): Promise<EpisodePublication> {
+export async function publishEpisode(
+  episode: Episode,
+  platform: PublishPlatform,
+  videoUrl: string | null,
+  metadata: EpisodeMetadata | null,
+  thumbnailUrl?: string | null,
+): Promise<EpisodePublication> {
   const { data: pub, error } = await supabase.from('trellis_episode_publications').insert({
     episode_id: episode.id, platform, status: 'pending',
   }).select('*').single();
@@ -297,6 +303,7 @@ export async function publishEpisode(episode: Episode, platform: PublishPlatform
     body: JSON.stringify({
       publication_id: pub.id, episode_id: episode.id, branch: episode.branch, platform,
       video_url: videoUrl,
+      thumbnail_url: thumbnailUrl || null,
       metadata: metadata ? {
         title: metadata.title, description: metadata.description,
         tags: sanitizeYoutubeTags(metadata.tags), chapters: metadata.chapters, hashtags: metadata.hashtags,
