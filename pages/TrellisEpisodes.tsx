@@ -161,7 +161,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
 
   const select = useCallback(async (ep: Episode) => {
     setSelected(ep); setAssets([]); setMetadata(null); setPubs([]); setLinkedSession(null); setMasterUrl(null);
-    try { setSessionsList(await getSessions(ep.branch || undefined, 50)); } catch { /* ignore */ }
+    try {
+      const sessions = await getSessions(ep.branch || undefined, 50);
+      setSessionsList(sessions.filter(s => s.status !== 'archived'));
+    } catch { /* ignore */ }
     await loadDetail(ep);
   }, [loadDetail]);
 
@@ -259,7 +262,19 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
-    try { await fn(); if (selected) await loadDetail(selected); }
+    try {
+      await fn();
+      if (selected) {
+        const fresh = await getEpisode(selected.id);
+        if (fresh) {
+          setSelected(fresh);
+          setEpisodes(prev => prev.map(ep => ep.id === fresh.id ? fresh : ep));
+          await loadDetail(fresh);
+        } else {
+          await loadDetail(selected);
+        }
+      }
+    }
     catch (e) { addToast(msg(e), 'error'); }
     finally { setBusy(''); }
   };
