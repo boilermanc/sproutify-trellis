@@ -2,17 +2,17 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Clapperboard, Loader2, RefreshCw, Plus, Music, Image as ImageIcon, Film, FileText, Send,
   CheckCircle2, Archive, Link2, Download, Wand2, ExternalLink, Upload, RotateCw, Activity,
-  AlertCircle, Copy,
+  AlertCircle, Copy, BarChart3,
 } from 'lucide-react';
 import {
-  Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform,
+  Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform, YouTubeDailyMetric,
 } from '../types';
 import { EPISODE_PHASES, EPISODE_STATUS_META, PUBLISH_PLATFORMS, EPISODE_ART_STYLES } from '../constants';
 import {
   createEpisode, getEpisodes, getEpisode, getAssets, getMetadata, getPublications,
   linkSession, setEpisodeStatus, setAssetApproved, getSessionMasterUrl,
   generateArtwork, buildVideo, generateMetadata, approveMetadata, publishEpisode, archiveEpisode, uploadEpisodeImage,
-  markPublicationFailed,
+  markPublicationFailed, getYouTubeMetrics,
 } from '../services/episodeService';
 import { getSessions, getSession } from '../services/sessionService';
 import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
@@ -106,6 +106,23 @@ function formatElapsed(value?: string | null): string {
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
+function formatMetricNumber(value?: number | null): string {
+  if (value == null || Number.isNaN(Number(value))) return '0';
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(value));
+}
+
+function formatWatchHours(minutes?: number | null): string {
+  const hours = Number(minutes || 0) / 60;
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: hours >= 10 ? 0 : 1 }).format(hours);
+}
+
+function formatDurationSeconds(seconds?: number | null): string {
+  const total = Math.max(0, Math.round(Number(seconds || 0)));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
 type WorkerInfo = {
   stage?: string;
   message?: string;
@@ -136,6 +153,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const [assets, setAssets] = useState<EpisodeAsset[]>([]);
   const [metadata, setMetadata] = useState<EpisodeMetadata | null>(null);
   const [pubs, setPubs] = useState<EpisodePublication[]>([]);
+  const [youtubeMetrics, setYoutubeMetrics] = useState<YouTubeDailyMetric[]>([]);
   const [sessionsList, setSessionsList] = useState<MusicSession[]>([]);
   const [linkedSession, setLinkedSession] = useState<MusicSession | null>(null);
   const [masterUrl, setMasterUrl] = useState<string | null>(null);
@@ -163,8 +181,8 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   useEffect(() => { loadEpisodes(); }, [loadEpisodes]);
 
   const loadDetail = useCallback(async (ep: Episode) => {
-    const [a, m, p] = await Promise.all([getAssets(ep.id), getMetadata(ep.id), getPublications(ep.id)]);
-    setAssets(a); setMetadata(m); setPubs(p);
+    const [a, m, p, y] = await Promise.all([getAssets(ep.id), getMetadata(ep.id), getPublications(ep.id), getYouTubeMetrics(ep.id).catch(() => [])]);
+    setAssets(a); setMetadata(m); setPubs(p); setYoutubeMetrics(y);
     if (ep.session_id) {
       const [s, url] = await Promise.all([getSession(ep.session_id), getSessionMasterUrl(ep.session_id)]);
       setLinkedSession(s); setMasterUrl(url);
@@ -172,7 +190,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   }, []);
 
   const select = useCallback(async (ep: Episode) => {
-    setSelected(ep); setAssets([]); setMetadata(null); setPubs([]); setLinkedSession(null); setMasterUrl(null);
+    setSelected(ep); setAssets([]); setMetadata(null); setPubs([]); setYoutubeMetrics([]); setLinkedSession(null); setMasterUrl(null);
     try {
       const sessions = await getSessions(ep.branch || undefined, 50);
       setSessionsList(sessions.filter(s => s.status !== 'archived'));
@@ -261,6 +279,13 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
   const seoRequiredItems = seoChecklist.filter(item => item.status !== 'warn');
   const seoPassedItems = seoRequiredItems.filter(item => item.status === 'pass').length;
   const seoReady = seoPassedItems === seoRequiredItems.length;
+  const latestYoutubeMetric = youtubeMetrics[0];
+  const sevenDayYoutubeMetrics = youtubeMetrics.slice(0, 7);
+  const sevenDayViews = sevenDayYoutubeMetrics.reduce((sum, row) => sum + Number(row.views || 0), 0);
+  const sevenDayWatchMinutes = sevenDayYoutubeMetrics.reduce((sum, row) => sum + Number(row.estimated_minutes_watched || 0), 0);
+  const latestPublicStats = latestYoutubeMetric?.raw?.public_statistics as Record<string, unknown> | undefined;
+  const totalYouTubeViews = latestPublicStats?.viewCount != null ? Number(latestPublicStats.viewCount) : null;
+  const youtubeLivePublication = pubs.find(p => p.platform === 'youtube' && p.status === 'live');
   const episodeTabCounts: Record<EpisodeListTab, number> = {
     ready: episodes.filter(ep => episodeInTab(ep, 'ready')).length,
     review: episodes.filter(ep => episodeInTab(ep, 'review')).length,
@@ -769,6 +794,64 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                       );
                     })()
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* YouTube Analytics */}
+            <div className={card}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className={phaseHead}><BarChart3 size={15} className="text-red-500" /> YouTube Analytics</h4>
+                  <p className="mt-1 text-[11px] font-medium text-slate-400">
+                    {latestYoutubeMetric ? `Last synced ${formatAge(latestYoutubeMetric.synced_at)}` : 'Waiting for the YouTube analytics sync.'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => selected && run('yt-metrics-refresh', () => getYouTubeMetrics(selected.id).then(setYoutubeMetrics))}
+                  disabled={!!busy}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-500 transition hover:bg-slate-200 disabled:opacity-40">
+                  Refresh
+                </button>
+              </div>
+              {!youtubeLivePublication ? (
+                <p className="mt-3 text-xs font-medium text-slate-400">Publish this episode to YouTube first. Analytics will attach to the live publication.</p>
+              ) : !latestYoutubeMetric ? (
+                <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-bold text-slate-500">No analytics rows yet.</p>
+                  <p className="mt-1 text-[11px] font-medium text-slate-400">Next step is the scheduled YouTube sync job. Once it writes to <b>trellis_youtube_daily_metrics</b>, this panel will fill in automatically.</p>
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    {[
+                      ['Total Views', totalYouTubeViews != null ? formatMetricNumber(totalYouTubeViews) : formatMetricNumber(sevenDayViews)],
+                      ['7-Day Watch', `${formatWatchHours(sevenDayWatchMinutes)} hr`],
+                      ['Latest Avg View', formatDurationSeconds(latestYoutubeMetric.average_view_duration)],
+                      ['Latest Retention', `${formatMetricNumber(latestYoutubeMetric.average_view_percentage)}%`],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                        <p className="mt-1 text-lg font-black text-slate-800">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    {[
+                      ['7-Day Views', formatMetricNumber(sevenDayViews)],
+                      ['Latest Day', formatMetricNumber(latestYoutubeMetric.views)],
+                      ['Total Likes', formatMetricNumber(latestYoutubeMetric.likes)],
+                      ['Total Comments', formatMetricNumber(latestYoutubeMetric.comments)],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-xl border border-slate-100 bg-white p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                        <p className="mt-1 text-sm font-black text-slate-700">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <span>Video ID: {latestYoutubeMetric.youtube_video_id}</span>
+                    <span>Metric date: {formatEpisodeDate(latestYoutubeMetric.metric_date)}</span>
+                  </div>
                 </div>
               )}
             </div>

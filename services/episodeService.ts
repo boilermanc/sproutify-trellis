@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication,
-  CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession,
+  CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession, YouTubeDailyMetric,
 } from '../types';
 import { EPISODE_VIDEO_WEBHOOK, EPISODE_PUBLISH_WEBHOOK, EpisodeArtStyle } from '../constants';
 import { supabase } from '../lib/supabase';
@@ -180,6 +180,17 @@ export async function getPublications(episodeId: string): Promise<EpisodePublica
   const { data, error } = await supabase.from('trellis_episode_publications').select('*').eq('episode_id', episodeId).order('created_at', { ascending: false });
   if (error) throw new Error(`Failed to load publications: ${error.message}`);
   return (data as EpisodePublication[]) ?? [];
+}
+
+export async function getYouTubeMetrics(episodeId: string, limit = 30): Promise<YouTubeDailyMetric[]> {
+  const { data, error } = await supabase
+    .from('trellis_youtube_daily_metrics')
+    .select('*')
+    .eq('episode_id', episodeId)
+    .order('metric_date', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to load YouTube analytics: ${error.message}`);
+  return (data as YouTubeDailyMetric[]) ?? [];
 }
 
 export async function setEpisodeStatus(id: string, status: EpisodeStatus): Promise<void> {

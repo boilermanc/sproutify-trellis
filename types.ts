@@ -1106,6 +1106,29 @@ export interface EpisodePublication {
   updated_at: string;
 }
 
+export interface YouTubeDailyMetric {
+  id: string;
+  episode_id: string | null;
+  publication_id: string | null;
+  youtube_video_id: string;
+  metric_date: string;
+  views: number | null;
+  engaged_views: number | null;
+  estimated_minutes_watched: number | null;
+  average_view_duration: number | null;
+  average_view_percentage: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  subscribers_gained: number | null;
+  subscribers_lost: number | null;
+  traffic_sources: Record<string, unknown>;
+  countries: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  synced_at: string | null;
+  created_at: string;
+}
+
 export interface CreateEpisodeConfig {
   branch: string;
   title: string;

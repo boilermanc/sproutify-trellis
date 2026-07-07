@@ -1,0 +1,180 @@
+{
+  "name": "Trellis: YouTube Analytics Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Trellis: YouTube Analytics Sync\n\nScheduled workflow that pulls YouTube performance data back into Trellis.\n\n### What it does\n1. Reads live YouTube rows from `trellis_episode_publications`.\n2. Extracts the YouTube video id from `external_id` or `external_url`.\n3. Calls YouTube Data API for public totals like views/likes/comments.\n4. Calls YouTube Analytics API for daily rows: views, watch time, avg view duration, retention, subscribers.\n5. Upserts rows into `trellis_youtube_daily_metrics`.\n\n### Setup\n1. Import this workflow into n8n.\n2. In **Config**, replace `REPLACE_WITH_HUB_SERVICE_ROLE_KEY` with the Trellis Hub service_role key.\n3. On **YouTube Video Stats** and **YouTube Daily Analytics**, select a Google OAuth2 credential with these scopes:\n   - `https://www.googleapis.com/auth/youtube.readonly`\n   - `https://www.googleapis.com/auth/yt-analytics.readonly`\n4. Run manually once. Then activate the workflow.\n\n### Notes\n- YouTube Analytics is delayed. New uploads may show no rows for a day or two.\n- Existing older publish rows may only have `external_url`; this workflow can extract ids from `youtu.be/...`, `watch?v=...`, and `/shorts/...` URLs.\n- The Trellis UI reads the same table and will fill in automatically after rows are written.",
+        "width": 620,
+        "height": 640
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [120, -420]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 260]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: {\n  supabase_url: 'https://horvjqqifgrzxesuxtfm.supabase.co',\n  supabase_service_role_key: 'REPLACE_WITH_HUB_SERVICE_ROLE_KEY',\n  lookback_days: 30,\n  publication_limit: 75\n} }];"
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 260]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').item.json.supabase_url + '/rest/v1/trellis_episode_publications' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "platform", "value": "eq.youtube" },
+            { "name": "status", "value": "eq.live" },
+            { "name": "select", "value": "id,episode_id,external_id,external_url,published_at,response,updated_at" },
+            { "name": "order", "value": "updated_at.desc" },
+            { "name": "limit", "value": "={{ $('Config').item.json.publication_limit }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('Config').item.json.supabase_service_role_key }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').item.json.supabase_service_role_key }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Live YouTube Publications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [620, 260]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $('Config').item.json;\nconst input = $input.all();\nconst rows = input.flatMap(item => Array.isArray(item.json) ? item.json : [item.json]).filter(Boolean);\n\nfunction extractVideoId(row) {\n  if (row.external_id && /^[A-Za-z0-9_-]{11}$/.test(String(row.external_id))) return String(row.external_id);\n  const url = String(row.external_url || row.response?.youtube_url || row.response?.url || '');\n  const patterns = [\n    /youtu\\.be\\/([A-Za-z0-9_-]{11})/,\n    /[?&]v=([A-Za-z0-9_-]{11})/,\n    /\\/shorts\\/([A-Za-z0-9_-]{11})/,\n    /\\/embed\\/([A-Za-z0-9_-]{11})/,\n    /([A-Za-z0-9_-]{11})/\n  ];\n  for (const pattern of patterns) {\n    const match = url.match(pattern);\n    if (match) return match[1];\n  }\n  return null;\n}\n\nfunction isoDate(date) {\n  return date.toISOString().slice(0, 10);\n}\n\nconst now = new Date();\nconst end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));\nconst minStart = new Date(end);\nminStart.setUTCDate(minStart.getUTCDate() - Math.max(1, Number(cfg.lookback_days || 30)) + 1);\n\nconst jobs = [];\nfor (const row of rows) {\n  const videoId = extractVideoId(row);\n  if (!videoId || !row.episode_id || !row.id) continue;\n  const published = row.published_at ? new Date(row.published_at) : minStart;\n  const publishedDate = Number.isNaN(published.getTime()) ? minStart : published;\n  const start = new Date(Math.max(minStart.getTime(), Date.UTC(publishedDate.getUTCFullYear(), publishedDate.getUTCMonth(), publishedDate.getUTCDate())));\n  const safeStart = start.getTime() > end.getTime() ? end : start;\n  jobs.push({ json: {\n    publication_id: row.id,\n    episode_id: row.episode_id,\n    youtube_video_id: videoId,\n    external_url: row.external_url || `https://youtu.be/${videoId}`,\n    start_date: isoDate(safeStart),\n    end_date: isoDate(end)\n  } });\n}\n\nreturn jobs;"
+      },
+      "name": "Build Video Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 260]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "part", "value": "statistics" },
+            { "name": "id", "value": "={{ $('Build Video Jobs').item.json.youtube_video_id }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "YouTube Video Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 260],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_ANALYTICS_CREDENTIAL",
+          "name": "Google YouTube Analytics account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://youtubeanalytics.googleapis.com/v2/reports",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "ids", "value": "channel==MINE" },
+            { "name": "startDate", "value": "={{ $('Build Video Jobs').item.json.start_date }}" },
+            { "name": "endDate", "value": "={{ $('Build Video Jobs').item.json.end_date }}" },
+            { "name": "metrics", "value": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost" },
+            { "name": "dimensions", "value": "day" },
+            { "name": "filters", "value": "={{ 'video==' + $('Build Video Jobs').item.json.youtube_video_id }}" },
+            { "name": "sort", "value": "day" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "YouTube Daily Analytics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1280, 260],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_ANALYTICS_CREDENTIAL",
+          "name": "Google YouTube Analytics account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const analyticsItems = $input.all();\nconst jobItems = $items('Build Video Jobs');\nconst statsItems = $items('YouTube Video Stats');\nconst output = [];\n\nfunction numberValue(value) {\n  const n = Number(value || 0);\n  return Number.isFinite(n) ? n : 0;\n}\n\nfunction buildRow(job, stats, values) {\n  const date = String(values.day || job.end_date).slice(0, 10);\n  return {\n    episode_id: job.episode_id,\n    publication_id: job.publication_id,\n    youtube_video_id: job.youtube_video_id,\n    metric_date: date,\n    views: Math.round(numberValue(values.views)),\n    engaged_views: 0,\n    estimated_minutes_watched: numberValue(values.estimatedMinutesWatched),\n    average_view_duration: numberValue(values.averageViewDuration),\n    average_view_percentage: numberValue(values.averageViewPercentage),\n    likes: Math.round(numberValue(stats.likeCount)),\n    comments: Math.round(numberValue(stats.commentCount)),\n    shares: 0,\n    subscribers_gained: Math.round(numberValue(values.subscribersGained)),\n    subscribers_lost: Math.round(numberValue(values.subscribersLost)),\n    traffic_sources: {},\n    countries: {},\n    raw: {\n      analytics_row: values,\n      public_statistics: stats,\n      external_url: job.external_url,\n      sync_window: { start_date: job.start_date, end_date: job.end_date }\n    },\n    synced_at: new Date().toISOString()\n  };\n}\n\nanalyticsItems.forEach((item, index) => {\n  const analytics = item.json || {};\n  const job = jobItems[index]?.json;\n  const stats = statsItems[index]?.json?.items?.[0]?.statistics || {};\n  if (!job) return;\n\n  const headers = Array.isArray(analytics.columnHeaders) ? analytics.columnHeaders.map(h => h.name) : [];\n  const rows = Array.isArray(analytics.rows) ? analytics.rows : [];\n\n  if (!rows.length) {\n    output.push({ json: buildRow(job, stats, { day: job.end_date }) });\n    return;\n  }\n\n  for (const row of rows) {\n    const values = {};\n    headers.forEach((name, headerIndex) => { values[name] = row[headerIndex]; });\n    output.push({ json: buildRow(job, stats, values) });\n  }\n});\n\nreturn output;"
+      },
+      "name": "Build Metric Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1500, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.supabase_url + '/rest/v1/trellis_youtube_daily_metrics?on_conflict=youtube_video_id,metric_date' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('Config').item.json.supabase_service_role_key }}" },
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Config').item.json.supabase_service_role_key }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "name": "Upsert Metric Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1720, 260]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Fetch Live YouTube Publications", "type": "main", "index": 0 }]] },
+    "Fetch Live YouTube Publications": { "main": [[{ "node": "Build Video Jobs", "type": "main", "index": 0 }]] },
+    "Build Video Jobs": { "main": [[{ "node": "YouTube Video Stats", "type": "main", "index": 0 }]] },
+    "YouTube Video Stats": { "main": [[{ "node": "YouTube Daily Analytics", "type": "main", "index": 0 }]] },
+    "YouTube Daily Analytics": { "main": [[{ "node": "Build Metric Rows", "type": "main", "index": 0 }]] },
+    "Build Metric Rows": { "main": [[{ "node": "Upsert Metric Row", "type": "main", "index": 0 }]] }
+  }
+}

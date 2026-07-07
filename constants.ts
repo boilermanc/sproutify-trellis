@@ -972,10 +972,35 @@ CREATE TABLE IF NOT EXISTS trellis_episode_publications (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS trellis_youtube_daily_metrics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  episode_id UUID REFERENCES trellis_episodes(id) ON DELETE CASCADE,
+  publication_id UUID REFERENCES trellis_episode_publications(id) ON DELETE CASCADE,
+  youtube_video_id TEXT NOT NULL,
+  metric_date DATE NOT NULL,
+  views INTEGER DEFAULT 0,
+  engaged_views INTEGER DEFAULT 0,
+  estimated_minutes_watched NUMERIC DEFAULT 0,
+  average_view_duration NUMERIC DEFAULT 0,
+  average_view_percentage NUMERIC DEFAULT 0,
+  likes INTEGER DEFAULT 0,
+  comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  subscribers_gained INTEGER DEFAULT 0,
+  subscribers_lost INTEGER DEFAULT 0,
+  traffic_sources JSONB DEFAULT '{}'::jsonb,
+  countries JSONB DEFAULT '{}'::jsonb,
+  raw JSONB DEFAULT '{}'::jsonb,
+  synced_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (youtube_video_id, metric_date)
+);
+
 ALTER TABLE trellis_episodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_episode_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_episode_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_episode_publications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trellis_youtube_daily_metrics ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anon Full Access" ON trellis_episodes FOR ALL TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated Full Access" ON trellis_episodes FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Service Role Full Access" ON trellis_episodes FOR ALL TO service_role USING (true) WITH CHECK (true);
@@ -988,15 +1013,22 @@ CREATE POLICY "Service Role Full Access" ON trellis_episode_metadata FOR ALL TO 
 CREATE POLICY "Anon Full Access" ON trellis_episode_publications FOR ALL TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Authenticated Full Access" ON trellis_episode_publications FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Service Role Full Access" ON trellis_episode_publications FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon Full Access" ON trellis_youtube_daily_metrics FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated Full Access" ON trellis_youtube_daily_metrics FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Service Role Full Access" ON trellis_youtube_daily_metrics FOR ALL TO service_role USING (true) WITH CHECK (true);
 GRANT ALL ON trellis_episodes TO anon, authenticated, service_role;
 GRANT ALL ON trellis_episode_assets TO anon, authenticated, service_role;
 GRANT ALL ON trellis_episode_metadata TO anon, authenticated, service_role;
 GRANT ALL ON trellis_episode_publications TO anon, authenticated, service_role;
+GRANT ALL ON trellis_youtube_daily_metrics TO anon, authenticated, service_role;
 
 CREATE INDEX IF NOT EXISTS idx_tep_branch ON trellis_episodes (branch);
 CREATE INDEX IF NOT EXISTS idx_tep_status ON trellis_episodes (status);
 CREATE INDEX IF NOT EXISTS idx_tea_episode ON trellis_episode_assets (episode_id, asset_type);
 CREATE INDEX IF NOT EXISTS idx_tepub_episode ON trellis_episode_publications (episode_id);
+CREATE INDEX IF NOT EXISTS idx_tytm_episode ON trellis_youtube_daily_metrics (episode_id);
+CREATE INDEX IF NOT EXISTS idx_tytm_publication ON trellis_youtube_daily_metrics (publication_id);
+CREATE INDEX IF NOT EXISTS idx_tytm_video_date ON trellis_youtube_daily_metrics (youtube_video_id, metric_date DESC);
 
 -- 19. CLIP STUDIO (short-form video: script → B-roll → publish)
 CREATE TABLE IF NOT EXISTS trellis_clip_projects (
