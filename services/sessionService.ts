@@ -14,9 +14,20 @@ import { supabase } from '../lib/supabase';
 
 const PLAN_MODEL = 'gemini-3-flash-preview';
 const SESSION_TRACK_WORKER = 'generate-session-track';
+const MAX_SESSION_TRACKS = 40;
+const RELIABLE_GENERATED_TRACK_SECONDS = 165;
 
 interface PlannedTrack { title: string; prompt: string; }
 const DEFAULT_VOCAL_STYLE = 'Instrumental only';
+
+function calculateReliableTrackCount(targetSeconds: number, avgLen: number, requested?: number): number {
+  const reliableAvg = Math.min(Math.max(15, avgLen), RELIABLE_GENERATED_TRACK_SECONDS);
+  const reliableCount = Math.max(1, Math.min(MAX_SESSION_TRACKS, Math.ceil(targetSeconds / reliableAvg)));
+  if (requested && Number.isFinite(requested)) {
+    return Math.max(reliableCount, Math.min(MAX_SESSION_TRACKS, Math.round(requested)));
+  }
+  return reliableCount;
+}
 
 const POLICY_SENSITIVE_MUSIC_TERMS = [
   /\bafter\s+dark\b/gi,
@@ -172,7 +183,7 @@ export async function createSessionWithPlan(
 ): Promise<{ session: MusicSession; tracks: MusicTrack[] }> {
   const target = config.target_duration_seconds ?? 3600;
   const avgLen = config.avg_track_length_seconds ?? 180;
-  const trackCount = Math.max(1, Math.min(24, config.track_count ?? Math.max(1, Math.round(target / avgLen))));
+  const trackCount = calculateReliableTrackCount(target, avgLen, config.track_count);
 
   // Insert the session (planning)
   const { data: session, error: sErr } = await supabase
@@ -223,6 +234,70 @@ export async function createSessionWithPlan(
     session: { ...(session as MusicSession), status: 'planned' },
     tracks: ((tracks as MusicTrack[]) ?? []).sort((a, b) => a.track_number - b.track_number),
   };
+}
+
+export async function appendSessionTracks(
+  session: MusicSession,
+  count: number,
+  geminiApiKey: string,
+): Promise<MusicTrack[]> {
+  const existingTracks = await getTracks(session.id);
+  const remainingSlots = Math.max(0, MAX_SESSION_TRACKS - existingTracks.length);
+  if (remainingSlots <= 0) throw new Error(`This session already has the maximum ${MAX_SESSION_TRACKS} tracks.`);
+  const requestedCount = Number.isFinite(count) ? Math.round(count) : 1;
+  const addCount = Math.max(1, Math.min(remainingSlots, requestedCount));
+
+  const avgLen = session.avg_track_length_seconds ?? 180;
+  const nextTrackNumber = existingTracks.reduce((max, t) => Math.max(max, t.track_number || 0), 0) + 1;
+  const existingVocals = existingTracks
+    .map(t => t.vocal_style)
+    .filter((v): v is string => !!v);
+  const vocalStyle = existingVocals.length ? Array.from(new Set(existingVocals)).join(', ') : DEFAULT_VOCAL_STYLE;
+  const config: CreateSessionConfig = {
+    branch: session.branch || '',
+    title: session.title,
+    genre: session.genre || undefined,
+    mood: session.mood || undefined,
+    vocal_style: vocalStyle,
+    target_duration_seconds: session.target_duration_seconds ?? addCount * avgLen,
+    avg_track_length_seconds: avgLen,
+    track_count: addCount,
+  };
+
+  const plan = await generateTrackPlan(config, addCount, avgLen, geminiApiKey);
+  const trackRows = plan.map((t, i) => {
+    const trackNumber = nextTrackNumber + i;
+    const trackVocalStyle = vocalStyleForTrack(vocalStyle, trackNumber - 1);
+    return {
+      session_id: session.id,
+      track_number: trackNumber,
+      title: t.title,
+      prompt: sanitizeMusicPrompt(t.prompt, session.genre, session.mood, trackNumber, t.title, trackVocalStyle),
+      genre: session.genre ?? null,
+      mood: session.mood ?? null,
+      vocal_style: trackVocalStyle,
+      duration_seconds: avgLen,
+      status: 'planned' as const,
+    };
+  });
+
+  const { data: tracks, error } = await supabase
+    .from('trellis_music_tracks')
+    .insert(trackRows)
+    .select('*');
+  if (error) throw new Error(`Could not add tracks: ${error.message}`);
+
+  await supabase.from('trellis_music_sessions')
+    .update({
+      track_count: existingTracks.length + ((tracks as MusicTrack[]) ?? []).length,
+      status: session.status === 'archived' ? 'archived' : 'planned',
+      final_audio_url: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', session.id);
+
+  return ((tracks as MusicTrack[]) ?? []).sort((a, b) => a.track_number - b.track_number);
 }
 
 // ─── 3. Reads ───────────────────────────────────────────────────────
@@ -313,6 +388,14 @@ export async function setTrackApproved(trackId: string, approved: boolean): Prom
   const { error } = await supabase.from('trellis_music_tracks')
     .update({ approved, updated_at: new Date().toISOString() }).eq('id', trackId);
   if (error) throw new Error(`Failed to update track: ${error.message}`);
+}
+
+export async function setTracksApproved(trackIds: string[], approved: boolean): Promise<void> {
+  if (trackIds.length === 0) return;
+  const { error } = await supabase.from('trellis_music_tracks')
+    .update({ approved, updated_at: new Date().toISOString() })
+    .in('id', trackIds);
+  if (error) throw new Error(`Failed to update tracks: ${error.message}`);
 }
 
 export async function regenerateTrack(session: MusicSession, track: MusicTrack): Promise<void> {

@@ -9,7 +9,7 @@ import {
 } from '../constants';
 import {
   createSessionWithPlan, getSessions, getTracks, getRenders,
-  generateSessionTracks, resumeSessionGeneration, setTrackApproved, regenerateTrack, stitchSession, archiveSession, updateSessionStatus,
+  generateSessionTracks, resumeSessionGeneration, setTrackApproved, setTracksApproved, regenerateTrack, stitchSession, archiveSession, updateSessionStatus, appendSessionTracks,
 } from '../services/sessionService';
 
 interface TrellisStudioProps {
@@ -31,6 +31,8 @@ const TRACK_BADGE: Record<MusicTrack['status'], { label: string; cls: string; sp
 type SessionListTab = 'ready' | 'review' | 'archived';
 const SESSION_PAGE_SIZE = 8;
 const VOCAL_MIX_OPTIONS = ['Instrumental only', 'Female vocals', 'Male vocals', 'Duet'];
+const MAX_SESSION_TRACKS = 40;
+const RELIABLE_GENERATED_TRACK_SECONDS = 165;
 
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -38,7 +40,8 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function calculateTrackCount(targetMinutes: number, avgSeconds: number): number {
-  return clampNumber(Math.round((targetMinutes * 60) / Math.max(15, avgSeconds)), 1, 24);
+  const effectiveAvg = Math.min(Math.max(15, avgSeconds), RELIABLE_GENERATED_TRACK_SECONDS);
+  return clampNumber(Math.ceil((targetMinutes * 60) / effectiveAvg), 1, MAX_SESSION_TRACKS);
 }
 
 function calculateAvgSeconds(targetMinutes: number, tracks: number): number {
@@ -141,6 +144,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const [busy, setBusy] = useState(false);
   const [sessionTab, setSessionTab] = useState<SessionListTab>('ready');
   const [sessionPage, setSessionPage] = useState(1);
+  const [addTrackCount, setAddTrackCount] = useState(6);
 
   // Create form
   const [branch, setBranch] = useState(branches[0]?.slug || '');
@@ -156,9 +160,13 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
   const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
-  const plannedTrackCount = trackCount === '' ? calculateTrackCount(targetMinutes, avgTrackSeconds) : Number(trackCount);
+  const requestedTrackCount = trackCount === '' ? calculateTrackCount(targetMinutes, avgTrackSeconds) : Number(trackCount);
+  const minimumReliableTrackCount = calculateTrackCount(targetMinutes, avgTrackSeconds);
+  const plannedTrackCount = Math.max(requestedTrackCount, minimumReliableTrackCount);
   const plannedDurationSeconds = plannedTrackCount * avgTrackSeconds;
   const plannedDurationDeltaSeconds = plannedDurationSeconds - (targetMinutes * 60);
+  const reliableDurationSeconds = plannedTrackCount * Math.min(avgTrackSeconds, RELIABLE_GENERATED_TRACK_SECONDS);
+  const reliableDurationDeltaSeconds = reliableDurationSeconds - (targetMinutes * 60);
   const vocalStyle = formatVocalMix(vocalStyles);
   const selectedVocalSummary = summarizeTrackVocals(tracks);
 
@@ -234,7 +242,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const handleTrackCountChange = (value: string) => {
     if (value === '') { setTrackCount(''); return; }
-    const next = clampNumber(Number(value), 1, 24);
+    const next = clampNumber(Number(value), 1, MAX_SESSION_TRACKS);
     setTrackCount(next);
     setAvgTrackSeconds(calculateAvgSeconds(targetMinutes, next));
   };
@@ -269,7 +277,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
         branch, title: title.trim(), genre: genre || undefined, mood: mood || undefined,
         vocal_style: vocalStyle, target_duration_seconds: targetMinutes * 60,
         avg_track_length_seconds: avgTrackSeconds,
-        track_count: trackCount === '' ? undefined : Number(trackCount),
+        track_count: plannedTrackCount,
       };
       const { session, tracks: planned } = await createSessionWithPlan(config, geminiApiKey || '', userId);
       setSessions(prev => [session, ...prev]);
@@ -316,6 +324,57 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); setTracks(prev => prev.map(x => x.id === t.id ? { ...x, approved: !next } : x)); }
   };
 
+  const handleApproveAll = async () => {
+    const ids = tracks.filter(t => t.status === 'completed' && !t.approved).map(t => t.id);
+    if (ids.length === 0) return;
+    setTracks(prev => prev.map(t => ids.includes(t.id) ? { ...t, approved: true } : t));
+    try {
+      await setTracksApproved(ids, true);
+      addToast(`Approved ${ids.length} tracks`, 'success');
+    } catch (e) {
+      addToast(`${e instanceof Error ? e.message : 'error'}`, 'error');
+      setTracks(prev => prev.map(t => ids.includes(t.id) ? { ...t, approved: false } : t));
+    }
+  };
+
+  const handleAddTracks = async () => {
+    if (!selected) return;
+    const remaining = MAX_SESSION_TRACKS - tracks.length;
+    const count = clampNumber(addTrackCount, 1, Math.max(1, remaining));
+    if (remaining <= 0) {
+      addToast(`This session already has the maximum ${MAX_SESSION_TRACKS} tracks`, 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const added = await appendSessionTracks(selected, count, geminiApiKey || '');
+      const nextCount = tracks.length + added.length;
+      setTracks(prev => [...prev, ...added].sort((a, b) => a.track_number - b.track_number));
+      setRenders([]);
+      setSelected(prev => prev ? {
+        ...prev,
+        track_count: nextCount,
+        status: prev.status === 'archived' ? 'archived' : 'planned',
+        final_audio_url: null,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      } : prev);
+      setSessions(prev => prev.map(s => s.id === selected.id ? {
+        ...s,
+        track_count: nextCount,
+        status: s.status === 'archived' ? 'archived' : 'planned',
+        final_audio_url: null,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      } : s));
+      addToast(`Added ${added.length} planned tracks. Generate them, approve them, then rebuild the master.`, 'success');
+    } catch (e) {
+      addToast(`${e instanceof Error ? e.message : 'error'}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleRegenerate = async (t: MusicTrack) => {
     if (!selected) return;
     setTracks(prev => prev.map(x => x.id === t.id ? {
@@ -335,6 +394,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   };
 
   const approvedCompleted = tracks.filter(t => t.approved && t.status === 'completed');
+  const unapprovedCompletedCount = tracks.filter(t => t.status === 'completed' && !t.approved).length;
 
   const handleStitch = async () => {
     if (!selected) return;
@@ -354,7 +414,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     catch (e) { addToast(`${e instanceof Error ? e.message : 'error'}`, 'error'); }
   };
 
-  const latestReadyRender = renders.find(r => r.status === 'ready');
+  const latestReadyRender = selected?.status === 'ready' ? renders.find(r => r.status === 'ready') : undefined;
   const activeRender = renders.find(r => r.status === 'queued' || r.status === 'processing');
   const activeRenderWorker = getRenderWorkerInfo(activeRender);
   const latestFailedRender = !activeRender && !latestReadyRender ? renders.find(r => r.status === 'failed') : undefined;
@@ -364,6 +424,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const generatingTracks = tracks.filter(t => t.status === 'generating');
   const staleGeneratingTracks = generatingTracks.filter(t => (minutesSince(t.updated_at) ?? 0) >= 20);
   const canResumeQueue = queuedTracks.length > 0 && (generatingTracks.length === 0 || staleGeneratingTracks.length > 0);
+  const maxAdditionalTracks = Math.max(0, MAX_SESSION_TRACKS - tracks.length);
   const sessionTabCounts: Record<SessionListTab, number> = {
     ready: sessions.filter(s => sessionInTab(s, 'ready')).length,
     review: sessions.filter(s => sessionInTab(s, 'review')).length,
@@ -443,7 +504,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
               <input type="number" min={1} className={inputCls} value={targetMinutes} onChange={e => handleTargetMinutesChange(Number(e.target.value))} />
             </div>
             <div><label className={labelCls}>Track Count</label>
-              <input type="number" min={1} max={24} className={inputCls} value={trackCount} onChange={e => handleTrackCountChange(e.target.value)} placeholder="auto" />
+              <input type="number" min={1} max={MAX_SESSION_TRACKS} className={inputCls} value={trackCount} onChange={e => handleTrackCountChange(e.target.value)} placeholder="auto" />
             </div>
             <div><label className={labelCls}>Avg Track (sec)</label>
               <input type="number" min={15} className={inputCls} value={avgTrackSeconds} onChange={e => handleAvgTrackSecondsChange(Number(e.target.value))} />
@@ -451,8 +512,16 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Estimate</p>
               <p className="mt-1 text-sm font-black text-slate-800">{plannedTrackCount} tracks · {formatDurationMinutes(plannedDurationSeconds)}</p>
+              {requestedTrackCount < plannedTrackCount && (
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-violet-600">
+                  {requestedTrackCount} requested · using {plannedTrackCount} to protect target
+                </p>
+              )}
               <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-widest ${Math.abs(plannedDurationDeltaSeconds) <= 30 ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {plannedDurationDeltaSeconds === 0 ? 'On target' : `${plannedDurationDeltaSeconds > 0 ? '+' : ''}${Math.round(plannedDurationDeltaSeconds / 60)} min vs target`}
+              </p>
+              <p className={`mt-1 text-[10px] font-bold uppercase tracking-widest ${reliableDurationDeltaSeconds >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                Generator-safe: {formatDurationMinutes(reliableDurationSeconds)}
               </p>
             </div>
           </div>
@@ -567,6 +636,23 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                     <Layers size={15} /> Stitch Approved ({approvedCompleted.length})
                   </button>
                 )}
+                {selected.status !== 'archived' && (
+                  <div className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-1.5">
+                    <input
+                      type="number"
+                      min={1}
+                      max={maxAdditionalTracks || 1}
+                      value={addTrackCount}
+                      onChange={e => setAddTrackCount(clampNumber(Number(e.target.value), 1, Math.max(1, maxAdditionalTracks)))}
+                      className="w-16 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-black text-slate-700 outline-none focus:border-emerald-500"
+                      aria-label="Tracks to add"
+                    />
+                    <button type="button" onClick={handleAddTracks} disabled={busy || maxAdditionalTracks <= 0}
+                      className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 hover:bg-emerald-700 transition disabled:opacity-40">
+                      <Plus size={13} /> Add Tracks
+                    </button>
+                  </div>
+                )}
                 <button type="button" onClick={() => handleArchive(selected)} className="px-4 py-2.5 text-slate-400 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-100 transition flex items-center gap-1">
                   <Archive size={14} /> Archive
                 </button>
@@ -653,7 +739,15 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
             {/* Tracks */}
             <div className="space-y-3">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tracks</h4>
+              <div className="flex items-center justify-between gap-3 px-1">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tracks</h4>
+                {unapprovedCompletedCount > 0 && (
+                  <button type="button" onClick={handleApproveAll} disabled={busy}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-100 text-[10px] font-black text-emerald-700 uppercase tracking-widest hover:border-emerald-400 transition disabled:opacity-40">
+                    Approve All ({unapprovedCompletedCount})
+                  </button>
+                )}
+              </div>
               {tracks.length === 0 ? (
                 <div className="py-10 text-center bg-white rounded-2xl border border-slate-100"><Loader2 className="w-6 h-6 animate-spin text-emerald-500 mx-auto" /></div>
               ) : tracks.map(t => {
