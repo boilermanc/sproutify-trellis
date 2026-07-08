@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication,
-  CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession, YouTubeDailyMetric,
+  CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession, YouTubeDailyMetric, EpisodeChapter,
 } from '../types';
 import { EPISODE_VIDEO_WEBHOOK, EPISODE_PUBLISH_WEBHOOK, EpisodeArtStyle } from '../constants';
 import { supabase } from '../lib/supabase';
@@ -106,18 +106,29 @@ function sanitizeYoutubeTags(values: unknown, maxTags = 15, maxTotalChars = 380)
   return tags;
 }
 
-function publishingFooter(title: string): string {
+function formatChapterBlock(chapters?: EpisodeChapter[] | null): string {
+  if (!chapters?.length) return '';
+  const lines = chapters
+    .map(c => `${c.time || '0:00'} ${sanitizePublishingText(c.title)}`.trim())
+    .filter(Boolean);
+  return lines.length ? `Chapters:\n${lines.join('\n')}` : '';
+}
+
+function publishingFooter(title: string, chapters?: EpisodeChapter[] | null): string {
   const cleanTitle = sanitizePublishingText(title) || 'this mix';
+  const chapterBlock = formatChapterBlock(chapters);
   return [
     'Join the conversation: Which track title, mood, or city should we explore next?',
     '',
     'Rekkrd After Dark is a mood-music companion from Rekkrd — the app built for people who actually live with their vinyl. Track your collection, catalog your gear, and rediscover what you own with AI-powered scanning that turns a snapshot of a label into full pressing details and real market value. Built by a collector, for collectors. rekkrd.com',
     '',
+    chapterBlock,
+    chapterBlock ? '' : null,
     'Content note: Sound and visuals are AI-generated. Tracks are curated, selected, and sometimes mixed by a human. Visuals may be refined or edited before publishing.',
     'How this was made: Made with AI. Sounds or visuals were altered or fully generated.',
     '',
     `Subscribe for more long-form instrumental sessions like ${cleanTitle}.`,
-  ].join('\n');
+  ].filter(part => part !== null).join('\n');
 }
 
 function engagementComment(title: string): string {
@@ -125,16 +136,17 @@ function engagementComment(title: string): string {
   return `Which setting should we explore next after ${cleanTitle}? Drop a city, mood, or track title idea in the comments.`;
 }
 
-function withPublishingFooter(description: string, title: string): string {
+function withPublishingFooter(description: string, title: string, chapters?: EpisodeChapter[] | null): string {
   const clean = sanitizePublishingText(description);
   const withoutOldFooter = clean
     .replace(/Join the conversation:[\s\S]*$/i, '')
     .replace(/Rekkrd After Dark is a mood-music companion[\s\S]*$/i, '')
+    .replace(/Chapters:[\s\S]*?(?=Content note:|How this was made|Subscribe for more long-form|$)/i, '')
     .replace(/Content note:[\s\S]*$/i, '')
     .replace(/How this was made[\s\S]*$/i, '')
     .replace(/Subscribe for more long-form[\s\S]*$/i, '')
     .trim();
-  return [withoutOldFooter, publishingFooter(title)]
+  return [withoutOldFooter, publishingFooter(title, chapters)]
     .filter(Boolean)
     .join('\n\n')
     .slice(0, 4900)
@@ -324,7 +336,7 @@ Return ONLY raw JSON, no markdown:
     } catch (e) { console.warn('[episodes] metadata gen failed, using minimal fallback', e); }
   }
   title = sanitizePublishingTitle(title, cleanShowName);
-  description = withPublishingFooter(description, title);
+  description = withPublishingFooter(description, title, chapters);
   tags = sanitizeYoutubeTags(tags);
   hashtags = hashtags.map(h => {
     const clean = sanitizePublishingText(h).replace(/\s+/g, '');
@@ -366,7 +378,7 @@ export async function publishEpisode(
       contains_synthetic_media: true,
       engagement_comment: engagementComment(metadata?.title || episode.title),
       metadata: metadata ? {
-        title: metadata.title, description: withPublishingFooter(metadata.description || '', metadata.title || episode.title),
+        title: metadata.title, description: withPublishingFooter(metadata.description || '', metadata.title || episode.title, metadata.chapters),
         tags: sanitizeYoutubeTags(metadata.tags), chapters: metadata.chapters, hashtags: metadata.hashtags,
       } : null,
     }),
