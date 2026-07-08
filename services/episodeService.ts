@@ -111,6 +111,8 @@ function publishingFooter(title: string): string {
   return [
     'Join the conversation: Which track title, mood, or city should we explore next?',
     '',
+    'Rekkrd After Dark is a mood-music companion from Rekkrd — the app built for people who actually live with their vinyl. Track your collection, catalog your gear, and rediscover what you own with AI-powered scanning that turns a snapshot of a label into full pressing details and real market value. Built by a collector, for collectors. rekkrd.com',
+    '',
     'Content note: Sound and visuals are AI-generated. Tracks are curated, selected, and sometimes mixed by a human. Visuals may be refined or edited before publishing.',
     'How this was made: Made with AI. Sounds or visuals were altered or fully generated.',
     '',
@@ -125,11 +127,14 @@ function engagementComment(title: string): string {
 
 function withPublishingFooter(description: string, title: string): string {
   const clean = sanitizePublishingText(description);
-  const withoutOldNote = clean
+  const withoutOldFooter = clean
+    .replace(/Join the conversation:[\s\S]*$/i, '')
+    .replace(/Rekkrd After Dark is a mood-music companion[\s\S]*$/i, '')
     .replace(/Content note:[\s\S]*$/i, '')
     .replace(/How this was made[\s\S]*$/i, '')
+    .replace(/Subscribe for more long-form[\s\S]*$/i, '')
     .trim();
-  return [withoutOldNote, publishingFooter(title)]
+  return [withoutOldFooter, publishingFooter(title)]
     .filter(Boolean)
     .join('\n\n')
     .slice(0, 4900)
