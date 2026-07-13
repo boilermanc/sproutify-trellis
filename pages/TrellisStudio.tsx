@@ -172,6 +172,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const plannedDurationDeltaSeconds = plannedDurationSeconds - (targetMinutes * 60);
   const reliableDurationSeconds = plannedTrackCount * Math.min(avgTrackSeconds, RELIABLE_GENERATED_TRACK_SECONDS);
   const reliableDurationDeltaSeconds = reliableDurationSeconds - (targetMinutes * 60);
+  const requestedTrackLengthTooLong = avgTrackSeconds > RELIABLE_GENERATED_TRACK_SECONDS;
   const vocalStyle = formatVocalMix(vocalStyles);
   const selectedVocalSummary = summarizeTrackVocals(tracks);
 
@@ -276,6 +277,10 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
   const handleCreate = async () => {
     if (!branch || !title.trim()) { addToast('Branch and title are required', 'error'); return; }
+    if (requestedTrackLengthTooLong) {
+      addToast(`Lyria currently returns about ${RELIABLE_GENERATED_TRACK_SECONDS}s per generated track. Use more tracks or reduce the target length.`, 'error');
+      return;
+    }
     setCreating(true);
     try {
       const config: CreateSessionConfig = {
@@ -562,9 +567,14 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
               <p className={`mt-1 text-[10px] font-bold uppercase tracking-widest ${reliableDurationDeltaSeconds >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                 Generator-safe: {formatDurationMinutes(reliableDurationSeconds)}
               </p>
+              {requestedTrackLengthTooLong && (
+                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-rose-600">
+                  Max generated track: {RELIABLE_GENERATED_TRACK_SECONDS}s
+                </p>
+              )}
             </div>
           </div>
-          <button type="button" onClick={handleCreate} disabled={creating || !branch || !title.trim()}
+          <button type="button" onClick={handleCreate} disabled={creating || !branch || !title.trim() || requestedTrackLengthTooLong}
             className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">
             {creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
             {creating ? 'Planning...' : 'Create + Plan Tracks'}

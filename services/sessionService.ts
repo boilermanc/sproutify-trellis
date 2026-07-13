@@ -28,6 +28,12 @@ function calculateTrackCount(targetSeconds: number, avgLen: number, requested?: 
   return Math.max(1, Math.min(MAX_SESSION_TRACKS, Math.ceil(targetSeconds / effectiveAvg)));
 }
 
+function assertSupportedTrackLength(avgLen: number): void {
+  if (avgLen > RELIABLE_GENERATED_TRACK_SECONDS) {
+    throw new Error(`Lyria currently returns about ${RELIABLE_GENERATED_TRACK_SECONDS}s per generated track. Use more tracks or reduce the target length.`);
+  }
+}
+
 const POLICY_SENSITIVE_MUSIC_TERMS = [
   /\bafter\s+dark\b/gi,
   /\blate[-\s]?night\b/gi,
@@ -182,6 +188,7 @@ export async function createSessionWithPlan(
 ): Promise<{ session: MusicSession; tracks: MusicTrack[] }> {
   const target = config.target_duration_seconds ?? 3600;
   const avgLen = config.avg_track_length_seconds ?? 180;
+  assertSupportedTrackLength(avgLen);
   const trackCount = calculateTrackCount(target, avgLen, config.track_count);
 
   // Insert the session (planning)
@@ -247,6 +254,7 @@ export async function appendSessionTracks(
   const addCount = Math.max(1, Math.min(remainingSlots, requestedCount));
 
   const avgLen = session.avg_track_length_seconds ?? 180;
+  assertSupportedTrackLength(avgLen);
   const nextTrackNumber = existingTracks.reduce((max, t) => Math.max(max, t.track_number || 0), 0) + 1;
   const existingVocals = existingTracks
     .map(t => t.vocal_style)
