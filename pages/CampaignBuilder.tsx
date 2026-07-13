@@ -14,6 +14,7 @@ import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { triggerEmailCampaign } from '../services/n8nService';
 import { fetchSuppressedEmails } from '../services/suppressionService';
+import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
 import { fetchTemplatesForBranch } from '../brandRepository';
 import { WEBHOOK_SPECS, BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import {
@@ -121,6 +122,7 @@ const CHANNEL_COLOR_MAP: Record<string, string> = {
 
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 const CAMPAIGN_HISTORY_KEY = 'trellis_campaign_history';
+const ATL_SPOKE_PROJECT_REF = 'povudgtvzggnxwgtjexa';
 
 // ═══════════════════════════════════════════════════════════════
 // COMPONENT
@@ -217,6 +219,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [historyOpen, setHistoryOpen] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [branchContent, setBranchContent] = useState<Record<string, string>>({});
+  const [authoritativeNewsletterAudience, setAuthoritativeNewsletterAudience] = useState<NewsletterAudienceRecipient[] | null>(null);
+  const [newsletterAudienceError, setNewsletterAudienceError] = useState<string | null>(null);
+  const [isLoadingNewsletterAudience, setIsLoadingNewsletterAudience] = useState(false);
 
   const [campaignHistory, setCampaignHistory] = useState<CampaignRecord[]>(() => {
     try {
@@ -342,6 +347,17 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     return map;
   }, [spokeConnections, slugByConnectionId]);
 
+  const atlNewsletterConnectionId = useMemo(() => {
+    if (selectedBranches.length !== 1) return null;
+    const selected = selectedBranches[0];
+    const branch = branches.find(b => b.slug === selected);
+    const connection = spokeConnections.find(c =>
+      c.id === branch?.spoke_connection_id ||
+      (c.supabase_url || '').includes(ATL_SPOKE_PROJECT_REF)
+    );
+    return connection?.supabase_url?.includes(ATL_SPOKE_PROJECT_REF) ? connection.id : null;
+  }, [branches, selectedBranches, spokeConnections]);
+
   const branchProfileCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const branch of availableBranches) {
@@ -369,6 +385,77 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       !suppressedEmails.has((p.email || '').toLowerCase())
     );
   }, [scopedProfiles, selectedBranches, suppressedEmails]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAuthoritativeNewsletterAudience(null);
+    setNewsletterAudienceError(null);
+
+    if (!atlNewsletterConnectionId) {
+      setIsLoadingNewsletterAudience(false);
+      return;
+    }
+
+    setIsLoadingNewsletterAudience(true);
+    fetchNewsletterAudience(atlNewsletterConnectionId)
+      .then(rows => {
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const deduped = rows.filter(row => {
+          const email = row.email.toLowerCase();
+          if (seen.has(email)) return false;
+          seen.add(email);
+          return !suppressedEmails.has(email);
+        });
+        setAuthoritativeNewsletterAudience(deduped);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setNewsletterAudienceError(err instanceof Error ? err.message : 'Could not load newsletter audience');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingNewsletterAudience(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [atlNewsletterConnectionId, suppressedEmails]);
+
+  const authoritativeNewsletterProfiles = useMemo<Profile[]>(() => {
+    if (!authoritativeNewsletterAudience || selectedBranches.length !== 1) return [];
+    const branch = selectedBranches[0];
+    const profilesByEmail = new Map(profiles.map(p => [p.email.toLowerCase(), p]));
+    return authoritativeNewsletterAudience.map(row => {
+      const existing = profilesByEmail.get(row.email);
+      if (existing) return { ...existing, is_subscribed: true, marketing_pause: false };
+      return {
+        id: row.customer_id || row.email,
+        email: row.email,
+        first_name: row.first_name || '',
+        last_name: row.last_name,
+        is_subscribed: true,
+        marketing_pause: false,
+        tags: ['newsletter_subscriber'],
+        segments: [],
+        branches: [branch],
+        branch_consent: {
+          [branch]: {
+            subscribed: true,
+            paused: false,
+            updated_at: new Date().toISOString(),
+          },
+        },
+        status: 'active' as const,
+        ltv: existing?.ltv || 0,
+        churn_risk: existing?.churn_risk || 'minimal',
+        last_active: existing?.last_active,
+        metadata: {
+          ...(existing?.metadata || {}),
+          consent_source: 'newsletter_subscribers',
+          subscriber_only: !existing,
+        },
+      };
+    });
+  }, [authoritativeNewsletterAudience, profiles, selectedBranches]);
 
   // Saved Segments — the same rule-based library managed on the Segments page
   // (built-in presets + user-created custom segments from localStorage). These are
@@ -408,15 +495,19 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   }, [savedSegments, branchStats?.enrichedProfiles]);
 
   const segmentProfiles = useMemo(() => {
+    if (authoritativeNewsletterAudience && selectedSegments.length === 0 && selectedSavedSegments.length === 0) {
+      return authoritativeNewsletterProfiles;
+    }
     if (selectedSegments.length === 0 && selectedSavedSegments.length === 0) return consentFiltered;
     const activeFilters = CAMPAIGN_PRESETS.filter(p => selectedSegments.includes(p.id));
     const activeSavedSets = selectedSavedSegments.map(id => savedSegmentEmails[id]).filter(Boolean);
-    return consentFiltered.filter(profile => {
+    const sourceProfiles = authoritativeNewsletterAudience ? authoritativeNewsletterProfiles : consentFiltered;
+    return sourceProfiles.filter(profile => {
       const matchesQuick = activeFilters.some(preset => preset.filter(profile));
       const matchesSaved = activeSavedSets.some(set => set.has((profile.email || '').toLowerCase()));
       return matchesQuick || matchesSaved;
     });
-  }, [consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
+  }, [authoritativeNewsletterAudience, authoritativeNewsletterProfiles, consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
 
   // Static test-list addresses from any selected 'email_list' segment. These bypass
   // branch scope + consent entirely and are emailed directly (QA sends).
@@ -443,6 +534,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // exactly where the drop happens (matched → opted-in → excluded for consent).
   const matchBeforeConsent = useMemo(() => {
     if (selectedBranches.length === 0) return 0;
+    if (authoritativeNewsletterAudience && selectedSegments.length === 0 && selectedSavedSegments.length === 0) return authoritativeNewsletterAudience.length;
     if (selectedSegments.length === 0 && selectedSavedSegments.length === 0) return scopedProfiles.length;
     const activeFilters = CAMPAIGN_PRESETS.filter(p => selectedSegments.includes(p.id));
     const activeSavedSets = selectedSavedSegments.map(id => savedSegmentEmails[id]).filter(Boolean);
@@ -451,7 +543,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       const matchesSaved = activeSavedSets.some(set => set.has((profile.email || '').toLowerCase()));
       return matchesQuick || matchesSaved;
     }).length;
-  }, [scopedProfiles, selectedBranches, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
+  }, [authoritativeNewsletterAudience, scopedProfiles, selectedBranches, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
 
   const excludedForConsent = Math.max(0, matchBeforeConsent - audienceSize);
 
@@ -1299,15 +1391,27 @@ Return ONLY the post content, no explanations or labels.`,
                     Preview this audience
                   </span>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs font-black">{audienceSize} {audienceSize === 1 ? 'person' : 'people'}</span>
+                    <span className="text-xs font-black">
+                      {isLoadingNewsletterAudience ? 'Loading...' : `${audienceSize} ${audienceSize === 1 ? 'person' : 'people'}`}
+                    </span>
                     <ChevronDown size={16} className={`transition-transform ${showAudiencePreview ? 'rotate-180' : ''}`} />
                   </span>
                 </button>
+
+                {newsletterAudienceError && (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[11px] font-bold text-amber-700">
+                    Could not load ATL newsletter audience: {newsletterAudienceError}. Trellis is showing the federated fallback count.
+                  </div>
+                )}
 
                 {showAudiencePreview && (
                   <div className="mt-3">
                     {selectedBranches.length === 0 ? (
                       <p className="text-xs text-slate-400 text-center py-4">Pick a branch above to see who qualifies.</p>
+                    ) : isLoadingNewsletterAudience ? (
+                      <div className="py-6 text-center text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
+                        <Loader2 size={14} className="animate-spin" /> Loading authoritative newsletter audience...
+                      </div>
                     ) : audienceSize === 0 ? (
                       <p className="text-xs text-slate-400 text-center py-4">
                         No opted-in customers match {selectedSegments.length > 0 ? 'these presets' : 'this branch'} yet — try {selectedSegments.length > 0 ? 'different or fewer presets' : 'another branch'}.
@@ -1362,7 +1466,12 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                   <div>
                     <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">Strategy Reach</p>
-                    <p className="text-3xl font-black text-slate-800">{audienceSize} Identities</p>
+                    <p className="text-3xl font-black text-slate-800">{isLoadingNewsletterAudience ? '...' : audienceSize} Identities</p>
+                    {authoritativeNewsletterAudience && (
+                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-1">
+                        ATL newsletter source of truth
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="text-right space-y-1">
