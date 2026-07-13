@@ -43,14 +43,17 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
     try { setTracks(await getStudioTracks(albumId)); }
     catch (error) { addToast(error instanceof Error ? error.message : 'Could not load tracks.', 'error'); }
   }, [addToast]);
+  // Load once when the user selects an album. Keeping this separate from the
+  // poller prevents a new signed audio URL from being created on every render.
   useEffect(() => {
-    if (!selected) return;
-    loadTracks(selected.id);
-    const hasActiveTrack = tracks.some(track => track.review_status === 'regenerating');
-    if (!hasActiveTrack) return;
+    if (selected) loadTracks(selected.id);
+  }, [selected?.id, loadTracks]);
+  const hasActiveTrack = tracks.some(track => track.review_status === 'regenerating');
+  useEffect(() => {
+    if (!selected || !hasActiveTrack) return;
     const poll = window.setInterval(() => loadTracks(selected.id), 5000);
     return () => clearInterval(poll);
-  }, [selected, tracks, loadTracks]);
+  }, [selected?.id, hasActiveTrack, loadTracks]);
 
   const update = (field: keyof typeof EMPTY, value: string | number) => setForm(prev => ({ ...prev, [field]: value }));
   const submit = async (event: React.FormEvent) => {
