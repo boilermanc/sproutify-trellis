@@ -8,6 +8,43 @@ const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const LEGACY_TRACK_WORKER = "generate-session-track";
 
+function fallbackTrackPlan(album: any, trackNumber: number) {
+  const title = `${album.title} — ${trackNumber === 1 ? 'Opening Signal' : `Movement ${trackNumber}`}`;
+  const prompt = `Original ${album.genre || 'instrumental'} piece with ${album.mood || 'a cohesive'} feel, ${album.vocal_direction === 'instrumental' ? 'instrumental arrangement' : album.vocal_direction}, clean studio production, ${72 + ((trackNumber - 1) % 5) * 4} BPM.`;
+  return { title, prompt };
+}
+
+async function planAlbumTrack(db: any, album: any, trackNumber: number) {
+  const fallback = fallbackTrackPlan(album, trackNumber);
+  const key = Deno.env.get("GEMINI_API_KEY") || (await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle()).data?.gemini_api_key;
+  if (!key) return fallback;
+  const prompt = `Create one original, cohesive next track for an AI music album. Return only JSON: {"title":"...","prompt":"..."}.
+Album title: ${album.title}
+Fictional artist: ${album.artist_name}
+Genre: ${album.genre || 'open'}
+Mood: ${album.mood || 'open'}
+Era: ${album.era || 'open'}
+Setting: ${album.theme || 'open'}
+Vocals: ${album.vocal_direction}
+Track number: ${trackNumber}
+Requirements: title is short and original; prompt is one concise 15–30 word sentence describing instruments, style, mood, and BPM; no real artists, songs, brands, franchises, lyrics, or unsafe themes.`;
+  try {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
+    });
+    if (!response.ok) return fallback;
+    const payload = await response.json();
+    const raw = payload?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const plan = JSON.parse(raw);
+    if (!plan?.title || !plan?.prompt) return fallback;
+    return { title: String(plan.title).slice(0, 120), prompt: String(plan.prompt).replace(/\s+/g, " ").trim().slice(0, 400) };
+  } catch {
+    return fallback;
+  }
+}
+
 async function getOwnedAlbum(db: any, albumId: string, userId: string) {
   const { data, error } = await db.from("studio_albums").select("*").eq("id", albumId).eq("organization_id", ORG_ID).eq("created_by", userId).maybeSingle();
   if (error) throw new Error(error.message);
@@ -91,6 +128,11 @@ Deno.serve(async (req) => {
       if (error) throw new Error(error.message);
       const tracks = await Promise.all((data || []).map((track: any) => syncLegacyTrack(db, track.id)));
       return json({ tracks });
+    }
+    if (body.action === "plan_track") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: last } = await db.from("studio_tracks").select("track_number").eq("album_id", album.id).order("track_number", { ascending: false }).limit(1).maybeSingle();
+      return json({ track: await planAlbumTrack(db, album, (last?.track_number || 0) + 1) });
     }
     if (body.action === "generate_one") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
