@@ -20,13 +20,12 @@ const RELIABLE_GENERATED_TRACK_SECONDS = 165;
 interface PlannedTrack { title: string; prompt: string; }
 const DEFAULT_VOCAL_STYLE = 'Instrumental only';
 
-function calculateReliableTrackCount(targetSeconds: number, avgLen: number, requested?: number): number {
-  const reliableAvg = Math.min(Math.max(15, avgLen), RELIABLE_GENERATED_TRACK_SECONDS);
-  const reliableCount = Math.max(1, Math.min(MAX_SESSION_TRACKS, Math.ceil(targetSeconds / reliableAvg)));
+function calculateTrackCount(targetSeconds: number, avgLen: number, requested?: number): number {
   if (requested && Number.isFinite(requested)) {
-    return Math.max(reliableCount, Math.min(MAX_SESSION_TRACKS, Math.round(requested)));
+    return Math.max(1, Math.min(MAX_SESSION_TRACKS, Math.round(requested)));
   }
-  return reliableCount;
+  const effectiveAvg = Math.max(15, avgLen);
+  return Math.max(1, Math.min(MAX_SESSION_TRACKS, Math.ceil(targetSeconds / effectiveAvg)));
 }
 
 const POLICY_SENSITIVE_MUSIC_TERMS = [
@@ -183,7 +182,7 @@ export async function createSessionWithPlan(
 ): Promise<{ session: MusicSession; tracks: MusicTrack[] }> {
   const target = config.target_duration_seconds ?? 3600;
   const avgLen = config.avg_track_length_seconds ?? 180;
-  const trackCount = calculateReliableTrackCount(target, avgLen, config.track_count);
+  const trackCount = calculateTrackCount(target, avgLen, config.track_count);
 
   // Insert the session (planning)
   const { data: session, error: sErr } = await supabase
@@ -396,6 +395,28 @@ export async function setTracksApproved(trackIds: string[], approved: boolean): 
     .update({ approved, updated_at: new Date().toISOString() })
     .in('id', trackIds);
   if (error) throw new Error(`Failed to update tracks: ${error.message}`);
+}
+
+export async function deletePlannedTrack(sessionId: string, trackId: string, nextTrackCount: number): Promise<void> {
+  const { data, error } = await supabase.from('trellis_music_tracks')
+    .delete()
+    .eq('id', trackId)
+    .eq('session_id', sessionId)
+    .eq('status', 'planned')
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`Failed to delete track plan: ${error.message}`);
+  if (!data) throw new Error('Only planned tracks can be deleted.');
+
+  const { error: sessionError } = await supabase.from('trellis_music_sessions')
+    .update({
+      track_count: Math.max(0, nextTrackCount),
+      final_audio_url: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', sessionId);
+  if (sessionError) throw new Error(`Failed to update session: ${sessionError.message}`);
 }
 
 export async function regenerateTrack(session: MusicSession, track: MusicTrack): Promise<void> {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Music, Loader2, RefreshCw, Archive, AlertCircle, CheckCircle2, XCircle, Wand2,
-  Sparkles, ListMusic, Layers, Download, Plus, Check, ArrowRight, Activity,
+  Sparkles, ListMusic, Layers, Download, Plus, Check, ArrowRight, Activity, Trash2,
 } from 'lucide-react';
 import { MusicSession, MusicTrack, MusicRender, CreateSessionConfig } from '../types';
 import {
@@ -9,7 +9,7 @@ import {
 } from '../constants';
 import {
   createSessionWithPlan, getSessions, getTracks, getRenders,
-  generateSessionTracks, resumeSessionGeneration, setTrackApproved, setTracksApproved, regenerateTrack, stitchSession, archiveSession, updateSessionStatus, appendSessionTracks,
+  generateSessionTracks, resumeSessionGeneration, setTrackApproved, setTracksApproved, deletePlannedTrack, regenerateTrack, stitchSession, archiveSession, updateSessionStatus, appendSessionTracks,
 } from '../services/sessionService';
 
 interface TrellisStudioProps {
@@ -40,6 +40,11 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function calculateTrackCount(targetMinutes: number, avgSeconds: number): number {
+  const effectiveAvg = Math.max(15, avgSeconds);
+  return clampNumber(Math.ceil((targetMinutes * 60) / effectiveAvg), 1, MAX_SESSION_TRACKS);
+}
+
+function calculateGeneratorSafeTrackCount(targetMinutes: number, avgSeconds: number): number {
   const effectiveAvg = Math.min(Math.max(15, avgSeconds), RELIABLE_GENERATED_TRACK_SECONDS);
   return clampNumber(Math.ceil((targetMinutes * 60) / effectiveAvg), 1, MAX_SESSION_TRACKS);
 }
@@ -161,8 +166,8 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
   const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
   const requestedTrackCount = trackCount === '' ? calculateTrackCount(targetMinutes, avgTrackSeconds) : Number(trackCount);
-  const minimumReliableTrackCount = calculateTrackCount(targetMinutes, avgTrackSeconds);
-  const plannedTrackCount = Math.max(requestedTrackCount, minimumReliableTrackCount);
+  const minimumReliableTrackCount = calculateGeneratorSafeTrackCount(targetMinutes, avgTrackSeconds);
+  const plannedTrackCount = requestedTrackCount;
   const plannedDurationSeconds = plannedTrackCount * avgTrackSeconds;
   const plannedDurationDeltaSeconds = plannedDurationSeconds - (targetMinutes * 60);
   const reliableDurationSeconds = plannedTrackCount * Math.min(avgTrackSeconds, RELIABLE_GENERATED_TRACK_SECONDS);
@@ -334,6 +339,40 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
     } catch (e) {
       addToast(`${e instanceof Error ? e.message : 'error'}`, 'error');
       setTracks(prev => prev.map(t => ids.includes(t.id) ? { ...t, approved: false } : t));
+    }
+  };
+
+  const handleDeletePlannedTrack = async (track: MusicTrack) => {
+    if (!selected || track.status !== 'planned') return;
+    const previousTracks = tracks;
+    const previousSelected = selected;
+    const nextTracks = tracks.filter(t => t.id !== track.id);
+    const nextTrackCount = nextTracks.length;
+
+    setTracks(nextTracks);
+    setSelected(prev => prev ? {
+      ...prev,
+      track_count: nextTrackCount,
+      final_audio_url: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    } : prev);
+    setSessions(prev => prev.map(s => s.id === selected.id ? {
+      ...s,
+      track_count: nextTrackCount,
+      final_audio_url: null,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    } : s));
+
+    try {
+      await deletePlannedTrack(selected.id, track.id, nextTrackCount);
+      addToast(`Deleted planned track "${track.title}"`, 'success');
+    } catch (e) {
+      setTracks(previousTracks);
+      setSelected(previousSelected);
+      setSessions(prev => prev.map(s => s.id === previousSelected.id ? previousSelected : s));
+      addToast(`${e instanceof Error ? e.message : 'error'}`, 'error');
     }
   };
 
@@ -512,9 +551,9 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Estimate</p>
               <p className="mt-1 text-sm font-black text-slate-800">{plannedTrackCount} tracks · {formatDurationMinutes(plannedDurationSeconds)}</p>
-              {requestedTrackCount < plannedTrackCount && (
+              {requestedTrackCount < minimumReliableTrackCount && (
                 <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-violet-600">
-                  {requestedTrackCount} requested · using {plannedTrackCount} to protect target
+                  {requestedTrackCount} requested · {minimumReliableTrackCount} generator-safe for target
                 </p>
               )}
               <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-widest ${Math.abs(plannedDurationDeltaSeconds) <= 30 ? 'text-emerald-600' : 'text-amber-600'}`}>
@@ -778,6 +817,12 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                         <button type="button" onClick={() => toggleApprove(t)}
                           className={`shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition ${t.approved ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
                           {t.approved ? <><Check size={12} /> Approved</> : 'Approve'}
+                        </button>
+                      )}
+                      {t.status === 'planned' && (
+                        <button type="button" onClick={() => handleDeletePlannedTrack(t)} title="Delete planned track"
+                          className="shrink-0 p-2 rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition">
+                          <Trash2 size={14} />
                         </button>
                       )}
                     </div>
