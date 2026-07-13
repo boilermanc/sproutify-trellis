@@ -58,6 +58,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     { id: 'social-hub', label: 'Social Hub', icon: Share2 },
     { id: 'video-ad-lab', label: 'Video Ad Lab', icon: Video },
     { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },
+    { id: 'studio-albums', label: 'Studio Albums', icon: Music },
     { id: 'trellis-episodes', label: 'Trellis Episodes', icon: Clapperboard },
     { id: 'clip-studio', label: 'Clip Studio', icon: Film },
     { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },

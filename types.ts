@@ -361,7 +361,44 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'trellis-episodes' | 'clip-studio';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'saved-connections' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio';
+
+export interface StudioAlbum {
+  id: string;
+  organization_id: string;
+  created_by: string;
+  title: string;
+  artist_name: string;
+  description: string | null;
+  genre: string | null;
+  mood: string | null;
+  era: string | null;
+  theme: string | null;
+  vocal_direction: string;
+  target_duration_seconds: number;
+  actual_duration_seconds: number | null;
+  status: string;
+  music_generation_status: string;
+  master_status: string;
+  artwork_status: string;
+  video_status: string;
+  metadata_status: string;
+  publishing_status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudioTrack {
+  id: string;
+  album_id: string;
+  track_number: number;
+  title: string;
+  prompt: string | null;
+  duration_seconds: number | null;
+  review_status: 'planned' | 'generated' | 'pending_review' | 'approved' | 'rejected' | 'regenerating' | 'locked' | 'failed';
+  rejection_reason: string | null;
+  audio_url?: string | null;
+}
 
 export interface TrellisReport {
   id: string;
