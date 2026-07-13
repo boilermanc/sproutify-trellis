@@ -19,6 +19,7 @@
 //   { op: "columns",  supabase_url, supabase_key, table_name }   // setup
 //   { op: "fetch",    connection_id, table_type }                // runtime
 //   { op: "snapshot", connection_id }                            // runtime
+//   { op: "newsletter_audience", connection_id, tags? }           // runtime ATL RPC
 //
 // SECRETS (auto-set by Supabase): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy spoke-query   (verify_jwt = true)
@@ -31,6 +32,7 @@ const BATCH_SIZE = 1000;
 const SNAPSHOT_NAME_SAMPLE = 500;
 const SNAPSHOT_TOTAL_SAMPLE = 5000;
 const SNAPSHOT_PRODUCT_SAMPLE = 2000;
+const RPC_PAGE_SIZE = 1000;
 
 // Tables the discovery step probes for (mirrors the old client behavior).
 const COMMON_TABLES = [
@@ -211,6 +213,47 @@ Deno.serve(async (req: Request) => {
         tables.push({ table_name: cfg.table_name, field_mapping: cfg.field_mapping, rows });
       }
       return json({ connection_id: body.connection_id, name: resolved.conn.name, tables, errors });
+    }
+
+    // ── newsletter_audience: RUNTIME ATL active newsletter audience ───
+    // ATL's newsletter_subscribers table is the subscription source of truth,
+    // but table reads can be RLS-hidden. The spoke owns a SECURITY DEFINER RPC
+    // that exposes only mailable status='active' subscribers.
+    if (op === "newsletter_audience") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+      const tags = Array.isArray(body.tags) && body.tags.length > 0 ? body.tags : null;
+      const rows: unknown[] = [];
+      const errors: string[] = [];
+      let page = 0;
+
+      while (true) {
+        const from = page * RPC_PAGE_SIZE;
+        const to = from + RPC_PAGE_SIZE - 1;
+        const { data, error } = await spoke
+          .rpc("resolve_newsletter_audience", { p_tags: tags })
+          .range(from, to);
+
+        if (error) {
+          errors.push(error.message);
+          break;
+        }
+        if (!data || data.length === 0) break;
+        rows.push(...data);
+        if (data.length < RPC_PAGE_SIZE) break;
+        page++;
+        if (page > 50) {
+          errors.push("newsletter_audience pagination guard tripped");
+          break;
+        }
+      }
+
+      return json({ connection_id: body.connection_id, name: resolved.conn.name, rows, errors });
     }
 
     // ── snapshot: RUNTIME aggregate bundle (client builds the snapshot) ─

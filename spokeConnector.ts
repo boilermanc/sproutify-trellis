@@ -28,6 +28,34 @@ async function spokeFetch(
   return { tables: data?.tables || [], errors: data?.errors || [] };
 }
 
+interface NewsletterAudienceRow {
+  email: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  customer_id?: string | null;
+  tags?: string[] | null;
+}
+
+async function fetchNewsletterAudience(connectionId: string): Promise<NewsletterAudienceRow[]> {
+  const { data, error } = await hubClient.functions.invoke('spoke-query', {
+    body: { op: 'newsletter_audience', connection_id: connectionId },
+  });
+  if (error) throw new Error(error.message || 'newsletter audience request failed');
+  if (data?.error) throw new Error(data.error);
+  if (data?.errors?.length) throw new Error(data.errors[0]);
+  return (data?.rows || []) as NewsletterAudienceRow[];
+}
+
+function supportsAtlNewsletterAudience(connection: SpokeConnection): boolean {
+  return connection.supabase_url.includes('povudgtvzggnxwgtjexa') ||
+    connection.name.toLowerCase().includes('atl urban farms');
+}
+
+function audienceKey(spokeId: string, email?: string | null): string | null {
+  const clean = (email || '').toLowerCase().trim();
+  return clean ? `${spokeId}:${clean}` : null;
+}
+
 // Cache spoke clients by URL to avoid duplicate GoTrueClient instances
 const spokeClientCache = new Map<string, SupabaseClient>();
 export function getSpokeClient(url: string, key: string): SupabaseClient {
@@ -851,11 +879,17 @@ const generateIdFromEmail = (email: string, spokeId: string): string => {
 export const fetchEnrichedProfiles = async (
   connections: SpokeConnection[]
 ): Promise<{ profiles: EnrichedProfile[]; errors: string[] }> => {
-  // Fetch profiles, orders, and order items in parallel
-  const [profilesResult, ordersResult, itemsResult] = await Promise.all([
+  const newsletterConnections = connections.filter(c => c.status === 'active' && supportsAtlNewsletterAudience(c));
+
+  // Fetch profiles, orders, order items, and authoritative ATL newsletter audience in parallel.
+  const [profilesResult, ordersResult, itemsResult, newsletterResults] = await Promise.all([
     fetchAllSpokesProfiles(connections),
     fetchAllSpokesOrders(connections),
     fetchAllSpokesOrderItems(connections),
+    Promise.allSettled(newsletterConnections.map(async connection => ({
+      connection,
+      rows: await fetchNewsletterAudience(connection.id),
+    }))),
   ]);
 
   // Combine errors
@@ -865,6 +899,34 @@ export const fetchEnrichedProfiles = async (
     ...itemsResult.errors,
   ];
 
+  const activeNewsletterKeys = new Set<string>();
+  const newsletterRowsByKey = new Map<string, NewsletterAudienceRow>();
+  const newsletterConnectionIds = new Set(newsletterConnections.map(c => c.id));
+  const authoritativeNewsletterConnectionIds = new Set<string>();
+
+  newsletterResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      errors.push(`${newsletterConnections[index].name}: ${result.reason?.message || 'Failed to fetch newsletter audience'}`);
+      return;
+    }
+
+    authoritativeNewsletterConnectionIds.add(result.value.connection.id);
+    for (const row of result.value.rows) {
+      const key = audienceKey(result.value.connection.id, row.email);
+      if (!key) continue;
+      activeNewsletterKeys.add(key);
+      newsletterRowsByKey.set(key, row);
+    }
+  });
+
+  // For ATL, newsletter_subscribers.status='active' is authoritative. The
+  // deprecated customers.newsletter_subscribed boolean may be stale.
+  for (const profile of profilesResult.profiles) {
+    if (!authoritativeNewsletterConnectionIds.has(profile._spoke_id)) continue;
+    const key = audienceKey(profile._spoke_id, profile.email);
+    profile.subscribed = key ? activeNewsletterKeys.has(key) : false;
+  }
+
   // Build a map of existing profiles by lowercase email + spoke_id
   const profilesByEmail = new Map<string, NormalizedSpokeProfile>();
   for (const profile of profilesResult.profiles) {
@@ -872,6 +934,27 @@ export const fetchEnrichedProfiles = async (
       const key = `${profile._spoke_id}:${profile.email.toLowerCase().trim()}`;
       profilesByEmail.set(key, profile);
     }
+  }
+
+  // Include active subscriber-only emails. Customers and subscribers are
+  // separate ATL sets, and subscribers do not always have customer accounts.
+  const newsletterOnlyProfiles: NormalizedSpokeProfile[] = [];
+  for (const [key, row] of newsletterRowsByKey) {
+    if (profilesByEmail.has(key)) continue;
+    const [spokeId] = key.split(':');
+    const connection = newsletterConnections.find(c => c.id === spokeId);
+    if (!connection) continue;
+    const profile: NormalizedSpokeProfile = {
+      id: row.customer_id || generateIdFromEmail(row.email, spokeId),
+      email: row.email.toLowerCase().trim(),
+      first_name: row.first_name || undefined,
+      last_name: row.last_name || undefined,
+      subscribed: true,
+      _spoke_id: spokeId,
+      _spoke_name: connection.name,
+    };
+    newsletterOnlyProfiles.push(profile);
+    profilesByEmail.set(key, profile);
   }
 
   // Extract unique identities from orders
@@ -889,7 +972,9 @@ export const fetchEnrichedProfiles = async (
         email: identity.email,
         first_name: identity.first_name,
         last_name: identity.last_name,
-        subscribed: true, // Default to subscribed
+        subscribed: authoritativeNewsletterConnectionIds.has(identity.spoke_id)
+          ? activeNewsletterKeys.has(key)
+          : true, // Legacy fallback for spokes without an authoritative newsletter source
         created_at: identity.first_order_date,
         _spoke_id: identity.spoke_id,
         _spoke_name: identity.spoke_name,
@@ -901,8 +986,8 @@ export const fetchEnrichedProfiles = async (
     }
   }
 
-  // Combine customer profiles + order-only profiles
-  const allProfiles = [...profilesResult.profiles, ...orderOnlyProfiles];
+  // Combine customer profiles + active subscriber-only profiles + order-only profiles
+  const allProfiles = [...profilesResult.profiles, ...newsletterOnlyProfiles, ...orderOnlyProfiles];
 
   // Enrich profiles with order data and order items
   const enrichedProfiles = enrichProfilesWithOrders(
@@ -913,6 +998,7 @@ export const fetchEnrichedProfiles = async (
 
   // Mark order-only profiles with special tags/metadata
   const orderOnlyEmails = new Set(orderOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
+  const newsletterOnlyEmails = new Set(newsletterOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
 
   enrichedProfiles.forEach(profile => {
     const key = `${profile._spoke_id}:${profile.email.toLowerCase()}`;
@@ -922,6 +1008,10 @@ export const fetchEnrichedProfiles = async (
       // This is an order-only profile - add metadata
       (profile as any)._order_only = true;
       (profile as any)._source = identity.source_table || 'orders';
+    }
+    if (newsletterOnlyEmails.has(key)) {
+      (profile as any)._subscriber_only = true;
+      (profile as any)._source = 'newsletter_subscribers';
     }
   });
 
