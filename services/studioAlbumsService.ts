@@ -1,4 +1,4 @@
-import { StudioAlbum, StudioMaster, StudioTrack } from '../types';
+import { StudioAlbum, StudioMaster, StudioReleaseIdentity, StudioTrack } from '../types';
 import { supabase } from '../lib/supabase';
 
 export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'genre' | 'mood' | 'era' | 'theme' | 'vocal_direction' | 'target_duration_seconds'> & { description?: string };
@@ -81,6 +81,14 @@ export async function buildStudioMaster(albumId: string): Promise<StudioMaster> 
 
 export async function approveStudioMaster(albumId: string): Promise<StudioMaster> {
   return (await callStudio('approve_master', { album_id: albumId })).master as StudioMaster;
+}
+
+export async function saveStudioReleaseIdentity(albumId: string, identity: StudioReleaseIdentity): Promise<StudioAlbum> {
+  return (await callStudio('update_release_identity', { album_id: albumId, identity })).album as StudioAlbum;
+}
+
+export async function approveStudioReleaseIdentity(albumId: string): Promise<StudioAlbum> {
+  return (await callStudio('approve_release_identity', { album_id: albumId })).album as StudioAlbum;
 }
 
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {

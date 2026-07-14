@@ -384,6 +384,15 @@ export interface StudioAlbum {
   video_status: string;
   metadata_status: string;
   publishing_status: string;
+  release_subtitle: string | null;
+  series_name: string | null;
+  subgenre: string | null;
+  short_description: string | null;
+  credits: string | null;
+  ai_disclosure: string | null;
+  copyright_note: string | null;
+  catalog_number: string | null;
+  release_identity_status: 'not_started' | 'draft' | 'approved';
   created_at: string;
   updated_at: string;
 }
@@ -405,6 +414,17 @@ export interface StudioMaster {
   audio_url?: string | null;
   duration_seconds?: number | null;
   error_message?: string | null;
+}
+
+export interface StudioReleaseIdentity {
+  release_subtitle: string;
+  series_name: string;
+  subgenre: string;
+  short_description: string;
+  credits: string;
+  ai_disclosure: string;
+  copyright_note: string;
+  catalog_number: string;
 }
 
 export interface TrellisReport {
