@@ -150,8 +150,10 @@ async function syncStudioMaster(db: any, albumId: string) {
     assetId = asset.id;
     await db.from("studio_jobs").update({ status: "completed", progress: 100, output_json: { legacy_render_id: render.id, studio_asset_id: asset.id }, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
   }
-  await db.from("studio_albums").update({ status: "master_review", master_status: "pending_review", actual_duration_seconds: render.duration_seconds, updated_at: new Date().toISOString() }).eq("id", albumId);
-  return masterWithAsset(db, albumId, { status: "pending_review", duration_seconds: render.duration_seconds, studio_asset_id: assetId });
+  const { data: album } = await db.from("studio_albums").select("master_status").eq("id", albumId).maybeSingle();
+  const masterStatus = album?.master_status === "approved" ? "approved" : "pending_review";
+  if (masterStatus === "pending_review") await db.from("studio_albums").update({ status: "master_review", master_status: "pending_review", actual_duration_seconds: render.duration_seconds, updated_at: new Date().toISOString() }).eq("id", albumId);
+  return masterWithAsset(db, albumId, { status: masterStatus, duration_seconds: render.duration_seconds, studio_asset_id: assetId });
 }
 
 async function queueStudioMaster(db: any, album: any, userId: string) {
