@@ -46,6 +46,12 @@ interface TableConfig {
   columns: string[];
 }
 
+const isOrderTable = (tableName: string): boolean => {
+  const name = tableName.toLowerCase();
+  return (name.includes('order') && !name.includes('item')) ||
+    ['purchases', 'transactions', 'revenue_events'].includes(name);
+};
+
 const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   connections,
   onConnectionsChange,
@@ -720,6 +726,10 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     );
   };
 
+  const detectedCustomerTable = discoveredTables.find((table) =>
+    ['customers', 'profiles', 'user_profiles', 'users'].includes(table.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -869,9 +879,21 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 Found <span className="font-bold text-emerald-600">{discoveredTables.length}</span> tables in this database:
               </p>
 
+              {detectedCustomerTable && (
+                <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <CheckCircle2 size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-black text-emerald-800">Customer profiles found</p>
+                    <p className="text-xs text-emerald-700 mt-0.5">
+                      We found <span className="font-mono font-bold">{detectedCustomerTable}</span> — this is the table Trellis will use for Rejoice members. Continue to review its field mapping.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {discoveredTables.map((table) => {
-                  const isCustomerTable = ['customers', 'profiles', 'users'].includes(table.toLowerCase());
+                  const isCustomerTable = table === detectedCustomerTable;
                   return (
                     <div
                       key={table}
@@ -912,19 +934,15 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    // Auto-select customer table if found
-                    const customerTable = discoveredTables.find(t =>
-                      ['customers', 'profiles', 'users'].includes(t.toLowerCase())
-                    );
-                    if (customerTable) {
-                      handleSelectCustomerTable(customerTable);
+                    if (detectedCustomerTable) {
+                      handleSelectCustomerTable(detectedCustomerTable);
                     }
                     setWizardStep('customers');
                   }}
                   disabled={discoveredTables.length === 0}
                   className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
-                  <span>Continue</span>
+                  <span>{detectedCustomerTable ? `Continue with ${detectedCustomerTable}` : 'Choose customer table'}</span>
                   <ChevronRight size={14} />
                 </button>
               </div>
@@ -1036,7 +1054,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="mb-4 flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
                 <Info size={13} className="text-slate-400 flex-shrink-0 mt-0.5" />
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Trellis scanned this spoke for standard <span className="font-mono">orders</span>,{' '}
+                  Trellis scanned this spoke for <span className="font-mono">orders</span> and revenue events,{' '}
                   <span className="font-mono">order_items</span>, and <span className="font-mono">subscriptions</span>{' '}
                   tables. A greyed-out card means no matching table was found (or the key can't read it). Your
                   customer data is already connected — these are optional extras.
@@ -1047,11 +1065,11 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 {/* Orders Card */}
                 <button
                   onClick={() => setSelectedDataTypes((prev) => ({ ...prev, orders: !prev.orders }))}
-                  disabled={!discoveredTables.some(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item'))}
+                  disabled={!discoveredTables.some(isOrderTable)}
                   className={`p-4 rounded-xl border-2 text-left transition ${
                     selectedDataTypes.orders
                       ? 'bg-blue-50 border-blue-300'
-                      : discoveredTables.some(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item'))
+                      : discoveredTables.some(isOrderTable)
                       ? 'bg-white border-slate-200 hover:border-blue-200'
                       : 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
                   }`}
@@ -1075,11 +1093,11 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     </div>
                   </div>
                   <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-1.5">
-                    {discoveredTables.some(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item')) ? (
+                    {discoveredTables.some(isOrderTable) ? (
                       <>
                         <Check size={11} className="text-emerald-500 flex-shrink-0" />
                         <span className="text-[9px] font-bold text-emerald-600 truncate">
-                          Found: {discoveredTables.find(t => t.toLowerCase().includes('order') && !t.toLowerCase().includes('item'))}
+                          Found: {discoveredTables.find(isOrderTable)}
                         </span>
                       </>
                     ) : (
@@ -1206,12 +1224,12 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               </div>
 
               <p className="text-sm text-slate-600">
-                Select all tables that contain order/purchase data:
+                Select all tables that contain order, purchase, or revenue data:
               </p>
 
               <div className="space-y-4">
                 {discoveredTables
-                  .filter(t => (t.toLowerCase().includes('order') && !t.toLowerCase().includes('item')) || t === 'purchases' || t === 'transactions')
+                  .filter(isOrderTable)
                   .map(tableName => {
                     const isSelected = orderTableConfigs.some(c => c.table_name === tableName);
                     const config = orderTableConfigs.find(c => c.table_name === tableName);
@@ -1282,7 +1300,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     );
                   })}
 
-                {discoveredTables.filter(t => (t.toLowerCase().includes('order') && !t.toLowerCase().includes('item')) || t === 'purchases' || t === 'transactions').length === 0 && (
+                {discoveredTables.filter(isOrderTable).length === 0 && (
                   <div className="text-center py-6 text-slate-400">
                     <Package size={32} className="mx-auto mb-2 opacity-50" />
                     <p className="text-sm font-bold">No order tables found</p>

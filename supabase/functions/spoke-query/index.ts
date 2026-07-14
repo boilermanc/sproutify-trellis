@@ -34,9 +34,11 @@ const SNAPSHOT_TOTAL_SAMPLE = 5000;
 const SNAPSHOT_PRODUCT_SAMPLE = 2000;
 const RPC_PAGE_SIZE = 1000;
 
-// Tables the discovery step probes for (mirrors the old client behavior).
+// Tables the discovery step probes first. Full discovery below also reads the
+// spoke's OpenAPI document, so a spoke is not required to use any of these
+// conventional names.
 const COMMON_TABLES = [
-  "customers", "profiles", "users",
+  "customers", "profiles", "user_profiles", "users",
   "orders", "order_items", "legacy_orders", "legacy_order_items",
   "subscriptions", "payments", "products",
   "newsletter_subscribers", "customer_tags", "customer_addresses",
@@ -68,6 +70,30 @@ async function columnsFromOpenApi(url: string, key: string, table: string): Prom
     const spec = await res.json();
     const props = spec?.definitions?.[table]?.properties;
     return props ? Object.keys(props) : [];
+  } catch {
+    return [];
+  }
+}
+
+// PostgREST publishes the exposed tables/views in its OpenAPI paths. This is
+// the only schema listing available to a remote Supabase project through its
+// Data API; information_schema is not exposed over PostgREST.
+async function tablesFromOpenApi(url: string, key: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${url}/rest/v1/`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) return [];
+    const spec = await res.json();
+    const paths = spec?.paths;
+    if (!paths || typeof paths !== "object") return [];
+
+    return Object.keys(paths)
+      .filter((path) => path.startsWith("/") && !path.startsWith("/rpc/"))
+      .map((path) => decodeURIComponent(path.slice(1)))
+      // Supabase table names are normally simple identifiers. Keeping this
+      // guard means discovery cannot send arbitrary paths to PostgREST.
+      .filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
   } catch {
     return [];
   }
@@ -172,12 +198,16 @@ Deno.serve(async (req: Request) => {
       const spoke = createClient(url, key);
 
       if (op === "discover") {
+        const candidates = new Set([
+          ...COMMON_TABLES,
+          ...await tablesFromOpenApi(url, key),
+        ]);
         const found: string[] = [];
-        for (const t of COMMON_TABLES) {
+        for (const t of candidates) {
           const { error } = await spoke.from(t).select("*").limit(1);
           if (!error) found.push(t);
         }
-        return json({ tables: found });
+        return json({ tables: found.sort((a, b) => a.localeCompare(b)) });
       }
 
       // columns
