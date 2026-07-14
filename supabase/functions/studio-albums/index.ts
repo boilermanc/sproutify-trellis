@@ -335,7 +335,6 @@ Deno.serve(async (req) => {
     if (body.action === "update_release_identity") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       if (album.master_status !== "approved") throw new Error("Approve the master before editing the Release Identity.");
-      if (album.release_identity_status === "approved") throw new Error("This Release Identity is approved. Create a revision before changing it.");
       const identity = body.identity || {};
       const text = (value: unknown, limit: number) => String(value || "").trim().slice(0, limit) || null;
       const { data, error } = await db.from("studio_albums").update({ release_subtitle: text(identity.release_subtitle, 160), series_name: text(identity.series_name, 120), subgenre: text(identity.subgenre, 120), short_description: text(identity.short_description, 400), credits: text(identity.credits, 2000), ai_disclosure: text(identity.ai_disclosure, 1000), copyright_note: text(identity.copyright_note, 1000), catalog_number: text(identity.catalog_number, 80), release_identity_status: "draft", status: "release_identity", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
