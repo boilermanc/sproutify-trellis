@@ -97,6 +97,20 @@ async function syncLegacyTrack(db: any, studioTrackId: string) {
   return trackWithAsset(db, studioTrackId);
 }
 
+async function queueStudioTrackGeneration(db: any, album: any, userId: string, studioTrack: any) {
+  const duration = Number(studioTrack.duration_seconds);
+  const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Adapter] ${album.title} — ${studioTrack.title}`, target_duration_seconds: duration, genre: album.genre, mood: album.mood, track_count: 1, avg_track_length_seconds: duration, status: "planned" }).select("*").single();
+  if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the legacy generation adapter.");
+  const { data: legacyTrack, error: legacyError } = await db.from("trellis_music_tracks").insert({ session_id: legacySession.id, track_number: 1, title: studioTrack.title, prompt: studioTrack.prompt, genre: album.genre, mood: album.mood, vocal_style: album.vocal_direction, duration_seconds: duration, status: "queued" }).select("*").single();
+  if (legacyError || !legacyTrack) throw new Error(legacyError?.message || "Could not queue legacy generation.");
+  const { error: updateError } = await db.from("studio_tracks").update({ legacy_generation_id: legacyTrack.id, review_status: "regenerating", generation_provider: "google", generation_model: duration <= 45 ? "lyria-3-clip-preview" : "lyria-3-pro-preview", updated_at: new Date().toISOString() }).eq("id", studioTrack.id);
+  if (updateError) throw new Error(updateError.message);
+  const { error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, track_id: studioTrack.id, job_type: "track_generation", status: "processing", progress: 5, provider: "legacy_lyria_adapter", attempt_count: 1, input_json: { legacy_session_id: legacySession.id, legacy_generation_id: legacyTrack.id } });
+  if (jobError) throw new Error(jobError.message);
+  await invokeLegacyWorker(legacySession.id, null);
+  return trackWithAsset(db, studioTrack.id);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -171,6 +185,14 @@ Deno.serve(async (req) => {
       }
       return json({ deleted_track_id: track.id });
     }
+    if (body.action === "generate_planned_track") {
+      const { data: studioTrack, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
+      if (error || !studioTrack) throw new Error("Track not found.");
+      const album = await getOwnedAlbum(db, studioTrack.album_id, user.id);
+      if (studioTrack.legacy_generation_id || studioTrack.review_status !== "planned") throw new Error("Only an ungenerated planned track can be queued for generation.");
+      if (!studioTrack.title?.trim() || !studioTrack.prompt?.trim() || !Number.isInteger(Number(studioTrack.duration_seconds)) || studioTrack.duration_seconds < 15 || studioTrack.duration_seconds > 165) throw new Error("This planned track needs a title, prompt, and a 15–165 second duration before generation.");
+      return json({ track: await queueStudioTrackGeneration(db, album, user.id, studioTrack) }, 201);
+    }
     if (body.action === "generate_one") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const input = body.track || {};
@@ -180,14 +202,7 @@ Deno.serve(async (req) => {
       const trackNumber = (last?.track_number || 0) + 1;
       const { data: studioTrack, error: studioError } = await db.from("studio_tracks").insert({ album_id: album.id, track_number: trackNumber, title: input.title.trim(), prompt: input.prompt.trim(), duration_seconds: duration, review_status: "regenerating", generation_provider: "google", generation_model: duration <= 45 ? "lyria-3-clip-preview" : "lyria-3-pro-preview" }).select("*").single();
       if (studioError || !studioTrack) throw new Error(studioError?.message || "Could not create Studio track.");
-      const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: user.id, title: `[Studio Adapter] ${album.title} — ${studioTrack.title}`, target_duration_seconds: duration, genre: album.genre, mood: album.mood, track_count: 1, avg_track_length_seconds: duration, status: "planned" }).select("*").single();
-      if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the legacy generation adapter.");
-      const { data: legacyTrack, error: legacyError } = await db.from("trellis_music_tracks").insert({ session_id: legacySession.id, track_number: 1, title: studioTrack.title, prompt: studioTrack.prompt, genre: album.genre, mood: album.mood, vocal_style: album.vocal_direction, duration_seconds: duration, status: "queued" }).select("*").single();
-      if (legacyError || !legacyTrack) throw new Error(legacyError?.message || "Could not queue legacy generation.");
-      await db.from("studio_tracks").update({ legacy_generation_id: legacyTrack.id, updated_at: new Date().toISOString() }).eq("id", studioTrack.id);
-      await db.from("studio_jobs").insert({ album_id: album.id, track_id: studioTrack.id, job_type: "track_generation", status: "processing", progress: 5, provider: "legacy_lyria_adapter", attempt_count: 1, input_json: { legacy_session_id: legacySession.id, legacy_generation_id: legacyTrack.id } });
-      await invokeLegacyWorker(legacySession.id, null);
-      return json({ track: await trackWithAsset(db, studioTrack.id) }, 201);
+      return json({ track: await queueStudioTrackGeneration(db, album, user.id, studioTrack) }, 201);
     }
     if (body.action === "review_track") {
       const { data: track, error } = await db.from("studio_tracks").select("album_id").eq("id", body.track_id).single();
