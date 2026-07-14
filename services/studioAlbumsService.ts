@@ -79,6 +79,10 @@ export async function buildStudioMaster(albumId: string): Promise<StudioMaster> 
   return (await callStudio('build_master', { album_id: albumId })).master as StudioMaster;
 }
 
+export async function approveStudioMaster(albumId: string): Promise<StudioMaster> {
+  return (await callStudio('approve_master', { album_id: albumId })).master as StudioMaster;
+}
+
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;
 }

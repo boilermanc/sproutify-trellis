@@ -144,13 +144,14 @@ async function syncStudioMaster(db: any, albumId: string) {
     const path = `studio/${ORG_ID}/albums/${albumId}/masters/${render.id}.mp3`;
     const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "audio/mpeg", upsert: true });
     if (uploadError) throw new Error(`Could not register the completed master: ${uploadError.message}`);
-    const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: albumId, asset_type: "master_mp3", storage_bucket: "studio-assets", storage_path: path, mime_type: "audio/mpeg", file_size: bytes.size, duration_seconds: render.duration_seconds, status: "active", metadata_json: { legacy_render_id: render.id, legacy_session_id: render.session_id, track_ids: render.track_ids } }).select("*").single();
+    const { data: previousAsset } = await db.from("studio_assets").select("version").eq("album_id", albumId).is("track_id", null).eq("asset_type", "master_mp3").order("version", { ascending: false }).limit(1).maybeSingle();
+    const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: albumId, asset_type: "master_mp3", storage_bucket: "studio-assets", storage_path: path, mime_type: "audio/mpeg", file_size: bytes.size, duration_seconds: render.duration_seconds, version: (previousAsset?.version || 0) + 1, status: "active", metadata_json: { legacy_render_id: render.id, legacy_session_id: render.session_id, track_ids: render.track_ids } }).select("*").single();
     if (assetError || !asset) throw new Error(assetError?.message || "Could not create the Studio master asset.");
     assetId = asset.id;
     await db.from("studio_jobs").update({ status: "completed", progress: 100, output_json: { legacy_render_id: render.id, studio_asset_id: asset.id }, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
   }
-  await db.from("studio_albums").update({ status: "master_review", master_status: "approved", actual_duration_seconds: render.duration_seconds, updated_at: new Date().toISOString() }).eq("id", albumId);
-  return masterWithAsset(db, albumId, { status: "ready", duration_seconds: render.duration_seconds, studio_asset_id: assetId });
+  await db.from("studio_albums").update({ status: "master_review", master_status: "pending_review", actual_duration_seconds: render.duration_seconds, updated_at: new Date().toISOString() }).eq("id", albumId);
+  return masterWithAsset(db, albumId, { status: "pending_review", duration_seconds: render.duration_seconds, studio_asset_id: assetId });
 }
 
 async function queueStudioMaster(db: any, album: any, userId: string) {
@@ -319,6 +320,15 @@ Deno.serve(async (req) => {
     if (body.action === "build_master") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       return json({ master: await queueStudioMaster(db, album, user.id) }, 201);
+    }
+    if (body.action === "approve_master") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: asset } = await db.from("studio_assets").select("id").eq("album_id", album.id).is("track_id", null).eq("asset_type", "master_mp3").eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (!asset) throw new Error("Build the full MP3 before approving the master.");
+      if (album.master_status !== "pending_review") throw new Error("Only a master awaiting review can be approved.");
+      const { error } = await db.from("studio_albums").update({ master_status: "approved", status: "release_identity", updated_at: new Date().toISOString() }).eq("id", album.id);
+      if (error) throw new Error(error.message);
+      return json({ master: await masterWithAsset(db, album.id, { status: "approved", studio_asset_id: asset.id }) });
     }
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Studio track operation failed." }, 400);

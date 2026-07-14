@@ -401,7 +401,7 @@ export interface StudioTrack {
 }
 
 export interface StudioMaster {
-  status: 'not_started' | 'queued' | 'processing' | 'ready' | 'failed';
+  status: 'not_started' | 'queued' | 'processing' | 'pending_review' | 'approved' | 'failed';
   audio_url?: string | null;
   duration_seconds?: number | null;
   error_message?: string | null;
