@@ -7,6 +7,7 @@ const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const LEGACY_TRACK_WORKER = "generate-session-track";
+const MUSIC_STITCH_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-music-stitch";
 
 function fallbackTrackPlan(album: any, trackNumber: number) {
   const title = `${album.title} — ${trackNumber === 1 ? 'Opening Signal' : `Movement ${trackNumber}`}`;
@@ -111,6 +112,77 @@ async function queueStudioTrackGeneration(db: any, album: any, userId: string, s
   return trackWithAsset(db, studioTrack.id);
 }
 
+async function masterWithAsset(db: any, albumId: string, fallback: any = {}) {
+  const { data: asset } = await db.from("studio_assets").select("*").eq("album_id", albumId).is("track_id", null).eq("asset_type", "master_mp3").eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  let audio_url: string | null = null;
+  if (asset) {
+    const { data: signed } = await db.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 60 * 15);
+    audio_url = signed?.signedUrl || null;
+  }
+  return { ...fallback, asset, audio_url };
+}
+
+async function syncStudioMaster(db: any, albumId: string) {
+  const { data: job, error: jobError } = await db.from("studio_jobs").select("*").eq("album_id", albumId).eq("job_type", "master_audio").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (jobError) throw new Error(jobError.message);
+  if (!job) return masterWithAsset(db, albumId, { status: "not_started" });
+  const renderId = job.input_json?.legacy_render_id;
+  if (!renderId) return masterWithAsset(db, albumId, { status: job.status, error_message: job.error_message });
+  const { data: render, error: renderError } = await db.from("trellis_music_renders").select("*").eq("id", renderId).maybeSingle();
+  if (renderError || !render) throw new Error(renderError?.message || "Master render record not found.");
+  if (render.status === "failed") {
+    await db.from("studio_jobs").update({ status: "failed", error_message: render.error_message || "Mastering failed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
+    await db.from("studio_albums").update({ master_status: "failed", updated_at: new Date().toISOString() }).eq("id", albumId);
+    return masterWithAsset(db, albumId, { status: "failed", error_message: render.error_message || "The master render failed." });
+  }
+  if (render.status !== "ready") return masterWithAsset(db, albumId, { status: render.status === "queued" ? "queued" : "processing" });
+  if (!render.storage_bucket || !render.storage_path) throw new Error("The completed master did not include an audio file.");
+  let assetId = job.output_json?.studio_asset_id;
+  if (!assetId) {
+    const { data: bytes, error: downloadError } = await db.storage.from(render.storage_bucket).download(render.storage_path);
+    if (downloadError || !bytes) throw new Error(downloadError?.message || "Could not retrieve the completed master.");
+    const path = `studio/${ORG_ID}/albums/${albumId}/masters/${render.id}.mp3`;
+    const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "audio/mpeg", upsert: true });
+    if (uploadError) throw new Error(`Could not register the completed master: ${uploadError.message}`);
+    const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: albumId, asset_type: "master_mp3", storage_bucket: "studio-assets", storage_path: path, mime_type: "audio/mpeg", file_size: bytes.size, duration_seconds: render.duration_seconds, status: "active", metadata_json: { legacy_render_id: render.id, legacy_session_id: render.session_id, track_ids: render.track_ids } }).select("*").single();
+    if (assetError || !asset) throw new Error(assetError?.message || "Could not create the Studio master asset.");
+    assetId = asset.id;
+    await db.from("studio_jobs").update({ status: "completed", progress: 100, output_json: { legacy_render_id: render.id, studio_asset_id: asset.id }, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
+  }
+  await db.from("studio_albums").update({ status: "master_review", master_status: "approved", actual_duration_seconds: render.duration_seconds, updated_at: new Date().toISOString() }).eq("id", albumId);
+  return masterWithAsset(db, albumId, { status: "ready", duration_seconds: render.duration_seconds, studio_asset_id: assetId });
+}
+
+async function queueStudioMaster(db: any, album: any, userId: string) {
+  const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("*").eq("album_id", album.id).order("track_number");
+  if (tracksError) throw new Error(tracksError.message);
+  if (!tracks?.length) throw new Error("Add and approve at least one generated track before building the full MP3.");
+  const unapproved = tracks.filter((track: any) => track.review_status !== "approved");
+  if (unapproved.length) throw new Error(`Approve all generated tracks before building the full MP3 (${unapproved.length} remaining).`);
+  if (tracks.some((track: any) => !track.legacy_generation_id)) throw new Error("Every approved track needs a completed generation before the full MP3 can be built.");
+  const legacyIds = tracks.map((track: any) => track.legacy_generation_id);
+  const { data: legacyTracks, error: legacyError } = await db.from("trellis_music_tracks").select("*").in("id", legacyIds);
+  if (legacyError) throw new Error(legacyError.message);
+  const legacyById = new Map((legacyTracks || []).map((track: any) => [track.id, track]));
+  const stitchTracks = await Promise.all(tracks.map(async (track: any) => {
+    const legacy = legacyById.get(track.legacy_generation_id);
+    if (!legacy || legacy.status !== "completed" || !legacy.storage_bucket || !legacy.storage_path) throw new Error(`“${track.title}” is not ready for mastering.`);
+    const { data: signed, error: signError } = await db.storage.from(legacy.storage_bucket).createSignedUrl(legacy.storage_path, 60 * 60);
+    if (signError || !signed?.signedUrl) throw new Error(signError?.message || `Could not prepare “${track.title}” for mastering.`);
+    return { id: legacy.id, track_number: track.track_number, audio_url: signed.signedUrl };
+  }));
+  const totalDuration = tracks.reduce((total: number, track: any) => total + Number(track.duration_seconds || 0), 0);
+  const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Master] ${album.title}`, target_duration_seconds: totalDuration, actual_duration_seconds: null, genre: album.genre, mood: album.mood, track_count: tracks.length, avg_track_length_seconds: Math.round(totalDuration / tracks.length), status: "stitching", final_audio_url: null, error_message: null }).select("*").single();
+  if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the master adapter.");
+  const { data: render, error: renderError } = await db.from("trellis_music_renders").insert({ session_id: legacySession.id, render_type: "master", status: "queued", track_ids: legacyIds }).select("*").single();
+  if (renderError || !render) throw new Error(renderError?.message || "Could not queue the master render.");
+  const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "master_audio", status: "queued", progress: 5, provider: "legacy_ffmpeg_stitch_adapter", attempt_count: 1, input_json: { legacy_render_id: render.id, legacy_session_id: legacySession.id, legacy_generation_ids: legacyIds } }).select("*").single();
+  if (jobError || !job) throw new Error(jobError?.message || "Could not register the Studio master job.");
+  await db.from("studio_albums").update({ status: "mastering", master_status: "queued", actual_duration_seconds: null, updated_at: new Date().toISOString() }).eq("id", album.id);
+  fetch(MUSIC_STITCH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ render_id: render.id, session_id: legacySession.id, branch: null, tracks: stitchTracks }) }).catch(() => { /* n8n receives this independent of its response body */ });
+  return masterWithAsset(db, album.id, { status: "queued", job_id: job.id });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -137,11 +209,11 @@ Deno.serve(async (req) => {
   }
   try {
     if (body.action === "tracks") {
-      await getOwnedAlbum(db, body.album_id, user.id);
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
       const { data, error } = await db.from("studio_tracks").select("*").eq("album_id", body.album_id).order("track_number");
       if (error) throw new Error(error.message);
       const tracks = await Promise.all((data || []).map((track: any) => syncLegacyTrack(db, track.id)));
-      return json({ tracks });
+      return json({ tracks, master: await syncStudioMaster(db, album.id) });
     }
     if (body.action === "plan_track") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
@@ -243,6 +315,10 @@ Deno.serve(async (req) => {
       const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "approved", approved_at: new Date().toISOString(), rejection_reason: null, updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("review_status", "pending_review").select("*");
       if (error) throw new Error(error.message);
       return json({ tracks: tracks || [] });
+    }
+    if (body.action === "build_master") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      return json({ master: await queueStudioMaster(db, album, user.id) }, 201);
     }
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Studio track operation failed." }, 400);

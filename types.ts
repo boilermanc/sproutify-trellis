@@ -400,6 +400,13 @@ export interface StudioTrack {
   audio_url?: string | null;
 }
 
+export interface StudioMaster {
+  status: 'not_started' | 'queued' | 'processing' | 'ready' | 'failed';
+  audio_url?: string | null;
+  duration_seconds?: number | null;
+  error_message?: string | null;
+}
+
 export interface TrellisReport {
   id: string;
   name: string;
