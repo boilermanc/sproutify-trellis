@@ -134,6 +134,43 @@ Deno.serve(async (req) => {
       const { data: last } = await db.from("studio_tracks").select("track_number").eq("album_id", album.id).order("track_number", { ascending: false }).limit(1).maybeSingle();
       return json({ track: await planAlbumTrack(db, album, (last?.track_number || 0) + 1) });
     }
+    if (body.action === "create_planned_track") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const input = body.track || {};
+      const duration = Number(input.duration_seconds);
+      if (!input.title?.trim() || !input.prompt?.trim() || !Number.isInteger(duration) || duration < 15 || duration > 165) throw new Error("Track title, prompt, and a 15–165 second duration are required.");
+      const { data: last } = await db.from("studio_tracks").select("track_number").eq("album_id", album.id).order("track_number", { ascending: false }).limit(1).maybeSingle();
+      const { data, error } = await db.from("studio_tracks").insert({ album_id: album.id, track_number: (last?.track_number || 0) + 1, title: input.title.trim(), prompt: input.prompt.trim(), duration_seconds: duration, vocal_direction: album.vocal_direction, review_status: "planned" }).select("*").single();
+      if (error || !data) throw new Error(error?.message || "Could not add planned track.");
+      return json({ track: data }, 201);
+    }
+    if (body.action === "update_planned_track") {
+      const input = body.track || {};
+      const duration = Number(input.duration_seconds);
+      if (!body.track_id || !input.title?.trim() || !input.prompt?.trim() || !Number.isInteger(duration) || duration < 15 || duration > 165) throw new Error("Track title, prompt, and a 15–165 second duration are required.");
+      const { data: track, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
+      if (error || !track) throw new Error("Track not found.");
+      await getOwnedAlbum(db, track.album_id, user.id);
+      if (track.legacy_generation_id || !["planned", "failed", "rejected"].includes(track.review_status)) throw new Error("Only tracks without generated audio can be edited.");
+      const { error: updateError } = await db.from("studio_tracks").update({ title: input.title.trim(), prompt: input.prompt.trim(), duration_seconds: duration, updated_at: new Date().toISOString() }).eq("id", track.id);
+      if (updateError) throw new Error(updateError.message);
+      return json({ track: await trackWithAsset(db, track.id) });
+    }
+    if (body.action === "delete_planned_track") {
+      const { data: track, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
+      if (error || !track) throw new Error("Track not found.");
+      await getOwnedAlbum(db, track.album_id, user.id);
+      if (track.legacy_generation_id || !["planned", "failed", "rejected"].includes(track.review_status)) throw new Error("Only tracks without generated audio can be deleted.");
+      const { error: deleteError } = await db.from("studio_tracks").delete().eq("id", track.id);
+      if (deleteError) throw new Error(deleteError.message);
+      const { data: laterTracks, error: laterError } = await db.from("studio_tracks").select("id, track_number").eq("album_id", track.album_id).gt("track_number", track.track_number).order("track_number");
+      if (laterError) throw new Error(laterError.message);
+      for (const later of laterTracks || []) {
+        const { error: renumberError } = await db.from("studio_tracks").update({ track_number: later.track_number - 1, updated_at: new Date().toISOString() }).eq("id", later.id);
+        if (renumberError) throw new Error(renumberError.message);
+      }
+      return json({ deleted_track_id: track.id });
+    }
     if (body.action === "generate_one") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const input = body.track || {};

@@ -36,6 +36,20 @@ export async function planStudioAlbum(albumId: string, trackCount: number): Prom
   return data.tracks as StudioTrack[];
 }
 
+export type StudioTrackDraft = { title: string; prompt: string; duration_seconds: number };
+
+export async function createPlannedStudioTrack(albumId: string, track: StudioTrackDraft): Promise<StudioTrack> {
+  return (await callStudio('create_planned_track', { album_id: albumId, track })).track as StudioTrack;
+}
+
+export async function updatePlannedStudioTrack(trackId: string, track: StudioTrackDraft): Promise<StudioTrack> {
+  return (await callStudio('update_planned_track', { track_id: trackId, track })).track as StudioTrack;
+}
+
+export async function deletePlannedStudioTrack(trackId: string): Promise<void> {
+  await callStudio('delete_planned_track', { track_id: trackId });
+}
+
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;
 }
