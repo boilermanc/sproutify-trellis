@@ -66,6 +66,10 @@ export async function generateAllApprovedStudioTracks(albumId: string): Promise<
   return (await callStudio('generate_all_approved_tracks', { album_id: albumId })).tracks as StudioTrack[];
 }
 
+export async function approveAllGeneratedStudioTracks(albumId: string): Promise<StudioTrack[]> {
+  return (await callStudio('approve_all_generated_tracks', { album_id: albumId })).tracks as StudioTrack[];
+}
+
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;
 }

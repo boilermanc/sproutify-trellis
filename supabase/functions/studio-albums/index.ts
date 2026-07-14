@@ -238,6 +238,12 @@ Deno.serve(async (req) => {
       if (updateError) throw new Error(updateError.message);
       return json({ track: await trackWithAsset(db, body.track_id) });
     }
+    if (body.action === "approve_all_generated_tracks") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "approved", approved_at: new Date().toISOString(), rejection_reason: null, updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("review_status", "pending_review").select("*");
+      if (error) throw new Error(error.message);
+      return json({ tracks: tracks || [] });
+    }
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Studio track operation failed." }, 400);
   }
