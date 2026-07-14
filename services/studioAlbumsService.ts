@@ -95,6 +95,7 @@ export async function getStudioCoverConcepts(albumId: string): Promise<StudioCov
 export async function generateStudioCoverConcept(albumId: string, direction: string): Promise<StudioCoverConcept> { return (await callStudio('generate_cover_concept', { album_id: albumId, direction })).concept as StudioCoverConcept; }
 export async function selectStudioCoverConcept(assetId: string): Promise<StudioCoverConcept> { return (await callStudio('select_cover_concept', { asset_id: assetId })).concept as StudioCoverConcept; }
 export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
+export async function prepareStudioVisualProduction(albumId: string, motion: string, direction: string): Promise<StudioAlbum> { return (await callStudio('prepare_visual_production', { album_id: albumId, motion, direction })).album as StudioAlbum; }
 
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;

@@ -409,6 +409,24 @@ Deno.serve(async (req) => {
       if (error || !data) throw new Error(error?.message || "Could not approve the cover.");
       return json({ album: data });
     }
+    if (body.action === "prepare_visual_production") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.artwork_status !== "approved") throw new Error("Approve the cover before preparing Visual Production.");
+      if (album.master_status !== "approved") throw new Error("Approve the master before preparing Visual Production.");
+      const motion = String(body.motion || "ken_burns").slice(0, 80);
+      const direction = String(body.direction || "Subtle cinematic movement that preserves the approved cover composition.").trim().slice(0, 500);
+      const { data: cover } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
+      const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (!cover || !master) throw new Error("The approved cover and master are required before preparing Visual Production.");
+      const { data: existing } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "video_mp4").eq("status", "planned").maybeSingle();
+      if (!existing) {
+        const { error: assetError } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "video_mp4", storage_bucket: "studio-assets", storage_path: `studio/${ORG_ID}/albums/${album.id}/video/final-v1.mp4`, mime_type: "video/mp4", status: "planned", metadata_json: { role: "visual_production", motion, direction, cover_asset_id: cover.id, master_asset_id: master.id } });
+        if (assetError) throw new Error(assetError.message);
+      }
+      const { data, error } = await db.from("studio_albums").update({ video_status: "planned", status: "video_review", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
+      if (error || !data) throw new Error(error?.message || "Could not prepare Visual Production.");
+      return json({ album: data });
+    }
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Studio track operation failed." }, 400);
   }
