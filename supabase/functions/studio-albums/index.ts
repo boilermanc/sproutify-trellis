@@ -165,8 +165,9 @@ Deno.serve(async (req) => {
       const { data: track, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
       if (error || !track) throw new Error("Track not found.");
       await getOwnedAlbum(db, track.album_id, user.id);
-      if (track.legacy_generation_id || !["planned", "failed", "rejected"].includes(track.review_status)) throw new Error("Only tracks without generated audio can be edited.");
-      const { error: updateError } = await db.from("studio_tracks").update({ title: input.title.trim(), prompt: input.prompt.trim(), duration_seconds: duration, updated_at: new Date().toISOString() }).eq("id", track.id);
+      if (!["planned", "failed", "rejected"].includes(track.review_status) || (track.review_status !== "failed" && track.legacy_generation_id)) throw new Error("Only planned tracks, rejected tracks, or failed tracks can be edited.");
+      const retryingFailedTrack = track.review_status === "failed";
+      const { error: updateError } = await db.from("studio_tracks").update({ title: input.title.trim(), prompt: input.prompt.trim(), duration_seconds: duration, legacy_generation_id: retryingFailedTrack ? null : track.legacy_generation_id, generation_provider: retryingFailedTrack ? null : track.generation_provider, generation_model: retryingFailedTrack ? null : track.generation_model, rejection_reason: retryingFailedTrack ? null : track.rejection_reason, review_status: retryingFailedTrack ? "planned" : track.review_status, updated_at: new Date().toISOString() }).eq("id", track.id);
       if (updateError) throw new Error(updateError.message);
       return json({ track: await trackWithAsset(db, track.id) });
     }
