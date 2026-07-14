@@ -185,13 +185,37 @@ Deno.serve(async (req) => {
       }
       return json({ deleted_track_id: track.id });
     }
+    if (body.action === "approve_planned_track") {
+      const { data: studioTrack, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
+      if (error || !studioTrack) throw new Error("Track not found.");
+      await getOwnedAlbum(db, studioTrack.album_id, user.id);
+      if (studioTrack.review_status !== "planned" || studioTrack.legacy_generation_id) throw new Error("Only an ungenerated planned track can be approved for generation.");
+      const { error: updateError } = await db.from("studio_tracks").update({ review_status: "locked", updated_at: new Date().toISOString() }).eq("id", studioTrack.id);
+      if (updateError) throw new Error(updateError.message);
+      return json({ track: await trackWithAsset(db, studioTrack.id) });
+    }
+    if (body.action === "approve_all_planned_tracks") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "locked", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("review_status", "planned").is("legacy_generation_id", null).select("*");
+      if (error) throw new Error(error.message);
+      return json({ tracks: tracks || [] });
+    }
     if (body.action === "generate_planned_track") {
       const { data: studioTrack, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
       if (error || !studioTrack) throw new Error("Track not found.");
       const album = await getOwnedAlbum(db, studioTrack.album_id, user.id);
-      if (studioTrack.legacy_generation_id || studioTrack.review_status !== "planned") throw new Error("Only an ungenerated planned track can be queued for generation.");
+      if (studioTrack.legacy_generation_id || studioTrack.review_status !== "locked") throw new Error("Only a plan approved for generation can be queued.");
       if (!studioTrack.title?.trim() || !studioTrack.prompt?.trim() || !Number.isInteger(Number(studioTrack.duration_seconds)) || studioTrack.duration_seconds < 15 || studioTrack.duration_seconds > 165) throw new Error("This planned track needs a title, prompt, and a 15–165 second duration before generation.");
       return json({ track: await queueStudioTrackGeneration(db, album, user.id, studioTrack) }, 201);
+    }
+    if (body.action === "generate_all_approved_tracks") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: approvedPlans, error } = await db.from("studio_tracks").select("*").eq("album_id", album.id).eq("review_status", "locked").is("legacy_generation_id", null).order("track_number");
+      if (error) throw new Error(error.message);
+      if (!approvedPlans?.length) throw new Error("Approve at least one planned track before generating.");
+      const tracks = [];
+      for (const track of approvedPlans) tracks.push(await queueStudioTrackGeneration(db, album, user.id, track));
+      return json({ tracks }, 201);
     }
     if (body.action === "generate_one") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
