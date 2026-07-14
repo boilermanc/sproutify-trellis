@@ -1,4 +1,4 @@
-import { StudioAlbum, StudioMaster, StudioReleaseIdentity, StudioTrack } from '../types';
+import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioReleaseIdentity, StudioTrack } from '../types';
 import { supabase } from '../lib/supabase';
 
 export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'genre' | 'mood' | 'era' | 'theme' | 'vocal_direction' | 'target_duration_seconds'> & { description?: string };
@@ -90,6 +90,11 @@ export async function saveStudioReleaseIdentity(albumId: string, identity: Studi
 export async function approveStudioReleaseIdentity(albumId: string): Promise<StudioAlbum> {
   return (await callStudio('approve_release_identity', { album_id: albumId })).album as StudioAlbum;
 }
+
+export async function getStudioCoverConcepts(albumId: string): Promise<StudioCoverConcept[]> { return (await callStudio('list_cover_concepts', { album_id: albumId })).concepts as StudioCoverConcept[]; }
+export async function generateStudioCoverConcept(albumId: string, direction: string): Promise<StudioCoverConcept> { return (await callStudio('generate_cover_concept', { album_id: albumId, direction })).concept as StudioCoverConcept; }
+export async function selectStudioCoverConcept(assetId: string): Promise<StudioCoverConcept> { return (await callStudio('select_cover_concept', { asset_id: assetId })).concept as StudioCoverConcept; }
+export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
 
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;

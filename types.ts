@@ -427,6 +427,8 @@ export interface StudioReleaseIdentity {
   catalog_number: string;
 }
 
+export interface StudioCoverConcept { id: string; version: number; image_url?: string | null; metadata_json?: { selection_status?: 'unselected' | 'selected' | 'approved'; direction?: string }; }
+
 export interface TrellisReport {
   id: string;
   name: string;

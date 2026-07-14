@@ -8,6 +8,7 @@ const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const LEGACY_TRACK_WORKER = "generate-session-track";
 const MUSIC_STITCH_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-music-stitch";
+const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
 
 function fallbackTrackPlan(album: any, trackNumber: number) {
   const title = `${album.title} — ${trackNumber === 1 ? 'Opening Signal' : `Movement ${trackNumber}`}`;
@@ -110,6 +111,35 @@ async function queueStudioTrackGeneration(db: any, album: any, userId: string, s
   if (jobError) throw new Error(jobError.message);
   await invokeLegacyWorker(legacySession.id, null);
   return trackWithAsset(db, studioTrack.id);
+}
+
+async function coverWithUrl(db: any, asset: any) {
+  const { data: signed } = await db.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 60 * 15);
+  return { ...asset, image_url: signed?.signedUrl || null };
+}
+
+async function generateStudioCover(db: any, album: any, direction: string) {
+  if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before generating cover concepts.");
+  const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
+  const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
+  if (!key) throw new Error("Image generation is not configured.");
+  const safeDirection = String(direction || "").replace(/\b(real artists?|brands?|lyrics?|logos?)\b/gi, "").trim().slice(0, 500);
+  const prompt = `Square album cover concept for an original music release. Album: ${album.title}. Fictional artist: ${album.artist_name}. Series: ${album.series_name || "Rekkrd After Dark"}. Genre: ${album.subgenre || album.genre || "instrumental"}. Mood: ${album.mood || "cinematic"}. Setting: ${album.theme || "evocative coastal night scene"}. Creative direction: ${safeDirection || "elegant cinematic scene with a strong single visual idea"}. Premium editorial album art, no text, no words, no lettering, no logos, no watermark, no signature, no real artists or copyrighted characters.`;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "1:1" } }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Cover concept generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
+  const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
+  if (!b64) throw new Error("The image provider returned no cover image.");
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const { data: prior } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
+  const version = (prior?.version || 0) + 1;
+  const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}.png`;
+  const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
+  if (uploadError) throw new Error(`Could not store cover concept: ${uploadError.message}`);
+  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "cover_concept", selection_status: "unselected", prompt, direction: safeDirection, model: IMAGE_MODEL } }).select("*").single();
+  if (error || !asset) throw new Error(error?.message || "Could not register cover concept.");
+  await db.from("studio_albums").update({ artwork_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
+  return coverWithUrl(db, asset);
 }
 
 async function masterWithAsset(db: any, albumId: string, fallback: any = {}) {
@@ -347,6 +377,36 @@ Deno.serve(async (req) => {
       if (!album.short_description?.trim()) throw new Error("Add a short promotional description before approving the Release Identity.");
       const { data, error } = await db.from("studio_albums").update({ release_identity_status: "approved", status: "artwork_review", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
       if (error || !data) throw new Error(error?.message || "Could not approve the Release Identity.");
+      return json({ album: data });
+    }
+    if (body.action === "list_cover_concepts") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data, error } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").order("version", { ascending: false });
+      if (error) throw new Error(error.message);
+      return json({ concepts: await Promise.all((data || []).map((asset: any) => coverWithUrl(db, asset))) });
+    }
+    if (body.action === "generate_cover_concept") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      return json({ concept: await generateStudioCover(db, album, body.direction) }, 201);
+    }
+    if (body.action === "select_cover_concept") {
+      const { data: asset, error } = await db.from("studio_assets").select("*").eq("id", body.asset_id).eq("asset_type", "cover_art").single();
+      if (error || !asset) throw new Error("Cover concept not found.");
+      const album = await getOwnedAlbum(db, asset.album_id, user.id);
+      const { error: clearError } = await db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active");
+      if (clearError) throw new Error(clearError.message);
+      const { data, error: selectError } = await db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "selected" } }).eq("id", asset.id).select("*").single();
+      if (selectError || !data) throw new Error(selectError?.message || "Could not select cover concept.");
+      await db.from("studio_albums").update({ artwork_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
+      return json({ concept: await coverWithUrl(db, data) });
+    }
+    if (body.action === "approve_cover") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: selectedCover } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "selected" }).maybeSingle();
+      if (!selectedCover) throw new Error("Select a cover concept before approving it.");
+      await db.from("studio_assets").update({ metadata_json: { ...(selectedCover.metadata_json || {}), selection_status: "approved" } }).eq("id", selectedCover.id);
+      const { data, error } = await db.from("studio_albums").update({ artwork_status: "approved", status: "animation_review", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
+      if (error || !data) throw new Error(error?.message || "Could not approve the cover.");
       return json({ album: data });
     }
   } catch (error) {
