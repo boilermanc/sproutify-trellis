@@ -29,6 +29,13 @@ export async function planStudioTrack(albumId: string): Promise<{ title: string;
   return data.track as { title: string; prompt: string };
 }
 
+export async function planStudioAlbum(albumId: string, trackCount: number): Promise<StudioTrack[]> {
+  const { data, error } = await supabase.functions.invoke('studio-album-planner', { body: { album_id: albumId, track_count: trackCount } });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error);
+  return data.tracks as StudioTrack[];
+}
+
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;
 }
