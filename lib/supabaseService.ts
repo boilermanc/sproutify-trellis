@@ -210,10 +210,10 @@ export async function uploadAvatar(
 }
 
 /**
- * Upload a social post image and return the public URL.
+ * Upload a social post media file and return its public URL.
  * Reuses the public `avatars` bucket under a `social/` prefix (no new bucket/policy setup needed).
  */
-export async function uploadSocialImage(
+export async function uploadSocialMedia(
   branchId: string,
   file: File
 ): Promise<{ url: string | null; error?: string }> {
@@ -227,13 +227,16 @@ export async function uploadSocialImage(
     .upload(filePath, file, { upsert: false, contentType: file.type || undefined });
 
   if (uploadError) {
-    console.error('Error uploading social image:', uploadError);
+    console.error('Error uploading social media:', uploadError);
     return { url: null, error: uploadError.message };
   }
 
   const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
   return { url: data.publicUrl };
 }
+
+// Kept for existing callers. New Social Studio uploads may be images or videos.
+export const uploadSocialImage = uploadSocialMedia;
 
 /**
  * Fetch all profiles (alias for getProfiles for import consistency)

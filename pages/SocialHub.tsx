@@ -5,7 +5,7 @@ import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
 import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook, checkConnections } from '../services/socialService';
-import { uploadSocialImage, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
+import { uploadSocialMedia, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
   Sparkles, Send,
@@ -15,7 +15,7 @@ import {
   History, Ban, RotateCcw, ChevronLeft, ChevronRight,
   AlertTriangle, ShieldCheck, Mail, Smartphone, Eye,
   Globe, ChevronDown, AlertCircle, ExternalLink, LifeBuoy, Users, ShoppingCart, Headphones, Star, Hash, Megaphone, Trash2, Plus, Info, Copy, ImagePlus, Download,
-  BarChart3, Search, ArrowUpDown, Image as ImageIcon
+  BarChart3, Search, ArrowUpDown, Image as ImageIcon, Video, Upload
 } from 'lucide-react';
 
 interface SocialHubProps {
@@ -291,6 +291,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(['facebook', 'instagram']);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [uploadingDraftId, setUploadingDraftId] = useState<string | null>(null);
+  const [isImportingMedia, setIsImportingMedia] = useState(false);
+  const [importDescription, setImportDescription] = useState('');
 
   // Publish Now (Instagram + Facebook) — confirm modal + in-flight tracking.
   // Tracked per (draft, platform) so a draft can publish to each platform separately.
@@ -798,7 +800,82 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, versions: { ...d.versions, [platform]: value } } : d));
   };
 
-  // Upload image file(s) from the user's computer to Supabase storage and attach to the draft.
+  const getDraftMediaUrls = (draft: DraftPost): string[] => draft.media_urls || draft.image_urls || [];
+
+  const mediaTypeForFiles = (files: File[]): DraftPost['media_type'] | null => {
+    if (files.some(file => file.type.startsWith('video/'))) {
+      return files.length === 1 && files.every(file => file.type.startsWith('video/')) ? 'video' : null;
+    }
+    return files.length > 1 ? 'carousel' : 'image';
+  };
+
+  const generateMetadataForDraft = async (draft: DraftPost) => {
+    const geminiKey = apiKeys?.gemini_api_key;
+    if (!geminiKey) { addToast?.('Gemini API key not configured. Set it in Settings.', 'error'); return; }
+    const mediaType = draft.media_type || (getDraftMediaUrls(draft).length > 1 ? 'carousel' : 'image');
+    const branch = getBranchForDraft(draft);
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    setIsGenerating(true);
+    try {
+      const { result } = await generateWithFallback(model => ai.models.generateContent({
+        model,
+        contents: `Create ready-to-publish social metadata for an imported ${mediaType} for ${branch?.name || 'this brand'}. Brand voice: ${branch?.tone || 'friendly'}. Creator notes: "${draft.base_content || 'No notes provided.'}". Write distinct captions for Instagram and Facebook. Include suitable hashtags at the end: 5-10 on Instagram and 1-3 on Facebook. Return JSON.`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: { type: Type.OBJECT, properties: { instagram: { type: Type.STRING }, facebook: { type: Type.STRING } }, required: ['instagram', 'facebook'] },
+        },
+      }));
+      const versions = JSON.parse(result.text || '{}');
+      setActiveDrafts(prev => prev.map(item => item.id === draft.id ? { ...item, versions: { ...item.versions, ...versions } } : item));
+      addToast?.('Captions and hashtags generated.', 'success');
+    } catch (error) {
+      console.error('Metadata generation failed:', error);
+      addToast?.('Could not generate captions. You can still write them manually.', 'error');
+    } finally { setIsGenerating(false); }
+  };
+
+  // Import finished creative first: upload it, then open it in the same review,
+  // metadata, scheduling, and publishing workflow as Trellis-created content.
+  const handleMediaImport = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    if (selectedBranchIds.length !== 1) { addToast?.('Choose one brand before importing media.', 'error'); return; }
+    const files = Array.from(fileList);
+    const mediaType = mediaTypeForFiles(files);
+    if (!mediaType) { addToast?.('Upload one video, or one or more images. Videos cannot be mixed into an image carousel.', 'error'); return; }
+    if (mediaType === 'carousel' && files.length > 10) { addToast?.('Instagram carousels support up to 10 images.', 'error'); return; }
+    const maxBytes = mediaType === 'video' ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (files.some(file => file.size > maxBytes)) { addToast?.(`${mediaType === 'video' ? 'Videos' : 'Images'} must be under ${mediaType === 'video' ? '100MB' : '10MB'}.`, 'error'); return; }
+
+    setIsImportingMedia(true);
+    const branchId = selectedBranchIds[0];
+    const urls: string[] = [];
+    try {
+      for (const file of files) {
+        const { url, error } = await uploadSocialMedia(branchId, file);
+        if (!url) throw new Error(error || `Could not upload ${file.name}`);
+        urls.push(url);
+      }
+      const description = importDescription.trim() || `Imported ${mediaType} · ${files.map(file => file.name).join(', ')}`;
+      setActiveDrafts([{
+        id: `import_${Date.now()}_${branchId}`,
+        branch_id: branchId,
+        base_content: description,
+        versions: { instagram: '', facebook: '' },
+        image_urls: mediaType === 'video' ? undefined : urls,
+        media_urls: urls,
+        media_type: mediaType,
+        status: 'drafting',
+        created_at: new Date().toISOString(),
+      }]);
+      setWorkflowStatus('reviewing');
+      setImportDescription('');
+      addToast?.(`${mediaType === 'video' ? 'Video' : mediaType === 'carousel' ? 'Carousel' : 'Image'} imported. Generate metadata or write your captions, then publish.`, 'success');
+    } catch (error) {
+      addToast?.(error instanceof Error ? error.message : 'Media import failed.', 'error');
+    } finally { setIsImportingMedia(false); }
+  };
+
+  // Add image file(s) to an existing draft. Videos are imported through the upload-first flow above.
   const handleImageUpload = async (draftId: string, fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     const draft = activeDrafts.find(d => d.id === draftId);
@@ -808,19 +885,23 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     for (const file of Array.from(fileList)) {
       if (!file.type.startsWith('image/')) { addToast?.(`${file.name} is not an image.`, 'error'); continue; }
       if (file.size > 10 * 1024 * 1024) { addToast?.(`${file.name} is over 10MB.`, 'error'); continue; }
-      const { url, error } = await uploadSocialImage(branchId, file);
+      const { url, error } = await uploadSocialMedia(branchId, file);
       if (url) urls.push(url);
       else addToast?.(error || `Failed to upload ${file.name}.`, 'error');
     }
     if (urls.length > 0) {
-      setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, image_urls: [...(d.image_urls || []), ...urls] } : d));
+      setActiveDrafts(prev => prev.map(d => {
+        if (d.id !== draftId) return d;
+        const mediaUrls = [...getDraftMediaUrls(d), ...urls];
+        return { ...d, image_urls: mediaUrls, media_urls: mediaUrls, media_type: mediaUrls.length > 1 ? 'carousel' : 'image' };
+      }));
       addToast?.(`Added ${urls.length} image${urls.length > 1 ? 's' : ''}.`, 'success');
     }
     setUploadingDraftId(null);
   };
 
   const removeDraftImage = (draftId: string, url: string) => {
-    setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, image_urls: (d.image_urls || []).filter(u => u !== url) } : d));
+    setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, image_urls: getDraftMediaUrls(d).filter(u => u !== url), media_urls: getDraftMediaUrls(d).filter(u => u !== url), media_type: getDraftMediaUrls(d).filter(u => u !== url).length > 1 ? 'carousel' : 'image' } : d));
   };
 
   const handleEditFromPipeline = (draft: DraftPost) => {
@@ -906,7 +987,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     if (!draft) { setPublishConfirm(null); return; }
 
     const caption = draft.versions[platform] || '';
-    const imageUrl = draft.image_urls?.[0];
+    const mediaUrls = getDraftMediaUrls(draft);
+    const mediaUrl = mediaUrls[0];
     const label = PLATFORM_LABEL[platform];
 
     if (!draft.branch_id) { addToast?.('Select a brand before publishing.', 'error'); setPublishConfirm(null); return; }
@@ -916,15 +998,15 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       onNavigate?.('branches');
       return;
     }
-    // Instagram requires an image; Facebook does not.
-    if (platform === 'instagram' && !imageUrl) { addToast?.('Instagram requires an image to publish.', 'error'); setPublishConfirm(null); return; }
+    // Instagram requires attached media; Facebook also supports caption-only posts.
+    if (platform === 'instagram' && !mediaUrl) { addToast?.('Instagram requires media to publish.', 'error'); setPublishConfirm(null); return; }
 
     setPublishingKey(`${draftId}_${platform}`);
     addToast?.(`Publishing to ${label}…`, 'info');
 
     const result = platform === 'instagram'
-      ? await publishToSocial(draft.branch_id, caption, imageUrl!, null)
-      : await publishToFacebook(draft.branch_id, caption, imageUrl || null, null);
+      ? await publishToSocial(draft.branch_id, caption, mediaUrl!, null, undefined, { media_type: draft.media_type || (mediaUrls.length > 1 ? 'carousel' : 'image'), media_urls: mediaUrls })
+      : await publishToFacebook(draft.branch_id, caption, mediaUrl || null, null);
 
     setPublishingKey(null);
     setPublishConfirm(null);
@@ -979,14 +1061,14 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       );
     }
 
-    const hasImage = !!(draft.image_urls && draft.image_urls.length > 0);
+    const hasMedia = getDraftMediaUrls(draft).length > 0;
     const publishing = publishingKey === `${draft.id}_${platform}`;
-    const needsImage = platform === 'instagram' && !hasImage;
-    const disabled = !hasBranch || needsImage || publishing;
+    const needsMedia = platform === 'instagram' && !hasMedia;
+    const disabled = !hasBranch || needsMedia || publishing;
     const reason = !hasBranch
       ? 'Select a brand to publish'
-      : needsImage
-      ? 'Instagram requires an image — upload one below'
+      : needsMedia
+      ? 'Instagram requires media — import it first'
       : platform === 'instagram'
       ? 'Publish this caption + image to Instagram now'
       : 'Publish this caption to Facebook now';
@@ -1027,10 +1109,11 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     const block = Object.entries(draft.versions)
       .map(([plat, text]) => `── ${SOCIAL_PLATFORM_META[plat]?.label || plat} ──\n${text}`)
       .join('\n\n');
-    const images = draft.image_urls && draft.image_urls.length > 0
-      ? `\n\n── Images (${draft.image_urls.length}) ──\n${draft.image_urls.join('\n')}`
+    const mediaUrls = getDraftMediaUrls(draft);
+    const media = mediaUrls.length > 0
+      ? `\n\n── ${draft.media_type === 'video' ? 'Video' : 'Media'} (${mediaUrls.length}) ──\n${mediaUrls.join('\n')}`
       : '';
-    return `${brandName}\n\n${block}${images}`;
+    return `${brandName}\n\n${block}${media}`;
   };
 
   const copyAllVariants = (draft: DraftPost) => {
@@ -1214,6 +1297,20 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20 rounded-[3.5rem]"><Loader2 className="animate-spin text-emerald-600" size={56} /></div>}
                   <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />Strategy Lab</h3>
                   <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-5 sm:p-8 text-base sm:text-xl font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[220px] shadow-inner mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
+                  <div className="mb-8 p-5 rounded-[2rem] border-2 border-dashed border-emerald-200 bg-emerald-50/40">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-sm font-black text-emerald-800 uppercase tracking-tight">Already made your creative?</p>
+                        <p className="text-[11px] font-bold text-emerald-700/70 mt-1">Import an image, up to 10 images for a carousel, or one Reel/video. We’ll generate captions, hashtags, scheduling, and publishing from here.</p>
+                      </div>
+                      <label className={`flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${isImportingMedia ? 'bg-slate-100 text-slate-400 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'}`}>
+                        {isImportingMedia ? <><Loader2 size={15} className="animate-spin" /> Uploading</> : <><Upload size={15} /> Import media</>}
+                        <input type="file" accept="image/*,video/mp4,video/quicktime" multiple className="hidden" disabled={isImportingMedia || selectedBranchIds.length !== 1} onChange={(e) => { handleMediaImport(e.target.files); e.target.value = ''; }} />
+                      </label>
+                    </div>
+                    <input value={importDescription} onChange={e => setImportDescription(e.target.value)} placeholder="Optional: tell Sage what this creative is about so it can write better metadata" className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl text-sm font-medium outline-none focus:border-emerald-500" />
+                    {selectedBranchIds.length !== 1 && <p className="mt-2 text-[10px] font-bold text-amber-700">Choose exactly one brand above to import media.</p>}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2 mb-10">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Platforms</span>
                     {(['facebook', 'instagram', 'x', 'linkedin'] as SocialPlatform[]).map(p => {
@@ -1291,6 +1388,11 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                       <div key={draft.id} className="bg-white p-5 sm:p-8 rounded-[3rem] border-2 border-slate-200 shadow-lg">
                         <div className="flex flex-wrap items-center justify-between gap-y-3 mb-6 pb-4 border-b border-slate-100">
                           <div className="flex items-center gap-2">
+                            {getDraftMediaUrls(draft).length > 0 && !Object.values(draft.versions).some(Boolean) && (
+                              <button onClick={() => generateMetadataForDraft(draft)} disabled={isGenerating} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] font-black uppercase tracking-wider transition disabled:opacity-50">
+                                {isGenerating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Generate metadata
+                              </button>
+                            )}
                             {brand && <div className="w-3 h-3 rounded" style={{ backgroundColor: brand.primary_color }} />}
                             <span className="text-sm font-black text-slate-700 uppercase tracking-tight">{brand?.name || 'Brand'}</span>
                           </div>
@@ -1352,8 +1454,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                                   </div>
                                 </div>
                                 <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 text-sm font-medium" value={text} onChange={(e) => updateDraftVersion(draft.id, plat, e.target.value)} />
-                                {plat === 'instagram' && !(draft.image_urls && draft.image_urls.length > 0) && (
-                                  <p className="mt-2 text-[10px] font-bold text-amber-600 flex items-center gap-1.5"><AlertTriangle size={11} /> Add an image below — Instagram requires one to publish.</p>
+                                {plat === 'instagram' && getDraftMediaUrls(draft).length === 0 && (
+                                  <p className="mt-2 text-[10px] font-bold text-amber-600 flex items-center gap-1.5"><AlertTriangle size={11} /> Import media below — Instagram requires it to publish.</p>
                                 )}
                               </div>
                             );
@@ -1364,18 +1466,18 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                         <div className="mt-6 pt-5 border-t border-slate-100">
                           <div className="flex items-center justify-between mb-3">
                             <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
-                              <ImagePlus size={14} /> Images{draft.image_urls?.length ? ` · ${draft.image_urls.length}` : ''}
+                              {draft.media_type === 'video' ? <Video size={14} /> : <ImagePlus size={14} />} {draft.media_type === 'video' ? 'Video' : 'Images'}{getDraftMediaUrls(draft).length ? ` · ${getDraftMediaUrls(draft).length}` : ''}
                             </span>
                             <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${uploadingDraftId === draft.id ? 'bg-slate-100 text-slate-400 cursor-wait' : 'bg-slate-900 text-white hover:bg-emerald-600'}`}>
                               {uploadingDraftId === draft.id ? <><Loader2 size={12} className="animate-spin" /> Uploading</> : <><ImagePlus size={12} /> Upload</>}
                               <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingDraftId === draft.id} onChange={(e) => { handleImageUpload(draft.id, e.target.files); e.target.value = ''; }} />
                             </label>
                           </div>
-                          {draft.image_urls && draft.image_urls.length > 0 ? (
+                          {getDraftMediaUrls(draft).length > 0 ? (
                             <div className="flex flex-wrap gap-3">
-                              {draft.image_urls.map((url, i) => (
+                              {getDraftMediaUrls(draft).map((url, i) => (
                                 <div key={url} className="relative group w-24 h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                                  <img src={url} alt={`upload ${i + 1}`} className="w-full h-full object-cover" />
+                                  {draft.media_type === 'video' ? <video src={url} className="w-full h-full object-cover" muted /> : <img src={url} alt={`upload ${i + 1}`} className="w-full h-full object-cover" />}
                                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100">
                                     <a href={url} download target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-white/90 text-slate-700 hover:text-emerald-600" title="Download"><Download size={14} /></a>
                                     <button type="button" onClick={() => removeDraftImage(draft.id, url)} className="p-1.5 rounded-lg bg-white/90 text-slate-700 hover:text-rose-600" title="Remove"><X size={14} /></button>
@@ -1384,7 +1486,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                               ))}
                             </div>
                           ) : (
-                            <p className="text-[11px] font-bold text-slate-400">No images yet. Upload here, then attach them in Meta Business Suite when you paste the text.</p>
+                            <p className="text-[11px] font-bold text-slate-400">No images yet. Add images here, or start a new import for a finished video/Reel.</p>
                           )}
                         </div>
                       </div>

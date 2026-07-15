@@ -456,6 +456,9 @@ export interface DraftPost {
   base_content: string;
   versions: Record<string, string>;
   image_urls?: string[];
+  /** Media imported into Social Studio. image_urls is retained for older drafts. */
+  media_urls?: string[];
+  media_type?: 'image' | 'video' | 'carousel';
   status: 'drafting' | 'approved' | 'scheduled' | 'published' | 'archived';
   created_at: string;
   scheduled_for?: string;

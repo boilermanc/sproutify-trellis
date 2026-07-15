@@ -191,14 +191,15 @@ export async function disconnectPlatform(
 }
 
 // ─── 4. publishToSocial ────────────────────────────────────────────
-// Publishes a single Instagram post (image + caption) for a branch via the
+// Publishes an Instagram image, Reel, or carousel (media + caption) for a branch via the
 // n8n webhook. n8n looks up the branch's credential, creates a media container,
 // then publishes — so this call is SLOW and synchronous; we await the result.
 //
 // Payload contract (matches the deployed trellis-social-publish webhook):
-//   { branch_id, caption, image_url, scheduled_for }
+//   { branch_id, caption, image_url, media_type, media_urls, scheduled_for }
 // - branch_id MUST be the branch UUID, never a domain slug.
-// - image_url is REQUIRED (Instagram cannot publish a caption-only post).
+// - image_url remains the primary-media compatibility field; media_type/media_urls
+//   support the Reel and carousel paths in the publisher workflow.
 // - scheduled_for is null for immediate publish.
 export interface PublishOutcome {
   ok: boolean;
@@ -206,16 +207,22 @@ export interface PublishOutcome {
   error?: string;
 }
 
+export interface SocialMediaPayload {
+  media_type: 'image' | 'video' | 'carousel';
+  media_urls: string[];
+}
+
 export async function publishToSocial(
   branchId: string,
   caption: string,
   imageUrl: string,
   scheduledFor: string | null = null,
-  webhookUrl?: string
+  webhookUrl?: string,
+  media?: SocialMediaPayload
 ): Promise<PublishOutcome> {
   if (!branchId) return { ok: false, error: 'Branch ID is required' };
   if (!caption) return { ok: false, error: 'Caption is required' };
-  if (!imageUrl) return { ok: false, error: 'An image is required to publish to Instagram' };
+  if (!imageUrl) return { ok: false, error: 'Media is required to publish to Instagram' };
 
   const url = webhookUrl || WEBHOOK_SPECS.social_publish;
   if (!url) {
@@ -230,6 +237,10 @@ export async function publishToSocial(
         branch_id: branchId,
         caption,
         image_url: imageUrl,
+        // The live webhook continues to receive image_url for a standard post.
+        // Updated publisher workflows can use these fields for Reels and carousels.
+        media_type: media?.media_type || 'image',
+        media_urls: media?.media_urls || [imageUrl],
         scheduled_for: scheduledFor,
       }),
     });

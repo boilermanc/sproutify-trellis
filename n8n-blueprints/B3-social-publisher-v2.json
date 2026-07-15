@@ -1,0 +1,131 @@
+{
+  "name": "Trellis: Instagram Publisher (Images, Reels & Carousels)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-social-publish", "responseMode": "responseNode", "options": {} },
+      "name": "Webhook", "type": "n8n-nodes-base.webhook", "typeVersion": 1, "position": [-1320, 100], "webhookId": "6c23a94d-1652-4938-8ad7-bbbc4c7fc296"
+    },
+    {
+      "parameters": { "conditions": { "string": [
+        { "value1": "={{ $json.body.branch_id }}", "operation": "isNotEmpty" },
+        { "value1": "={{ $json.body.caption }}", "operation": "isNotEmpty" }
+      ] } },
+      "name": "Validate Payload", "type": "n8n-nodes-base.if", "typeVersion": 1, "position": [-1100, 100]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{ JSON.stringify({ success: false, error: 'Missing required fields: branch_id and caption are required' }) }}", "options": { "responseCode": 400 } },
+      "name": "Error: Missing Fields", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1, "position": [-880, 300]
+    },
+    {
+      "parameters": { "method": "POST", "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential", "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth", "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] }, "sendBody": true, "bodyParameters": { "parameters": [{ "name": "p_branch_id", "value": "={{ $json.body.branch_id }}" }, { "name": "p_platform", "value": "instagram" }] }, "options": {} },
+      "name": "Fetch Instagram Credentials", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [-880, 100], "credentials": { "httpHeaderAuth": { "name": "Trellis Supabase Secret Key" } }
+    },
+    {
+      "parameters": { "jsCode": "const credentials = $input.first().json;\nconst body = $('Webhook').first().json.body || {};\nif (!credentials.success) throw new Error('Credential lookup failed: ' + (credentials.error || 'unknown error'));\nconst igAccountId = credentials.platform_metadata?.instagram_business_account_id;\nconst accessToken = (credentials.access_token || '').trim();\nif (!igAccountId) throw new Error('instagram_business_account_id missing from platform_metadata');\nif (!accessToken) throw new Error('access_token came back null');\nconst mediaUrls = Array.isArray(body.media_urls) && body.media_urls.length ? body.media_urls : (body.image_url ? [body.image_url] : []);\nconst mediaType = body.media_type || (mediaUrls.length > 1 ? 'carousel' : 'image');\nif (!['image', 'video', 'carousel'].includes(mediaType)) throw new Error('media_type must be image, video, or carousel');\nif (mediaType !== 'image' && !mediaUrls.length) throw new Error('Media URL is required for Reels and carousels');\nif (mediaType === 'video' && mediaUrls.length !== 1) throw new Error('A Reel requires exactly one video URL');\nif (mediaType === 'carousel' && (mediaUrls.length < 2 || mediaUrls.length > 10)) throw new Error('A carousel requires 2 to 10 image URLs');\nreturn [{ json: { ig_account_id: igAccountId, access_token: accessToken, branch_id: body.branch_id, caption: body.caption, media_type: mediaType, media_urls: mediaUrls, image_url: mediaUrls[0] || null, scheduled_for: body.scheduled_for || null } }];" },
+      "name": "Extract & Normalize Request", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [-640, 100]
+    },
+    {
+      "parameters": { "conditions": { "string": [{ "value1": "={{ $json.media_type }}", "value2": "carousel", "operation": "equals" }] } },
+      "name": "Is Carousel?", "type": "n8n-nodes-base.if", "typeVersion": 1, "position": [-400, 100]
+    },
+    {
+      "parameters": { "jsCode": "const source = $input.first().json;\nreturn source.media_urls.map((url, index) => ({ json: { ...source, image_url: url, carousel_index: index } }));" },
+      "name": "Prepare Carousel Items", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [-180, -150]
+    },
+    {
+      "parameters": { "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{ $json.ig_account_id }}/media", "sendBody": true, "contentType": "form-urlencoded", "bodyParameters": { "parameters": [
+        { "name": "image_url", "value": "={{ $json.image_url }}" },
+        { "name": "is_carousel_item", "value": "true" },
+        { "name": "access_token", "value": "={{ $json.access_token }}" }
+      ] }, "options": {} },
+      "name": "Create Carousel Child", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [60, -150]
+    },
+    {
+      "parameters": { "jsCode": "const children = $input.all().map(item => item.json.id).filter(Boolean);\nconst source = $('Extract & Normalize Request').first().json;\nif (children.length !== source.media_urls.length) throw new Error('One or more carousel child containers failed');\nreturn [{ json: { ...source, children } }];" },
+      "name": "Collect Carousel Children", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [300, -150]
+    },
+    {
+      "parameters": { "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{ $json.ig_account_id }}/media", "sendBody": true, "contentType": "form-urlencoded", "bodyParameters": { "parameters": [
+        { "name": "media_type", "value": "CAROUSEL" },
+        { "name": "children", "value": "={{ JSON.stringify($json.children) }}" },
+        { "name": "caption", "value": "={{ $json.caption }}" },
+        { "name": "access_token", "value": "={{ $json.access_token }}" }
+      ] }, "options": {} },
+      "name": "Create Carousel Container", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [540, -150]
+    },
+    {
+      "parameters": { "conditions": { "string": [{ "value1": "={{ $json.media_type }}", "value2": "video", "operation": "equals" }] } },
+      "name": "Is Reel?", "type": "n8n-nodes-base.if", "typeVersion": 1, "position": [-180, 140]
+    },
+    {
+      "parameters": { "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{ $json.ig_account_id }}/media", "sendBody": true, "contentType": "form-urlencoded", "bodyParameters": { "parameters": [
+        { "name": "media_type", "value": "REELS" },
+        { "name": "video_url", "value": "={{ $json.image_url }}" },
+        { "name": "caption", "value": "={{ $json.caption }}" },
+        { "name": "access_token", "value": "={{ $json.access_token }}" }
+      ] }, "options": {} },
+      "name": "Create Reel Container", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [60, 80]
+    },
+    {
+      "parameters": { "amount": 20, "unit": "seconds" },
+      "name": "Wait for Reel Processing", "type": "n8n-nodes-base.wait", "typeVersion": 1.1, "position": [300, 80]
+    },
+    {
+      "parameters": { "method": "GET", "url": "=https://graph.facebook.com/v21.0/{{ $('Create Reel Container').first().json.id }}?fields=status_code,status", "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $('Extract & Normalize Request').first().json.access_token }}" }] }, "options": {} },
+      "name": "Check Reel Status", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [540, 80]
+    },
+    {
+      "parameters": { "conditions": { "string": [{ "value1": "={{ $json.status_code || $json.status }}", "value2": "FINISHED", "operation": "equals" }] } },
+      "name": "Reel Ready?", "type": "n8n-nodes-base.if", "typeVersion": 1, "position": [760, 80]
+    },
+    {
+      "parameters": { "jsCode": "const source = $('Extract & Normalize Request').first().json;\nreturn [{ json: { ...source, id: $('Create Reel Container').first().json.id } }];" },
+      "name": "Use Reel Container", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [980, 20]
+    },
+    {
+      "parameters": { "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{ $json.ig_account_id }}/media", "sendBody": true, "contentType": "form-urlencoded", "bodyParameters": { "parameters": [
+        { "name": "image_url", "value": "={{ $json.image_url }}" },
+        { "name": "caption", "value": "={{ $json.caption }}" },
+        { "name": "access_token", "value": "={{ $json.access_token }}" }
+      ] }, "options": {} },
+      "name": "Create Image Container", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [60, 260]
+    },
+    {
+      "parameters": { "jsCode": "const container = $input.first().json;\nconst source = $('Extract & Normalize Request').first().json;\nif (!container.id) throw new Error('Failed to create media container: ' + JSON.stringify(container));\nreturn [{ json: { ...source, id: container.id } }];" },
+      "name": "Use Image or Carousel Container", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [980, 220]
+    },
+    {
+      "parameters": { "method": "POST", "url": "=https://graph.facebook.com/v21.0/{{ $json.ig_account_id }}/media_publish", "sendBody": true, "contentType": "form-urlencoded", "bodyParameters": { "parameters": [
+        { "name": "creation_id", "value": "={{ $json.id }}" },
+        { "name": "access_token", "value": "={{ $json.access_token }}" }
+      ] }, "options": {} },
+      "name": "Publish to Instagram", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [1220, 120]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Publish to Instagram').first().json.id, message: 'Published successfully to Instagram' }) }}", "options": { "responseCode": 200 } },
+      "name": "Success Response", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1, "position": [1460, 120]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Validate Payload", "type": "main", "index": 0 }]] },
+    "Validate Payload": { "main": [[{ "node": "Fetch Instagram Credentials", "type": "main", "index": 0 }], [{ "node": "Error: Missing Fields", "type": "main", "index": 0 }]] },
+    "Fetch Instagram Credentials": { "main": [[{ "node": "Extract & Normalize Request", "type": "main", "index": 0 }]] },
+    "Extract & Normalize Request": { "main": [[{ "node": "Is Carousel?", "type": "main", "index": 0 }]] },
+    "Is Carousel?": { "main": [[{ "node": "Prepare Carousel Items", "type": "main", "index": 0 }], [{ "node": "Is Reel?", "type": "main", "index": 0 }]] },
+    "Prepare Carousel Items": { "main": [[{ "node": "Create Carousel Child", "type": "main", "index": 0 }]] },
+    "Create Carousel Child": { "main": [[{ "node": "Collect Carousel Children", "type": "main", "index": 0 }]] },
+    "Collect Carousel Children": { "main": [[{ "node": "Create Carousel Container", "type": "main", "index": 0 }]] },
+    "Create Carousel Container": { "main": [[{ "node": "Use Image or Carousel Container", "type": "main", "index": 0 }]] },
+    "Is Reel?": { "main": [[{ "node": "Create Reel Container", "type": "main", "index": 0 }], [{ "node": "Create Image Container", "type": "main", "index": 0 }]] },
+    "Create Reel Container": { "main": [[{ "node": "Wait for Reel Processing", "type": "main", "index": 0 }]] },
+    "Wait for Reel Processing": { "main": [[{ "node": "Check Reel Status", "type": "main", "index": 0 }]] },
+    "Check Reel Status": { "main": [[{ "node": "Reel Ready?", "type": "main", "index": 0 }]] },
+    "Reel Ready?": { "main": [[{ "node": "Use Reel Container", "type": "main", "index": 0 }], [{ "node": "Wait for Reel Processing", "type": "main", "index": 0 }]] },
+    "Use Reel Container": { "main": [[{ "node": "Publish to Instagram", "type": "main", "index": 0 }]] },
+    "Create Image Container": { "main": [[{ "node": "Use Image or Carousel Container", "type": "main", "index": 0 }]] },
+    "Use Image or Carousel Container": { "main": [[{ "node": "Publish to Instagram", "type": "main", "index": 0 }]] },
+    "Publish to Instagram": { "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
