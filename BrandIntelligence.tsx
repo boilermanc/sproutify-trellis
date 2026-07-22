@@ -200,6 +200,95 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 </html>`;
   }, [brands]);
 
+  // Unlayer can only render its own design JSON, not arbitrary HTML. For
+  // HTML-only templates (legacy, or authored in Code mode) we wrap the raw
+  // HTML in a single Unlayer "html" content block so the Visual tab at least
+  // DISPLAYS it. It renders as one opaque block — not individually editable —
+  // but the user can see it instead of a blank canvas.
+  const htmlToUnlayerDesign = useCallback((html: string) => ({
+    counters: { u_row: 1, u_column: 1, u_content_html: 1 },
+    body: {
+      id: 'u_body',
+      rows: [
+        {
+          id: 'u_row_1',
+          cells: [1],
+          columns: [
+            {
+              id: 'u_column_1',
+              contents: [
+                {
+                  id: 'u_content_html_1',
+                  type: 'html',
+                  values: {
+                    html,
+                    hideDesktop: false,
+                    displayCondition: null,
+                    containerPadding: '0px',
+                    anchor: '',
+                    _meta: { htmlID: 'u_content_html_1', htmlClassNames: 'u_content_html' },
+                    selectable: true,
+                    draggable: true,
+                    duplicatable: true,
+                    deletable: true,
+                    hideMobile: false,
+                  },
+                },
+              ],
+              values: {
+                _meta: { htmlID: 'u_column_1', htmlClassNames: 'u_column' },
+                border: {},
+                padding: '0px',
+                backgroundColor: '',
+              },
+            },
+          ],
+          values: {
+            displayCondition: null,
+            columns: false,
+            backgroundColor: '',
+            columnsBackgroundColor: '',
+            backgroundImage: { url: '', fullWidth: true, repeat: 'no-repeat', size: 'custom', position: 'center' },
+            padding: '0px',
+            anchor: '',
+            _meta: { htmlID: 'u_row_1', htmlClassNames: 'u_row' },
+            selectable: true,
+            draggable: true,
+            duplicatable: true,
+            deletable: true,
+            hideDesktop: false,
+            hideMobile: false,
+          },
+        },
+      ],
+      values: {
+        popupPosition: 'center',
+        backgroundColor: '#f1f5f9',
+        backgroundImage: { url: '', fullWidth: true, repeat: 'no-repeat', size: 'custom', position: 'center' },
+        contentWidth: '600px',
+        contentAlign: 'center',
+        preheaderText: '',
+        linkStyle: {},
+        _meta: { htmlID: 'u_body', htmlClassNames: 'u_body' },
+      },
+    },
+    schemaVersion: 16,
+  }), []);
+
+  // Load the correct content into the Unlayer editor: a saved design if we have
+  // one, otherwise the raw HTML wrapped as a block, otherwise a blank canvas.
+  const loadIntoVisualEditor = useCallback((design: any, html: string) => {
+    const editor = emailEditorRef.current?.editor;
+    if (!editor) return;
+    if (design) {
+      editor.loadDesign(design);
+    } else if (html && html.trim()) {
+      editor.loadDesign(htmlToUnlayerDesign(html));
+    } else {
+      editor.loadDesign({ body: { rows: [], values: { backgroundColor: '#f1f5f9' } } });
+    }
+  }, [htmlToUnlayerDesign]);
+
   // Template editor helpers
   const handleNewTemplate = () => {
     setSelectedTemplate(null);
@@ -218,12 +307,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     if (tmpl.design_json) {
       // Template has a saved Unlayer design — edit it visually.
       setCodeMode(false);
-      setTimeout(() => {
-        emailEditorRef.current?.editor?.loadDesign(tmpl.design_json);
-      }, 300);
+      // If the editor is already mounted (switching between templates in visual
+      // mode), onReady won't fire again, so push the design in directly.
+      setTimeout(() => loadIntoVisualEditor(tmpl.design_json, tmpl.html_body), 300);
     } else {
       // No saved design (legacy or code-authored). Open in code mode so the
       // visual editor can't overwrite the real HTML with a blank export.
+      // The Visual tab still renders it (as one HTML block) if the user toggles.
       setCodeMode(true);
     }
   };
@@ -1648,11 +1738,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     <EmailEditor
                       ref={emailEditorRef}
                       onReady={() => {
-                        // Load the saved Unlayer design (source of truth for re-editing).
-                        // html_body is rendered HTML and is NOT a valid design — never parse it here.
-                        if (selectedTemplate?.design_json) {
-                          emailEditorRef.current?.editor?.loadDesign(selectedTemplate.design_json);
-                        }
+                        // Prefer the saved Unlayer design (source of truth for re-editing).
+                        // For HTML-only templates, fall back to wrapping the current HTML
+                        // as a block so the Visual tab renders it instead of a blank canvas.
+                        // html_body is rendered HTML and is NOT a valid design — never parse it.
+                        loadIntoVisualEditor(selectedTemplate?.design_json, templateHtml);
                       }}
                       options={{
                         mergeTags: {
