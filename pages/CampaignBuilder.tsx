@@ -816,9 +816,15 @@ Return ONLY the post content, no explanations or labels.`,
       launched_at: triggerType === 'immediate' ? launchedAt : null,
     });
 
-    if (newCampaign) {
-      setSavedCampaigns(prev => [newCampaign, ...prev]);
+    if (!newCampaign) {
+      // Persisting the campaign is also the gate for the n8n send — if it fails,
+      // nothing goes out. Abort loudly instead of playing a fake success animation.
+      addToast?.('Campaign could not be saved, so nothing was sent. Please try again.', 'error');
+      setIsLaunching(false);
+      setChannelDeployResults([]);
+      return;
     }
+    setSavedCampaigns(prev => [newCampaign, ...prev]);
 
     // Fire n8n campaign dispatch webhook for immediate campaigns.
     // We send the EXACT audience the builder computed (segmentProfiles): already
