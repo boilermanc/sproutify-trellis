@@ -30,11 +30,12 @@ interface BrandIntelligenceProps {
   onBrandUpdate?: (brand: BrandIdentity) => void;
   geminiApiKey?: string;
   branchContext?: BranchContext;
+  addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 const FALLBACK_SITES = ['farm.sproutify.app', 'school.sproutify.app', 'micro.sproutify.app', 'letsrejoice.app', 'atlurbanfarms.com'];
 
-const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, geminiApiKey = '', branchContext }) => {
+const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, geminiApiKey = '', branchContext, addToast }) => {
   const branchSlugs = branchContext?.allBranches.map(b => b.slug) || FALLBACK_SITES;
   // Email templates are keyed by the stable branch UUID; resolve the
   // (now-immutable) slug to it, normalizing slug/domain/hyphen variants.
@@ -252,8 +253,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       setSelectedTemplate(saved);
       setTemplateDirty(false);
       await loadTemplates(resolveBranchId(templateBranchFilter));
+      addToast?.(`Template "${saved.name}" saved.`, 'success');
     } catch (err) {
       console.error('Failed to save template:', err);
+      const message = err instanceof TypeError
+        ? 'Save failed — no network connection. Your changes were not saved. Reconnect and try again.'
+        : `Failed to save template: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      addToast?.(message, 'error');
     } finally {
       setTemplateSaving(false);
     }
@@ -270,8 +276,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
         setTemplateDirty(false);
       }
       await loadTemplates(resolveBranchId(templateBranchFilter));
+      addToast?.('Template deleted.', 'success');
     } catch (err) {
       console.error('Failed to delete template:', err);
+      const message = err instanceof TypeError
+        ? 'Delete failed — no network connection. Reconnect and try again.'
+        : `Failed to delete template: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      addToast?.(message, 'error');
     }
   };
 
