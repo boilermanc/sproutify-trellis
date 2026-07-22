@@ -97,6 +97,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [templateDirty, setTemplateDirty] = useState(false);
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
+  const [templateDeleting, setTemplateDeleting] = useState(false);
   const [previewHtml, setPreviewHtml] = useState('');
   const [codeMode, setCodeMode] = useState(false); // paste-raw-HTML mode vs Unlayer visual editor
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -274,6 +276,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   };
 
   const handleDeleteTemplate = async (id: string) => {
+    setTemplateDeleting(true);
     try {
       await deleteTemplateFromDb(id);
       if (selectedTemplate?.id === id) {
@@ -285,12 +288,16 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       }
       await loadTemplates(resolveBranchId(templateBranchFilter));
       addToast?.('Template deleted.', 'success');
+      setTemplateToDelete(null);
     } catch (err) {
       console.error('Failed to delete template:', err);
       const message = err instanceof TypeError
         ? 'Delete failed — no network connection. Reconnect and try again.'
         : `Failed to delete template: ${err instanceof Error ? err.message : 'Unknown error'}`;
       addToast?.(message, 'error');
+      // Keep the modal open on failure so the user can retry.
+    } finally {
+      setTemplateDeleting(false);
     }
   };
 
@@ -1547,7 +1554,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={(ev) => { ev.stopPropagation(); handleDeleteTemplate(tmpl.id); }}
+                            onClick={(ev) => { ev.stopPropagation(); setTemplateToDelete(tmpl); }}
                             className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
                             title="Delete"
                           >
@@ -2143,6 +2150,43 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 className="px-8 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-500 transition-colors"
               >
                 Delete Forever
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* DELETE TEMPLATE CONFIRMATION MODAL */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {templateToDelete && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Trash2 className="w-8 h-8 text-red-500" />
+            </div>
+            <h2 className="text-xl font-black text-slate-800 mb-2">Delete Template?</h2>
+            <p className="text-slate-500 mb-6">
+              This will permanently delete <span className="font-bold text-slate-700">"{templateToDelete.name}"</span>. This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setTemplateToDelete(null)}
+                disabled={templateDeleting}
+                className="px-6 py-3 text-slate-600 font-bold hover:text-slate-800 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteTemplate(templateToDelete.id)}
+                disabled={templateDeleting}
+                className="px-8 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-500 transition-colors disabled:opacity-60 flex items-center gap-2"
+              >
+                {templateDeleting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Deleting...</>
+                ) : (
+                  'Delete Forever'
+                )}
               </button>
             </div>
           </div>
