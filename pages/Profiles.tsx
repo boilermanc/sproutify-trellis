@@ -225,6 +225,20 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     });
   }, [profiles, searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter]);
 
+  // Federated view renders federatedProfiles directly, so the search box has to
+  // filter THIS list (the 'filtered' memo above only feeds the 'local' view).
+  const filteredFederatedProfiles = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return federatedProfiles;
+    return federatedProfiles.filter(p =>
+      (p.email && p.email.toLowerCase().includes(q)) ||
+      (p.first_name && p.first_name.toLowerCase().includes(q)) ||
+      (p.last_name && p.last_name.toLowerCase().includes(q)) ||
+      (p.phone && p.phone.toLowerCase().includes(q)) ||
+      (p.id && p.id.toLowerCase().includes(q))
+    );
+  }, [federatedProfiles, searchTerm]);
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -502,7 +516,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
             {dataSource === 'local'
               ? `Showing ${filtered.length} of ${profiles.filter(p => p.status === 'active').length} profiles`
-              : `Showing ${federatedProfiles.length} federated profiles`
+              : searchTerm.trim()
+                ? `Showing ${filteredFederatedProfiles.length} of ${federatedProfiles.length} federated profiles`
+                : `Showing ${federatedProfiles.length} federated profiles`
             }
           </div>
         </div>
@@ -554,7 +570,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               </button>
             ))
           ) : (
-            federatedProfiles.map((profile, index) => (
+            filteredFederatedProfiles.map((profile, index) => (
               <button
                 key={`${profile._spoke_id}-${profile.email}-${index}`}
                 onClick={() => setSelectedFederatedProfile(profile)}
@@ -648,7 +664,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 </tr>
               ))
             ) : (
-              federatedProfiles.map((profile, index) => (
+              filteredFederatedProfiles.map((profile, index) => (
                 <tr
                   key={`${profile._spoke_id}-${profile.email}-${index}`}
                   className="hover:bg-slate-50/80 transition-all cursor-pointer"
