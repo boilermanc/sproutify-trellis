@@ -711,6 +711,7 @@ export interface EmailTemplate {
   description?: string;
   thumbnail_url?: string;
   html_body: string;
+  design_json?: any; // Unlayer visual-editor design; source of truth for re-editing. html_body is the rendered send-time HTML.
   is_default: boolean;
   created_at: string;
   updated_at: string;

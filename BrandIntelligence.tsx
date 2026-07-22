@@ -213,33 +213,39 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     setTemplateDescription(tmpl.description || '');
     setTemplateHtml(tmpl.html_body);
     setTemplateDirty(false);
-    setTimeout(() => {
-      if (emailEditorRef.current?.editor && tmpl.html_body) {
-        try {
-          const design = JSON.parse(tmpl.html_body);
-          emailEditorRef.current.editor.loadDesign(design);
-        } catch {
-          // Plain HTML template — load as body
-          emailEditorRef.current.editor.loadDesign({
-            body: { rows: [], values: { backgroundColor: '#f1f5f9' } }
-          });
-        }
-      }
-    }, 300);
+    if (tmpl.design_json) {
+      // Template has a saved Unlayer design — edit it visually.
+      setCodeMode(false);
+      setTimeout(() => {
+        emailEditorRef.current?.editor?.loadDesign(tmpl.design_json);
+      }, 300);
+    } else {
+      // No saved design (legacy or code-authored). Open in code mode so the
+      // visual editor can't overwrite the real HTML with a blank export.
+      setCodeMode(true);
+    }
   };
 
   const handleSaveTemplate = async () => {
     if (!templateName.trim()) return;
     setTemplateSaving(true);
     try {
-      // Code mode saves the raw pasted HTML directly; visual mode exports Unlayer's HTML.
-      const exportedHtml = codeMode ? templateHtml : await new Promise<string>((resolve) => {
-        if (emailEditorRef.current?.editor) {
-          emailEditorRef.current.editor.exportHtml((data) => resolve(data.html));
-        } else {
-          resolve(templateHtml);
-        }
-      });
+      // Code mode saves the raw pasted HTML directly (no Unlayer design).
+      // Visual mode exports BOTH the rendered HTML (for sending) and the Unlayer
+      // design JSON (for re-editing) — the design is the source of truth on reload.
+      let exportedHtml: string;
+      let designJson: any = null;
+      if (codeMode) {
+        exportedHtml = templateHtml;
+      } else if (emailEditorRef.current?.editor) {
+        const exported = await new Promise<{ html: string; design: any }>((resolve) => {
+          emailEditorRef.current!.editor!.exportHtml((data) => resolve({ html: data.html, design: data.design }));
+        });
+        exportedHtml = exported.html;
+        designJson = exported.design;
+      } else {
+        exportedHtml = templateHtml;
+      }
       setTemplateHtml(exportedHtml);
       const payload: Partial<EmailTemplate> = {
         ...(selectedTemplate?.id ? { id: selectedTemplate.id } : {}),
@@ -248,6 +254,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
         name: templateName.trim(),
         description: templateDescription.trim() || undefined,
         html_body: exportedHtml,
+        // Persist the design so the visual editor can reload it; clear it for code-mode saves.
+        design_json: codeMode ? null : designJson,
       };
       const saved = await upsertTemplate(payload);
       setSelectedTemplate(saved);
@@ -1633,15 +1641,10 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     <EmailEditor
                       ref={emailEditorRef}
                       onReady={() => {
-                        if (selectedTemplate?.html_body) {
-                          try {
-                            const design = JSON.parse(selectedTemplate.html_body);
-                            emailEditorRef.current?.editor?.loadDesign(design);
-                          } catch {
-                            emailEditorRef.current?.editor?.loadDesign({
-                              body: { rows: [], values: { backgroundColor: '#f1f5f9' } }
-                            });
-                          }
+                        // Load the saved Unlayer design (source of truth for re-editing).
+                        // html_body is rendered HTML and is NOT a valid design — never parse it here.
+                        if (selectedTemplate?.design_json) {
+                          emailEditorRef.current?.editor?.loadDesign(selectedTemplate.design_json);
                         }
                       }}
                       options={{
