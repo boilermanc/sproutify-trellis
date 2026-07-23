@@ -433,11 +433,13 @@ export interface TrellisReport {
   id: string;
   name: string;
   type: 'system' | 'custom';
-  created_at: string;
-  last_generated: string;
   metrics: string[];
   spokes: string[];
-  status: 'ready' | 'generating';
+  // Only set once a report has actually been generated — never seed these with
+  // placeholder values, they are surfaced to users as real generation history.
+  created_at?: string;
+  last_generated?: string;
+  status?: 'ready' | 'generating';
 }
 
 export type EmailModule = 'hero' | 'intro' | 'events' | 'products' | 'app_promo' | 'social_proof' | 'footer';

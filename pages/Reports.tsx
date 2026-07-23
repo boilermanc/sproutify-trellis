@@ -15,10 +15,10 @@ import {
 // ═══════════════════════════════════════════════════════════════
 
 const REPORT_BLUEPRINTS: TrellisReport[] = [
-  { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'], status: 'ready' },
-  { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'], status: 'ready' },
-  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Open Rate', 'Click Rate', 'Conversion Rate', 'Audience Reach'], spokes: ['All Spokes'], status: 'ready' },
-  { id: 'rep_4', name: 'Cross-Channel Performance Analysis', type: 'system', created_at: '2024-01-15', last_generated: '2024-02-01', metrics: ['Email Open Rate', 'Social Engagement', 'Cross-Channel Attribution', 'Channel ROI'], spokes: ['All Spokes'], status: 'ready' },
+  { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'] },
+  { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'] },
+  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Open Rate', 'Click Rate', 'Conversion Rate', 'Audience Reach'], spokes: ['All Spokes'] },
+  { id: 'rep_4', name: 'Cross-Channel Performance Analysis', type: 'system', metrics: ['Email Open Rate', 'Social Engagement', 'Cross-Channel Attribution', 'Channel ROI'], spokes: ['All Spokes'] },
 ];
 
 const DEFAULT_KEYS: ApiKeyConfig = {
@@ -76,44 +76,6 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
   }, [sageHistory, sageLoading]);
 
   const activeKeys = apiKeys || DEFAULT_KEYS;
-
-  const handleAiDeepDive = async (report: TrellisReport) => {
-    setAuditingReport(report.id);
-    const isXChannelReport = report.metrics.includes('Cross-Channel Attribution') || report.metrics.includes('Channel ROI');
-
-    const prompt = isXChannelReport
-      ? `Analyze a Cross-Channel Performance Report for Sproutify Trellis.
-Available channels: Email (Resend), Instagram (Meta Graph), X (X API v2), LinkedIn (LinkedIn API), SMS (Twilio).
-Spokes: ${report.spokes.join(', ')}.
-
-Provide a strategic analysis covering:
-1. Per-channel engagement breakdown (email open rate, social impressions, click-through)
-2. Cross-channel attribution patterns (e.g. "Email + Instagram sequence yields 3.2x conversion vs email alone")
-3. Branch-level comparison (which spoke-site combos perform best on which channel)
-4. Optimal timing recommendations based on channel behavior patterns
-5. Two actionable recommendations for improving cross-channel ROI
-
-Format as a concise strategic brief. Use specific percentages and metrics (simulated but realistic).`
-      : `Analyze this marketing report config: ${report.name}. Metrics: ${report.metrics.join(', ')}. Spokes: ${report.spokes.join(', ')}. Suggest 2 strategic optimizations for a multi-site brand. Keep it concise.`;
-
-    try {
-      const response = await generateText(activeKeys, { prompt, maxTokens: 1024, temperature: 0.7 });
-      const text = response.error ? 'Sage Intelligence offline. Check API configuration.' : (response.text || 'Unable to generate analysis.');
-      setSageHistory(prev => [
-        ...prev,
-        { role: 'user', content: `Sage Audit: ${report.name}` },
-        { role: 'sage', content: text },
-      ]);
-    } catch {
-      setSageHistory(prev => [
-        ...prev,
-        { role: 'user', content: `Sage Audit: ${report.name}` },
-        { role: 'sage', content: 'Sage Intelligence offline. Check API configuration.' },
-      ]);
-    } finally {
-      setAuditingReport(null);
-    }
-  };
 
   // Use shared branchStats data, filtered by active branch context
   const isFederating = branchStats.isLoading;
@@ -266,20 +228,14 @@ Format as a concise strategic brief. Use specific percentages and metrics (simul
   }, [profiles]);
 
   // ═══════════════════════════════════════════════════════════════
-  // SAGE AI HANDLER
+  // SHARED STATS SUMMARY
+  // The single factual basis for every AI answer on this page. Both "Ask Sage"
+  // and the blueprint audits send THIS, so answers cite real numbers.
   // ═══════════════════════════════════════════════════════════════
-  const handleSageSubmit = async () => {
-    if (!sageQuery.trim() || sageLoading) return;
-
-    const query = sageQuery.trim();
-    setSageQuery('');
-    setSageLoading(true);
-    setSageHistory(prev => [...prev, { role: 'user', content: query }]);
-
-    // Build statistical summary from federated data
+  const statsSummary = useMemo(() => {
     const getLtv = (p: EnrichedProfile) => p.order_stats?.ltv || 0;
     const sortedLtvs = [...profiles].map(getLtv).sort((a, b) => a - b);
-    const statsSummary = {
+    return {
       total_profiles: profiles.length,
       subscribed: subscriptionData.subscribed,
       unsubscribed: subscriptionData.unsubscribed,
@@ -287,9 +243,7 @@ Format as a concise strategic brief. Use specific percentages and metrics (simul
       avg_ltv: profiles.length > 0
         ? (profiles.reduce((s, p) => s + getLtv(p), 0) / profiles.length).toFixed(2)
         : '0.00',
-      median_ltv: sortedLtvs.length > 0
-        ? sortedLtvs[Math.floor(sortedLtvs.length / 2)]
-        : 0,
+      median_ltv: sortedLtvs.length > 0 ? sortedLtvs[Math.floor(sortedLtvs.length / 2)] : 0,
       ltv_tiers: ltvData.tiers,
       order_activity: {
         with_orders: subscriptionData.withOrders,
@@ -303,13 +257,67 @@ Format as a concise strategic brief. Use specific percentages and metrics (simul
       spoke_distribution: audienceData.topSources.map(([spoke, count]) => ({ spoke, count })),
       gender_distribution: audienceData.genderCounts,
     };
+  }, [profiles, subscriptionData, ltvData, productData, audienceData]);
+
+  // Guardrail carried by every AI call on this page. The Cross-Channel audit
+  // used to ask the model for "simulated but realistic" metrics, which produced
+  // invented statistics that read exactly like real reporting.
+  const NO_FABRICATION_RULE =
+    'Base every number strictly on the DATA provided. Never invent, estimate, simulate, or illustrate a metric. ' +
+    'If the data needed for a requested metric is not present, say plainly that it is not available yet and what would need to be connected to measure it. ' +
+    'Never present hypothetical or example figures as findings.';
+
+  // ═══════════════════════════════════════════════════════════════
+  // SAGE AI HANDLER
+  // ═══════════════════════════════════════════════════════════════
+  const handleAiDeepDive = async (report: TrellisReport) => {
+    setAuditingReport(report.id);
+
+    const prompt = `You are auditing the "${report.name}" report for Sproutify Trellis.
+Requested metrics: ${report.metrics.join(', ')}.
+Scope: ${report.spokes.join(', ')}.
+
+DATA (the complete set of figures available to you):
+${JSON.stringify(statsSummary, null, 2)}
+
+${NO_FABRICATION_RULE}
+
+Note: this data covers customers, orders and LTV only. It contains NO channel-level engagement data (email opens/clicks, social impressions, ad spend, or attribution). If this report asks for those, state that they are not available in this dataset and point the user to the Email Performance panel for live email delivery metrics.
+
+Write a concise brief: what the available data actually shows, then up to 2 specific recommendations grounded in those numbers. Under 300 words.`;
+
+    try {
+      const response = await generateText(activeKeys, { prompt, maxTokens: 1024, temperature: 0.4 });
+      const text = response.error ? 'Sage Intelligence offline. Check API configuration.' : (response.text || 'Unable to generate analysis.');
+      setSageHistory(prev => [
+        ...prev,
+        { role: 'user', content: `Sage Audit: ${report.name}` },
+        { role: 'sage', content: text },
+      ]);
+    } catch {
+      setSageHistory(prev => [
+        ...prev,
+        { role: 'user', content: `Sage Audit: ${report.name}` },
+        { role: 'sage', content: 'Sage Intelligence offline. Check API configuration.' },
+      ]);
+    } finally {
+      setAuditingReport(null);
+    }
+  };
+  const handleSageSubmit = async () => {
+    if (!sageQuery.trim() || sageLoading) return;
+
+    const query = sageQuery.trim();
+    setSageQuery('');
+    setSageLoading(true);
+    setSageHistory(prev => [...prev, { role: 'user', content: query }]);
 
     try {
       const response = await generateText(activeKeys, {
         systemPrompt: 'You are Sage, the AI marketing strategist for Sproutify Trellis. You analyze customer data to provide actionable marketing insights.',
-        prompt: `Here is the current customer database summary:\n${JSON.stringify(statsSummary, null, 2)}\n\nThe user's question: "${query}"\n\nProvide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
+        prompt: `Here is the current customer database summary:\n${JSON.stringify(statsSummary, null, 2)}\n\nThe user's question: "${query}"\n\n${NO_FABRICATION_RULE}\n\nProvide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
         maxTokens: 1024,
-        temperature: 0.7,
+        temperature: 0.4,
       });
 
       const sageText = response.error
@@ -637,7 +645,6 @@ Format as a concise strategic brief. Use specific percentages and metrics (simul
             <div key={report.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-black text-slate-800">{report.name}</h4>
-                <span className="text-[8px] font-black uppercase px-2 py-1 rounded bg-emerald-100 text-emerald-700">{report.status}</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {report.metrics.map(m => (
