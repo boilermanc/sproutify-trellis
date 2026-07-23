@@ -2136,12 +2136,12 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 </div>
 
-                {/* Staging Proofing Center */}
+                {/* Send a Test Email */}
                 {enabledChannels.has('email') && (
                   <div className="pt-6 border-t border-slate-100 bg-slate-50/50 -mx-10 p-10">
                     <div className="flex items-center space-x-3 mb-6">
                       <Mail size={24} className="text-indigo-600" />
-                      <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Staging Proofing Center</h5>
+                      <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Send a Test Email</h5>
                     </div>
                     <div className="flex items-center space-x-4">
                       <input
@@ -2167,7 +2167,7 @@ Return ONLY the post content, no explanations or labels.`,
                         ) : (
                           <Send size={18} />
                         )}
-                        <span>{isSendingTest ? 'Deploying...' : testSentStatus === 'success' ? 'Sent' : 'Send Proof'}</span>
+                        <span>{isSendingTest ? 'Sending...' : testSentStatus === 'success' ? 'Sent' : 'Send Test'}</span>
                       </button>
                     </div>
                     {testSendError && (
