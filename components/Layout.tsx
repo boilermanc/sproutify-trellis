@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send
+  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -24,6 +24,62 @@ interface LayoutProps {
   onOpenHelpArticle: (article: Article) => void;
   onOpenHelpCenter: () => void;
 }
+
+// Sidebar IA: two pinned "at a glance" destinations, then collapsible groups.
+// Audience + Campaigns open by default; the specialised groups start collapsed so
+// the default nav is ~11 visible items instead of 24.
+const NAV_SECTIONS_KEY = 'trellis_nav_sections';
+
+const PINNED = [
+  { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+  { id: 'reports', label: 'Reports', icon: BarChart3 },
+];
+
+const NAV_GROUPS = [
+  {
+    id: 'audience', label: 'Audience', defaultOpen: true, items: [
+      { id: 'profiles', label: 'Profiles', icon: Users },
+      { id: 'segments', label: 'Segments', icon: Layers },
+      { id: 'intelligence', label: 'Intelligence', icon: BarChart3 },
+      { id: 'branches', label: 'Branches', icon: GitBranch },
+    ],
+  },
+  {
+    id: 'campaigns', label: 'Campaigns', defaultOpen: true, items: [
+      { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },
+      { id: 'campaigns', label: 'Campaigns', icon: Send },
+      { id: 'email-preview', label: 'Email Previews', icon: Mail },
+      { id: 'marketing-wizard', label: 'Marketing AI', icon: Wand2 },
+      { id: 'tasks', label: 'Campaign Tasks', icon: CheckSquare },
+    ],
+  },
+  {
+    id: 'content-studio', label: 'Content Studio', defaultOpen: false, items: [
+      { id: 'social-hub', label: 'Social Hub', icon: Share2 },
+      { id: 'reddit-growth', label: 'Reddit Growth', icon: MessageCircle },
+      { id: 'video-ad-lab', label: 'Video Ad Lab', icon: Video },
+      { id: 'clip-studio', label: 'Clip Studio', icon: Film },
+      { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },
+      { id: 'studio-albums', label: 'Studio Albums', icon: Music },
+      { id: 'trellis-episodes', label: 'Trellis Episodes', icon: Clapperboard },
+    ],
+  },
+  {
+    id: 'brand', label: 'Brand', defaultOpen: false, items: [
+      { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
+      { id: 'marketing-brands', label: 'Brand Profiles', icon: Palette },
+    ],
+  },
+  {
+    id: 'setup', label: 'Setup & Admin', defaultOpen: false, items: [
+      { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },
+      { id: 'automations', label: 'n8n Flows', icon: Workflow },
+      { id: 'dev-tools', label: 'Dev Resources', icon: Code2 },
+      { id: 'team', label: 'Team', icon: UserCog },
+      { id: 'knowledge-base', label: 'Knowledge Base', icon: BookOpen },
+    ],
+  },
+];
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, onOpenHelpArticle, onOpenHelpCenter }) => {
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
@@ -47,32 +103,29 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     setIsMobileNavOpen(false);
   }, [activeView]);
 
-  const navItems = [
-    { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-    { id: 'reports', label: 'Reports', icon: BarChart3 },
-    { id: 'knowledge-base', label: 'Knowledge Base', icon: BookOpen },
-    { id: 'profiles', label: 'Profiles', icon: Users },
-    { id: 'segments', label: 'Segments', icon: Layers },
-    { id: 'intelligence', label: 'Intelligence', icon: BarChart3 },
-    { id: 'branches', label: 'Branches', icon: GitBranch },
-    { id: 'social-hub', label: 'Social Hub', icon: Share2 },
-    { id: 'video-ad-lab', label: 'Video Ad Lab', icon: Video },
-    { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },
-    { id: 'studio-albums', label: 'Studio Albums', icon: Music },
-    { id: 'trellis-episodes', label: 'Trellis Episodes', icon: Clapperboard },
-    { id: 'clip-studio', label: 'Clip Studio', icon: Film },
-    { id: 'platform-wizard', label: 'Platform Setup', icon: Plug },
-    { id: 'brand-intelligence', label: 'Brand DNA', icon: Dna },
-    { id: 'campaign-builder', label: 'Campaign Builder', icon: Rocket },
-    { id: 'campaigns', label: 'Campaigns', icon: Send },
-    { id: 'marketing-wizard', label: 'Marketing AI', icon: Wand2 },
-    { id: 'marketing-brands', label: 'Brand Profiles', icon: Palette },
-    { id: 'automations', label: 'n8n Flows', icon: Workflow },
-    { id: 'tasks', label: 'Campaign Tasks', icon: CheckSquare },
-    { id: 'email-preview', label: 'Email Previews', icon: Mail },
-    { id: 'dev-tools', label: 'Dev Resources', icon: Code2 },
-    { id: 'team', label: 'Team', icon: UserCog },
-  ];
+  // Which nav groups are expanded. Seeded from each group's defaultOpen, then
+  // overlaid with whatever the user last chose (persisted in localStorage).
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    const defaults: Record<string, boolean> = {};
+    NAV_GROUPS.forEach(g => { defaults[g.id] = g.defaultOpen; });
+    try {
+      const saved = localStorage.getItem(NAV_SECTIONS_KEY);
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+    } catch { /* ignore malformed storage */ }
+    return defaults;
+  });
+
+  const toggleSection = (id: string) => {
+    setOpenSections(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  // The group holding the current view is always shown, so you can never be
+  // "lost" inside a collapsed section. This doesn't overwrite the saved state.
+  const activeGroupId = NAV_GROUPS.find(g => g.items.some(i => i.id === activeView))?.id;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -106,7 +159,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
         </div>
 
         <nav className="flex-1 mt-6 px-3 space-y-1 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
+          {/* Pinned — always visible, no group header */}
+          {PINNED.map((item) => (
             <button
               key={item.id}
               onClick={() => onViewChange(item.id as ViewState)}
@@ -120,6 +174,45 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
               <span className="font-medium text-sm">{item.label}</span>
             </button>
           ))}
+
+          {/* Collapsible groups */}
+          {NAV_GROUPS.map((group) => {
+            const isOpen = openSections[group.id] || group.id === activeGroupId;
+            return (
+              <div key={group.id} className="pt-3">
+                <button
+                  onClick={() => toggleSection(group.id)}
+                  className="w-full flex items-center justify-between px-4 py-1.5 rounded-lg text-white/40 hover:text-white/80 transition-colors"
+                  aria-expanded={isOpen}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest">{group.label}</span>
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+                  />
+                </button>
+
+                {isOpen && (
+                  <div className="space-y-1 mt-1">
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => onViewChange(item.id as ViewState)}
+                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
+                          activeView === item.id
+                          ? 'bg-sky-400/20 text-sky-300 shadow-lg shadow-yale-blue/20'
+                          : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
+                        }`}
+                      >
+                        <item.icon size={20} />
+                        <span className="font-medium text-sm">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-blue-slate-2/30 space-y-2 bg-yale-blue/50">
