@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain, Link2, ExternalLink } from 'lucide-react';
 import { EnrichedProfile, SocialActivity } from '../types';
 import { PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META, getSocialUrl } from '../utils';
+import { EmailActivitySection } from '../components/EmailActivitySection';
 
 interface ProfileDetailDrawerProps {
   profile: EnrichedProfile | null;
@@ -87,6 +88,9 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
               )}
             </div>
           </div>
+
+          {/* Email Activity — per-contact engagement timeline (Hub email_events, keyed by email) */}
+          <EmailActivitySection email={profile.email} />
 
           {/* Social Presence */}
           {handleEntries.length > 0 && (

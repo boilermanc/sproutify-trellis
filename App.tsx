@@ -28,6 +28,7 @@ import PlatformSetupWizard from './pages/PlatformSetupWizard';
 import Segments from './Segments';
 import CustomerIntelligence from './CustomerIntelligence';
 import BrandIntelligence from './BrandIntelligence';
+import Campaigns from './pages/Campaigns';
 import MarketingBrands from './pages/MarketingBrands';
 import MarketingWizard from './pages/MarketingWizard';
 import Login from './pages/Login';
@@ -379,6 +380,7 @@ const AppContent: React.FC = () => {
       case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'help-center': return <HelpCenter initialArticle={helpArticle} />;
       case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} branchStats={branchStats} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} />;
+      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} />;
       case 'marketing-brands': return (
         <MarketingBrands
           branchContext={branchContext}
