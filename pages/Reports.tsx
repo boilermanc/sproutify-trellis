@@ -4,6 +4,7 @@ import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, Tre
 import { Article } from '../src/data/helpContent';
 import { generateText } from '../services/aiService';
 import EmailPerformancePanel from '../components/EmailPerformancePanel';
+import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
   Activity, ShieldCheck, AlertTriangle, Crown,
@@ -14,11 +15,16 @@ import {
 // STATIC DATA (outside component to avoid re-creation per render)
 // ═══════════════════════════════════════════════════════════════
 
+// Metric lists here are a promise to the user about what Sage can actually answer.
+// Only list metrics backed by real data reaching statsSummary below — email open/click/bounce
+// rates are live (campaign_email_stats), but conversion rate, channel ROI, cross-channel
+// attribution and social engagement are NOT: there is no order<->campaign linkage and no
+// social metrics pipeline feeding this page, so they must not be advertised as deliverable.
 const REPORT_BLUEPRINTS: TrellisReport[] = [
   { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'] },
   { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'] },
-  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Open Rate', 'Click Rate', 'Conversion Rate', 'Audience Reach'], spokes: ['All Spokes'] },
-  { id: 'rep_4', name: 'Cross-Channel Performance Analysis', type: 'system', metrics: ['Email Open Rate', 'Social Engagement', 'Cross-Channel Attribution', 'Channel ROI'], spokes: ['All Spokes'] },
+  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Open Rate', 'Click Rate', 'Bounce Rate', 'Audience Reach'], spokes: ['All Spokes'] },
+  { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
 ];
 
 const DEFAULT_KEYS: ApiKeyConfig = {
@@ -67,6 +73,8 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
   const [sageLoading, setSageLoading] = useState(false);
   const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);
   const [auditingReport, setAuditingReport] = useState<string | null>(null);
+  const [emailStats, setEmailStats] = useState<CampaignEmailStat[]>([]);
+  const [emailStatsLoading, setEmailStatsLoading] = useState(true);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +82,21 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [sageHistory, sageLoading]);
+
+  // Live per-campaign email engagement (same source EmailPerformancePanel renders from) so
+  // Sage's prompts carry the real numbers instead of describing them as unavailable.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setEmailStatsLoading(true);
+      const stats = await fetchCampaignEmailStats();
+      if (!cancelled) {
+        setEmailStats(stats);
+        setEmailStatsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const activeKeys = apiKeys || DEFAULT_KEYS;
 
@@ -228,6 +251,42 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
   }, [profiles]);
 
   // ═══════════════════════════════════════════════════════════════
+  // EMAIL ENGAGEMENT (real, live from campaign_email_stats — same source
+  // EmailPerformancePanel renders from). Gives the AI actual open/click/bounce
+  // numbers per campaign instead of no channel-level data at all.
+  // ═══════════════════════════════════════════════════════════════
+  const emailEngagementData = useMemo(() => {
+    const totals = emailStats.reduce(
+      (acc, r) => {
+        acc.sent += r.sent; acc.delivered += r.delivered; acc.opened += r.opened;
+        acc.clicked += r.clicked; acc.bounced += r.bounced; acc.complained += r.complained;
+        return acc;
+      },
+      { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0 },
+    );
+    const openDenom = totals.delivered || totals.sent;
+    const bounceDenom = totals.sent || totals.delivered;
+    const openRate = openDenom > 0 ? (totals.opened / openDenom) * 100 : 0;
+    const clickRate = openDenom > 0 ? (totals.clicked / openDenom) * 100 : 0;
+    const bounceRate = bounceDenom > 0 ? (totals.bounced / bounceDenom) * 100 : 0;
+
+    const recentCampaigns = emailStats.slice(0, 10).map(r => {
+      const denom = r.delivered || r.sent;
+      return {
+        subject: r.campaign_subject,
+        sent: r.sent,
+        delivered: r.delivered,
+        open_rate_pct: denom > 0 ? Number(((r.opened / denom) * 100).toFixed(1)) : 0,
+        click_rate_pct: denom > 0 ? Number(((r.clicked / denom) * 100).toFixed(1)) : 0,
+        bounced: r.bounced,
+        last_event_at: r.last_event_at,
+      };
+    });
+
+    return { totalCampaigns: emailStats.length, totals, openRate, clickRate, bounceRate, recentCampaigns };
+  }, [emailStats]);
+
+  // ═══════════════════════════════════════════════════════════════
   // SHARED STATS SUMMARY
   // The single factual basis for every AI answer on this page. Both "Ask Sage"
   // and the blueprint audits send THIS, so answers cite real numbers.
@@ -256,8 +315,21 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       top_products: productData.topProducts.slice(0, 10).map(([name, stats]) => ({ name, ...stats })),
       spoke_distribution: audienceData.topSources.map(([spoke, count]) => ({ spoke, count })),
       gender_distribution: audienceData.genderCounts,
+      email_engagement: emailStatsLoading
+        ? { status: 'loading', total_campaigns: 0 }
+        : emailEngagementData.totalCampaigns === 0
+        ? { status: 'no_campaigns_sent_yet', total_campaigns: 0 }
+        : {
+            status: 'live',
+            total_campaigns: emailEngagementData.totalCampaigns,
+            aggregate: emailEngagementData.totals,
+            open_rate_pct: Number(emailEngagementData.openRate.toFixed(1)),
+            click_rate_pct: Number(emailEngagementData.clickRate.toFixed(1)),
+            bounce_rate_pct: Number(emailEngagementData.bounceRate.toFixed(1)),
+            recent_campaigns: emailEngagementData.recentCampaigns,
+          },
     };
-  }, [profiles, subscriptionData, ltvData, productData, audienceData]);
+  }, [profiles, subscriptionData, ltvData, productData, audienceData, emailEngagementData, emailStatsLoading]);
 
   // Guardrail carried by every AI call on this page. The Cross-Channel audit
   // used to ask the model for "simulated but realistic" metrics, which produced
@@ -266,6 +338,18 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
     'Base every number strictly on the DATA provided. Never invent, estimate, simulate, or illustrate a metric. ' +
     'If the data needed for a requested metric is not present, say plainly that it is not available yet and what would need to be connected to measure it. ' +
     'Never present hypothetical or example figures as findings.';
+
+  // Tells the model exactly what it does and does not have, so it stops disclaiming data
+  // that is now present (email engagement) while still refusing to guess at data that
+  // genuinely isn't wired up (social, ad spend, order<->campaign attribution).
+  const DATA_SCOPE_NOTE =
+    'Note on DATA scope: it includes customers, orders, LTV, AND real per-campaign email engagement ' +
+    '(sent/delivered/opened/clicked/bounced counts plus computed open and click rates), sourced live from Resend delivery events via the Email Performance panel. ' +
+    'If email_engagement.status is "no_campaigns_sent_yet", no campaigns have been sent — say that plainly rather than inventing a rate. ' +
+    'If email_engagement.status is "loading", email data has not finished loading yet — say so rather than treating it as zero. ' +
+    'DATA does NOT include social impressions, ad spend, or revenue attribution — there is no linkage between orders and campaigns yet, ' +
+    'so conversion rate, channel ROI, and cross-channel attribution cannot be computed. For any requested metric that falls in that gap, ' +
+    'respond with "not yet tracked" and name what would need to be connected (e.g. order-to-campaign linkage, social API integration) rather than estimating it.';
 
   // ═══════════════════════════════════════════════════════════════
   // SAGE AI HANDLER
@@ -282,7 +366,7 @@ ${JSON.stringify(statsSummary, null, 2)}
 
 ${NO_FABRICATION_RULE}
 
-Note: this data covers customers, orders and LTV only. It contains NO channel-level engagement data (email opens/clicks, social impressions, ad spend, or attribution). If this report asks for those, state that they are not available in this dataset and point the user to the Email Performance panel for live email delivery metrics.
+${DATA_SCOPE_NOTE}
 
 Write a concise brief: what the available data actually shows, then up to 2 specific recommendations grounded in those numbers. Under 300 words.`;
 
@@ -315,7 +399,7 @@ Write a concise brief: what the available data actually shows, then up to 2 spec
     try {
       const response = await generateText(activeKeys, {
         systemPrompt: 'You are Sage, the AI marketing strategist for Sproutify Trellis. You analyze customer data to provide actionable marketing insights.',
-        prompt: `Here is the current customer database summary:\n${JSON.stringify(statsSummary, null, 2)}\n\nThe user's question: "${query}"\n\n${NO_FABRICATION_RULE}\n\nProvide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
+        prompt: `Here is the current customer database summary:\n${JSON.stringify(statsSummary, null, 2)}\n\nThe user's question: "${query}"\n\n${NO_FABRICATION_RULE}\n\n${DATA_SCOPE_NOTE}\n\nProvide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
         maxTokens: 1024,
         temperature: 0.4,
       });

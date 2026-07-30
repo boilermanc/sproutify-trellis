@@ -20,6 +20,7 @@ import {
   countProfilesInSegment,
   evaluateSegment,
 } from './segmentEngine';
+import { fetchEngagementByEmail, EngagementSummary } from './services/emailReportingService';
 import { SegmentProfilesModal } from './SegmentProfilesModal';
 
 interface SegmentsProps {
@@ -118,11 +119,23 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     localStorage.setItem('trellis_custom_segments', JSON.stringify(customSegments));
   }, [customSegments]);
 
+  // Email engagement (opens/clicks per address) so the "Email Engagement"
+  // rule category can actually evaluate. Loaded once; rules resolve to false
+  // until it arrives, which is the same as having no engagement history.
+  const [engagementByEmail, setEngagementByEmail] = useState<Map<string, EngagementSummary>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    fetchEngagementByEmail()
+      .then(map => { if (!cancelled) setEngagementByEmail(map); })
+      .catch(err => console.error('[Segments] Failed to load email engagement:', err));
+    return () => { cancelled = true; };
+  }, []);
+
   // Get matching profiles for selected segment
   const matchingProfiles = useMemo(() => {
     if (!selectedSegment) return [];
-    return filterProfilesBySegment(profiles, selectedSegment);
-  }, [selectedSegment, profiles]);
+    return filterProfilesBySegment(profiles, selectedSegment, engagementByEmail);
+  }, [selectedSegment, profiles, engagementByEmail]);
 
   // Add a new rule to the form
   const addRule = () => {
@@ -261,7 +274,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
       created_at: '',
       updated_at: '',
     };
-    return countProfilesInSegment(profiles, previewSegment);
+    return countProfilesInSegment(profiles, previewSegment, engagementByEmail);
   }, [newSegmentRules, newSegmentJoin, profiles]);
 
   // Render rule editor row
@@ -312,6 +325,11 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
           </optgroup>
           <optgroup label="Demographics">
             {SEGMENT_FIELDS.filter(f => f.category === 'demographics').map(f => (
+              <option key={f.id} value={f.id}>{f.label}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Email Engagement">
+            {SEGMENT_FIELDS.filter(f => f.category === 'engagement').map(f => (
               <option key={f.id} value={f.id}>{f.label}</option>
             ))}
           </optgroup>
@@ -408,7 +426,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900 truncate">{segment.name}</div>
                   <div className="text-sm text-gray-500">
-                    {countProfilesInSegment(profiles, segment).toLocaleString()} profiles
+                    {countProfilesInSegment(profiles, segment, engagementByEmail).toLocaleString()} profiles
                   </div>
                 </div>
               </button>
@@ -447,7 +465,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                       <div className="text-sm text-gray-500">
                         {segment.kind === 'email_list'
                           ? `${(segment.email_list?.length || 0).toLocaleString()} test emails`
-                          : `${countProfilesInSegment(profiles, segment).toLocaleString()} profiles`}
+                          : `${countProfilesInSegment(profiles, segment, engagementByEmail).toLocaleString()} profiles`}
                       </div>
                     </div>
                   </button>

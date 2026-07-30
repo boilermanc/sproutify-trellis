@@ -6,6 +6,47 @@ import {
   SEGMENT_FIELDS,
   SegmentOperator
 } from './segmentTypes';
+import { EngagementSummary } from './services/emailReportingService';
+
+// Sentinel for last_opened_days_ago / last_clicked_days_ago when a profile has never
+// opened/clicked (see SEGMENT_FIELDS 'engagement' category in segmentTypes.ts).
+// Treated as "infinitely long ago": "at least/more than N days" style rules correctly
+// include never-engaged profiles, while "in the last N days" style rules correctly
+// exclude them. Kept as a large finite number (not Infinity) so `between` upper
+// bounds still behave.
+const NEVER_ENGAGED_DAYS = 999999;
+
+const daysSince = (iso: string | null | undefined): number => {
+  if (!iso) return NEVER_ENGAGED_DAYS;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(diffMs / 86400000));
+};
+
+// Resolve an 'engagement' category field against the bulk engagement map, keyed by
+// lowercased email (see fetchEngagementByEmail in services/emailReportingService.ts).
+const getEngagementValue = (
+  profile: EnrichedProfile,
+  fieldId: string,
+  engagementByEmail: Map<string, EngagementSummary>
+): number | boolean | undefined => {
+  const summary = engagementByEmail.get((profile.email || '').toLowerCase());
+  switch (fieldId) {
+    case 'emails_opened':
+      return summary?.opened ?? 0;
+    case 'emails_clicked':
+      return summary?.clicked ?? 0;
+    case 'last_opened_days_ago':
+      return daysSince(summary?.last_opened_at);
+    case 'last_clicked_days_ago':
+      return daysSince(summary?.last_clicked_at);
+    case 'has_opened':
+      return (summary?.opened ?? 0) > 0;
+    case 'has_clicked':
+      return (summary?.clicked ?? 0) > 0;
+    default:
+      return undefined;
+  }
+};
 
 // Get nested value from object using dot notation path
 const getValueByPath = (obj: any, path: string): any => {
@@ -26,12 +67,10 @@ const getValueByPath = (obj: any, path: string): any => {
   return value;
 };
 
-// Evaluate a single rule against a profile
-const evaluateRule = (profile: EnrichedProfile, rule: SegmentRule): boolean => {
-  const field = SEGMENT_FIELDS.find(f => f.id === rule.field);
-  if (!field) return false;
-
-  const value = getValueByPath(profile, field.path);
+// Apply an operator to an already-resolved value. Extracted so 'engagement' fields
+// (resolved from the bulk engagement map, not a profile path) share the exact same
+// operator semantics as every other field category.
+const applyOperator = (value: any, rule: SegmentRule): boolean => {
   const ruleValue = rule.value;
 
   // Handle different operators
@@ -109,6 +148,27 @@ const evaluateRule = (profile: EnrichedProfile, rule: SegmentRule): boolean => {
   }
 };
 
+// Evaluate a single rule against a profile
+const evaluateRule = (
+  profile: EnrichedProfile,
+  rule: SegmentRule,
+  engagementByEmail?: Map<string, EngagementSummary>
+): boolean => {
+  const field = SEGMENT_FIELDS.find(f => f.id === rule.field);
+  if (!field) return false;
+
+  if (field.category === 'engagement') {
+    // No engagement data supplied — rules in this category simply don't match, so
+    // existing evaluateSegment(profile, segment) callers keep working unchanged.
+    if (!engagementByEmail) return false;
+    const value = getEngagementValue(profile, field.id, engagementByEmail);
+    return applyOperator(value, rule);
+  }
+
+  const value = getValueByPath(profile, field.path);
+  return applyOperator(value, rule);
+};
+
 // Special handling for array 'contains' on products_purchased
 const evaluateArrayContains = (profile: EnrichedProfile, rule: SegmentRule, negate: boolean = false): boolean => {
   const field = SEGMENT_FIELDS.find(f => f.id === rule.field);
@@ -133,29 +193,49 @@ const evaluateArrayContains = (profile: EnrichedProfile, rule: SegmentRule, nega
 };
 
 // Evaluate a rule, with special handling for array contains
-const evaluateRuleWithArrays = (profile: EnrichedProfile, rule: SegmentRule): boolean => {
+const evaluateRuleWithArrays = (
+  profile: EnrichedProfile,
+  rule: SegmentRule,
+  engagementByEmail?: Map<string, EngagementSummary>
+): boolean => {
   if (rule.operator === 'contains' && rule.field === 'products_purchased') {
     return evaluateArrayContains(profile, rule, false);
   }
   if (rule.operator === 'not_contains' && rule.field === 'products_purchased') {
     return evaluateArrayContains(profile, rule, true);
   }
-  return evaluateRule(profile, rule);
+  return evaluateRule(profile, rule, engagementByEmail);
 };
 
 // Evaluate a group of rules (joined by AND or OR)
-const evaluateRuleGroup = (profile: EnrichedProfile, group: SegmentRuleGroup): boolean => {
+const evaluateRuleGroup = (
+  profile: EnrichedProfile,
+  group: SegmentRuleGroup,
+  engagementByEmail?: Map<string, EngagementSummary>
+): boolean => {
   if (group.rules.length === 0) return true;
 
   if (group.join === 'AND') {
-    return group.rules.every(rule => evaluateRuleWithArrays(profile, rule));
+    return group.rules.every(rule => evaluateRuleWithArrays(profile, rule, engagementByEmail));
   } else {
-    return group.rules.some(rule => evaluateRuleWithArrays(profile, rule));
+    return group.rules.some(rule => evaluateRuleWithArrays(profile, rule, engagementByEmail));
   }
 };
 
-// Evaluate a complete segment against a profile
-export const evaluateSegment = (profile: EnrichedProfile, segment: Segment): boolean => {
+// Evaluate a complete segment against a profile.
+//
+// `engagementByEmail` is an OPTIONAL third argument (from
+// fetchEngagementByEmail() in services/emailReportingService.ts). Every existing
+// call site (Segments.tsx, pages/CampaignBuilder.tsx) calls this with just
+// (profile, segment) and keeps working exactly as before — segments with no
+// 'engagement' category rules are entirely unaffected, and segments that do use
+// engagement rules simply evaluate those rules as non-matching until a caller
+// opts in by passing the map.
+export const evaluateSegment = (
+  profile: EnrichedProfile,
+  segment: Segment,
+  engagementByEmail?: Map<string, EngagementSummary>
+): boolean => {
   // Static test list: membership is the explicit set of addresses.
   if (segment.kind === 'email_list') {
     const list = segment.email_list || [];
@@ -165,31 +245,34 @@ export const evaluateSegment = (profile: EnrichedProfile, segment: Segment): boo
   if (segment.rule_groups.length === 0) return true;
 
   // All rule groups are joined by AND
-  return segment.rule_groups.every(group => evaluateRuleGroup(profile, group));
+  return segment.rule_groups.every(group => evaluateRuleGroup(profile, group, engagementByEmail));
 };
 
 // Filter profiles by a segment
 export const filterProfilesBySegment = (
   profiles: EnrichedProfile[],
-  segment: Segment
+  segment: Segment,
+  engagementByEmail?: Map<string, EngagementSummary>
 ): EnrichedProfile[] => {
-  return profiles.filter(profile => evaluateSegment(profile, segment));
+  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail));
 };
 
 // Get count of profiles matching a segment
 export const countProfilesInSegment = (
   profiles: EnrichedProfile[],
-  segment: Segment
+  segment: Segment,
+  engagementByEmail?: Map<string, EngagementSummary>
 ): number => {
-  return profiles.filter(profile => evaluateSegment(profile, segment)).length;
+  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail)).length;
 };
 
 // Get all segments a profile belongs to
 export const getProfileSegments = (
   profile: EnrichedProfile,
-  segments: Segment[]
+  segments: Segment[],
+  engagementByEmail?: Map<string, EngagementSummary>
 ): Segment[] => {
-  return segments.filter(segment => evaluateSegment(profile, segment));
+  return segments.filter(segment => evaluateSegment(profile, segment, engagementByEmail));
 };
 
 // Create a product-based segment dynamically

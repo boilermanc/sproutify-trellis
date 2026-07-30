@@ -344,6 +344,47 @@ WHERE campaign_subject IS NOT NULL
 GROUP BY campaign_subject;
 GRANT SELECT ON campaign_email_stats TO anon, authenticated, service_role;
 
+-- Send-time attribution map: Resend /emails/batch returns message ids in request
+-- order (no per-message tags/metadata support), so B2-campaign-dispatch.json's
+-- "Record Send Ids" node zips those ids with the recipients it just sent and
+-- upserts the mapping here. resend-webhook/index.ts then joins incoming events
+-- on resend_email_id to resolve campaign_id, instead of matching on subject text.
+CREATE TABLE IF NOT EXISTS campaign_sends (
+  resend_email_id TEXT PRIMARY KEY,
+  campaign_id UUID,
+  email TEXT NOT NULL,
+  subject TEXT,
+  sent_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_campaign_sends_campaign ON campaign_sends (campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_sends_email ON campaign_sends (email);
+ALTER TABLE campaign_sends ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "campaign_sends_service" ON campaign_sends;
+CREATE POLICY "campaign_sends_service" ON campaign_sends FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "campaign_sends_read" ON campaign_sends;
+CREATE POLICY "campaign_sends_read" ON campaign_sends FOR SELECT TO anon, authenticated USING (true);
+GRANT SELECT ON campaign_sends TO anon, authenticated;
+GRANT ALL ON campaign_sends TO service_role;
+
+-- Per-campaign rollup keyed by campaign_id (exact — no subject-collision risk).
+-- Prefer this over campaign_email_stats once email_events.campaign_id is populated.
+CREATE OR REPLACE VIEW campaign_stats_by_id
+WITH (security_invoker = true) AS
+SELECT
+  campaign_id,
+  COUNT(*) FILTER (WHERE event_type = 'sent')                 AS sent,
+  COUNT(*) FILTER (WHERE event_type = 'delivered')            AS delivered,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')  AS opened,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked') AS clicked,
+  COUNT(*) FILTER (WHERE event_type = 'bounced')              AS bounced,
+  COUNT(*) FILTER (WHERE event_type = 'complained')           AS complained,
+  MIN(occurred_at) AS first_event_at,
+  MAX(occurred_at) AS last_event_at
+FROM email_events
+WHERE campaign_id IS NOT NULL
+GROUP BY campaign_id;
+GRANT SELECT ON campaign_stats_by_id TO anon, authenticated, service_role;
+
 -- 7. PERFORMANCE INDEXING
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_spoke_uuid ON profiles (spoke_uuid);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email_unique ON profiles (email);

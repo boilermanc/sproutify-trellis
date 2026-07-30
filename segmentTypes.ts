@@ -15,7 +15,7 @@ export interface SegmentField {
   id: string;
   label: string;
   type: SegmentFieldType;
-  category: 'profile' | 'orders' | 'products' | 'location' | 'demographics';
+  category: 'profile' | 'orders' | 'products' | 'location' | 'demographics' | 'engagement';
   path: string;
 }
 
@@ -89,6 +89,23 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   { id: 'predicted_age', label: 'Predicted Age Range', type: 'string', category: 'demographics', path: '_predicted_demographics.age.age_range' },
   { id: 'gender_confidence', label: 'Gender Confidence', type: 'string', category: 'demographics', path: '_predicted_demographics.gender.confidence' },
   { id: 'name_origin', label: 'Name Origin', type: 'string', category: 'demographics', path: '_predicted_demographics.gender.origin' },
+
+  // Engagement fields — sourced from email_events (opens/clicks), not the spoke
+  // profile. `path` is set to the field id for documentation only; these are NOT
+  // resolved via getValueByPath(profile, ...) like the categories above. They only
+  // resolve when the caller passes a bulk engagement map (see
+  // fetchEngagementByEmail() in services/emailReportingService.ts) as the third
+  // argument to evaluateSegment(). Without that map, rules in this category simply
+  // never match (see segmentEngine.ts).
+  { id: 'emails_opened', label: 'Emails Opened', type: 'number', category: 'engagement', path: 'emails_opened' },
+  { id: 'emails_clicked', label: 'Emails Clicked', type: 'number', category: 'engagement', path: 'emails_clicked' },
+  // "Never opened/clicked" resolves to a large sentinel (see NEVER_ENGAGED_DAYS in
+  // segmentEngine.ts) so "at least/more than N days ago" rules correctly include
+  // never-engaged profiles, while "in the last N days" style rules exclude them.
+  { id: 'last_opened_days_ago', label: 'Days Since Last Open', type: 'number', category: 'engagement', path: 'last_opened_days_ago' },
+  { id: 'last_clicked_days_ago', label: 'Days Since Last Click', type: 'number', category: 'engagement', path: 'last_clicked_days_ago' },
+  { id: 'has_opened', label: 'Has Opened an Email', type: 'boolean', category: 'engagement', path: 'has_opened' },
+  { id: 'has_clicked', label: 'Has Clicked an Email', type: 'boolean', category: 'engagement', path: 'has_clicked' },
 ];
 
 // Get operators for a field type

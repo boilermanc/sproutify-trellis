@@ -86,6 +86,94 @@ export async function fetchEmailActivity(email: string): Promise<EmailEventRow[]
   }
 }
 
+// Bulk per-address engagement aggregate, built for segment targeting (see
+// SEGMENT_FIELDS 'engagement' category + segmentEngine.ts). One row per email that
+// has at least one 'opened' or 'clicked' event.
+export interface EngagementSummary {
+  email: string; // lowercased
+  opened: number; // count of 'opened' events for this address
+  clicked: number; // count of 'clicked' events for this address
+  last_opened_at: string | null;
+  last_clicked_at: string | null;
+}
+
+// Bulk engagement aggregate for segment targeting: a single query over email_events
+// (not one call per profile), grouped client-side by lowercased email into open/click
+// counts plus last-touch timestamps. Keyed the same way the rest of the codebase
+// normalizes email identity (see fetchEmailActivity above).
+export async function fetchEngagementByEmail(): Promise<Map<string, EngagementSummary>> {
+  const result = new Map<string, EngagementSummary>();
+  try {
+    const { data, error } = await supabase
+      .from('email_events')
+      .select('email,event_type,occurred_at')
+      .in('event_type', ['opened', 'clicked'])
+      .order('occurred_at', { ascending: true })
+      // Bulk aggregate query — explicit range so we don't silently fall back to the
+      // client's default 1000-row cap on a large events table.
+      .range(0, 49999);
+    if (error) throw error;
+    for (const row of (data || []) as { email: string; event_type: string; occurred_at: string }[]) {
+      const key = (row.email || '').toLowerCase();
+      if (!key) continue;
+      let summary = result.get(key);
+      if (!summary) {
+        summary = { email: key, opened: 0, clicked: 0, last_opened_at: null, last_clicked_at: null };
+        result.set(key, summary);
+      }
+      // Rows are ordered ascending by occurred_at, so the last write for each
+      // event_type ends up holding the most recent timestamp.
+      if (row.event_type === 'opened') {
+        summary.opened++;
+        summary.last_opened_at = row.occurred_at;
+      } else if (row.event_type === 'clicked') {
+        summary.clicked++;
+        summary.last_clicked_at = row.occurred_at;
+      }
+    }
+    return result;
+  } catch (e) {
+    console.error('fetchEngagementByEmail failed:', e);
+    return result;
+  }
+}
+
+// Derives profiles.engagement_score (0-100) and profiles.churn_risk from a bulk
+// EngagementSummary. Simple, deterministic scoring — not a written-back value, just
+// available for a future job/UI to use:
+//   - Recency: up to 60 pts, linear decay from the most recent open/click, reaching
+//     0 at 90+ days (or if the address has never opened/clicked at all).
+//   - Frequency: up to 40 pts, from min(opens + clicks*2, 20) activity units scaled
+//     to 40 (clicks count double since they're stronger engagement signal).
+// churn_risk buckets the resulting score using the existing Profile.churn_risk
+// values (types.ts): >=70 minimal, >=40 moderate, >=15 high, else critical.
+export function computeEngagementScore(
+  summary: EngagementSummary | undefined
+): { engagement_score: number; churn_risk: 'minimal' | 'moderate' | 'high' | 'critical' } {
+  const opened = summary?.opened ?? 0;
+  const clicked = summary?.clicked ?? 0;
+  const lastTouch = summary?.last_clicked_at || summary?.last_opened_at || null;
+
+  let recencyScore = 0;
+  if (lastTouch) {
+    const daysSinceTouch = Math.max(0, Math.floor((Date.now() - new Date(lastTouch).getTime()) / 86400000));
+    recencyScore = Math.max(0, 60 * (1 - daysSinceTouch / 90));
+  }
+
+  const activityUnits = Math.min(opened + clicked * 2, 20);
+  const frequencyScore = (activityUnits / 20) * 40;
+
+  const engagement_score = Math.round(Math.min(100, recencyScore + frequencyScore));
+
+  let churn_risk: 'minimal' | 'moderate' | 'high' | 'critical';
+  if (engagement_score >= 70) churn_risk = 'minimal';
+  else if (engagement_score >= 40) churn_risk = 'moderate';
+  else if (engagement_score >= 15) churn_risk = 'high';
+  else churn_risk = 'critical';
+
+  return { engagement_score, churn_risk };
+}
+
 export interface EmailSuppressionStatus {
   suppressed: boolean;
   reason?: string;

@@ -58,11 +58,31 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
+  // Resolve campaign attribution via the send-time mapping recorded by
+  // B2-campaign-dispatch.json's "Save Send Ids" node. Older/transactional
+  // sends have no row here — that's expected, campaign_id just stays null.
+  let campaignId: string | null = null;
+  let mappedSubject: string | null = null;
+  if (data.email_id) {
+    const { data: sendRow, error: sendErr } = await supabase
+      .from("campaign_sends")
+      .select("campaign_id, subject")
+      .eq("resend_email_id", data.email_id)
+      .maybeSingle();
+    if (sendErr) {
+      console.error("campaign_sends lookup failed:", sendErr.message);
+    } else if (sendRow) {
+      campaignId = sendRow.campaign_id ?? null;
+      mappedSubject = sendRow.subject ?? null;
+    }
+  }
+
   const { error: insErr } = await supabase.from("email_events").insert({
     email,
     event_type: type,
     resend_email_id: data.email_id || null,
-    campaign_subject: data.subject || null,
+    campaign_subject: data.subject || mappedSubject || null,
+    campaign_id: campaignId,
     metadata: data,
     occurred_at: evt?.created_at || new Date().toISOString(),
   });
