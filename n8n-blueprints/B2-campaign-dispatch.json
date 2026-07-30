@@ -91,14 +91,6 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "apikey",
-              "value": "YOUR_HUB_SERVICE_ROLE_KEY"
-            },
-            {
-              "name": "Authorization",
-              "value": "Bearer YOUR_HUB_SERVICE_ROLE_KEY"
-            },
-            {
               "name": "Content-Type",
               "value": "application/json"
             },
@@ -111,7 +103,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($input.all().map(item => item.json)) }}",
-        "options": {}
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
       },
       "name": "Save Send Ids",
       "type": "n8n-nodes-base.httpRequest",
@@ -123,8 +117,14 @@
       "executeOnce": true,
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "notes": "Upserts resend_email_id -> campaign_id/email/subject into campaign_sends (PK = resend_email_id; Prefer: resolution=merge-duplicates makes the POST an upsert). executeOnce=true + $input.all() bulk-inserts every row from \"Record Send Ids\" in one request instead of one call per recipient. onError=continueRegularOutput + alwaysOutputData=true so a failed or empty attribution write can never stop \"Mark Complete\" from running. Replace YOUR_HUB_SERVICE_ROLE_KEY with the Hub Supabase service_role key (same convention as the \"Mark Complete\" node below).",
-      "notesInFlow": true
+      "notes": "Upserts resend_email_id -> campaign_id/email/subject into campaign_sends (PK = resend_email_id; Prefer: resolution=merge-duplicates makes the POST an upsert). executeOnce=true + $input.all() bulk-inserts every row from \"Record Send Ids\" in one request instead of one call per recipient. onError=continueRegularOutput + alwaysOutputData=true so a failed or empty attribution write can never stop \"Mark Complete\" from running. Authenticates with the existing \"Sproutify Trellis\" Supabase credential via Predefined Credential Type (supabaseApi), which injects apikey + Authorization: Bearer automatically - no key pasted into this workflow.",
+      "notesInFlow": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
     },
     {
       "parameters": {
@@ -133,14 +133,6 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "apikey",
-              "value": "YOUR_HUB_SERVICE_ROLE_KEY"
-            },
-            {
-              "name": "Authorization",
-              "value": "Bearer YOUR_HUB_SERVICE_ROLE_KEY"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -153,7 +145,9 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ status: 'completed', updated_at: new Date().toISOString() }) }}"
+        "jsonBody": "={{ JSON.stringify({ status: 'completed', updated_at: new Date().toISOString() }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
       },
       "name": "Mark Complete",
       "type": "n8n-nodes-base.httpRequest",
@@ -161,11 +155,17 @@
       "position": [
         1620,
         300
-      ]
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
     },
     {
       "parameters": {
-        "content": "## Trellis: Campaign Dispatch Gateway (Resend Batch)\n\n**What changed:** Trellis now sends the **exact segment audience** it built (already deduped by email, consent-filtered, narrowed to the selected segments/branches) plus a personalizable HTML template. This workflow chunks that audience into groups of **100** and sends each via Resend's **`/emails/batch`** endpoint \u2014 one HTTP call per 100 recipients instead of one per person.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-campaign-dispatch`\n\n**Expected POST body (from Trellis CampaignBuilder):**\n```json\n{\n  \"campaign_id\": \"uuid\",\n  \"subject\": \"Spring Sale!\",\n  \"from\": \"ATL Urban Farms <sheree@atlurbanfarms.com>\",\n  \"html_template\": \"<html>... {{first_name}} ... {{unsubscribe_url}} ...</html>\",\n  \"recipients\": [ { \"email\": \"a@x.com\", \"first_name\": \"Ada\" }, ... ],\n  \"recipient_count\": 1234\n}\n```\n\n### FLOW\nWebhook \u2192 **Build Resend Batches** (Code: personalize `{{first_name}}` / `{{unsubscribe_url}}` per recipient, chunk into <=100) \u2192 **Resend Batch Dispatch** (`POST /emails/batch`, runs once per chunk) \u2192 **Record Send Ids** (Code: zips the batch response ids with the chunk's recipients \u2014 see CAMPAIGN ATTRIBUTION below) \u2192 **Save Send Ids** (upserts the mapping into Hub `campaign_sends`) \u2192 **Mark Complete** (PATCH Hub `campaigns` \u2192 completed).\n\n### CAMPAIGN ATTRIBUTION (new)\n`email_events.campaign_id` used to be populated by NOTHING \u2014 Reports matched campaigns by comparing `campaign_subject` strings, so two campaigns sharing a subject line silently merged in the stats. Resend's `/emails/batch` endpoint accepts **no per-message tags or metadata**, so the campaign id can't ride along with the send request itself.\n\nInstead: `/emails/batch` returns `{ \"data\": [ { \"id\": \"...\" }, ... ] }` **in the same order as the request array**. **Record Send Ids** zips those returned ids with the recipients from the matching `Build Resend Batches` chunk (paired via n8n's `itemMatching()`, not raw array position \u2014 see the node's own comments) and **Save Send Ids** upserts `{ resend_email_id, campaign_id, email, subject }` rows into Hub `campaign_sends` (`Prefer: resolution=merge-duplicates`, PK = `resend_email_id`). The `resend-webhook` edge function then looks up `campaign_sends` by `data.email_id` on every inbound event and stamps `email_events.campaign_id` before insert \u2014 exact per-campaign attribution instead of subject-string guessing.\n\nBoth new nodes are wired with `onError: continueRegularOutput` + `alwaysOutputData: true`: if the attribution write fails or a chunk can't be mapped, the campaign send itself is untouched and `Mark Complete` still fires.\n\n**Prerequisite SQL** (already applied on the live Hub `horvjqqifgrzxesuxtfm`; mirrored in `constants.ts` SQL_SCHEMA for the record):\n```sql\nCREATE TABLE IF NOT EXISTS campaign_sends (\n  resend_email_id TEXT PRIMARY KEY,\n  campaign_id UUID,\n  email TEXT NOT NULL,\n  subject TEXT,\n  sent_at TIMESTAMPTZ DEFAULT now()\n);\n-- + indexes on campaign_id/email, RLS enabled, service_role ALL policy,\n-- anon/authenticated SELECT policy + grants (mirrors email_events)\n\nCREATE OR REPLACE VIEW campaign_stats_by_id WITH (security_invoker = true) AS\nSELECT campaign_id, ... FROM email_events WHERE campaign_id IS NOT NULL GROUP BY campaign_id;\n```\n\n### SETUP REQUIRED\n**Resend Batch Dispatch node:**\n- Replace `YOUR_RESEND_API_KEY` with your Resend token (`re_...`). Prefer a **Header Auth credential** over pasting the key.\n- Batching is set to 1 request / 600ms to stay under Resend's default 2 req/s. Raise the interval if you see **429**s, or lower it if your plan allows more.\n\n**Save Send Ids node:**\n- Replace `YOUR_HUB_SERVICE_ROLE_KEY` (both headers) with the Hub Supabase service_role key \u2014 same convention as **Mark Complete** below.\n\n**Mark Complete node:**\n- Replace `YOUR_HUB_SERVICE_ROLE_KEY` (both headers) with the Hub Supabase service_role key. Skip/disable this node if you only track campaigns in localStorage.\n\n### NOTES\n- **No audience RPC anymore.** The old `resolve_newsletter_audience` shortcut (blasted ALL active ATL subscribers, ignoring your segments) is gone \u2014 the audience is now whatever Trellis targeted. If you ever want a server-resolved fallback, add a branch that calls a Hub audience RPC when `recipients` is empty.\n- **Batch limits:** `/emails/batch` accepts up to 100 messages/call and does not support per-message `attachments`, `tags`, `metadata`, or `scheduled_at` \u2014 that's exactly why campaign attribution is done out-of-band via the id-mapping chain above (`Record Send Ids` \u2192 `Save Send Ids` \u2192 `campaign_sends`) instead of tagging each message.\n- **Empty audience:** if `recipients` is empty, the Code node emits nothing and no email is sent (campaign is not marked complete).",
+        "content": "## Trellis: Campaign Dispatch Gateway (Resend Batch)\n\n**What changed:** Trellis now sends the **exact segment audience** it built (already deduped by email, consent-filtered, narrowed to the selected segments/branches) plus a personalizable HTML template. This workflow chunks that audience into groups of **100** and sends each via Resend's **`/emails/batch`** endpoint \u2014 one HTTP call per 100 recipients instead of one per person.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/trellis-campaign-dispatch`\n\n**Expected POST body (from Trellis CampaignBuilder):**\n```json\n{\n  \"campaign_id\": \"uuid\",\n  \"subject\": \"Spring Sale!\",\n  \"from\": \"ATL Urban Farms <sheree@atlurbanfarms.com>\",\n  \"html_template\": \"<html>... {{first_name}} ... {{unsubscribe_url}} ...</html>\",\n  \"recipients\": [ { \"email\": \"a@x.com\", \"first_name\": \"Ada\" }, ... ],\n  \"recipient_count\": 1234\n}\n```\n\n### FLOW\nWebhook \u2192 **Build Resend Batches** (Code: personalize `{{first_name}}` / `{{unsubscribe_url}}` per recipient, chunk into <=100) \u2192 **Resend Batch Dispatch** (`POST /emails/batch`, runs once per chunk) \u2192 **Record Send Ids** (Code: zips the batch response ids with the chunk's recipients \u2014 see CAMPAIGN ATTRIBUTION below) \u2192 **Save Send Ids** (upserts the mapping into Hub `campaign_sends`) \u2192 **Mark Complete** (PATCH Hub `campaigns` \u2192 completed).\n\n### CAMPAIGN ATTRIBUTION (new)\n`email_events.campaign_id` used to be populated by NOTHING \u2014 Reports matched campaigns by comparing `campaign_subject` strings, so two campaigns sharing a subject line silently merged in the stats. Resend's `/emails/batch` endpoint accepts **no per-message tags or metadata**, so the campaign id can't ride along with the send request itself.\n\nInstead: `/emails/batch` returns `{ \"data\": [ { \"id\": \"...\" }, ... ] }` **in the same order as the request array**. **Record Send Ids** zips those returned ids with the recipients from the matching `Build Resend Batches` chunk (paired via n8n's `itemMatching()`, not raw array position \u2014 see the node's own comments) and **Save Send Ids** upserts `{ resend_email_id, campaign_id, email, subject }` rows into Hub `campaign_sends` (`Prefer: resolution=merge-duplicates`, PK = `resend_email_id`). The `resend-webhook` edge function then looks up `campaign_sends` by `data.email_id` on every inbound event and stamps `email_events.campaign_id` before insert \u2014 exact per-campaign attribution instead of subject-string guessing.\n\nBoth new nodes are wired with `onError: continueRegularOutput` + `alwaysOutputData: true`: if the attribution write fails or a chunk can't be mapped, the campaign send itself is untouched and `Mark Complete` still fires.\n\n**Prerequisite SQL** (already applied on the live Hub `horvjqqifgrzxesuxtfm`; mirrored in `constants.ts` SQL_SCHEMA for the record):\n```sql\nCREATE TABLE IF NOT EXISTS campaign_sends (\n  resend_email_id TEXT PRIMARY KEY,\n  campaign_id UUID,\n  email TEXT NOT NULL,\n  subject TEXT,\n  sent_at TIMESTAMPTZ DEFAULT now()\n);\n-- + indexes on campaign_id/email, RLS enabled, service_role ALL policy,\n-- anon/authenticated SELECT policy + grants (mirrors email_events)\n\nCREATE OR REPLACE VIEW campaign_stats_by_id WITH (security_invoker = true) AS\nSELECT campaign_id, ... FROM email_events WHERE campaign_id IS NOT NULL GROUP BY campaign_id;\n```\n\n### SETUP REQUIRED\n**Resend Batch Dispatch node:**\n- Replace `YOUR_RESEND_API_KEY` with your Resend token (`re_...`). Prefer a **Header Auth credential** over pasting the key.\n- Batching is set to 1 request / 600ms to stay under Resend's default 2 req/s. Raise the interval if you see **429**s, or lower it if your plan allows more.\n\n**Save Send Ids node:**\n- Replace the Sproutify Trellis Supabase credential (both headers) with the Hub Supabase service_role key \u2014 same convention as **Mark Complete** below.\n\n**Mark Complete node:**\n- Uses the existing **Sproutify Trellis** Supabase credential (`supabaseApi`) via *Predefined Credential Type* - no key to paste. If `supabaseApi` is missing from the HTTP Request node's credential dropdown on your n8n version, fall back to a **Header Auth** credential supplying `apikey` + `Authorization: Bearer <service_role>`. Skip/disable this node if you only track campaigns in localStorage.\n\n### NOTES\n- **No audience RPC anymore.** The old `resolve_newsletter_audience` shortcut (blasted ALL active ATL subscribers, ignoring your segments) is gone \u2014 the audience is now whatever Trellis targeted. If you ever want a server-resolved fallback, add a branch that calls a Hub audience RPC when `recipients` is empty.\n- **Batch limits:** `/emails/batch` accepts up to 100 messages/call and does not support per-message `attachments`, `tags`, `metadata`, or `scheduled_at` \u2014 that's exactly why campaign attribution is done out-of-band via the id-mapping chain above (`Record Send Ids` \u2192 `Save Send Ids` \u2192 `campaign_sends`) instead of tagging each message.\n- **Empty audience:** if `recipients` is empty, the Code node emits nothing and no email is sent (campaign is not marked complete).",
         "width": 620,
         "height": 1520
       },
