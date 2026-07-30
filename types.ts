@@ -647,6 +647,9 @@ export interface Branch {
   tagline?: string;
   tone: string;
   brand_keywords?: string[];
+  // Standing call to action appended to every generated social caption for this
+  // brand — Instagram captions can't hold links, so this carries "link in bio".
+  default_cta?: string;
   website_url?: string;
   contact_email?: string;
   description?: string;

@@ -1027,6 +1027,14 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
                     <p className="mt-1 text-xs text-slate-400">Comma-separated keywords</p>
                   </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Social Call To Action</label>
+                    <input type="text" value={editedBranch.default_cta || ''}
+                      onChange={(e) => setEditedBranch({ ...editedBranch, default_cta: e.target.value })}
+                      placeholder="Rejoice — free to try. Link in bio."
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+                    <p className="mt-1 text-xs text-slate-400">Ends every generated caption for this brand. Instagram captions can't hold links, so this is where "link in bio" goes.</p>
+                  </div>
                 </div>
               </div>
 
