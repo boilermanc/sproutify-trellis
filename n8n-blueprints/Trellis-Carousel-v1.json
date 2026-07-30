@@ -501,6 +501,14 @@
             {
               "fieldId": "updated_at",
               "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "image_model",
+              "fieldValue": "gemini-3.1-flash-image"
+            },
+            {
+              "fieldId": "text_model",
+              "fieldValue": "gemini-flash-latest"
             }
           ]
         }
@@ -519,7 +527,7 @@
           "name": "Sproutify Trellis"
         }
       },
-      "notes": "Terminal state for this workflow. media_urls is written as a JSON.stringify'd array via the Supabase node - after first run, confirm in the table editor that the column stores a real JSON array and not a double-encoded string; if PostgREST stores it as a scalar string, switch this field to a raw HTTP PATCH node with Content-Type: application/json instead. CONFIRMED on live runs: PostgREST stores this JSON.stringify'd value as a jsonb *string*, not a native array/object (jsonb_typeof = 'string'). The app normalizes it on read via parseJsonbField() in services/videoAdService.ts. Do NOT remove the JSON.stringify without updating that normalizer - and note jsonb_array_length / the GIN index cannot be used while it is stored this way."
+      "notes": "Terminal state for this workflow. media_urls is written as a JSON.stringify'd array via the Supabase node - after first run, confirm in the table editor that the column stores a real JSON array and not a double-encoded string; if PostgREST stores it as a scalar string, switch this field to a raw HTTP PATCH node with Content-Type: application/json instead. CONFIRMED on live runs: PostgREST stores this JSON.stringify'd value as a jsonb *string*, not a native array/object (jsonb_typeof = 'string'). The app normalizes it on read via parseJsonbField() in services/videoAdService.ts. Do NOT remove the JSON.stringify without updating that normalizer - and note jsonb_array_length / the GIN index cannot be used while it is stored this way. Records image_model/text_model for provenance - hardcoded to match the model ids this workflow actually calls (gemini-3.1-flash-image / gemini-flash-latest); update both together if a model node changes."
     },
     {
       "parameters": {

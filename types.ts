@@ -1010,6 +1010,10 @@ export interface VideoAdJob {
   // the headline is composited on top in the actual brand font.
   overlay_config?: TextOverlayConfig;
   composite_url?: string;
+  // Which models actually produced this creative — provenance for comparing
+  // performance across model changes.
+  image_model?: string;
+  text_model?: string;
 }
 
 // Editable text layer drawn over a generated image. Positions are fractions of
