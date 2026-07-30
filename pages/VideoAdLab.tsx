@@ -463,6 +463,34 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
         });
       if (calError) throw new Error(calError.message);
 
+      // The calendar row above is display-only. This is what actually gets
+      // published: the S1 worker drains scheduled_social_posts every 10 min.
+      // Videos aren't supported by the publish path yet, so only queue images.
+      if (job.format === 'static' || job.format === 'carousel') {
+        const caption = getCaptionDraft(job).trim() || job.caption || '';
+        const mediaUrls = job.format === 'carousel' && job.media_urls?.length
+          ? job.media_urls
+          : [publishableImageUrl(job)].filter(Boolean);
+        const branchUuid = branchIdForSlug(job.branch);
+
+        if (!caption) throw new Error('Add a caption before scheduling — it publishes exactly as written.');
+        if (!mediaUrls.length) throw new Error('No media to schedule.');
+
+        const { error: queueError } = await supabase
+          .from('scheduled_social_posts')
+          .insert({
+            branch_id: branchUuid,
+            branch_slug: job.branch,
+            platform: 'instagram',
+            caption,
+            media_type: job.format === 'carousel' ? 'carousel' : 'image',
+            media_urls: mediaUrls,
+            scheduled_for: scheduledDate.toISOString(),
+            source: 'creative_studio',
+          });
+        if (queueError) throw new Error(queueError.message);
+      }
+
       // Update video_ad_jobs row
       const { error: jobError } = await supabase
         .from('video_ad_jobs')
@@ -480,7 +508,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
       const label = scheduledDate.toLocaleString('en-US', {
         month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
       });
-      addToast(`Video scheduled for ${label}`, 'success');
+      addToast(`${formatLabel(job.format)} scheduled for ${label}`, 'success');
       setSchedulingJobId(null);
       setScheduleDateTime('');
     } catch (err: any) {
@@ -488,7 +516,9 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     } finally {
       setIsScheduling(false);
     }
-  }, [scheduleDateTime, addToast]);
+    // captionDrafts/branchContext are read via getCaptionDraft/branchIdForSlug —
+    // without them a stale closure would queue the pre-edit caption.
+  }, [scheduleDateTime, addToast, captionDrafts, branchContext]);
 
   // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
