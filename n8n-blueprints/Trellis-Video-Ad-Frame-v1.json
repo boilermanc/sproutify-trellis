@@ -1,0 +1,656 @@
+{
+  "name": "Trellis Video Ad Frame v1",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Trellis Video Ad \u2014 FRAME (v1)\n\nGenerates the approved-before-render first frame.\n\n**In:** POST /webhook/trellis-video-ad-frame\n```\n{ job_id, branch, product_description,\n  target_segment, tone, cta, setting,\n  actor_style, actor_gender,\n  video_duration, aspect_ratio,\n  pipeline, platform,\n  regenerate?: bool }\n```\n**Out:** job row -> status `awaiting_approval`, `frame_url` set.\n\nRender is a SEPARATE workflow, fired by the Approve button.",
+        "height": 460,
+        "width": 460,
+        "color": 4
+      },
+      "id": "sticky-81078",
+      "name": "Sticky Note 717",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Why a frame first\nText-to-video invents the scene: the subject fades in, the background drifts, the model burns seconds on dead air.\n\nGenerating an approved still and animating THAT removes the model's freedom to improvise.",
+        "height": 240,
+        "width": 460,
+        "color": 7
+      },
+      "id": "sticky-71235",
+      "name": "Sticky Note 63",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-video-ad-frame",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        0
+      ],
+      "webhookId": "trellis-video-ad-frame"
+    },
+    {
+      "parameters": {
+        "tableId": "video_ad_jobs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $json.body.job_id }}"
+            },
+            {
+              "fieldId": "branch",
+              "fieldValue": "={{ $json.body.branch }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "queued"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "5"
+            },
+            {
+              "fieldId": "script",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "voice_id",
+              "fieldValue": "={{ $json.body.voice_id || '21m00Tcm4TlvDq8ikWAM' }}"
+            },
+            {
+              "fieldId": "voice_style",
+              "fieldValue": "={{ $json.body.voice_style || 'friendly' }}"
+            },
+            {
+              "fieldId": "target_segment",
+              "fieldValue": "={{ $json.body.target_segment || '' }}"
+            },
+            {
+              "fieldId": "actor_prompt",
+              "fieldValue": "={{ ($json.body.actor_style || 'professional') + ' ' + ($json.body.actor_gender || 'female') }}"
+            },
+            {
+              "fieldId": "actor_gender",
+              "fieldValue": "={{ $json.body.actor_gender || 'female' }}"
+            },
+            {
+              "fieldId": "actor_style",
+              "fieldValue": "={{ $json.body.actor_style || 'professional' }}"
+            },
+            {
+              "fieldId": "setting",
+              "fieldValue": "={{ $json.body.setting || '' }}"
+            },
+            {
+              "fieldId": "aspect_ratio",
+              "fieldValue": "={{ $json.body.aspect_ratio || '9:16' }}"
+            },
+            {
+              "fieldId": "duration_seconds",
+              "fieldValue": "={{ (Number($json.body.video_duration) || 5) <= 5 ? 5 : 10 }}"
+            },
+            {
+              "fieldId": "pipeline",
+              "fieldValue": "={{ $json.body.pipeline || 'talking_head' }}"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "={{ $json.body.platform || 'general' }}"
+            }
+          ]
+        }
+      },
+      "id": "upsert-job-record",
+      "name": "Upsert Job Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        120,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Insert on first run. On regenerate the row exists and this 409s harmlessly - onError lets it pass through."
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "video_ad_jobs",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}"
+      },
+      "id": "read-job",
+      "name": "Read Job",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        340,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Authoritative read - gives us frame_attempt whether this is a first run or a regenerate."
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "brand_profiles",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "=branch=like.{{ $('Webhook').item.json.body.branch }}*"
+      },
+      "id": "lookup-brand-profile",
+      "name": "Lookup Brand Profile",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').item.json.body;\nconst brandItem = $('Lookup Brand Profile').all()[0];\nconst brand = brandItem ? brandItem.json : {};\n\nconst brandName = brand.brand_name || body.branch || 'the brand';\nconst tone = body.tone || brand.default_tone || 'friendly';\nconst pron = brand.pronunciation_guide || '';\nconst pipeline = body.pipeline || 'talking_head';\n\n// Duration: Kling accepts 5 or 10 only.\nconst dur = (Number(body.video_duration) || 5) <= 5 ? 5 : 10;\n\n// Script length must FIT the clip. ~2.2 wps, and leave ~1s of head/tail room.\nconst maxWords = Math.max(6, Math.floor((dur - 1) * 2.2));\n\nconst aspect = body.aspect_ratio || '9:16';\nconst gender = body.actor_gender || 'female';\nconst style = body.actor_style || 'professional';\nconst setting = body.setting || brand.default_setting || 'a clean, modern, well-lit interior';\n\nconst hook = body.platform === 'tiktok'\n  ? 'Write a HOOK-FIRST viral vertical video script that grabs attention in the first 2 seconds. Punchy, conversational, fast-paced.'\n  : 'Write a performance-marketing video ad script.';\n\nconst script_prompt = `${hook} Brand: ${brandName}. Product: ${body.product_description || ''}. Audience: ${body.target_segment || 'general audience'}. Tone: ${tone}. Call to action: ${body.cta || 'Learn more'}. Pronunciation and brand rules: ${pron}. Write ONLY the spoken words - no stage directions, no parentheticals like (smiling), no narrator labels. Maximum ${maxWords} words. Conversational, natural.`;\n\n// ---- FIRST-FRAME IMAGE PROMPT ----\n// This describes a STILL PHOTOGRAPH. No motion, no speech, no narrative.\nconst frameBase = pipeline === 'full_scene'\n  ? `A single still photograph. Vertical ${aspect} composition. Product-forward marketing photograph for ${brandName}. Setting: ${setting}. The product is the clear focal point, positioned in the centre third of the frame.`\n  : `A single still photograph. Vertical ${aspect} composition. Medium-close portrait of one ${style} ${gender} person, alone in frame, already standing in place and facing the camera directly. Setting: ${setting}. Mouth closed, neutral-warm expression, eyes to camera. Head and shoulders occupy the centre of the frame with clear headroom above.`;\n\nconst frameStyle = `Photorealistic. Natural professional lighting, soft key from camera left. Shallow depth of field. Realistic skin texture and film grain. Colour palette consistent with ${brandName}. No text, no logos, no watermarks, no captions, no borders, no collage, no split screen. Only one person in frame. Sharp focus, correct anatomy, natural hands.`;\n\nconst frame_prompt = `${frameBase} ${frameStyle}`;\n\nreturn [{ json: {\n  script_prompt,\n  frame_prompt,\n  brand_name: brandName,\n  duration: String(dur),\n  pipeline,\n  aspect_ratio: aspect,\n  setting,\n  actor_gender: gender,\n  actor_style: style,\n  job_id: body.job_id,\n  branch: body.branch,\n  is_regenerate: body.regenerate === true,\n} }];"
+      },
+      "id": "prepare-prompt",
+      "name": "Prepare Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Prepare Prompt').item.json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_frame"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "15"
+            },
+            {
+              "fieldId": "frame_prompt",
+              "fieldValue": "={{ $('Prepare Prompt').item.json.frame_prompt }}"
+            }
+          ]
+        }
+      },
+      "id": "update-generating-frame",
+      "name": "Update: Generating Frame",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Prompt').item.json.script_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 500 } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "generate-script-gemini",
+      "name": "Generate Script (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        0
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "gemini-2.0-flash is RETIRED. Using gemini-flash-latest."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Prepare Prompt').item.json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "script",
+              "fieldValue": "={{ $json.candidates[0].content.parts[0].text }}"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "30"
+            }
+          ]
+        }
+      },
+      "id": "save-script",
+      "name": "Save Script",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Prompt').item.json.frame_prompt + ($('Prepare Prompt').item.json.is_regenerate ? ' Vary the composition and lighting from previous attempts while keeping the same subject and setting.' : '') }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: $('Prepare Prompt').item.json.aspect_ratio } } }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "generate-frame-nano-banana",
+      "name": "Generate Frame (Nano Banana)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        0
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Nano Banana 2. Returns inlineData base64 in candidates[].content.parts[]."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nano Banana returns content parts; the image arrives as inlineData base64.\nconst cands = $json.candidates || [];\nlet b64 = null;\nlet mime = 'image/png';\n\nfor (const c of cands) {\n  const parts = (c.content && c.content.parts) || [];\n  for (const p of parts) {\n    const inline = p.inlineData || p.inline_data;\n    if (inline && inline.data) {\n      b64 = inline.data;\n      mime = inline.mimeType || inline.mime_type || mime;\n      break;\n    }\n  }\n  if (b64) break;\n}\n\nif (!b64) {\n  throw new Error('No image returned by Gemini. Raw: ' + JSON.stringify($json).slice(0, 400));\n}\n\nconst jobId = $('Prepare Prompt').item.json.job_id;\nconst attempt = Number($('Read Job').item.json.frame_attempt || 0) + 1;\nconst ext = mime.includes('jpeg') ? 'jpg' : 'png';\n// upsert:false + randomised suffix -> avoids UPDATE RLS policy on Storage\nconst rand = Math.random().toString(36).slice(2, 8);\nconst path = `video-ad-frames/${jobId}/frame-${attempt}-${rand}.${ext}`;\n\nreturn [{\n  json: { storage_path: path, mime, attempt },\n  binary: {\n    data: {\n      data: b64,\n      mimeType: mime,\n      fileName: `frame-${attempt}-${rand}.${ext}`,\n    },\n  },\n}];"
+      },
+      "id": "extract-image",
+      "name": "Extract Image",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/episode-assets/{{ $json.storage_path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.mime }}"
+            },
+            {
+              "name": "x-upsert",
+              "value": "false"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "upload-frame-to-storage",
+      "name": "Upload Frame to Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_STORAGE_CRED",
+          "name": "Supabase Storage (legacy eyJ service role)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "MUST use the legacy eyJ... JWT service role key. The sb_secret_... format breaks Storage uploads silently.\nupsert:false + randomised filename avoids the UPDATE RLS policy."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Prepare Prompt').item.json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "awaiting_approval"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "50"
+            },
+            {
+              "fieldId": "frame_url",
+              "fieldValue": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/{{ $('Extract Image').item.json.storage_path }}"
+            },
+            {
+              "fieldId": "frame_attempt",
+              "fieldValue": "={{ $('Extract Image').item.json.attempt }}"
+            },
+            {
+              "fieldId": "frame_approved_at",
+              "fieldValue": "={{ null }}"
+            },
+            {
+              "fieldId": "cost_estimate",
+              "fieldValue": "={{ Number(($('Read Job').item.json.cost_estimate || 0)) + 0.045 }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "update-awaiting-approval",
+      "name": "Update: Awaiting Approval",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "frame_approved_at is explicitly nulled - a regenerate must invalidate any prior approval."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Generation failed').toString().slice(0, 500) }}"
+            }
+          ]
+        }
+      },
+      "id": "mark-failed",
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        320
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Upsert Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Job Record": {
+      "main": [
+        [
+          {
+            "node": "Read Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Job": {
+      "main": [
+        [
+          {
+            "node": "Lookup Brand Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Brand Profile": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt": {
+      "main": [
+        [
+          {
+            "node": "Update: Generating Frame",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Generating Frame": {
+      "main": [
+        [
+          {
+            "node": "Generate Script (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Script (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Save Script",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Script": {
+      "main": [
+        [
+          {
+            "node": "Generate Frame (Nano Banana)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Frame (Nano Banana)": {
+      "main": [
+        [
+          {
+            "node": "Extract Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Image": {
+      "main": [
+        [
+          {
+            "node": "Upload Frame to Storage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Frame to Storage": {
+      "main": [
+        [
+          {
+            "node": "Update: Awaiting Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

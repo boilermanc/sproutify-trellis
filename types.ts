@@ -940,7 +940,9 @@ export interface MarketingGenerationLog {
 
 // ─── Video Ad Lab ───
 
-export type VideoAdStatus = 'queued' | 'generating_face' | 'generating_audio' | 'generating_video' | 'completed' | 'failed' | 'cancelled';
+export type VideoAdStatus = 'queued' | 'generating_script' | 'generating_frame' | 'awaiting_approval' | 'rendering' | 'generating_face' | 'generating_audio' | 'generating_video' | 'completed' | 'failed' | 'cancelled' | 'publishing' | 'published';
+
+export type VideoAdFormat = 'video' | 'static' | 'carousel';
 
 export interface VideoAdConfig {
   branch: string;
@@ -981,6 +983,18 @@ export interface VideoAdJob {
   created_by: string | null;
   publish_status: string | null;
   scheduled_for: string | null;
+  format?: VideoAdFormat;
+  media_urls?: string[];
+  caption?: string;
+  frame_url?: string;
+  frame_prompt?: string;
+  frame_attempt?: number;
+  frame_approved_at?: string;
+  setting?: string;
+  actor_gender?: string;
+  actor_style?: string;
+  aspect_ratio?: string;
+  pipeline?: string;
 }
 
 // ─── Trellis Studio (AI music generation) ───────────────────────────

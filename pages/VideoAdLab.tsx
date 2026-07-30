@@ -1,19 +1,24 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, BranchContext } from '../types';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
 import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
 } from '../constants';
-import { submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob } from '../services/videoAdService';
+import {
+  submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob,
+  submitStaticAdJob, submitCarouselJob, approveJob, approveAndRenderVideo,
+} from '../services/videoAdService';
+import { publishToSocial } from '../services/socialService';
 import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
+  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -68,13 +73,31 @@ interface VideoAdLabProps {
 const TERMINAL_STATUSES: VideoAdStatus[] = ['completed', 'failed', 'cancelled'];
 const BRANCH_KEYS = Object.keys(BRANCH_DISPLAY_NAMES);
 
-const STEPS = [
-  { num: 1, label: 'Message', icon: FileText },
-  { num: 2, label: 'Look & Feel', icon: Palette },
-  { num: 3, label: 'Review', icon: Eye },
+// Static/Carousel formats don't use the wider video aspect ratio set —
+// these are the ratios the n8n image pipelines actually support.
+const STATIC_ASPECT_RATIOS = [
+  { value: '1:1', label: '1:1 Square' },
+  { value: '4:5', label: '4:5 Portrait' },
+  { value: '9:16', label: '9:16 Story' },
 ] as const;
 
+const CAROUSEL_ASPECT_RATIOS = [
+  { value: '1:1', label: '1:1 Square' },
+  { value: '4:5', label: '4:5 Portrait' },
+] as const;
+
+const SLIDE_COUNT_OPTIONS = [3, 4, 5, 6, 7] as const;
+
+const FORMAT_OPTIONS: { value: VideoAdFormat; label: string; description: string; hint: string; icon: React.ElementType }[] = [
+  { value: 'video', label: 'Video', description: 'AI actor or full scene with voiceover', hint: 'Premium · ~minutes', icon: Film },
+  { value: 'static', label: 'Static Image', description: 'Single AI-generated ad image', hint: 'Seconds · pennies', icon: ImageIcon },
+  { value: 'carousel', label: 'Carousel', description: '3–7 swipeable slides', hint: '3–7 slides · best IG engagement', icon: Layers },
+];
+
+type WizardStep = 0 | 1 | 2 | 3;
+
 type StatusFilter = 'all' | 'active' | 'completed' | 'failed';
+type FormatFilter = 'all' | VideoAdFormat;
 
 const VOICE_NAMES: Record<string, string> = {
   '21m00Tcm4TlvDq8ikWAM': 'Rachel',
@@ -82,6 +105,26 @@ const VOICE_NAMES: Record<string, string> = {
   '2EiwWnXFnvU5JabPnv8n': 'Clyde',
   'AZnzlk1XvdvUeBnXmlld': 'Domi',
 };
+
+const formatLabel = (fmt?: VideoAdFormat): string =>
+  fmt === 'static' ? 'Static' : fmt === 'carousel' ? 'Carousel' : 'Video';
+
+const formatBadgeClasses = (fmt?: VideoAdFormat): string =>
+  fmt === 'static' ? 'bg-sky-100 text-sky-600' :
+  fmt === 'carousel' ? 'bg-violet-100 text-violet-600' :
+  'bg-indigo-100 text-indigo-600';
+
+const FormatIcon: React.FC<{ format?: VideoAdFormat; size?: number; className?: string }> = ({ format, size = 10, className }) => {
+  const Icon = format === 'static' ? ImageIcon : format === 'carousel' ? Layers : Film;
+  return <Icon size={size} className={className} />;
+};
+
+const statusChipClasses = (status: VideoAdStatus): string =>
+  status === 'failed' ? 'bg-rose-50 text-rose-500' :
+  status === 'cancelled' ? 'bg-slate-100 text-slate-400' :
+  status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
+  status === 'awaiting_approval' ? 'bg-amber-100 text-amber-700 animate-pulse' :
+  'bg-amber-50 text-amber-600';
 
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext }) => {
@@ -96,12 +139,32 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // Prefer the real branch name for display; fall back to the slug formatter.
   const branchName = (slug: string) =>
     branchContext?.allBranches.find(b => b.slug === slug)?.name || formatBranchName(slug);
+  // publishToSocial needs the branch UUID, not the slug used elsewhere in this page.
+  const branchIdForSlug = (slug: string) =>
+    branchContext?.allBranches.find(b => b.slug === slug)?.id || slug;
 
-  // ── Wizard step ──
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  // ── Wizard step & format ──
+  const [step, setStep] = useState<WizardStep>(0);
+  const [format, setFormat] = useState<VideoAdFormat>('video');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // ── Form fields ──
+  const STEPS = useMemo(() => {
+    if (format === 'video') {
+      return [
+        { num: 0 as WizardStep, label: 'Format', icon: Sliders },
+        { num: 1 as WizardStep, label: 'Message', icon: FileText },
+        { num: 2 as WizardStep, label: 'Look & Feel', icon: Palette },
+        { num: 3 as WizardStep, label: 'Review', icon: Eye },
+      ];
+    }
+    return [
+      { num: 0 as WizardStep, label: 'Format', icon: Sliders },
+      { num: 1 as WizardStep, label: format === 'static' ? 'Message' : 'Topic', icon: FileText },
+      { num: 3 as WizardStep, label: 'Review', icon: Eye },
+    ];
+  }, [format]);
+
+  // ── Form fields (shared across formats where sensible) ──
   const [branch, setBranch] = useState('');
   // Default to the first real branch once branch options are available.
   useEffect(() => {
@@ -122,6 +185,18 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [mood, setMood] = useState<string>(VIDEO_MOODS[0]);
   const [customVisualNotes, setCustomVisualNotes] = useState('');
 
+  // ── Static / carousel specific fields ──
+  const [staticMessage, setStaticMessage] = useState('');
+  const [carouselTopic, setCarouselTopic] = useState('');
+  const [slideCount, setSlideCount] = useState<number>(5);
+  const [styleNotes, setStyleNotes] = useState('');
+
+  // Reset aspect ratio to a sensible default whenever the format changes
+  // (the user can still override it on the config step).
+  useEffect(() => {
+    setAspectRatio(format === 'video' ? '9:16' : '1:1');
+  }, [format]);
+
   // ── Script & template state ──
   const [generatedScript, setGeneratedScript] = useState('');
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
@@ -135,8 +210,18 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── Approval / caption state ──
+  const [approvingJobId, setApprovingJobId] = useState<string | null>(null);
+  const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
+  const getCaptionDraft = (job: VideoAdJob) => captionDrafts[job.id] ?? job.caption ?? '';
+
+  // ── Publish state ──
+  const [publishDraftJobId, setPublishDraftJobId] = useState<string | null>(null);
+  const [publishingJobId, setPublishingJobId] = useState<string | null>(null);
+
   // ── Video Library state ──
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [formatFilter, setFormatFilter] = useState<FormatFilter>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
@@ -223,9 +308,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
     setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
     if (updatedJob.status === 'completed') {
-      addToast(`Video ad "${updatedJob.id.slice(0, 8)}..." completed!`, 'success');
+      addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." completed!`, 'success');
+    } else if (updatedJob.status === 'awaiting_approval') {
+      addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." is ready for review`, 'info');
     } else if (updatedJob.status === 'failed') {
-      addToast(`Video ad "${updatedJob.id.slice(0, 8)}..." failed: ${updatedJob.error_message || 'Unknown error'}`, 'error');
+      addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." failed: ${updatedJob.error_message || 'Unknown error'}`, 'error');
     }
     if (TERMINAL_STATUSES.includes(updatedJob.status)) {
       setActiveJobIds(prev => prev.filter(id => id !== updatedJob.id));
@@ -252,11 +339,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Filtered jobs ──
   const filteredJobs = useMemo(() => {
-    if (statusFilter === 'all') return jobs;
-    if (statusFilter === 'active') return jobs.filter(j => !TERMINAL_STATUSES.includes(j.status));
-    if (statusFilter === 'completed') return jobs.filter(j => j.status === 'completed');
-    return jobs.filter(j => j.status === 'failed' || j.status === 'cancelled');
-  }, [jobs, statusFilter]);
+    let list = jobs;
+    if (statusFilter === 'active') list = list.filter(j => !TERMINAL_STATUSES.includes(j.status));
+    else if (statusFilter === 'completed') list = list.filter(j => j.status === 'completed');
+    else if (statusFilter === 'failed') list = list.filter(j => j.status === 'failed' || j.status === 'cancelled');
+    if (formatFilter !== 'all') list = list.filter(j => (j.format || 'video') === formatFilter);
+    return list;
+  }, [jobs, statusFilter, formatFilter]);
 
   // ── Filter counts ──
   const filterCounts = useMemo(() => ({
@@ -266,6 +355,19 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     failed: jobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length,
   }), [jobs]);
 
+  const formatCounts = useMemo(() => ({
+    all: jobs.length,
+    video: jobs.filter(j => (j.format || 'video') === 'video').length,
+    static: jobs.filter(j => j.format === 'static').length,
+    carousel: jobs.filter(j => j.format === 'carousel').length,
+  }), [jobs]);
+
+  // ── Jobs awaiting review ──
+  const awaitingApprovalJobs = useMemo(
+    () => jobs.filter(j => j.status === 'awaiting_approval'),
+    [jobs],
+  );
+
   // ── Pagination ──
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE));
   const paginatedJobs = useMemo(() => {
@@ -274,7 +376,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   }, [filteredJobs, currentPage]);
 
   // Reset to page 1 when filter changes
-  useEffect(() => { setCurrentPage(1); }, [statusFilter]);
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, formatFilter]);
 
   // ── Apply template ──
   const applyTemplate = (templateId: string | null) => {
@@ -333,7 +435,7 @@ STRICT RULES:
     }
   };
 
-  // ── Submit ──
+  // ── Submit: Video ──
   const handleSubmit = async () => {
     if (!generatedScript || isSubmitting) return;
     setIsSubmitting(true);
@@ -363,7 +465,12 @@ STRICT RULES:
         platform,
       };
 
-      const result = await submitVideoAdJob(config);
+      const result = await submitVideoAdJob({
+        ...config,
+        script: generatedScript,
+        aspect_ratio: aspectRatio,
+        setting,
+      });
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Video generation started!', 'success');
 
@@ -385,6 +492,68 @@ STRICT RULES:
     }
   };
 
+  // ── Submit: Static ──
+  const handleSubmitStatic = async () => {
+    if (!staticMessage.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const result = await submitStaticAdJob({
+        branch,
+        message: staticMessage,
+        target_segment: targetSegment,
+        platform,
+        aspect_ratio: aspectRatio,
+        setting,
+        style_notes: styleNotes,
+      });
+      setActiveJobIds(prev => [...prev, result.job_id]);
+      addToast('Static ad generation started!', 'success');
+
+      const fetched = await getVideoAdJobs();
+      setJobs(fetched);
+
+      setStep(1);
+      setStaticMessage('');
+      setTargetSegment('');
+      setStyleNotes('');
+    } catch (err: any) {
+      addToast(`Submit failed: ${err.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Submit: Carousel ──
+  const handleSubmitCarousel = async () => {
+    if (!carouselTopic.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const result = await submitCarouselJob({
+        branch,
+        topic: carouselTopic,
+        slide_count: slideCount,
+        target_segment: targetSegment,
+        platform,
+        aspect_ratio: aspectRatio,
+        style_notes: styleNotes,
+      });
+      setActiveJobIds(prev => [...prev, result.job_id]);
+      addToast('Carousel generation started!', 'success');
+
+      const fetched = await getVideoAdJobs();
+      setJobs(fetched);
+
+      setStep(1);
+      setCarouselTopic('');
+      setTargetSegment('');
+      setStyleNotes('');
+    } catch (err: any) {
+      addToast(`Submit failed: ${err.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ── Cancel job ──
   const handleCancel = async (jobId: string) => {
     try {
@@ -397,12 +566,85 @@ STRICT RULES:
     }
   };
 
+  // ── Approve (static / carousel) ──
+  const handleApprove = async (job: VideoAdJob) => {
+    setApprovingJobId(job.id);
+    try {
+      await approveJob(job.id);
+      setJobs(prev => prev.map(j => j.id === job.id
+        ? { ...j, status: 'completed' as VideoAdStatus, frame_approved_at: new Date().toISOString() }
+        : j));
+      setActiveJobIds(prev => prev.filter(id => id !== job.id));
+      addToast(`${formatLabel(job.format)} ad approved!`, 'success');
+    } catch (err: any) {
+      addToast(`Approve failed: ${err.message}`, 'error');
+    } finally {
+      setApprovingJobId(null);
+    }
+  };
+
+  // ── Approve & render (video) ──
+  const handleApproveAndRender = async (job: VideoAdJob) => {
+    setApprovingJobId(job.id);
+    try {
+      await approveAndRenderVideo(job.id);
+      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'rendering' as VideoAdStatus } : j));
+      addToast('Frame approved — rendering video now!', 'success');
+    } catch (err: any) {
+      addToast(`Approve & render failed: ${err.message}`, 'error');
+    } finally {
+      setApprovingJobId(null);
+    }
+  };
+
+  // ── Publish approved static/carousel jobs to Instagram ──
+  const handlePublish = async (job: VideoAdJob) => {
+    const caption = getCaptionDraft(job).trim();
+    if (!caption) { addToast('Add a caption before publishing.', 'error'); return; }
+
+    const mediaUrls = job.format === 'carousel' && job.media_urls?.length
+      ? job.media_urls
+      : [job.frame_url || job.media_urls?.[0] || ''].filter(Boolean);
+    const primaryImage = job.frame_url || mediaUrls[0];
+    if (!primaryImage) { addToast('No media to publish.', 'error'); return; }
+
+    setPublishingJobId(job.id);
+    try {
+      const branchId = branchIdForSlug(job.branch);
+      const result = await publishToSocial(
+        branchId,
+        caption,
+        primaryImage,
+        null,
+        undefined,
+        { media_type: job.format === 'carousel' ? 'carousel' : 'image', media_urls: mediaUrls },
+      );
+      if (result.ok) {
+        addToast(`Published to Instagram${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, publish_status: 'published', caption } : j));
+        setPublishDraftJobId(null);
+      } else {
+        addToast(`Publish failed: ${result.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      addToast(`Publish failed: ${err.message}`, 'error');
+    } finally {
+      setPublishingJobId(null);
+    }
+  };
+
   // ── Derived ──
   const wordCount = generatedScript.trim().split(/\s+/).filter(Boolean).length;
   const pipelineCost = PIPELINE_OPTIONS.find(p => p.value === pipeline)?.cost ?? 0.12;
-  const step1Valid = !!(branch && productDescription && cta);
+  const step1Valid = format === 'video'
+    ? !!(branch && productDescription && cta)
+    : format === 'static'
+    ? !!(branch && staticMessage.trim())
+    : !!(branch && carouselTopic.trim());
 
   const advancedChanged = setting !== VIDEO_SETTINGS[0] || lighting !== VIDEO_LIGHTING[0] || mood !== VIDEO_MOODS[0] || customVisualNotes.trim() !== '';
+
+  const currentAspectRatios = format === 'static' ? STATIC_ASPECT_RATIOS : format === 'carousel' ? CAROUSEL_ASPECT_RATIOS : ASPECT_RATIOS;
 
   // ═══════════════════════════════════════════════════════════════════
   // RENDER
@@ -413,27 +655,29 @@ STRICT RULES:
       {/* ── Top Bar ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Film size={24} className="text-emerald-600" />
+          <Sparkles size={24} className="text-emerald-600" />
           <div>
-            <h2 className="text-xl font-black text-slate-800">Video Ad Lab</h2>
-            <p className="text-xs text-slate-400">Create AI-powered video ads</p>
+            <h2 className="text-xl font-black text-slate-800">Creative Studio</h2>
+            <p className="text-xs text-slate-400">Create AI-powered video, static, and carousel ads</p>
           </div>
         </div>
 
-        {/* Template selector */}
-        <div className="flex items-center gap-2">
-          <BookTemplate size={16} className="text-slate-400" />
-          <select
-            value={selectedTemplateId || ''}
-            onChange={e => applyTemplate(e.target.value || null)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-emerald-500"
-          >
-            <option value="">Start fresh</option>
-            {templates.map(t => (
-              <option key={t.id} value={t.id}>{t.template_name}</option>
-            ))}
-          </select>
-        </div>
+        {/* Template selector — video only, since static/carousel don't have Look & Feel settings to template */}
+        {format === 'video' && (
+          <div className="flex items-center gap-2">
+            <BookTemplate size={16} className="text-slate-400" />
+            <select
+              value={selectedTemplateId || ''}
+              onChange={e => applyTemplate(e.target.value || null)}
+              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-emerald-500"
+            >
+              <option value="">Start fresh</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>{t.template_name}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* ── Stepper ── */}
@@ -449,7 +693,7 @@ STRICT RULES:
               )}
               <button
                 onClick={() => {
-                  if (isCompleted) setStep(s.num as 1 | 2 | 3);
+                  if (isCompleted) setStep(s.num);
                 }}
                 className="flex flex-col items-center gap-1.5 cursor-default"
               >
@@ -469,8 +713,41 @@ STRICT RULES:
         })}
       </div>
 
-      {/* ── Step 1: Message ── */}
-      {step === 1 && (
+      {/* ── Step 0: Format picker ── */}
+      {step === 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+          <h3 className="text-lg font-black text-slate-800 mb-1">What kind of ad?</h3>
+          <p className="text-xs text-slate-400 mb-6">Pick a format — this drives what you'll configure next.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {FORMAT_OPTIONS.map(opt => {
+              const Icon = opt.icon;
+              const selected = format === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => { setFormat(opt.value); setStep(1); }}
+                  className={`border-2 rounded-xl p-5 text-left transition ${
+                    selected ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${selected ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    <Icon size={18} />
+                  </div>
+                  <span className={`block text-sm font-black uppercase tracking-tight mb-1 ${selected ? 'text-emerald-700' : 'text-slate-700'}`}>{opt.label}</span>
+                  <p className={`text-xs mb-2 ${selected ? 'text-emerald-600' : 'text-slate-400'}`}>{opt.description}</p>
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${selected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <DollarSign size={10} />{opt.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 1: Message / Topic (format-specific) ── */}
+      {step === 1 && format === 'video' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
           <h3 className="text-lg font-black text-slate-800 mb-1">What's your message?</h3>
           <p className="text-xs text-slate-400 mb-6">Tell us about your product and who you're talking to.</p>
@@ -546,7 +823,13 @@ STRICT RULES:
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end mt-8">
+          <div className="flex justify-between mt-8">
+            <button
+              onClick={() => setStep(0)}
+              className="px-6 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition"
+            >
+              Back
+            </button>
             <button
               onClick={() => setStep(2)}
               disabled={!step1Valid}
@@ -558,8 +841,279 @@ STRICT RULES:
         </div>
       )}
 
-      {/* ── Step 2: Look & Feel ── */}
-      {step === 2 && (
+      {/* ── Step 1: Static config ── */}
+      {step === 1 && format === 'static' && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+          <h3 className="text-lg font-black text-slate-800 mb-1">What's the offer?</h3>
+          <p className="text-xs text-slate-400 mb-6">n8n writes the ad copy for you — just describe the message.</p>
+
+          <div className="space-y-5">
+            {/* Branch */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
+              <select
+                value={branch}
+                onChange={e => setBranch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
+              >
+                {branchOptions.length === 0 && <option value="">No branches available</option>}
+                {branchOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Message */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
+              <textarea
+                value={staticMessage}
+                onChange={e => setStaticMessage(e.target.value)}
+                rows={3}
+                placeholder="e.g. 20% off microgreens starter kits this week only"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+              />
+              <p className="text-xs text-slate-400 mt-1">What should the image say or promote?</p>
+            </div>
+
+            {/* Target Audience */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Target Audience</label>
+              <input
+                value={targetSegment}
+                onChange={e => setTargetSegment(e.target.value)}
+                placeholder="e.g. health-conscious millennials, new gardeners"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
+              />
+            </div>
+
+            {/* Aspect Ratio */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Aspect Ratio</label>
+              <div className="flex gap-2 flex-wrap">
+                {STATIC_ASPECT_RATIOS.map(ar => (
+                  <button
+                    key={ar.value}
+                    onClick={() => setAspectRatio(ar.value)}
+                    className={`border rounded-full px-4 py-1.5 text-sm transition ${
+                      aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {ar.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Setting */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Setting</label>
+              <select
+                value={setting}
+                onChange={e => setSetting(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
+              >
+                {VIDEO_SETTINGS.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Platform */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Platform</label>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'general', label: 'General' },
+                  { value: 'instagram_reels', label: 'Instagram' },
+                  { value: 'tiktok', label: 'TikTok' },
+                  { value: 'youtube_shorts', label: 'YT Shorts' },
+                ] as const).map(p => (
+                  <button
+                    key={p.value}
+                    onClick={() => setPlatform(p.value)}
+                    className={`border rounded-full px-4 py-1.5 text-sm transition ${
+                      platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Style Notes */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Style Notes <span className="normal-case text-slate-300">(optional)</span></label>
+              <textarea
+                value={styleNotes}
+                onChange={e => setStyleNotes(e.target.value)}
+                rows={2}
+                placeholder="e.g. bold typography, bright green accent color"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+              />
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-between mt-8">
+            <button
+              onClick={() => setStep(0)}
+              className="px-6 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStep(3)}
+              disabled={!step1Valid}
+              className="px-6 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 1: Carousel config ── */}
+      {step === 1 && format === 'carousel' && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+          <h3 className="text-lg font-black text-slate-800 mb-1">What's the topic?</h3>
+          <p className="text-xs text-slate-400 mb-6">n8n plans the slide-by-slide story and writes the caption.</p>
+
+          <div className="space-y-5">
+            {/* Branch */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
+              <select
+                value={branch}
+                onChange={e => setBranch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
+              >
+                {branchOptions.length === 0 && <option value="">No branches available</option>}
+                {branchOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Topic */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Topic</label>
+              <textarea
+                value={carouselTopic}
+                onChange={e => setCarouselTopic(e.target.value)}
+                rows={3}
+                placeholder="e.g. 5 reasons to start a microgreens garden this fall"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+              />
+              <p className="text-xs text-slate-400 mt-1">What story should the slides tell?</p>
+            </div>
+
+            {/* Target Audience */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Target Audience</label>
+              <input
+                value={targetSegment}
+                onChange={e => setTargetSegment(e.target.value)}
+                placeholder="e.g. health-conscious millennials, new gardeners"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
+              />
+            </div>
+
+            {/* Slide Count */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Slide Count</label>
+              <div className="flex gap-2 flex-wrap">
+                {SLIDE_COUNT_OPTIONS.map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setSlideCount(n)}
+                    className={`w-10 h-10 rounded-full text-sm font-bold border transition ${
+                      slideCount === n ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-400 mt-1">3–7 slides. IG carousels with more slides tend to see stronger engagement.</p>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Aspect Ratio</label>
+              <div className="flex gap-2 flex-wrap">
+                {CAROUSEL_ASPECT_RATIOS.map(ar => (
+                  <button
+                    key={ar.value}
+                    onClick={() => setAspectRatio(ar.value)}
+                    className={`border rounded-full px-4 py-1.5 text-sm transition ${
+                      aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {ar.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Platform */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Platform</label>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'general', label: 'General' },
+                  { value: 'instagram_reels', label: 'Instagram' },
+                  { value: 'tiktok', label: 'TikTok' },
+                  { value: 'youtube_shorts', label: 'YT Shorts' },
+                ] as const).map(p => (
+                  <button
+                    key={p.value}
+                    onClick={() => setPlatform(p.value)}
+                    className={`border rounded-full px-4 py-1.5 text-sm transition ${
+                      platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Style Notes */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Style Notes <span className="normal-case text-slate-300">(optional)</span></label>
+              <textarea
+                value={styleNotes}
+                onChange={e => setStyleNotes(e.target.value)}
+                rows={2}
+                placeholder="e.g. consistent bold typography across slides, bright green accent color"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+              />
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-between mt-8">
+            <button
+              onClick={() => setStep(0)}
+              className="px-6 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStep(3)}
+              disabled={!step1Valid}
+              className="px-6 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Look & Feel (video only) ── */}
+      {step === 2 && format === 'video' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
           <h3 className="text-lg font-black text-slate-800 mb-1">How should it look?</h3>
           <p className="text-xs text-slate-400 mb-6">Choose the visual style for your video ad.</p>
@@ -765,8 +1319,8 @@ STRICT RULES:
         </div>
       )}
 
-      {/* ── Step 3: Review & Generate ── */}
-      {step === 3 && (
+      {/* ── Step 3: Review & Generate — Video ── */}
+      {step === 3 && format === 'video' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
           <h3 className="text-lg font-black text-slate-800 mb-1">Review & generate</h3>
           <p className="text-xs text-slate-400 mb-6">Check everything looks good, then generate your video.</p>
@@ -906,6 +1460,177 @@ STRICT RULES:
         </div>
       )}
 
+      {/* ── Step 3: Review & Generate — Static / Carousel ── */}
+      {step === 3 && format !== 'video' && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+          <h3 className="text-lg font-black text-slate-800 mb-1">Review & generate</h3>
+          <p className="text-xs text-slate-400 mb-6">
+            {format === 'static'
+              ? "n8n writes the copy and generates the image — check your inputs, then generate."
+              : "n8n plans the slides, writes the caption, and generates each frame — check your inputs, then generate."}
+          </p>
+
+          {/* Summary grid */}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-8">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Branch</span>
+              <p className="text-sm text-slate-700">{branchName(branch)}</p>
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">{format === 'static' ? 'Message' : 'Topic'}</span>
+              <p className="text-sm text-slate-700">
+                {format === 'static'
+                  ? (staticMessage.length > 100 ? `${staticMessage.slice(0, 100)}...` : staticMessage)
+                  : (carouselTopic.length > 100 ? `${carouselTopic.slice(0, 100)}...` : carouselTopic)}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Audience</span>
+              <p className="text-sm text-slate-700">{targetSegment || 'General'}</p>
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Aspect Ratio</span>
+              <p className="text-sm text-slate-700">{currentAspectRatios.find(a => a.value === aspectRatio)?.label || aspectRatio}</p>
+            </div>
+            {format === 'carousel' && (
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Slide Count</span>
+                <p className="text-sm text-slate-700">{slideCount} slides</p>
+              </div>
+            )}
+            {format === 'static' && (
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Setting</span>
+                <p className="text-sm text-slate-700">{setting}</p>
+              </div>
+            )}
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Platform</span>
+              <p className="text-sm text-slate-700">{platform === 'general' ? 'General' : platform}</p>
+            </div>
+            {styleNotes.trim() && (
+              <div className="col-span-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Style Notes</span>
+                <p className="text-sm text-slate-700">{styleNotes}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Cost / speed note */}
+          <div className="flex items-center gap-2 mb-8 text-sm bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">
+            <DollarSign size={16} className="text-emerald-500" />
+            <span className="font-bold text-emerald-700">
+              {format === 'static'
+                ? 'Static images typically generate in seconds for pennies per image.'
+                : `Carousels typically take a minute or two — ${slideCount} slides generated in sequence.`}
+            </span>
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-between">
+            <button
+              onClick={() => setStep(1)}
+              className="px-6 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition"
+            >
+              Back
+            </button>
+            <button
+              onClick={format === 'static' ? handleSubmitStatic : handleSubmitCarousel}
+              disabled={isSubmitting || !step1Valid}
+              className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-sm font-bold rounded-lg hover:from-emerald-700 hover:to-emerald-600 transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg"
+            >
+              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
+              {isSubmitting ? 'Generating...' : format === 'static' ? 'Generate Static Ad' : 'Generate Carousel'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Needs Your Review ── */}
+      {awaitingApprovalJobs.length > 0 && (
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+            </span>
+            <h3 className="text-sm font-black uppercase tracking-tight text-amber-800">
+              Needs Your Review ({awaitingApprovalJobs.length})
+            </h3>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {awaitingApprovalJobs.map(job => {
+              const isStaticOrCarousel = job.format === 'static' || job.format === 'carousel';
+              const isApproving = approvingJobId === job.id;
+              return (
+                <div key={job.id} className="bg-white rounded-xl border border-amber-200 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${formatBadgeClasses(job.format)}`}>
+                      <FormatIcon format={job.format} />
+                      {formatLabel(job.format)}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600">
+                      {formatBranchName(job.branch)}
+                    </span>
+                  </div>
+
+                  {/* Preview */}
+                  {job.format === 'carousel' && job.media_urls?.length ? (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {job.media_urls.map((url, i) => (
+                        <img key={i} src={url} alt={`Slide ${i + 1}`} className="w-20 h-20 rounded-lg object-cover border border-slate-200 flex-shrink-0" />
+                      ))}
+                    </div>
+                  ) : job.frame_url ? (
+                    <img src={job.frame_url} alt="Generated frame" className="w-full h-40 rounded-lg object-cover border border-slate-200" />
+                  ) : (
+                    <div className="w-full h-40 rounded-lg bg-slate-100 flex items-center justify-center">
+                      <FormatIcon format={job.format} size={24} className="text-slate-300" />
+                    </div>
+                  )}
+
+                  {/* Caption (static / carousel) */}
+                  {isStaticOrCarousel && (
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Caption</label>
+                      <textarea
+                        value={getCaptionDraft(job)}
+                        onChange={e => setCaptionDrafts(prev => ({ ...prev, [job.id]: e.target.value }))}
+                        rows={2}
+                        placeholder="Generated caption will appear here — edit as needed"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 transition resize-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* Action */}
+                  {isStaticOrCarousel ? (
+                    <button
+                      onClick={() => handleApprove(job)}
+                      disabled={isApproving}
+                      className="w-full px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
+                    >
+                      {isApproving ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
+                      {isApproving ? 'Approving...' : 'Approve'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleApproveAndRender(job)}
+                      disabled={isApproving}
+                      className="w-full px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
+                    >
+                      {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                      {isApproving ? 'Starting...' : 'Approve & Render'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Video Library ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {/* Header */}
@@ -913,7 +1638,7 @@ STRICT RULES:
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <Video size={20} className="text-emerald-600" />
-              <span className="text-sm font-black text-slate-800 uppercase tracking-tight">Video Library</span>
+              <span className="text-sm font-black text-slate-800 uppercase tracking-tight">Creative Library</span>
               {activeCount > 0 && (
                 <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase tracking-wider animate-pulse">
                   {activeCount} processing
@@ -932,20 +1657,39 @@ STRICT RULES:
           </div>
 
           {/* Filter pills */}
-          <div className="flex gap-2">
-            {(['all', 'active', 'completed', 'failed'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setStatusFilter(f)}
-                className={`px-3 py-1 text-xs font-bold rounded-full transition ${
-                  statusFilter === f
-                    ? 'bg-emerald-500 text-white'
-                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                }`}
-              >
-                {f.charAt(0).toUpperCase() + f.slice(1)} ({filterCounts[f]})
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-2">
+              {(['all', 'active', 'completed', 'failed'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setStatusFilter(f)}
+                  className={`px-3 py-1 text-xs font-bold rounded-full transition ${
+                    statusFilter === f
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)} ({filterCounts[f]})
+                </button>
+              ))}
+            </div>
+            <div className="w-px h-4 bg-slate-200 hidden sm:block" />
+            <div className="flex gap-2">
+              {(['all', 'video', 'static', 'carousel'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFormatFilter(f)}
+                  className={`flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full transition ${
+                    formatFilter === f
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  {f !== 'all' && <FormatIcon format={f as VideoAdFormat} size={11} />}
+                  {f.charAt(0).toUpperCase() + f.slice(1)} ({formatCounts[f]})
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -954,7 +1698,7 @@ STRICT RULES:
           <div className="text-center py-16 text-slate-400">
             <Film size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-bold text-sm">
-              {jobs.length === 0 ? 'No video ads yet' : 'No videos match this filter'}
+              {jobs.length === 0 ? 'No ads yet' : 'No ads match this filter'}
             </p>
             <p className="text-xs mt-1">
               {jobs.length === 0
@@ -968,22 +1712,24 @@ STRICT RULES:
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="w-8 px-2 py-3" />
-                  <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-20">Preview</th>
+                  <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-32">Preview</th>
                   <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3">Details</th>
                   <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-36">Status</th>
                   <th className="text-left text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-28">Created</th>
                   <th className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 px-4 py-3 w-20">Cost</th>
-                  <th className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-28">Actions</th>
+                  <th className="text-right text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-3 w-32">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedJobs.map(job => {
                   const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
-                  const thumbnailSrc = job.thumbnail_url || job.face_image_url;
+                  const thumbnailSrc = job.thumbnail_url || job.frame_url || job.face_image_url;
                   const createdDate = new Date(job.created_at);
                   const isExpanded = expandedJobId === job.id;
                   const completedDate = job.completed_at ? new Date(job.completed_at) : null;
                   const voiceLabel = job.voice_id ? (VOICE_NAMES[job.voice_id] || job.voice_id) : null;
+                  const isPublishable = job.status === 'completed' && (job.format === 'static' || job.format === 'carousel');
+                  const isPublishing = publishingJobId === job.id;
 
                   return (
                     <React.Fragment key={job.id}>
@@ -1001,11 +1747,28 @@ STRICT RULES:
 
                       {/* Thumbnail */}
                       <td className="px-6 py-3">
-                        {thumbnailSrc ? (
+                        {job.format === 'carousel' && job.media_urls?.length ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex -space-x-2">
+                              {job.media_urls.slice(0, 3).map((url, i) => (
+                                <img
+                                  key={i}
+                                  src={url}
+                                  alt=""
+                                  className="w-10 h-10 rounded-lg object-cover border-2 border-white shadow-sm"
+                                  style={{ zIndex: 3 - i }}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-[10px] font-black bg-slate-200 text-slate-600 rounded-full px-1.5 py-0.5">
+                              {job.media_urls.length}
+                            </span>
+                          </div>
+                        ) : thumbnailSrc ? (
                           <img src={thumbnailSrc} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-200" />
                         ) : (
                           <div className="w-14 h-14 rounded-lg bg-slate-100 flex items-center justify-center">
-                            <Film size={18} className="text-slate-300" />
+                            <FormatIcon format={job.format} size={18} className="text-slate-300" />
                           </div>
                         )}
                       </td>
@@ -1013,6 +1776,10 @@ STRICT RULES:
                       {/* Details */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${formatBadgeClasses(job.format)}`}>
+                            <FormatIcon format={job.format} />
+                            {formatLabel(job.format)}
+                          </span>
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600">
                             {formatBranchName(job.branch)}
                           </span>
@@ -1035,9 +1802,9 @@ STRICT RULES:
                             </span>
                           )}
                         </div>
-                        {job.script && (
-                          <p className="text-xs text-slate-500 truncate max-w-xs" title={job.script}>
-                            {job.script.length > 80 ? `${job.script.slice(0, 80)}...` : job.script}
+                        {(job.script || job.caption) && (
+                          <p className="text-xs text-slate-500 truncate max-w-xs" title={job.script || job.caption}>
+                            {(job.script || job.caption || '').length > 80 ? `${(job.script || job.caption)!.slice(0, 80)}...` : (job.script || job.caption)}
                           </p>
                         )}
                         <span className="text-[10px] font-mono text-slate-300">{job.id.slice(0, 12)}</span>
@@ -1045,16 +1812,11 @@ STRICT RULES:
 
                       {/* Status */}
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                          job.status === 'failed' ? 'bg-rose-50 text-rose-500' :
-                          job.status === 'cancelled' ? 'bg-slate-100 text-slate-400' :
-                          job.status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
-                          'bg-amber-50 text-amber-600'
-                        }`}>
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${statusChipClasses(job.status)}`}>
                           {job.status === 'completed' && <Check size={10} />}
                           {currentStage?.label || job.status}
                         </span>
-                        {!TERMINAL_STATUSES.includes(job.status) && (
+                        {!TERMINAL_STATUSES.includes(job.status) && job.status !== 'awaiting_approval' && (
                           <div className="mt-1.5">
                             <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden w-24">
                               <div
@@ -1095,7 +1857,7 @@ STRICT RULES:
                       {/* Actions */}
                       <td className="px-6 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
-                          {job.status === 'completed' && job.video_url && (
+                          {job.status === 'completed' && job.format !== 'static' && job.format !== 'carousel' && job.video_url && (
                             <>
                               <a
                                 href={job.video_url}
@@ -1133,6 +1895,25 @@ STRICT RULES:
                               )}
                             </>
                           )}
+                          {isPublishable && (
+                            job.publish_status === 'published' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold">
+                                <Check size={11} /> Published
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setPublishDraftJobId(prev => prev === job.id ? null : job.id);
+                                  setCaptionDrafts(prev => prev[job.id] !== undefined ? prev : { ...prev, [job.id]: job.caption || '' });
+                                }}
+                                disabled={!job.frame_url && !job.media_urls?.length}
+                                title={!job.frame_url && !job.media_urls?.length ? 'No media to publish' : 'Publish to Instagram'}
+                                className="p-1.5 text-slate-400 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+                              >
+                                <Instagram size={14} />
+                              </button>
+                            )
+                          )}
                           {!TERMINAL_STATUSES.includes(job.status) && (
                             <button
                               onClick={() => handleCancel(job.id)}
@@ -1168,6 +1949,36 @@ STRICT RULES:
                             </button>
                           </div>
                         )}
+                        {/* Inline publish form */}
+                        {publishDraftJobId === job.id && (
+                          <div className="mt-2 w-72 ml-auto text-left bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Caption</label>
+                            <textarea
+                              value={getCaptionDraft(job)}
+                              onChange={e => setCaptionDrafts(prev => ({ ...prev, [job.id]: e.target.value }))}
+                              rows={2}
+                              placeholder="Write a caption before publishing..."
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-emerald-500 transition resize-none"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => setPublishDraftJobId(null)}
+                                className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handlePublish(job)}
+                                disabled={isPublishing || !getCaptionDraft(job).trim()}
+                                title={!getCaptionDraft(job).trim() ? 'Add a caption before publishing' : 'Publish to Instagram'}
+                                className="px-2.5 py-1 text-[11px] font-bold bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                              >
+                                {isPublishing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                {isPublishing ? 'Publishing…' : 'Publish'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
 
@@ -1184,6 +1995,15 @@ STRICT RULES:
                               <div>
                                 <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Branch</span>
                                 <span className="text-sm font-medium text-slate-700">{formatBranchName(job.branch)}</span>
+                              </div>
+
+                              {/* Format */}
+                              <div>
+                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Format</span>
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${formatBadgeClasses(job.format)}`}>
+                                  <FormatIcon format={job.format} />
+                                  {formatLabel(job.format)}
+                                </span>
                               </div>
 
                               {/* Platform */}
@@ -1206,15 +2026,25 @@ STRICT RULES:
                                 )}
                               </div>
 
-                              {/* Pipeline */}
-                              <div>
-                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Pipeline</span>
-                                <span className="text-sm font-medium text-slate-700">
-                                  {(job as any).pipeline === 'talking_head' ? 'Talking Head' :
-                                   (job as any).pipeline === 'full_scene' ? 'Full Scene' :
-                                   (job as any).pipeline || '—'}
-                                </span>
-                              </div>
+                              {/* Pipeline (video only) */}
+                              {(!job.format || job.format === 'video') && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Pipeline</span>
+                                  <span className="text-sm font-medium text-slate-700">
+                                    {(job as any).pipeline === 'talking_head' ? 'Talking Head' :
+                                     (job as any).pipeline === 'full_scene' ? 'Full Scene' :
+                                     (job as any).pipeline || '—'}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Aspect ratio (static/carousel) */}
+                              {(job.format === 'static' || job.format === 'carousel') && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Aspect Ratio</span>
+                                  <span className="text-sm font-medium text-slate-700">{job.aspect_ratio || '—'}</span>
+                                </div>
+                              )}
 
                               {/* Segment */}
                               <div>
@@ -1222,29 +2052,35 @@ STRICT RULES:
                                 <span className="text-sm font-medium text-slate-700">{job.target_segment || '—'}</span>
                               </div>
 
-                              {/* Actor */}
-                              <div>
-                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Actor</span>
-                                <span className="text-sm font-medium text-slate-700">{job.actor_prompt || '—'}</span>
-                              </div>
+                              {/* Actor (video only) */}
+                              {(!job.format || job.format === 'video') && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Actor</span>
+                                  <span className="text-sm font-medium text-slate-700">{job.actor_prompt || '—'}</span>
+                                </div>
+                              )}
 
-                              {/* Voice */}
-                              <div>
-                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Voice</span>
-                                <span className="text-sm font-medium text-slate-700">
-                                  {job.voice_style || voiceLabel
-                                    ? [job.voice_style, voiceLabel].filter(Boolean).join(' · ')
-                                    : '—'}
-                                </span>
-                              </div>
+                              {/* Voice (video only) */}
+                              {(!job.format || job.format === 'video') && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Voice</span>
+                                  <span className="text-sm font-medium text-slate-700">
+                                    {job.voice_style || voiceLabel
+                                      ? [job.voice_style, voiceLabel].filter(Boolean).join(' · ')
+                                      : '—'}
+                                  </span>
+                                </div>
+                              )}
 
-                              {/* Duration */}
-                              <div>
-                                <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Duration</span>
-                                <span className="text-sm font-medium text-slate-700">
-                                  {job.duration_seconds ? `${job.duration_seconds}s` : 'N/A'}
-                                </span>
-                              </div>
+                              {/* Duration (video only) */}
+                              {(!job.format || job.format === 'video') && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Duration</span>
+                                  <span className="text-sm font-medium text-slate-700">
+                                    {job.duration_seconds ? `${job.duration_seconds}s` : 'N/A'}
+                                  </span>
+                                </div>
+                              )}
 
                               {/* Cost */}
                               <div>
@@ -1257,12 +2093,7 @@ STRICT RULES:
                               {/* Status */}
                               <div>
                                 <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Status</span>
-                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                  job.status === 'failed' ? 'bg-rose-50 text-rose-500' :
-                                  job.status === 'cancelled' ? 'bg-slate-100 text-slate-400' :
-                                  job.status === 'completed' ? 'bg-emerald-50 text-emerald-600' :
-                                  'bg-amber-50 text-amber-600'
-                                }`}>
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${statusChipClasses(job.status)}`}>
                                   {job.status === 'completed' && <Check size={10} />}
                                   {currentStage?.label || job.status}
                                 </span>
@@ -1287,11 +2118,33 @@ STRICT RULES:
                                 </span>
                               </div>
 
-                              {/* Face thumbnail */}
+                              {/* Approved */}
+                              {job.frame_approved_at && (
+                                <div>
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Approved</span>
+                                  <span className="text-sm font-medium text-slate-700">
+                                    {new Date(job.frame_approved_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Face thumbnail (video only) */}
                               {job.face_image_url && (
                                 <div>
                                   <span className="text-xs uppercase tracking-wider text-slate-400 block mb-0.5">Face</span>
                                   <img src={job.face_image_url} alt="Generated face" className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                                </div>
+                              )}
+
+                              {/* Carousel gallery — full width */}
+                              {job.format === 'carousel' && job.media_urls && job.media_urls.length > 0 && (
+                                <div className="col-span-2 mt-1">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-1">Slides ({job.media_urls.length})</span>
+                                  <div className="flex gap-2 overflow-x-auto pb-1">
+                                    {job.media_urls.map((url, i) => (
+                                      <img key={i} src={url} alt={`Slide ${i + 1}`} className="w-24 h-24 rounded-lg object-cover border border-slate-200 flex-shrink-0" />
+                                    ))}
+                                  </div>
                                 </div>
                               )}
 
@@ -1301,6 +2154,16 @@ STRICT RULES:
                                   <span className="text-xs uppercase tracking-wider text-slate-400 block mb-1">Script</span>
                                   <blockquote className="border-l-4 border-emerald-400 pl-4 py-2 bg-white/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
                                     {job.script}
+                                  </blockquote>
+                                </div>
+                              )}
+
+                              {/* Caption — full width */}
+                              {job.caption && (
+                                <div className="col-span-2 mt-1">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-1">Caption</span>
+                                  <blockquote className="border-l-4 border-emerald-400 pl-4 py-2 bg-white/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
+                                    {job.caption}
                                   </blockquote>
                                 </div>
                               )}

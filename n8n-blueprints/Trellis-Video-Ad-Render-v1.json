@@ -1,0 +1,641 @@
+{
+  "name": "Trellis Video Ad Render v1",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Trellis Video Ad \u2014 RENDER (v1)\n\nFires ONLY from the Approve button.\n\n**In:** POST /webhook/trellis-video-ad-render\n```\n{ job_id }\n```\n\nEverything else is read from the job row. The client does not get to pass a prompt, a frame or a duration - the approved row is the source of truth.\n\n**Gate:** refuses unless status is `awaiting_approval` AND `frame_url` is set.",
+        "height": 420,
+        "width": 460,
+        "color": 4
+      },
+      "id": "sticky-20352",
+      "name": "Sticky Note 606",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Kling: image-to-video\n`v2.6/pro/image-to-video`\n\n- `image_url` = the APPROVED frame\n- `generate_audio: false` - the music/VO is ours, Kling's synthetic speech is what caused the odd timing\n- `negative_prompt` - suppresses the entrance, the dissolve and the dead-air smile\n\nThe prompt describes MOTION ONLY. The frame already carries the scene.",
+        "height": 300,
+        "width": 460,
+        "color": 7
+      },
+      "id": "sticky-13254",
+      "name": "Sticky Note 132",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-video-ad-render",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        0
+      ],
+      "webhookId": "trellis-video-ad-render"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "video_ad_jobs",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $json.body.job_id }}"
+      },
+      "id": "read-job",
+      "name": "Read Job",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        120,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $('Read Job').all()[0];\nif (!job) { throw new Error('Job not found: ' + $('Webhook').item.json.body.job_id); }\nconst j = job.json;\n\n// ---- APPROVAL GATE ----\nif (!j.frame_url) {\n  throw new Error('Refusing to render: job has no frame_url.');\n}\nif (j.status !== 'awaiting_approval' && j.status !== 'rendering') {\n  throw new Error('Refusing to render: job status is \"' + j.status + '\", expected \"awaiting_approval\".');\n}\n\nconst pipeline = j.pipeline || 'talking_head';\nconst dur = (Number(j.duration_seconds) || 5) <= 5 ? 5 : 10;\nconst script = (j.script || '').trim();\n\n// ---- MOTION-ONLY PROMPT ----\n// The frame already establishes subject, setting, wardrobe, lighting, composition.\n// Kling's ONLY job is controlled motion FROM that frame. Describe nothing else.\nconst lock = 'Use the provided image as the exact opening frame. Preserve the subject identity, facial structure, hairstyle, skin tone, wardrobe, body proportions, background, furniture, lighting direction and colour palette exactly as they appear. Do not re-stage the scene.';\n\nconst camera = 'Locked composition with an extremely slow five-percent camera push-in. Realistic film grain, restrained natural motion.';\n\nconst motion = pipeline === 'full_scene'\n  ? 'Subtle ambient life only: slow drifting dust in the light, a gentle shift in the highlights, minimal parallax. The product remains static and in sharp focus in the centre third.'\n  : 'The person is already in position and begins speaking immediately at frame one, with no pause, no entrance, no settling and no held smile before the first word. Natural lip movement and light conversational head motion in time with the words: \"' + script + '\". Weight stays on the same foot. Eyes remain on the camera.';\n\nconst negative = 'no scene change, no cut, no dissolve, no fade in, no fade from black, no character entering or exiting frame, no new people, no new objects, no camera orbit, no whip pan, no zoom out, no wardrobe change, no background transformation, no morphing, no facial distortion, no extra limbs, no deformed hands, no text, no captions, no subtitles, no watermark, no logo, no split screen, no idle pause before speaking, no exaggerated gestures';\n\nconst prompt = lock + ' ' + motion + ' ' + camera;\n\nreturn [{ json: {\n  prompt,\n  negative_prompt: negative,\n  image_url: j.frame_url,\n  duration: String(dur),\n  aspect_ratio: j.aspect_ratio || '9:16',\n  job_id: j.id,\n  prior_cost: Number(j.cost_estimate || 0),\n} }];"
+      },
+      "id": "build-motion-prompt",
+      "name": "Build Motion Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        340,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Hard approval gate lives here. Throws if the frame is missing or the job was never approved."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "rendering"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "55"
+            },
+            {
+              "fieldId": "frame_approved_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "update-rendering",
+      "name": "Update: Rendering",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://queue.fal.run/fal-ai/kling-video/v2.6/pro/image-to-video",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: $('Build Motion Prompt').item.json.prompt, negative_prompt: $('Build Motion Prompt').item.json.negative_prompt, image_url: $('Build Motion Prompt').item.json.image_url, duration: $('Build Motion Prompt').item.json.duration, generate_audio: false }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "submit-kling-falai",
+      "name": "Submit Kling (Fal.ai)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_FAL_CRED",
+          "name": "Fal.ai API"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "image-to-video, NOT text-to-video.\nNo aspect_ratio - it is inherited from the frame.\ngenerate_audio:false - we supply our own audio."
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "id": "wait-20s",
+      "name": "Wait 20s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1000,
+        0
+      ],
+      "webhookId": "trellis-video-ad-render-wait"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Submit Kling (Fal.ai)').item.json.status_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "poll-status",
+      "name": "Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_FAL_CRED",
+          "name": "Fal.ai API"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "completed?",
+      "name": "Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Submit Kling (Fal.ai)').item.json.response_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "fetch-result",
+      "name": "Fetch Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_FAL_CRED",
+          "name": "Fal.ai API"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-video",
+              "leftValue": "={{ $json.video?.url || $json.data?.video?.url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-video?",
+      "name": "Has Video?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Build Motion Prompt').item.json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "100"
+            },
+            {
+              "fieldId": "video_url",
+              "fieldValue": "={{ $json.video?.url || $json.data?.video?.url }}"
+            },
+            {
+              "fieldId": "completed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "cost_estimate",
+              "fieldValue": "={{ Number($('Build Motion Prompt').item.json.prior_cost || 0) + 0.70 }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "update-completed",
+      "name": "Update: Completed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        -220
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Adds Kling cost to the frame cost already accrued, rather than overwriting it."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Build Motion Prompt').item.json.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "rendering"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "={{ Math.min(95, 60 + $runIndex * 3) }}"
+            }
+          ]
+        }
+      },
+      "id": "bump-progress",
+      "name": "Bump Progress",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        160
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "over-cap",
+              "leftValue": "={{ $runIndex }}",
+              "rightValue": 30,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "timed-out?",
+      "name": "Timed Out?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Video render failed').toString().slice(0, 500) }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "mark-failed",
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Job": {
+      "main": [
+        [
+          {
+            "node": "Build Motion Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Motion Prompt": {
+      "main": [
+        [
+          {
+            "node": "Update: Rendering",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Rendering": {
+      "main": [
+        [
+          {
+            "node": "Submit Kling (Fal.ai)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Kling (Fal.ai)": {
+      "main": [
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 20s": {
+      "main": [
+        [
+          {
+            "node": "Poll Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Status": {
+      "main": [
+        [
+          {
+            "node": "Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completed?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bump Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Result": {
+      "main": [
+        [
+          {
+            "node": "Has Video?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Video?": {
+      "main": [
+        [
+          {
+            "node": "Update: Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bump Progress": {
+      "main": [
+        [
+          {
+            "node": "Timed Out?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Timed Out?": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

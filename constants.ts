@@ -1240,6 +1240,71 @@ CREATE INDEX IF NOT EXISTS idx_tcpub_project ON trellis_clip_publications (proje
 
 INSERT INTO storage.buckets (id, name, public) VALUES ('clip-assets','clip-assets', true)
 ON CONFLICT (id) DO NOTHING;
+
+-- 21. VIDEO AD LAB
+CREATE TABLE IF NOT EXISTS video_ad_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  campaign_id UUID,
+  branch TEXT NOT NULL,
+  script TEXT,
+  actor_prompt TEXT,
+  voice_id TEXT,
+  voice_style TEXT,
+  target_segment TEXT,
+  platform TEXT,
+  pipeline TEXT,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'generating_script', 'generating_frame', 'awaiting_approval', 'rendering', 'generating_face', 'generating_audio', 'generating_video', 'completed', 'failed', 'cancelled', 'publishing', 'published')),
+  progress INTEGER DEFAULT 0,
+  face_image_url TEXT,
+  audio_url TEXT,
+  video_url TEXT,
+  thumbnail_url TEXT,
+  duration_seconds INTEGER,
+  cost_estimate NUMERIC,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  frame_url TEXT,
+  frame_prompt TEXT,
+  frame_attempt INTEGER DEFAULT 0,
+  frame_approved_at TIMESTAMPTZ,
+  setting TEXT,
+  actor_gender TEXT,
+  actor_style TEXT,
+  aspect_ratio TEXT DEFAULT '9:16',
+  format TEXT DEFAULT 'video',
+  media_urls JSONB DEFAULT '[]'::jsonb,
+  caption TEXT,
+  completed_at TIMESTAMPTZ,
+  created_by UUID,
+  publish_status TEXT,
+  scheduled_for TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS frame_url TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS frame_prompt TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS frame_attempt INTEGER DEFAULT 0;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS frame_approved_at TIMESTAMPTZ;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS setting TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS actor_gender TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS actor_style TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS aspect_ratio TEXT DEFAULT '9:16';
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT DEFAULT 'video';
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;
+
+ALTER TABLE video_ad_jobs DROP CONSTRAINT IF EXISTS video_ad_jobs_status_check;
+ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_status_check
+  CHECK (status IN ('queued', 'generating_script', 'generating_frame', 'awaiting_approval', 'rendering', 'generating_face', 'generating_audio', 'generating_video', 'completed', 'failed', 'cancelled', 'publishing', 'published'));
+
+ALTER TABLE video_ad_jobs DROP CONSTRAINT IF EXISTS video_ad_jobs_format_check;
+ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_format_check
+  CHECK (format IN ('video', 'static', 'carousel'));
+
+CREATE INDEX IF NOT EXISTS video_ad_jobs_status_idx ON public.video_ad_jobs (status);
+CREATE INDEX IF NOT EXISTS video_ad_jobs_media_urls_idx ON public.video_ad_jobs USING GIN (media_urls jsonb_path_ops);
 `;
 
 export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
@@ -1640,11 +1705,16 @@ export const VIDEO_AD_COST_PER_VARIANT = 0.12;
 
 export const VIDEO_AD_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-video-ad-generate';
 
+export const STATIC_AD_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-static-ad-generate';
+export const CAROUSEL_AD_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-carousel-generate';
+export const VIDEO_AD_RENDER_WEBHOOK = 'https://n8n.sproutify.app/webhook/trellis-video-ad-render';
+
 export const VIDEO_AD_STAGES = [
   { key: 'queued', label: 'Queued' },
-  { key: 'generating_face', label: 'Face Gen' },
-  { key: 'generating_audio', label: 'Audio' },
-  { key: 'generating_video', label: 'Lipsync' },
+  { key: 'generating_script', label: 'Script' },
+  { key: 'generating_frame', label: 'Frame' },
+  { key: 'awaiting_approval', label: 'Review' },
+  { key: 'rendering', label: 'Rendering' },
   { key: 'completed', label: 'Complete' },
 ] as const;
 

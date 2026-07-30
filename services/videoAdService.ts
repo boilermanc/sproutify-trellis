@@ -1,5 +1,5 @@
 import { VideoAdConfig, VideoAdJob } from '../types';
-import { VIDEO_AD_WEBHOOK } from '../constants';
+import { VIDEO_AD_WEBHOOK, STATIC_AD_WEBHOOK, CAROUSEL_AD_WEBHOOK, VIDEO_AD_RENDER_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 
 // ─── Video Ad Lab Service ──────────────────────────────────────────
@@ -13,8 +13,13 @@ import { supabase } from '../lib/supabase';
 // response — n8n processing takes minutes, Cloudflare will 524), and
 // return the job_id immediately so the poller can start tracking it.
 // n8n must use the provided job_id as the row's id in video_ad_jobs.
+//
+// `script`/`aspect_ratio`/`setting` are optional extras layered on top of
+// VideoAdConfig (not part of that type in types.ts) so the caller can pass
+// the user-edited script and visual settings through without us touching
+// the shared type file.
 export async function submitVideoAdJob(
-  config: VideoAdConfig,
+  config: VideoAdConfig & { script?: string; aspect_ratio?: string; setting?: string },
 ): Promise<{ job_id: string }> {
   const job_id = crypto.randomUUID();
 
@@ -36,6 +41,9 @@ export async function submitVideoAdJob(
       video_duration: config.video_duration,
       pipeline: config.pipeline,
       platform: config.platform,
+      script: config.script,
+      aspect_ratio: config.aspect_ratio,
+      setting: config.setting,
     }),
   }).catch(() => {
     // Expected — Cloudflare 524 timeout or CORS block on the response.
@@ -102,4 +110,127 @@ export async function cancelVideoAdJob(
   if (error) {
     throw new Error(`Failed to cancel video ad job ${jobId}: ${error.message}`);
   }
+}
+
+// ─── Creative Studio: Static + Carousel formats ──────────────────────
+// Same client-generated job_id + fire-and-forget pattern as
+// submitVideoAdJob above. n8n uses the provided job_id as the row's id
+// in video_ad_jobs (format='static' | 'carousel').
+
+export interface StaticAdConfig {
+  branch: string;
+  message: string;
+  target_segment: string;
+  platform: string;
+  aspect_ratio: string;
+  setting: string;
+  style_notes: string;
+}
+
+export interface CarouselAdConfig {
+  branch: string;
+  topic: string;
+  slide_count: number;
+  target_segment: string;
+  platform: string;
+  aspect_ratio: string;
+  style_notes: string;
+}
+
+// ─── 5. submitStaticAdJob ────────────────────────────────────────
+export async function submitStaticAdJob(
+  config: StaticAdConfig,
+): Promise<{ job_id: string }> {
+  const job_id = crypto.randomUUID();
+
+  fetch(STATIC_AD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      job_id,
+      branch: config.branch,
+      message: config.message,
+      target_segment: config.target_segment,
+      platform: config.platform,
+      aspect_ratio: config.aspect_ratio,
+      setting: config.setting,
+      style_notes: config.style_notes,
+    }),
+  }).catch(() => {
+    // Expected — Cloudflare 524 timeout or CORS block on the response.
+    // The request still reaches n8n and the job will appear in Supabase.
+    console.log('[videoAd] Static ad webhook fire-and-forget completed (response unreadable, expected)');
+  });
+
+  return { job_id };
+}
+
+// ─── 6. submitCarouselJob ────────────────────────────────────────
+export async function submitCarouselJob(
+  config: CarouselAdConfig,
+): Promise<{ job_id: string }> {
+  const job_id = crypto.randomUUID();
+
+  fetch(CAROUSEL_AD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      job_id,
+      branch: config.branch,
+      topic: config.topic,
+      slide_count: config.slide_count,
+      target_segment: config.target_segment,
+      platform: config.platform,
+      aspect_ratio: config.aspect_ratio,
+      style_notes: config.style_notes,
+    }),
+  }).catch(() => {
+    // Expected — Cloudflare 524 timeout or CORS block on the response.
+    // The request still reaches n8n and the job will appear in Supabase.
+    console.log('[videoAd] Carousel webhook fire-and-forget completed (response unreadable, expected)');
+  });
+
+  return { job_id };
+}
+
+// ─── 7. approveJob ───────────────────────────────────────────────
+// Marks a static/carousel job (currently 'awaiting_approval') as
+// approved+complete. There's no further render step for these formats —
+// the generated frame(s) ARE the deliverable, so approval just finalizes
+// the job.
+export async function approveJob(jobId: string): Promise<void> {
+  const { error } = await supabase
+    .from('video_ad_jobs')
+    .update({ status: 'completed', frame_approved_at: new Date().toISOString() })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to approve video ad job ${jobId}: ${error.message}`);
+  }
+}
+
+// ─── 8. approveAndRenderVideo ─────────────────────────────────────
+// For format='video' jobs sitting in 'awaiting_approval' (frame approved,
+// ready to animate): flip status to 'rendering' on Hub Supabase, then
+// fire-and-forget the render webhook so n8n picks up the job and finishes
+// the video pipeline.
+export async function approveAndRenderVideo(jobId: string): Promise<void> {
+  const { error } = await supabase
+    .from('video_ad_jobs')
+    .update({ status: 'rendering' })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to approve video ad job ${jobId}: ${error.message}`);
+  }
+
+  fetch(VIDEO_AD_RENDER_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_id: jobId }),
+  }).catch(() => {
+    // Expected — Cloudflare 524 timeout or CORS block on the response.
+    // The request still reaches n8n and the job will appear in Supabase.
+    console.log('[videoAd] Render webhook fire-and-forget completed (response unreadable, expected)');
+  });
 }

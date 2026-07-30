@@ -1,0 +1,388 @@
+{
+  "name": "Trellis Carousel v1",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Trellis Carousel — v1\n\nGenerates a 3-7 slide social carousel: one plan (Gemini), then one on-brand image per slide (Nano Banana), all sharing an identical style block.\n\n**In:** POST /webhook/trellis-carousel-generate\n```\n{ job_id, branch, topic, slide_count,\n  target_segment, platform,\n  aspect_ratio, style_notes }\n```\n`slide_count` is clamped to 3-7.\n\n**Out:** job row -> status `awaiting_approval`, with `media_urls` (N items, in slide order), `frame_url` (= slide 1), `caption`, `script` (the full slide plan JSON) set.\n\nApproval + publish happen in the Trellis app (Video Ad Lab), which hands off to the existing B3 social publisher webhook (`trellis-social-publish`) with `media_type: 'carousel'` and `media_urls`.\n\n### Setup\n1. Credentials — reuse the same 3 as Trellis-Video-Ad-Frame-v1:\n   • **Sproutify Trellis** (Supabase) — id `IkIpi5m4OmJ9DvBS`\n   • **Gemini API** (Query Auth) — replace `REPLACE_GEMINI_CRED`\n   • **Supabase Storage (legacy eyJ service role)** (Header Auth) — replace `REPLACE_SUPABASE_STORAGE_CRED`\n2. Prerequisite SQL (Hub, run once — idempotent):\n```sql\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT;\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;\n```\n3. Activate, then point the Video Ad Lab's carousel action at `https://n8n.sproutify.app/webhook/trellis-carousel-generate`.\n\nThis workflow STOPS at `awaiting_approval`. It does not publish anything.",
+        "height": 660,
+        "width": 500,
+        "color": 4
+      },
+      "id": "sticky-setup",
+      "name": "Sticky Note - Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-760, -420]
+    },
+    {
+      "parameters": {
+        "content": "### Why the slides can't drift\nAsking Gemini nicely for a 'consistent style' across N separate image generations is not reliable enough on its own. **Parse Slide Plan** computes ONE `style_block` string in code and appends it VERBATIM to every slide's `image_prompt` after parsing - consistency is guaranteed by the code, not by model compliance.\n\n### No loop node needed\n**Split Slides** fans one plan out into N items; **Generate Slide Image -> Extract Slide Image -> Upload Slide to Storage** then process one item per slide automatically (n8n's default per-item behaviour for regular nodes) - the exact same shape as B3's carousel-child chain (`Prepare Carousel Items -> Create Carousel Child -> Collect Carousel Children`). **Aggregate Slide URLs** re-sorts by `slide_index` and throws if any slide is missing, mirroring B3's `children.length !== source.media_urls.length` check.",
+        "height": 320,
+        "width": 500,
+        "color": 7
+      },
+      "id": "sticky-design",
+      "name": "Sticky Note - Design",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-760, 260]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-carousel-generate",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "webhookId": "trellis-carousel-generate"
+    },
+    {
+      "parameters": {
+        "tableId": "video_ad_jobs",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "id", "fieldValue": "={{ $json.body.job_id }}" },
+            { "fieldId": "branch", "fieldValue": "={{ $json.body.branch }}" },
+            { "fieldId": "status", "fieldValue": "queued" },
+            { "fieldId": "progress", "fieldValue": "5" },
+            { "fieldId": "format", "fieldValue": "carousel" },
+            { "fieldId": "script", "fieldValue": "pending" },
+            { "fieldId": "target_segment", "fieldValue": "={{ $json.body.target_segment || '' }}" },
+            { "fieldId": "platform", "fieldValue": "={{ $json.body.platform || 'general' }}" },
+            { "fieldId": "aspect_ratio", "fieldValue": "={{ $json.body.aspect_ratio || '1:1' }}" }
+          ]
+        }
+      },
+      "id": "upsert-job-record",
+      "name": "Upsert Job Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [120, 0],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Insert on first run. On a resubmit the row already exists and this 409s harmlessly - onError lets it pass through, mirrors Trellis-Video-Ad-Frame-v1."
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "brand_profiles",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "=branch=like.{{ $('Webhook').item.json.body.branch }}*"
+      },
+      "id": "lookup-brand-profile",
+      "name": "Lookup Brand Profile",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [340, 0],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Prefix match so both bare slugs and domain keys in brand_profiles resolve. If nothing matches, downstream falls back to branch name + 'friendly' tone."
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').item.json.body;\nconst brandItem = $('Lookup Brand Profile').all()[0];\nconst brand = brandItem ? brandItem.json : {};\n\nconst brandName = brand.brand_name || body.branch || 'the brand';\nconst tone = body.tone || brand.default_tone || 'friendly';\nconst pron = brand.pronunciation_guide || '';\nconst aspect = body.aspect_ratio || '1:1';\nconst platform = body.platform || 'general';\nconst segment = body.target_segment || 'general audience';\nconst styleNotes = body.style_notes || '';\nconst topic = body.topic || '';\nconst slideCount = Math.max(3, Math.min(7, Number(body.slide_count) || 5));\n\nconst styleBlock = 'Style: consistent ' + tone + ' brand photography/illustration style for ' + brandName + '. Identical colour palette, identical lighting, identical composition rules (subject centred, ' + aspect + ' aspect ratio, generous negative space reserved for on-slide text) across every slide in the set. No watermarks, no logos, no stock-photo badges.';\n\nconst shape = { caption: 'ready-to-publish social caption for the whole carousel, 1-3 sentences, up to 3 hashtags', slides: [{ title: 'short on-slide title, max 8 words', body: 'one supporting sentence, max 18 words', image_prompt: 'description of the still image for this slide, no on-image body copy other than the title' }] };\n\nconst plan_prompt = 'You are planning a ' + slideCount + '-slide social media carousel. Brand: ' + brandName + '. Topic: ' + topic + '. Audience: ' + segment + '. Tone: ' + tone + '. Platform: ' + platform + '. Pronunciation and brand rules: ' + pron + '. ' + (styleNotes ? ('Style notes: ' + styleNotes + '. ') : '') + 'Slide 1 MUST be a scroll-stopping hook. The LAST slide (slide ' + slideCount + ') MUST be a clear call to action. The slides in between build out the idea one point at a time. Return ONLY valid JSON, no markdown fences, no commentary, in exactly this shape: ' + JSON.stringify(shape) + '. The slides array must contain exactly ' + slideCount + ' items.';\n\nreturn [{ json: {\n  plan_prompt,\n  style_block: styleBlock,\n  brand_name: brandName,\n  tone,\n  aspect_ratio: aspect,\n  platform,\n  slide_count: slideCount,\n  job_id: body.job_id,\n  branch: body.branch,\n} }];"
+      },
+      "id": "prepare-slide-plan",
+      "name": "Prepare Slide Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "generating_script" },
+            { "fieldId": "progress", "fieldValue": "15" }
+          ]
+        }
+      },
+      "id": "update-generating-script",
+      "name": "Update: Generating Script",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [780, 0],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Slide Plan').item.json.plan_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 1500 } }) }}",
+        "options": { "timeout": 45000 }
+      },
+      "id": "generate-slide-plan",
+      "name": "Generate Slide Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 0],
+      "credentials": {
+        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "gemini-flash-latest, same model id used by Trellis-Video-Ad-Frame-v1. maxOutputTokens raised to 1500 to fit up to 7 slides of JSON."
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] && $json.candidates[0].content.parts[0].text) || '';\nconst prep = $('Prepare Slide Plan').item.json;\n\nfunction extractJson(text) {\n  try { return JSON.parse(text); } catch (e) {}\n  const match = text.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch (e) {}\n  }\n  return null;\n}\n\nlet plan = extractJson(raw);\nif (!plan || !Array.isArray(plan.slides) || plan.slides.length === 0) {\n  plan = {\n    caption: prep.brand_name + ': ' + prep.tone + ' update.',\n    slides: [{ title: prep.brand_name, body: raw.slice(0, 140) || 'See more.', image_prompt: 'A clean on-brand marketing photo for ' + prep.brand_name + '.' }],\n  };\n}\n\nlet slides = plan.slides.slice(0, prep.slide_count);\nif (slides.length === 0) {\n  throw new Error('Slide plan produced zero usable slides.');\n}\n\nslides = slides.map(function (s) {\n  return {\n    title: (s.title || '').toString(),\n    body: (s.body || '').toString(),\n    image_prompt: (s.image_prompt || 'A clean on-brand marketing photo.').toString() + ' ' + prep.style_block,\n  };\n});\n\nreturn [{ json: {\n  caption: (plan.caption || (prep.brand_name + ' - new today.')).toString(),\n  slides,\n  job_id: prep.job_id,\n  branch: prep.branch,\n  aspect_ratio: prep.aspect_ratio,\n} }];"
+      },
+      "id": "parse-slide-plan",
+      "name": "Parse Slide Plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1220, 0],
+      "notes": "Defensive JSON parse (raw parse -> regex-extracted {...} block -> 1-slide fallback). Appends the identical style_block to every slide.image_prompt so slide-to-slide consistency does not depend on the model."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "script", "fieldValue": "={{ JSON.stringify({ caption: $json.caption, slides: $json.slides }) }}" },
+            { "fieldId": "caption", "fieldValue": "={{ $json.caption }}" },
+            { "fieldId": "progress", "fieldValue": "30" }
+          ]
+        }
+      },
+      "id": "save-plan",
+      "name": "Save Plan",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1440, 0],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "generating_frame" },
+            { "fieldId": "progress", "fieldValue": "40" }
+          ]
+        }
+      },
+      "id": "update-generating-frame",
+      "name": "Update: Generating Frame",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1660, 0],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const plan = $('Parse Slide Plan').item.json;\nconst slides = Array.isArray(plan.slides) ? plan.slides : [];\nreturn slides.map(function (s, i) {\n  return { json: {\n    job_id: plan.job_id,\n    branch: plan.branch,\n    aspect_ratio: plan.aspect_ratio,\n    slide_index: i + 1,\n    slide_count: slides.length,\n    title: s.title,\n    body: s.body,\n    image_prompt: s.image_prompt,\n  } };\n});"
+      },
+      "id": "split-slides",
+      "name": "Split Slides",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 0],
+      "notes": "One output item per slide, in order. Everything downstream (Generate Slide Image / Extract Slide Image / Upload Slide to Storage) processes these N items automatically - no splitInBatches loop needed, same shape as B3's carousel-child chain."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.image_prompt }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: $json.aspect_ratio } } }) }}",
+        "options": { "timeout": 90000 }
+      },
+      "id": "generate-slide-image",
+      "name": "Generate Slide Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2100, 0],
+      "credentials": {
+        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Nano Banana 2 (gemini-3.1-flash-image), one call per input item (per slide). Runs sequentially in n8n's default execution order."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const cands = $json.candidates || [];\nlet b64 = null;\nlet mime = 'image/png';\n\nfor (const c of cands) {\n  const parts = (c.content && c.content.parts) || [];\n  for (const p of parts) {\n    const inline = p.inlineData || p.inline_data;\n    if (inline && inline.data) {\n      b64 = inline.data;\n      mime = inline.mimeType || inline.mime_type || mime;\n      break;\n    }\n  }\n  if (b64) break;\n}\n\nif (!b64) {\n  throw new Error('No image returned by Gemini for slide ' + $('Split Slides').item.json.slide_index + '. Raw: ' + JSON.stringify($json).slice(0, 300));\n}\n\nconst jobId = $('Split Slides').item.json.job_id;\nconst slideIndex = $('Split Slides').item.json.slide_index;\nconst ext = mime.includes('jpeg') ? 'jpg' : 'png';\nconst rand = Math.random().toString(36).slice(2, 8);\nconst path = 'static-ads/' + jobId + '/slide-' + slideIndex + '-' + rand + '.' + ext;\n\nreturn {\n  json: { storage_path: path, mime, slide_index: slideIndex },\n  binary: {\n    data: {\n      data: b64,\n      mimeType: mime,\n      fileName: 'slide-' + slideIndex + '-' + rand + '.' + ext,\n    },\n  },\n};"
+      },
+      "id": "extract-slide-image",
+      "name": "Extract Slide Image",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2320, 0],
+      "onError": "continueErrorOutput",
+      "notes": "runOnceForEachItem, same idiom as E5's 'Audio base64 to Binary' node - $('Split Slides').item correctly resolves to the paired slide for whichever item is currently executing."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/episode-assets/{{ $json.storage_path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "={{ $json.mime }}" },
+            { "name": "x-upsert", "value": "false" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": { "timeout": 60000 }
+      },
+      "id": "upload-slide-to-storage",
+      "name": "Upload Slide to Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2540, 0],
+      "credentials": {
+        "httpHeaderAuth": { "id": "REPLACE_SUPABASE_STORAGE_CRED", "name": "Supabase Storage (legacy eyJ service role)" }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Same episode-assets bucket as Trellis-Video-Ad-Frame-v1, under a static-ads/ prefix. MUST use the legacy eyJ... JWT service role key - upsert:false + a randomised filename avoids the UPDATE RLS policy on Storage, same as Frame v1. Runs once per slide."
+    },
+    {
+      "parameters": {
+        "jsCode": "const uploaded = $input.all();\nconst meta = $('Extract Slide Image').all();\nconst plan = $('Parse Slide Plan').item.json;\n\nif (uploaded.length !== plan.slides.length || meta.length !== plan.slides.length) {\n  throw new Error('Expected ' + plan.slides.length + ' carousel slides, got ' + uploaded.length + ' uploads / ' + meta.length + ' extracted - one or more slides failed.');\n}\n\nconst BASE = 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/';\n\nconst media_urls = meta\n  .slice()\n  .sort(function (a, b) { return a.json.slide_index - b.json.slide_index; })\n  .map(function (m) { return BASE + m.json.storage_path; });\n\nreturn [{ json: { media_urls, frame_url: media_urls[0], job_id: plan.job_id } }];"
+      },
+      "id": "aggregate-slide-urls",
+      "name": "Aggregate Slide URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2760, 0],
+      "notes": "Mirrors B3's 'Collect Carousel Children' validation: throws if the item count reaching this node does not match the planned slide count (a slide that hit its error branch never arrives here), then re-sorts by slide_index so order is guaranteed regardless of async completion order."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "awaiting_approval" },
+            { "fieldId": "progress", "fieldValue": "100" },
+            { "fieldId": "media_urls", "fieldValue": "={{ JSON.stringify($json.media_urls) }}" },
+            { "fieldId": "frame_url", "fieldValue": "={{ $json.frame_url }}" },
+            { "fieldId": "updated_at", "fieldValue": "={{ new Date().toISOString() }}" }
+          ]
+        }
+      },
+      "id": "update-awaiting-approval",
+      "name": "Update: Awaiting Approval",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2980, 0],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      },
+      "notes": "Terminal state for this workflow. media_urls is written as a JSON.stringify'd array via the Supabase node - after first run, confirm in the table editor that the column stores a real JSON array and not a double-encoded string; if PostgREST stores it as a scalar string, switch this field to a raw HTTP PATCH node with Content-Type: application/json instead."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "failed" },
+            { "fieldId": "error_message", "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Carousel generation failed').toString().slice(0, 500) }}" }
+          ]
+        }
+      },
+      "id": "mark-failed",
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2320, 400],
+      "credentials": {
+        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Upsert Job Record", "type": "main", "index": 0 }]] },
+    "Upsert Job Record": { "main": [[{ "node": "Lookup Brand Profile", "type": "main", "index": 0 }]] },
+    "Lookup Brand Profile": { "main": [[{ "node": "Prepare Slide Plan", "type": "main", "index": 0 }]] },
+    "Prepare Slide Plan": { "main": [[{ "node": "Update: Generating Script", "type": "main", "index": 0 }]] },
+    "Update: Generating Script": { "main": [[{ "node": "Generate Slide Plan", "type": "main", "index": 0 }]] },
+    "Generate Slide Plan": {
+      "main": [
+        [{ "node": "Parse Slide Plan", "type": "main", "index": 0 }],
+        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Slide Plan": { "main": [[{ "node": "Save Plan", "type": "main", "index": 0 }]] },
+    "Save Plan": { "main": [[{ "node": "Update: Generating Frame", "type": "main", "index": 0 }]] },
+    "Update: Generating Frame": { "main": [[{ "node": "Split Slides", "type": "main", "index": 0 }]] },
+    "Split Slides": { "main": [[{ "node": "Generate Slide Image", "type": "main", "index": 0 }]] },
+    "Generate Slide Image": {
+      "main": [
+        [{ "node": "Extract Slide Image", "type": "main", "index": 0 }],
+        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Slide Image": {
+      "main": [
+        [{ "node": "Upload Slide to Storage", "type": "main", "index": 0 }],
+        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upload Slide to Storage": {
+      "main": [
+        [{ "node": "Aggregate Slide URLs", "type": "main", "index": 0 }],
+        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Slide URLs": { "main": [[{ "node": "Update: Awaiting Approval", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "tags": [{ "name": "video-ads" }, { "name": "trellis" }]
+}

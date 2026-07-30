@@ -1,0 +1,785 @@
+{
+  "name": "Trellis Video Ad Generator v5",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🎬 Trellis Video Ad Generator v5 — SETUP\n\nEngine: **Kling v2.6 Pro (fal.ai)** — renders video **+ lip-synced audio in one call**.\n\n### 1) Create these credentials\nThe flagged nodes need them:\n\n**Fal.ai API** → type *Header Auth*\n• Name:  `Authorization`\n• Value: `Key YOUR_FAL_KEY`\n(Submit Kling / Poll Status / Fetch Result)\n\n**Gemini API** → type *Query Auth*\n• Name:  `key`\n• Value: `YOUR_GEMINI_KEY`\n(Generate Script)\n\n**Sproutify Trellis** (Supabase) — already exists; re-select if a node shows it unset.\n\n### 2) ⚠️ Rotate leaked keys FIRST\nv4 had Gemini / Fal.ai / ElevenLabs keys hardcoded in plaintext. Rotate all three before going live.\n\n### 3) Activate\nDelete/disable the old **v4** first (it holds the same webhook path), then toggle this workflow **Active**.",
+        "height": 620,
+        "width": 420,
+        "color": 4
+      },
+      "id": "note-setup-0001",
+      "name": "Sticky Note - Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1360,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Webhook contract\n\n`POST https://n8n.sproutify.app/webhook/trellis-video-ad-generate`\n\nBody (sent by the Trellis app → Video Ad Lab):\n```\njob_id, branch, product_description,\ntarget_segment, tone, cta, actor_style,\nactor_gender, voice_id, voice_style,\nvideo_duration, pipeline ('talking_head'\n| 'full_scene'), platform\n```\nResponds **instantly** (async) — the app polls `video_ad_jobs` for status/progress.\n\n**DB prereq (already done on the Hub):** `video_ad_jobs.updated_at` column + heartbeat trigger.\n\n**Branch lookup:** prefix match, so both bare slugs (`rekkrd`) and domain keys (`rekkrd.com`) in `brand_profiles` resolve.",
+        "height": 360,
+        "width": 420,
+        "color": 5
+      },
+      "id": "note-io-0002",
+      "name": "Sticky Note - Webhook",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Reliability (why v5 wont zombie)\n• Every generation node has an **error branch → Mark Failed** (writes `status=failed` + `error_message`).\n• Poll loop is **bounded**: Wait 20s → Poll → not done → Bump Progress → **Timed Out? (30 tries ≈ 10 min)** → fail.\n• Progress climbs each poll (45→95%) so it never looks frozen.\n• Executions are saved (Settings) so failures are visible.",
+        "height": 220,
+        "width": 520,
+        "color": 3
+      },
+      "id": "note-loop-0003",
+      "name": "Sticky Note - Reliability",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-video-ad-generate",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "852108a6-331c-4408-85f3-7042d716bf7f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        400
+      ],
+      "webhookId": "b54acdde-307c-4db9-975a-842a99efe237"
+    },
+    {
+      "parameters": {
+        "tableId": "video_ad_jobs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $json.body.job_id }}"
+            },
+            {
+              "fieldId": "branch",
+              "fieldValue": "={{ $json.body.branch }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "queued"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "5"
+            },
+            {
+              "fieldId": "script",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "voice_id",
+              "fieldValue": "={{ $json.body.voice_id || '21m00Tcm4TlvDq8ikWAM' }}"
+            },
+            {
+              "fieldId": "voice_style",
+              "fieldValue": "={{ $json.body.voice_style || 'friendly' }}"
+            },
+            {
+              "fieldId": "target_segment",
+              "fieldValue": "={{ $json.body.target_segment || '' }}"
+            },
+            {
+              "fieldId": "actor_prompt",
+              "fieldValue": "={{ ($json.body.actor_style || 'professional') + ' ' + ($json.body.actor_gender || 'female') }}"
+            },
+            {
+              "fieldId": "pipeline",
+              "fieldValue": "={{ $json.body.pipeline || 'talking_head' }}"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "={{ $json.body.platform || 'general' }}"
+            }
+          ]
+        }
+      },
+      "id": "480f19a0-6ce0-4d25-ba13-76085aae5a4f",
+      "name": "Create Job Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1140,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "brand_profiles",
+        "returnAll": true,
+        "filterType": "string",
+        "filterString": "=branch=like.{{ $('Webhook').item.json.body.branch }}*"
+      },
+      "id": "95a0cd40-d4df-4d12-838f-1d0181fe4879",
+      "name": "Lookup Brand Profile",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        400
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').item.json.body;\nconst brandItem = $('Lookup Brand Profile').all()[0];\nconst brand = brandItem ? brandItem.json : {};\nconst brandName = brand.brand_name || body.branch || 'the brand';\nconst tone = body.tone || brand.default_tone || 'friendly';\nconst pron = brand.pronunciation_guide || '';\nconst dur = (Number(body.video_duration) || 10) <= 5 ? 5 : 10;\nconst maxWords = Math.floor(dur * 2.5);\nconst hook = body.platform === 'tiktok'\n  ? 'Write a HOOK-FIRST viral vertical video script that grabs attention in the first 2 seconds. Punchy, conversational, fast-paced.'\n  : 'Write a performance-marketing video ad script.';\nconst script_prompt = `${hook} Brand: ${brandName}. Product: ${body.product_description || ''}. Audience: ${body.target_segment || 'general audience'}. Tone: ${tone}. Call to action: ${body.cta || 'Learn more'}. Pronunciation and brand rules: ${pron}. Write ONLY the spoken words - no stage directions, no parentheticals like (smiling), no narrator labels. Maximum ${maxWords} words. Conversational, natural.`;\nreturn [{ json: { script_prompt, brand_name: brandName, duration: String(dur), pipeline: body.pipeline || 'talking_head' } }];"
+      },
+      "id": "b7a1e2c3-1111-4a22-9c33-aaaaaaaaaaaa",
+      "name": "Prepare Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.script_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 500 } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "6dd8c7ec-60c4-4a71-bf35-4a8ca66f48f7",
+      "name": "Generate Script (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        400
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Create Job Record').item.json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_video"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "40"
+            },
+            {
+              "fieldId": "script",
+              "fieldValue": "={{ $json.candidates[0].content.parts[0].text }}"
+            }
+          ]
+        }
+      },
+      "id": "cd0e3b37-3c3f-4699-bf47-bc5d1c3dd21f",
+      "name": "Update: Rendering",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        320
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://queue.fal.run/fal-ai/kling-video/v2.6/pro/text-to-video",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: ($('Prepare Prompt').item.json.pipeline === 'full_scene' ? ('Cinematic vertical 9:16 product ad. ' + $('Generate Script (Gemini)').item.json.candidates[0].content.parts[0].text + ' Modern, clean, on-brand setting for ' + $('Prepare Prompt').item.json.brand_name + '.') : ('A ' + ($('Webhook').item.json.body.actor_gender || 'female') + ' ' + ($('Webhook').item.json.body.actor_style || 'professional') + ' person speaking directly to camera in a clean modern studio, saying: \"' + $('Generate Script (Gemini)').item.json.candidates[0].content.parts[0].text + '\". Natural expression, professional lighting, 9:16 vertical.')), duration: $('Prepare Prompt').item.json.duration, aspect_ratio: '9:16', generate_audio: true }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "67877d7c-2424-4141-b5c5-205bab0f8d21",
+      "name": "Submit Kling (Fal.ai)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -40,
+        320
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_FAL_CRED",
+          "name": "Fal.ai API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "id": "03832ac0-47bb-436f-a988-956b3ae9d57f",
+      "name": "Wait 20s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        180,
+        320
+      ],
+      "webhookId": "4d86b310-7095-49ce-b6ba-409d1946627b"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Submit Kling (Fal.ai)').item.json.status_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "3cb04361-3223-4d45-98ed-b3e96bce66e0",
+      "name": "Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        320
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_FAL_CRED",
+          "name": "Fal.ai API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "33df7a34-92bf-41de-875e-c9756f8dd553",
+      "name": "Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        620,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Submit Kling (Fal.ai)').item.json.response_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "aaaa1111-2222-4333-8444-555566667777",
+      "name": "Fetch Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        240
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_FAL_CRED",
+          "name": "Fal.ai API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-video",
+              "leftValue": "={{ $json.video?.url || $json.data?.video?.url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bbbb1111-2222-4333-8444-555566667777",
+      "name": "Has Video?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Create Job Record').item.json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "100"
+            },
+            {
+              "fieldId": "video_url",
+              "fieldValue": "={{ $json.video?.url || $json.data?.video?.url }}"
+            },
+            {
+              "fieldId": "completed_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            },
+            {
+              "fieldId": "cost_estimate",
+              "fieldValue": "0.70"
+            }
+          ]
+        }
+      },
+      "id": "f3fb6bcf-8ffa-432d-b896-a2a6717617df",
+      "name": "Update: Completed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        240
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Create Job Record').item.json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_video"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "={{ Math.min(95, 45 + $runIndex * 3) }}"
+            }
+          ]
+        }
+      },
+      "id": "cccc1111-2222-4333-8444-555566667777",
+      "name": "Bump Progress",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        840,
+        480
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "over-cap",
+              "leftValue": "={{ $runIndex }}",
+              "rightValue": 30,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "dddd1111-2222-4333-8444-555566667777",
+      "name": "Timed Out?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "video_ad_jobs",
+        "filterType": "string",
+        "filterString": "=id=eq.{{ $('Create Job Record').item.json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Video generation failed').toString().slice(0, 500) }}"
+            }
+          ]
+        }
+      },
+      "id": "83ee60f3-7a41-491f-beff-1119f6132faa",
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        620,
+        700
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Job Record": {
+      "main": [
+        [
+          {
+            "node": "Lookup Brand Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Brand Profile": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Script (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Script (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Update: Rendering",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Rendering": {
+      "main": [
+        [
+          {
+            "node": "Submit Kling (Fal.ai)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Kling (Fal.ai)": {
+      "main": [
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 20s": {
+      "main": [
+        [
+          {
+            "node": "Poll Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Status": {
+      "main": [
+        [
+          {
+            "node": "Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bump Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completed?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bump Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Result": {
+      "main": [
+        [
+          {
+            "node": "Has Video?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Video?": {
+      "main": [
+        [
+          {
+            "node": "Update: Completed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bump Progress": {
+      "main": [
+        [
+          {
+            "node": "Timed Out?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Timed Out?": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "tags": [
+    {
+      "name": "video-ads"
+    },
+    {
+      "name": "trellis"
+    }
+  ]
+}
