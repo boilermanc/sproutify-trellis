@@ -153,6 +153,9 @@ export interface StaticAdConfig {
   // 'inspire' generates a new image guided by the photo's setting/mood/composition.
   reference_image_url?: string;
   reference_mode?: 'edit' | 'inspire';
+  // 'background' = a text-led canvas (devotional/quote posts): atmospheric, no
+  // subject, no people. 'photo' = a normal ad photograph with a subject.
+  image_style?: 'photo' | 'background';
 }
 
 export interface CarouselAdConfig {
@@ -185,6 +188,7 @@ export async function submitStaticAdJob(
       style_notes: config.style_notes,
       reference_image_url: config.reference_image_url || '',
       reference_mode: config.reference_mode || 'inspire',
+      image_style: config.image_style || 'photo',
     }),
   }).catch(() => {
     // Expected — Cloudflare 524 timeout or CORS block on the response.

@@ -287,6 +287,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [refMode, setRefMode] = useState<'edit' | 'inspire'>('edit');
   const [isUploadingRef, setIsUploadingRef] = useState(false);
   const [isDraggingRef, setIsDraggingRef] = useState(false);
+  // Photograph (a subject) vs Background (a canvas for text, no people).
+  const [imageStyle, setImageStyle] = useState<'photo' | 'background'>('photo');
 
   const handleRefImageUpload = async (fileList: FileList | null) => {
     const file = fileList?.[0];
@@ -795,6 +797,7 @@ STRICT RULES:
         style_notes: styleNotes,
         reference_image_url: refImageUrl,
         reference_mode: refMode,
+        image_style: imageStyle,
       });
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Static ad generation started!', 'success');
@@ -836,6 +839,7 @@ STRICT RULES:
         style_notes: styleNotes,
         reference_image_url: refImageUrl,
         reference_mode: refMode,
+        image_style: imageStyle,
       }));
       const result = await submitStaticAdBatch(configs);
       setActiveJobIds(prev => [...prev, ...result.job_ids]);
@@ -1371,6 +1375,33 @@ STRICT RULES:
               <p className="text-xs text-slate-400 mt-1">
                 Shapes how the copy is written — the words, not who sees the post. Ad targeting is set later in Ads Manager.
               </p>
+            </div>
+
+            {/* Image Type */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 block">Image Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'photo', label: 'Photograph', hint: 'A real scene with a subject — products, people, events' },
+                  { value: 'background', label: 'Background', hint: 'A calm canvas for text — no people, no focal subject' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setImageStyle(opt.value)}
+                    className={`border-2 rounded-xl p-3 text-left transition ${
+                      imageStyle === opt.value ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`text-sm font-bold ${imageStyle === opt.value ? 'text-emerald-700' : 'text-slate-700'}`}>{opt.label}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{opt.hint}</div>
+                  </button>
+                ))}
+              </div>
+              {imageStyle === 'background' && (
+                <p className="text-xs text-slate-400 mt-1.5">
+                  Built for verse and quote posts — the whole frame stays calm so text reads anywhere on it.
+                </p>
+              )}
             </div>
 
             {/* Aspect Ratio */}
