@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Trellis Carousel — v1\n\nGenerates a 3-7 slide social carousel: one plan (Gemini), then one on-brand image per slide (Nano Banana), all sharing an identical style block.\n\n**In:** POST /webhook/trellis-carousel-generate\n```\n{ job_id, branch, topic, slide_count,\n  target_segment, platform,\n  aspect_ratio, style_notes }\n```\n`slide_count` is clamped to 3-7.\n\n**Out:** job row -> status `awaiting_approval`, with `media_urls` (N items, in slide order), `frame_url` (= slide 1), `caption`, `script` (the full slide plan JSON) set.\n\nApproval + publish happen in the Trellis app (Video Ad Lab), which hands off to the existing B3 social publisher webhook (`trellis-social-publish`) with `media_type: 'carousel'` and `media_urls`.\n\n### Setup\n1. Credentials — reuse the same 3 as Trellis-Video-Ad-Frame-v1:\n   • **Sproutify Trellis** (Supabase) — id `IkIpi5m4OmJ9DvBS`\n   • **Gemini API** (Query Auth) — replace `REPLACE_GEMINI_CRED`\n   • **Supabase Storage (legacy eyJ service role)** (Header Auth) — replace `REPLACE_SUPABASE_STORAGE_CRED`\n2. Prerequisite SQL (Hub, run once — idempotent):\n```sql\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT;\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;\n```\n3. Activate, then point the Video Ad Lab's carousel action at `https://n8n.sproutify.app/webhook/trellis-carousel-generate`.\n\nThis workflow STOPS at `awaiting_approval`. It does not publish anything.",
+        "content": "## Trellis Carousel \u2014 v1\n\nGenerates a 3-7 slide social carousel: one plan (Gemini), then one on-brand image per slide (Nano Banana), all sharing an identical style block.\n\n**In:** POST /webhook/trellis-carousel-generate\n```\n{ job_id, branch, topic, slide_count,\n  target_segment, platform,\n  aspect_ratio, style_notes }\n```\n`slide_count` is clamped to 3-7.\n\n**Out:** job row -> status `awaiting_approval`, with `media_urls` (N items, in slide order), `frame_url` (= slide 1), `caption`, `script` (the full slide plan JSON) set.\n\nApproval + publish happen in the Trellis app (Video Ad Lab), which hands off to the existing B3 social publisher webhook (`trellis-social-publish`) with `media_type: 'carousel'` and `media_urls`.\n\n### Setup\n1. Credentials \u2014 reuse the same 3 as Trellis-Video-Ad-Frame-v1:\n   \u2022 **Sproutify Trellis** (Supabase) \u2014 id `IkIpi5m4OmJ9DvBS`\n   \u2022 **Gemini API** (Query Auth) \u2014 replace `REPLACE_GEMINI_CRED`\n   \u2022 **Supabase Storage (legacy eyJ service role)** (Header Auth) \u2014 replace `REPLACE_SUPABASE_STORAGE_CRED`\n2. Prerequisite SQL (Hub, run once \u2014 idempotent):\n```sql\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT;\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;\n```\n3. Activate, then point the Video Ad Lab's carousel action at `https://n8n.sproutify.app/webhook/trellis-carousel-generate`.\n\nThis workflow STOPS at `awaiting_approval`. It does not publish anything.",
         "height": 660,
         "width": 500,
         "color": 4
@@ -12,7 +12,10 @@
       "name": "Sticky Note - Setup",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-760, -420]
+      "position": [
+        -760,
+        -420
+      ]
     },
     {
       "parameters": {
@@ -25,7 +28,10 @@
       "name": "Sticky Note - Design",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-760, 260]
+      "position": [
+        -760,
+        260
+      ]
     },
     {
       "parameters": {
@@ -38,7 +44,10 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-100, 0],
+      "position": [
+        -100,
+        0
+      ],
       "webhookId": "trellis-carousel-generate"
     },
     {
@@ -46,15 +55,42 @@
         "tableId": "video_ad_jobs",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "id", "fieldValue": "={{ $json.body.job_id }}" },
-            { "fieldId": "branch", "fieldValue": "={{ $json.body.branch }}" },
-            { "fieldId": "status", "fieldValue": "queued" },
-            { "fieldId": "progress", "fieldValue": "5" },
-            { "fieldId": "format", "fieldValue": "carousel" },
-            { "fieldId": "script", "fieldValue": "pending" },
-            { "fieldId": "target_segment", "fieldValue": "={{ $json.body.target_segment || '' }}" },
-            { "fieldId": "platform", "fieldValue": "={{ $json.body.platform || 'general' }}" },
-            { "fieldId": "aspect_ratio", "fieldValue": "={{ $json.body.aspect_ratio || '1:1' }}" }
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $json.body.job_id }}"
+            },
+            {
+              "fieldId": "branch",
+              "fieldValue": "={{ $json.body.branch }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "queued"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "5"
+            },
+            {
+              "fieldId": "format",
+              "fieldValue": "carousel"
+            },
+            {
+              "fieldId": "script",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "target_segment",
+              "fieldValue": "={{ $json.body.target_segment || '' }}"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "={{ $json.body.platform || 'general' }}"
+            },
+            {
+              "fieldId": "aspect_ratio",
+              "fieldValue": "={{ $json.body.aspect_ratio || '1:1' }}"
+            }
           ]
         }
       },
@@ -62,9 +98,15 @@
       "name": "Upsert Job Record",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [120, 0],
+      "position": [
+        120,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       },
       "onError": "continueRegularOutput",
       "notes": "Insert on first run. On a resubmit the row already exists and this 409s harmlessly - onError lets it pass through, mirrors Trellis-Video-Ad-Frame-v1."
@@ -81,9 +123,15 @@
       "name": "Lookup Brand Profile",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [340, 0],
+      "position": [
+        340,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       },
       "onError": "continueRegularOutput",
       "notes": "Prefix match so both bare slugs and domain keys in brand_profiles resolve. If nothing matches, downstream falls back to branch name + 'friendly' tone."
@@ -96,7 +144,10 @@
       "name": "Prepare Slide Plan",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [560, 0]
+      "position": [
+        560,
+        0
+      ]
     },
     {
       "parameters": {
@@ -106,8 +157,14 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "generating_script" },
-            { "fieldId": "progress", "fieldValue": "15" }
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_script"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "15"
+            }
           ]
         }
       },
@@ -115,9 +172,15 @@
       "name": "Update: Generating Script",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [780, 0],
+      "position": [
+        780,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     },
     {
@@ -128,23 +191,36 @@
         "genericAuthType": "httpQueryAuth",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Slide Plan').item.json.plan_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 1500 } }) }}",
-        "options": { "timeout": 45000 }
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Slide Plan').item.json.plan_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 4096, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { caption: { type: 'STRING' }, slides: { type: 'ARRAY', items: { type: 'OBJECT', properties: { title: { type: 'STRING' }, body: { type: 'STRING' }, image_prompt: { type: 'STRING' } }, required: ['title','body','image_prompt'] } } }, required: ['caption','slides'] } } }) }}",
+        "options": {
+          "timeout": 45000
+        }
       },
       "id": "generate-slide-plan",
       "name": "Generate Slide Plan",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1000, 0],
+      "position": [
+        1000,
+        0
+      ],
       "credentials": {
-        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
       },
       "onError": "continueErrorOutput",
-      "notes": "gemini-flash-latest, same model id used by Trellis-Video-Ad-Frame-v1. maxOutputTokens raised to 1500 to fit up to 7 slides of JSON."
+      "notes": "Schema-enforced JSON (responseMimeType + responseSchema) so the slide plan is always parseable. maxOutputTokens is large because N slide prompts plus thinking tokens add up, and truncation makes the whole plan unparseable."
     },
     {
       "parameters": {
@@ -154,7 +230,10 @@
       "name": "Parse Slide Plan",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1220, 0],
+      "position": [
+        1220,
+        0
+      ],
       "notes": "Defensive JSON parse (raw parse -> regex-extracted {...} block -> 1-slide fallback). Appends the identical style_block to every slide.image_prompt so slide-to-slide consistency does not depend on the model."
     },
     {
@@ -165,9 +244,18 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "script", "fieldValue": "={{ JSON.stringify({ caption: $json.caption, slides: $json.slides }) }}" },
-            { "fieldId": "caption", "fieldValue": "={{ $json.caption }}" },
-            { "fieldId": "progress", "fieldValue": "30" }
+            {
+              "fieldId": "script",
+              "fieldValue": "={{ JSON.stringify({ caption: $json.caption, slides: $json.slides }) }}"
+            },
+            {
+              "fieldId": "caption",
+              "fieldValue": "={{ $json.caption }}"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "30"
+            }
           ]
         }
       },
@@ -175,9 +263,15 @@
       "name": "Save Plan",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1440, 0],
+      "position": [
+        1440,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     },
     {
@@ -188,8 +282,14 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "generating_frame" },
-            { "fieldId": "progress", "fieldValue": "40" }
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_frame"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "40"
+            }
           ]
         }
       },
@@ -197,9 +297,15 @@
       "name": "Update: Generating Frame",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1660, 0],
+      "position": [
+        1660,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     },
     {
@@ -210,7 +316,10 @@
       "name": "Split Slides",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1880, 0],
+      "position": [
+        1880,
+        0
+      ],
       "notes": "One output item per slide, in order. Everything downstream (Generate Slide Image / Extract Slide Image / Upload Slide to Storage) processes these N items automatically - no splitInBatches loop needed, same shape as B3's carousel-child chain."
     },
     {
@@ -221,20 +330,33 @@
         "genericAuthType": "httpQueryAuth",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.image_prompt }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: $json.aspect_ratio } } }) }}",
-        "options": { "timeout": 90000 }
+        "options": {
+          "timeout": 90000
+        }
       },
       "id": "generate-slide-image",
       "name": "Generate Slide Image",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2100, 0],
+      "position": [
+        2100,
+        0
+      ],
       "credentials": {
-        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
       },
       "onError": "continueErrorOutput",
       "notes": "Nano Banana 2 (gemini-3.1-flash-image), one call per input item (per slide). Runs sequentially in n8n's default execution order."
@@ -248,7 +370,10 @@
       "name": "Extract Slide Image",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2320, 0],
+      "position": [
+        2320,
+        0
+      ],
       "onError": "continueErrorOutput",
       "notes": "runOnceForEachItem, same idiom as E5's 'Audio base64 to Binary' node - $('Split Slides').item correctly resolves to the paired slide for whichever item is currently executing."
     },
@@ -261,22 +386,36 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "={{ $json.mime }}" },
-            { "name": "x-upsert", "value": "false" }
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.mime }}"
+            },
+            {
+              "name": "x-upsert",
+              "value": "false"
+            }
           ]
         },
         "sendBody": true,
         "contentType": "binaryData",
         "inputDataFieldName": "data",
-        "options": { "timeout": 60000 }
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "upload-slide-to-storage",
       "name": "Upload Slide to Storage",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2540, 0],
+      "position": [
+        2540,
+        0
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_SUPABASE_STORAGE_CRED", "name": "Supabase Storage (legacy eyJ service role)" }
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_STORAGE_CRED",
+          "name": "Supabase Storage (legacy eyJ service role)"
+        }
       },
       "onError": "continueErrorOutput",
       "notes": "Same episode-assets bucket as Trellis-Video-Ad-Frame-v1, under a static-ads/ prefix. MUST use the legacy eyJ... JWT service role key - upsert:false + a randomised filename avoids the UPDATE RLS policy on Storage, same as Frame v1. Runs once per slide."
@@ -289,7 +428,10 @@
       "name": "Aggregate Slide URLs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2760, 0],
+      "position": [
+        2760,
+        0
+      ],
       "notes": "Mirrors B3's 'Collect Carousel Children' validation: throws if the item count reaching this node does not match the planned slide count (a slide that hit its error branch never arrives here), then re-sorts by slide_index so order is guaranteed regardless of async completion order."
     },
     {
@@ -300,11 +442,26 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "awaiting_approval" },
-            { "fieldId": "progress", "fieldValue": "100" },
-            { "fieldId": "media_urls", "fieldValue": "={{ JSON.stringify($json.media_urls) }}" },
-            { "fieldId": "frame_url", "fieldValue": "={{ $json.frame_url }}" },
-            { "fieldId": "updated_at", "fieldValue": "={{ new Date().toISOString() }}" }
+            {
+              "fieldId": "status",
+              "fieldValue": "awaiting_approval"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "100"
+            },
+            {
+              "fieldId": "media_urls",
+              "fieldValue": "={{ JSON.stringify($json.media_urls) }}"
+            },
+            {
+              "fieldId": "frame_url",
+              "fieldValue": "={{ $json.frame_url }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
           ]
         }
       },
@@ -312,9 +469,15 @@
       "name": "Update: Awaiting Approval",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2980, 0],
+      "position": [
+        2980,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       },
       "notes": "Terminal state for this workflow. media_urls is written as a JSON.stringify'd array via the Supabase node - after first run, confirm in the table editor that the column stores a real JSON array and not a double-encoded string; if PostgREST stores it as a scalar string, switch this field to a raw HTTP PATCH node with Content-Type: application/json instead."
     },
@@ -326,8 +489,14 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "failed" },
-            { "fieldId": "error_message", "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Carousel generation failed').toString().slice(0, 500) }}" }
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Carousel generation failed').toString().slice(0, 500) }}"
+            }
           ]
         }
       },
@@ -335,47 +504,201 @@
       "name": "Mark Failed",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2320, 400],
+      "position": [
+        2320,
+        400
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Upsert Job Record", "type": "main", "index": 0 }]] },
-    "Upsert Job Record": { "main": [[{ "node": "Lookup Brand Profile", "type": "main", "index": 0 }]] },
-    "Lookup Brand Profile": { "main": [[{ "node": "Prepare Slide Plan", "type": "main", "index": 0 }]] },
-    "Prepare Slide Plan": { "main": [[{ "node": "Update: Generating Script", "type": "main", "index": 0 }]] },
-    "Update: Generating Script": { "main": [[{ "node": "Generate Slide Plan", "type": "main", "index": 0 }]] },
-    "Generate Slide Plan": {
+    "Webhook": {
       "main": [
-        [{ "node": "Parse Slide Plan", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Upsert Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Parse Slide Plan": { "main": [[{ "node": "Save Plan", "type": "main", "index": 0 }]] },
-    "Save Plan": { "main": [[{ "node": "Update: Generating Frame", "type": "main", "index": 0 }]] },
-    "Update: Generating Frame": { "main": [[{ "node": "Split Slides", "type": "main", "index": 0 }]] },
-    "Split Slides": { "main": [[{ "node": "Generate Slide Image", "type": "main", "index": 0 }]] },
+    "Upsert Job Record": {
+      "main": [
+        [
+          {
+            "node": "Lookup Brand Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Brand Profile": {
+      "main": [
+        [
+          {
+            "node": "Prepare Slide Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Slide Plan": {
+      "main": [
+        [
+          {
+            "node": "Update: Generating Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Generating Script": {
+      "main": [
+        [
+          {
+            "node": "Generate Slide Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Slide Plan": {
+      "main": [
+        [
+          {
+            "node": "Parse Slide Plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Slide Plan": {
+      "main": [
+        [
+          {
+            "node": "Save Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Plan": {
+      "main": [
+        [
+          {
+            "node": "Update: Generating Frame",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Generating Frame": {
+      "main": [
+        [
+          {
+            "node": "Split Slides",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Slides": {
+      "main": [
+        [
+          {
+            "node": "Generate Slide Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Generate Slide Image": {
       "main": [
-        [{ "node": "Extract Slide Image", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Extract Slide Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Extract Slide Image": {
       "main": [
-        [{ "node": "Upload Slide to Storage", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Upload Slide to Storage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Upload Slide to Storage": {
       "main": [
-        [{ "node": "Aggregate Slide URLs", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Aggregate Slide URLs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Aggregate Slide URLs": { "main": [[{ "node": "Update: Awaiting Approval", "type": "main", "index": 0 }]] }
+    "Aggregate Slide URLs": {
+      "main": [
+        [
+          {
+            "node": "Update: Awaiting Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
   "settings": {
@@ -384,5 +707,12 @@
     "saveDataSuccessExecution": "all",
     "saveDataErrorExecution": "all"
   },
-  "tags": [{ "name": "video-ads" }, { "name": "trellis" }]
+  "tags": [
+    {
+      "name": "video-ads"
+    },
+    {
+      "name": "trellis"
+    }
+  ]
 }

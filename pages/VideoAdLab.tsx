@@ -219,6 +219,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [refImageUrl, setRefImageUrl] = useState('');
   const [refMode, setRefMode] = useState<'edit' | 'inspire'>('edit');
   const [isUploadingRef, setIsUploadingRef] = useState(false);
+  const [isDraggingRef, setIsDraggingRef] = useState(false);
 
   const handleRefImageUpload = async (fileList: FileList | null) => {
     const file = fileList?.[0];
@@ -1029,9 +1030,27 @@ STRICT RULES:
                 Reference Photo <span className="normal-case text-slate-300">(optional)</span>
               </label>
               {!refImageUrl ? (
-                <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl px-4 py-6 text-sm text-slate-400 hover:border-emerald-400 hover:text-emerald-500 transition cursor-pointer ${isUploadingRef ? 'opacity-50 pointer-events-none' : ''}`}>
-                  {isUploadingRef ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                  {isUploadingRef ? 'Uploading…' : 'Upload a real photo to work from'}
+                <label
+                  onDragOver={e => { e.preventDefault(); setIsDraggingRef(true); }}
+                  onDragLeave={() => setIsDraggingRef(false)}
+                  onDrop={e => {
+                    e.preventDefault();
+                    setIsDraggingRef(false);
+                    handleRefImageUpload(e.dataTransfer.files);
+                  }}
+                  className={`flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-xl px-4 py-8 text-sm transition cursor-pointer ${
+                    isDraggingRef
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                      : 'border-slate-200 text-slate-400 hover:border-emerald-400 hover:text-emerald-500'
+                  } ${isUploadingRef ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  {isUploadingRef ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                  <span className="font-bold">
+                    {isUploadingRef ? 'Uploading…' : isDraggingRef ? 'Drop the photo here' : 'Drag a photo here'}
+                  </span>
+                  {!isUploadingRef && !isDraggingRef && (
+                    <span className="text-xs text-slate-300">or click to browse</span>
+                  )}
                   <input
                     type="file"
                     accept="image/*"
@@ -2475,6 +2494,25 @@ STRICT RULES:
                                   <blockquote className="border-l-4 border-emerald-400 pl-4 py-2 bg-white/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
                                     {job.caption}
                                   </blockquote>
+                                </div>
+                              )}
+
+                              {/* Image prompt — what was actually sent to the image model.
+                                  The first line tells you whether a reference photo was used. */}
+                              {job.frame_prompt && (
+                                <div className="col-span-2 mt-1">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-1">
+                                    Image Prompt
+                                    {/^The attached image is a real photograph/.test(job.frame_prompt) && (
+                                      <span className="ml-2 normal-case tracking-normal text-emerald-600 font-bold">· used your photo</span>
+                                    )}
+                                    {/^A reference photograph is attached/.test(job.frame_prompt) && (
+                                      <span className="ml-2 normal-case tracking-normal text-emerald-600 font-bold">· guided by your photo</span>
+                                    )}
+                                  </span>
+                                  <p className="bg-white/60 rounded-lg px-3 py-2 text-xs text-slate-500 font-mono whitespace-pre-wrap break-words">
+                                    {job.frame_prompt}
+                                  </p>
                                 </div>
                               )}
                             </div>
