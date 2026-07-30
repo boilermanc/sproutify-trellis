@@ -2241,7 +2241,7 @@ STRICT RULES:
             </h3>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4">
             {awaitingApprovalJobs.map(job => {
               const isStaticOrCarousel = job.format === 'static' || job.format === 'carousel';
               const isApproving = approvingJobId === job.id;
@@ -2269,7 +2269,74 @@ STRICT RULES:
                         <img key={i} src={url} alt={`Slide ${i + 1}`} className="w-20 h-20 rounded-lg object-cover border border-slate-200 flex-shrink-0" />
                       ))}
                     </div>
-                  ) : job.frame_url ? (
+                  ) : job.format === 'static' && job.frame_url ? (() => {
+                    const copy = parseJobCopy(job);
+                    const overlayConfig = getOverlayConfig(job);
+                    const activeHeadline = overlayConfig.layers[0]?.text;
+                    const canAddSubheadHere = !!copy.subhead && overlayConfig.layers.length === 1;
+                    return (
+                      <div className="space-y-3">
+                        {copy.headline_variants.length > 1 && (
+                          <div className="max-w-sm space-y-1.5 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Headline options</span>
+                            <p className="text-[10px] text-slate-400">
+                              Free to swap — text is composited onto the image, not regenerated.
+                            </p>
+                            <div className="flex flex-col gap-1.5 mt-1">
+                              {copy.headline_variants.map((variant, i) => {
+                                const active = variant === activeHeadline;
+                                return (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => applyHeadlineVariant(job, variant)}
+                                    className={`text-left border rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                                      active
+                                        ? 'bg-emerald-500 text-white border-emerald-500'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    {variant}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        <TextOverlayEditor
+                          imageUrl={job.frame_url}
+                          config={overlayConfig}
+                          onChange={c => setOverlayConfigs(prev => ({ ...prev, [job.id]: c }))}
+                          brandColors={{
+                            primary: brandInfoForJob(job)?.primary_color,
+                            secondary: brandInfoForJob(job)?.secondary_color,
+                            accent: brandInfoForJob(job)?.accent_color,
+                          }}
+                          brandFont={brandInfoForJob(job)?.font_family || 'sans-serif'}
+                          className="rounded-xl border border-slate-200"
+                        />
+                        <div className="flex items-center justify-between gap-2">
+                          {canAddSubheadHere ? (
+                            <button
+                              type="button"
+                              onClick={() => handleAddSubhead(job, copy.subhead!)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition"
+                            >
+                              <Plus size={13} /> Add subhead
+                            </button>
+                          ) : <span />}
+                          <button
+                            onClick={() => handleSaveLayout(job)}
+                            disabled={savingLayoutJobId === job.id}
+                            className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition disabled:opacity-30 flex items-center gap-2"
+                          >
+                            {savingLayoutJobId === job.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                            {savingLayoutJobId === job.id ? 'Saving…' : 'Save layout'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })() : job.frame_url ? (
                     <img src={job.frame_url} alt="Generated frame" className="w-full h-40 rounded-lg object-cover border border-slate-200" />
                   ) : (
                     <div className="w-full h-40 rounded-lg bg-slate-100 flex items-center justify-center">
