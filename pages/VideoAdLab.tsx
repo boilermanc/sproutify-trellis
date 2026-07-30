@@ -796,7 +796,9 @@ STRICT RULES:
         setting: setting === AI_CHOOSES_SETTING ? '' : setting,
         style_notes: styleNotes,
         reference_image_url: refImageUrl,
-        reference_mode: refMode,
+        // Only meaningful with an actual photo; sending 'edit' with no image
+        // just makes payloads confusing to read back when debugging.
+        reference_mode: refImageUrl ? refMode : 'inspire',
         image_style: imageStyle,
       });
       setActiveJobIds(prev => [...prev, result.job_id]);
@@ -838,7 +840,9 @@ STRICT RULES:
         setting: setting === AI_CHOOSES_SETTING ? '' : setting,
         style_notes: styleNotes,
         reference_image_url: refImageUrl,
-        reference_mode: refMode,
+        // Only meaningful with an actual photo; sending 'edit' with no image
+        // just makes payloads confusing to read back when debugging.
+        reference_mode: refImageUrl ? refMode : 'inspire',
         image_style: imageStyle,
       }));
       const result = await submitStaticAdBatch(configs);

@@ -149,7 +149,8 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "OPTIONAL supplement only (pronunciation_guide, default_setting). Name, tone and colours now come from `Lookup Branch Style` (the `branches` table), which is keyed by the exact slug the app sends. brand_profiles is keyed by DOMAIN, so this prefix match misses e.g. slug 'rejoice' vs 'letsrejoice.app' - that is expected and harmless now, since nothing essential depends on it."
+      "notes": "OPTIONAL supplement only (pronunciation_guide, default_setting). Name, tone and colours now come from `Lookup Branch Style` (the `branches` table), which is keyed by the exact slug the app sends. brand_profiles is keyed by DOMAIN, so this prefix match misses e.g. slug 'rejoice' vs 'letsrejoice.app' - that is expected and harmless now, since nothing essential depends on it. CRITICAL: alwaysOutputData=true. A Supabase lookup that matches nothing returns ZERO ITEMS, and in n8n zero items silently halts every downstream node \u2014 it is not an error, so onError never fires. That is exactly how branch 'rejoice' died here: brand_profiles is keyed by domain ('letsrejoice.app') and the slug prefix match found nothing. alwaysOutputData emits an empty item instead, so the flow continues and the prepare-prompt node falls back as designed.",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -174,7 +175,8 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "Exact slug match against branches.slug - the app sends the bare slug (e.g. atlurbanfarms), which matches this column exactly, unlike Lookup Brand Profile's prefix hack against brand_profiles.branch. Supplies primary_color / secondary_color / accent_color (and font_family) for the real brand colours; brand_profiles.brand_colors is empty for every brand, so this is the only source of truth for hex values used in image prompts."
+      "notes": "Exact slug match against branches.slug - the app sends the bare slug (e.g. atlurbanfarms), which matches this column exactly, unlike Lookup Brand Profile's prefix hack against brand_profiles.branch. Supplies primary_color / secondary_color / accent_color (and font_family) for the real brand colours; brand_profiles.brand_colors is empty for every brand, so this is the only source of truth for hex values used in image prompts. CRITICAL: alwaysOutputData=true. A Supabase lookup that matches nothing returns ZERO ITEMS, and in n8n zero items silently halts every downstream node \u2014 it is not an error, so onError never fires. That is exactly how branch 'rejoice' died here: brand_profiles is keyed by domain ('letsrejoice.app') and the slug prefix match found nothing. alwaysOutputData emits an empty item instead, so the flow continues and the prepare-prompt node falls back as designed.",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
