@@ -87,6 +87,27 @@ const STATIC_ASPECT_RATIOS = [
   { value: '9:16', label: '9:16 Story' },
 ] as const;
 
+// Video settings are physical shoot locations. Image posts often aren't scenes
+// at all — a symbol, a texture, a sky — so static gets its own list, with
+// "Let AI choose" as the default: it sends no setting and lets the scene brief
+// (written from your message) decide the imagery.
+const AI_CHOOSES_SETTING = 'Let AI choose';
+const STATIC_SETTINGS = [
+  AI_CHOOSES_SETTING,
+  'Symbolic / abstract',
+  'Outdoor / nature',
+  'Sky',
+  'Water',
+  'Home interior',
+  'Studio',
+  'Kitchen',
+  'Garden',
+  'Cafe',
+  'Market',
+  'Office',
+  'Rooftop',
+] as const;
+
 const CAROUSEL_ASPECT_RATIOS = [
   { value: '1:1', label: '1:1 Square' },
   { value: '4:5', label: '4:5 Portrait' },
@@ -288,6 +309,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // (the user can still override it on the config step).
   useEffect(() => {
     setAspectRatio(format === 'video' ? '9:16' : '1:1');
+    setSetting(format === 'video' ? VIDEO_SETTINGS[0] : AI_CHOOSES_SETTING);
   }, [format]);
 
   // ── Script & template state ──
@@ -767,7 +789,9 @@ STRICT RULES:
         target_segment: targetSegment,
         platform,
         aspect_ratio: aspectRatio,
-        setting,
+        // "Let AI choose" means send nothing, so the scene brief written from
+        // the message decides the imagery instead of a fixed location.
+        setting: setting === AI_CHOOSES_SETTING ? '' : setting,
         style_notes: styleNotes,
         reference_image_url: refImageUrl,
         reference_mode: refMode,
@@ -806,7 +830,9 @@ STRICT RULES:
         target_segment: targetSegment,
         platform,
         aspect_ratio: aspectRatio,
-        setting,
+        // "Let AI choose" means send nothing, so the scene brief written from
+        // the message decides the imagery instead of a fixed location.
+        setting: setting === AI_CHOOSES_SETTING ? '' : setting,
         style_notes: styleNotes,
         reference_image_url: refImageUrl,
         reference_mode: refMode,
@@ -1339,9 +1365,12 @@ STRICT RULES:
               <input
                 value={targetSegment}
                 onChange={e => setTargetSegment(e.target.value)}
-                placeholder="e.g. health-conscious millennials, new gardeners"
+                placeholder="e.g. Christian women 25-45 in a hard season"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
               />
+              <p className="text-xs text-slate-400 mt-1">
+                Shapes how the copy is written — the words, not who sees the post. Ad targeting is set later in Ads Manager.
+              </p>
             </div>
 
             {/* Aspect Ratio */}
@@ -1368,12 +1397,20 @@ STRICT RULES:
               <select
                 value={setting}
                 onChange={e => setSetting(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
+                disabled={!!refImageUrl && refMode === 'edit'}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {VIDEO_SETTINGS.map(s => (
+                {STATIC_SETTINGS.map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+              <p className="text-xs text-slate-400 mt-1">
+                {refImageUrl && refMode === 'edit'
+                  ? 'Not used — your uploaded photo is the scene.'
+                  : setting === AI_CHOOSES_SETTING
+                  ? 'The AI picks the imagery from your message. For something specific — "a single white dove against a pale sky" — describe it in Style Notes below.'
+                  : 'A broad direction. Describe anything specific in Style Notes below.'}
+              </p>
             </div>
 
             {/* Platform */}
@@ -1406,9 +1443,14 @@ STRICT RULES:
                 value={styleNotes}
                 onChange={e => setStyleNotes(e.target.value)}
                 rows={2}
-                placeholder="e.g. bold typography, bright green accent color"
+                placeholder="e.g. a single white dove against a pale morning sky, soft natural light, muted warm tones"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
               />
+              <p className="text-xs text-slate-400 mt-1">
+                {refImageUrl && refMode === 'edit'
+                  ? 'With your own photo, this only steers the colour grade — the scene stays as shot.'
+                  : 'Describe the actual subject and mood you want. This is the strongest lever on how the image looks.'}
+              </p>
             </div>
 
             {/* Reference Photo */}
