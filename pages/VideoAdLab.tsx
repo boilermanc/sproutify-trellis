@@ -9,7 +9,7 @@ import {
 } from '../constants';
 import {
   submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob,
-  submitStaticAdJob, submitCarouselJob, approveJob, approveAndRenderVideo,
+  submitStaticAdJob, submitStaticAdBatch, submitCarouselJob, approveJob, approveAndRenderVideo,
   regenerateJob, discardJob, saveOverlayConfig, saveComposite, publishableImageUrl,
 } from '../services/videoAdService';
 import { publishToSocial } from '../services/socialService';
@@ -24,6 +24,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
   Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch, Plus, Megaphone,
+  ListChecks, AlertTriangle, Wand2,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -92,6 +93,41 @@ const CAROUSEL_ASPECT_RATIOS = [
 ] as const;
 
 const SLIDE_COUNT_OPTIONS = [3, 4, 5, 6, 7] as const;
+
+// Batch mode convenience presets for the static-image batch textarea — one
+// click fills in a labelled set of lines (one image each). Scoped to a
+// branch slug so they only surface for that branch; kept generic so more
+// presets can be added later without touching the UI.
+interface StaticBatchPreset {
+  label: string;
+  branchSlug: string;
+  lines: string[];
+}
+
+const STATIC_BATCH_PRESETS: StaticBatchPreset[] = [
+  {
+    label: 'Load Rejoice emotion set',
+    branchSlug: 'rejoice',
+    lines: [
+      "For the night anxiety won't let you sleep",
+      'For the day you feel completely overwhelmed',
+      'For the grief that still catches you off guard',
+      'For the loneliness no one else can see',
+      "For the anger you don't want to admit to",
+      'For the fear of what comes next',
+      "For the doubt you're afraid to say out loud",
+      "For the exhaustion that sleep doesn't fix",
+      'For the gratitude that surprised you today',
+      'For the joy you almost missed',
+      "For the hope you're trying to hold onto",
+      'For the waiting that feels endless',
+    ],
+  },
+];
+
+// Hard cap on images per batch run — keeps a single "queue a batch" click
+// from firing off an unbounded number of generation jobs.
+const STATIC_BATCH_MAX = 25;
 
 const FORMAT_OPTIONS: { value: VideoAdFormat; label: string; description: string; hint: string; icon: React.ElementType }[] = [
   { value: 'video', label: 'Video', description: 'AI actor or full scene with voiceover', hint: 'Premium · ~minutes', icon: Film },
@@ -218,6 +254,12 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [carouselTopic, setCarouselTopic] = useState('');
   const [slideCount, setSlideCount] = useState<number>(5);
   const [styleNotes, setStyleNotes] = useState('');
+
+  // ── Static batch mode: one image per non-blank line, all other static
+  //    fields (branch, aspect ratio, setting, platform, style notes, ref
+  //    photo) shared across the whole batch for visual consistency. ──
+  const [staticBatchMode, setStaticBatchMode] = useState(false);
+  const [staticBatchText, setStaticBatchText] = useState('');
 
   // ── Reference photo (static ads): a real photo the generation works from ──
   const [refImageUrl, setRefImageUrl] = useState('');
@@ -557,6 +599,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     setTargetSegment('');
     setStyleNotes('');
     setRefImageUrl('');
+    setStaticBatchMode(false);
+    setStaticBatchText('');
     setStep(0);
   };
 
@@ -708,6 +752,51 @@ STRICT RULES:
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Submit: Static batch ──
+  // Queues one job per non-blank line so a week/month of daily images can be
+  // generated in one go instead of one at a time. Every other static field
+  // (branch, aspect ratio, setting, platform, style notes, reference photo)
+  // is shared across the batch so the set reads as one consistent campaign.
+  // Batch submits skip the single-job Progress step (step 4 tracks exactly
+  // one job) — instead we return to the format picker and let "Needs Your
+  // Review" plus the Creative Library (which already handle many jobs at
+  // once) surface each image as it finishes.
+  const handleSubmitStaticBatch = async () => {
+    if (staticBatchLinesCapped.length === 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const configs = staticBatchLinesCapped.map(message => ({
+        branch,
+        message,
+        target_segment: targetSegment,
+        platform,
+        aspect_ratio: aspectRatio,
+        setting,
+        style_notes: styleNotes,
+        reference_image_url: refImageUrl,
+        reference_mode: refMode,
+      }));
+      const result = await submitStaticAdBatch(configs);
+      setActiveJobIds(prev => [...prev, ...result.job_ids]);
+      addToast(
+        `${result.job_ids.length} image${result.job_ids.length === 1 ? '' : 's'} queued — they'll appear in Needs Your Review as they finish.`,
+        'success',
+      );
+
+      // Batch jobs aren't tracked individually on the Progress step (it
+      // watches exactly one job) — go back to the format picker and let the
+      // review queue below pick each one up as it finishes.
+      setStep(0);
+
+      const fetched = await getVideoAdJobs();
+      setJobs(fetched);
+    } catch (err: any) {
+      addToast(`Batch submit failed: ${err.message}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -894,10 +983,26 @@ STRICT RULES:
   // ── Derived ──
   const wordCount = generatedScript.trim().split(/\s+/).filter(Boolean).length;
   const pipelineCost = PIPELINE_OPTIONS.find(p => p.value === pipeline)?.cost ?? 0.12;
+
+  // ── Static batch derived state ──
+  const staticBatchLines = useMemo(
+    () => staticBatchText.split('\n').map(l => l.trim()).filter(Boolean),
+    [staticBatchText],
+  );
+  const staticBatchLinesCapped = useMemo(
+    () => staticBatchLines.slice(0, STATIC_BATCH_MAX),
+    [staticBatchLines],
+  );
+  const staticBatchOverLimit = staticBatchLines.length > STATIC_BATCH_MAX;
+  const availableStaticBatchPresets = useMemo(
+    () => STATIC_BATCH_PRESETS.filter(p => p.branchSlug === branch),
+    [branch],
+  );
+
   const step1Valid = format === 'video'
     ? !!(branch && productDescription && cta)
     : format === 'static'
-    ? !!(branch && staticMessage.trim())
+    ? (staticBatchMode ? !!(branch && staticBatchLines.length > 0) : !!(branch && staticMessage.trim()))
     : !!(branch && carouselTopic.trim());
 
   const advancedChanged = setting !== VIDEO_SETTINGS[0] || lighting !== VIDEO_LIGHTING[0] || mood !== VIDEO_MOODS[0] || customVisualNotes.trim() !== '';
@@ -1105,6 +1210,26 @@ STRICT RULES:
           <h3 className="text-lg font-black text-slate-800 mb-1">What's the offer?</h3>
           <p className="text-xs text-slate-400 mb-6">n8n writes the ad copy for you — just describe the message.</p>
 
+          {/* Single / Batch mode toggle */}
+          <div className="flex items-center gap-2 mb-6">
+            <button
+              onClick={() => setStaticBatchMode(false)}
+              className={`flex items-center gap-1.5 border rounded-full px-4 py-1.5 text-sm font-bold transition ${
+                !staticBatchMode ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              <ImageIcon size={14} /> Single
+            </button>
+            <button
+              onClick={() => setStaticBatchMode(true)}
+              className={`flex items-center gap-1.5 border rounded-full px-4 py-1.5 text-sm font-bold transition ${
+                staticBatchMode ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              <ListChecks size={14} /> Batch
+            </button>
+          </div>
+
           <div className="space-y-5">
             {/* Branch */}
             <div>
@@ -1121,18 +1246,62 @@ STRICT RULES:
               </select>
             </div>
 
-            {/* Message */}
-            <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
-              <textarea
-                value={staticMessage}
-                onChange={e => setStaticMessage(e.target.value)}
-                rows={3}
-                placeholder="e.g. 20% off microgreens starter kits this week only"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
-              />
-              <p className="text-xs text-slate-400 mt-1">What should the image say or promote?</p>
-            </div>
+            {/* Message — single job, or one line per image in batch mode */}
+            {staticBatchMode ? (
+              <div>
+                <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                    Messages <span className="normal-case text-slate-300">(one per line — one image each)</span>
+                  </label>
+                  {availableStaticBatchPresets.length > 0 && (
+                    <div className="flex gap-3">
+                      {availableStaticBatchPresets.map(preset => (
+                        <button
+                          key={preset.label}
+                          onClick={() => setStaticBatchText(preset.lines.join('\n'))}
+                          className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition"
+                        >
+                          <Wand2 size={12} /> {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <textarea
+                  value={staticBatchText}
+                  onChange={e => setStaticBatchText(e.target.value)}
+                  rows={10}
+                  placeholder={'e.g.\nMonday: 20% off microgreens starter kits\nTuesday: New arrivals just landed\nWednesday: Ask us anything — live Q&A at 5pm'}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-emerald-500 transition resize-y"
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  {staticBatchLinesCapped.length} image{staticBatchLinesCapped.length === 1 ? '' : 's'} will be generated
+                </p>
+                {staticBatchOverLimit && (
+                  <div className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-xs text-amber-700">
+                      You pasted {staticBatchLines.length} lines — batches are capped at {STATIC_BATCH_MAX} images per run. Only the first {STATIC_BATCH_MAX} will be generated; remove {staticBatchLines.length - STATIC_BATCH_MAX} line{staticBatchLines.length - STATIC_BATCH_MAX === 1 ? '' : 's'} to include the rest.
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-slate-400 mt-2">
+                  Branch, aspect ratio, setting, platform, style notes, and reference photo below apply to every image in the batch, so the set looks visually consistent.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
+                <textarea
+                  value={staticMessage}
+                  onChange={e => setStaticMessage(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. 20% off microgreens starter kits this week only"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+                />
+                <p className="text-xs text-slate-400 mt-1">What should the image say or promote?</p>
+              </div>
+            )}
 
             {/* Target Audience */}
             <div>
@@ -1795,7 +1964,9 @@ STRICT RULES:
           <h3 className="text-lg font-black text-slate-800 mb-1">Review & generate</h3>
           <p className="text-xs text-slate-400 mb-6">
             {format === 'static'
-              ? "n8n writes the copy and generates the image — check your inputs, then generate."
+              ? (staticBatchMode
+                  ? "n8n writes the copy and generates each image — check your inputs, then generate the batch."
+                  : "n8n writes the copy and generates the image — check your inputs, then generate.")
               : "n8n plans the slides, writes the caption, and generates each frame — check your inputs, then generate."}
           </p>
 
@@ -1805,14 +1976,30 @@ STRICT RULES:
               <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Branch</span>
               <p className="text-sm text-slate-700">{branchName(branch)}</p>
             </div>
-            <div>
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">{format === 'static' ? 'Message' : 'Topic'}</span>
-              <p className="text-sm text-slate-700">
-                {format === 'static'
-                  ? (staticMessage.length > 100 ? `${staticMessage.slice(0, 100)}...` : staticMessage)
-                  : (carouselTopic.length > 100 ? `${carouselTopic.slice(0, 100)}...` : carouselTopic)}
-              </p>
-            </div>
+            {format === 'static' && staticBatchMode ? (
+              <div className="col-span-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Batch — {staticBatchLinesCapped.length} image{staticBatchLinesCapped.length === 1 ? '' : 's'}
+                </span>
+                <ul className="mt-2 space-y-1 max-h-56 overflow-y-auto pr-2">
+                  {staticBatchLinesCapped.map((line, i) => (
+                    <li key={i} className="text-sm text-slate-700 flex gap-2">
+                      <span className="text-slate-300 font-mono text-xs mt-0.5 flex-shrink-0">{i + 1}.</span>
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">{format === 'static' ? 'Message' : 'Topic'}</span>
+                <p className="text-sm text-slate-700">
+                  {format === 'static'
+                    ? (staticMessage.length > 100 ? `${staticMessage.slice(0, 100)}...` : staticMessage)
+                    : (carouselTopic.length > 100 ? `${carouselTopic.slice(0, 100)}...` : carouselTopic)}
+                </p>
+              </div>
+            )}
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Audience</span>
               <p className="text-sm text-slate-700">{targetSegment || 'General'}</p>
@@ -1850,7 +2037,9 @@ STRICT RULES:
             <DollarSign size={16} className="text-emerald-500" />
             <span className="font-bold text-emerald-700">
               {format === 'static'
-                ? 'Static images typically generate in seconds for pennies per image.'
+                ? (staticBatchMode
+                    ? `${staticBatchLinesCapped.length} images will be generated in sequence, staggered a fraction of a second apart to stay within provider rate limits.`
+                    : 'Static images typically generate in seconds for pennies per image.')
                 : `Carousels typically take a minute or two — ${slideCount} slides generated in sequence.`}
             </span>
           </div>
@@ -1864,12 +2053,16 @@ STRICT RULES:
               Back
             </button>
             <button
-              onClick={format === 'static' ? handleSubmitStatic : handleSubmitCarousel}
+              onClick={format === 'static' ? (staticBatchMode ? handleSubmitStaticBatch : handleSubmitStatic) : handleSubmitCarousel}
               disabled={isSubmitting || !step1Valid}
               className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-sm font-bold rounded-lg hover:from-emerald-700 hover:to-emerald-600 transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg"
             >
               {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
-              {isSubmitting ? 'Generating...' : format === 'static' ? 'Generate Static Ad' : 'Generate Carousel'}
+              {isSubmitting
+                ? (format === 'static' && staticBatchMode ? 'Queuing…' : 'Generating...')
+                : format === 'static'
+                ? (staticBatchMode ? `Generate ${staticBatchLinesCapped.length} Images` : 'Generate Static Ad')
+                : 'Generate Carousel'}
             </button>
           </div>
         </div>

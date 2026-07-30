@@ -195,6 +195,38 @@ export async function submitStaticAdJob(
   return { job_id };
 }
 
+// ─── 5b. submitStaticAdBatch ─────────────────────────────────────
+// Queues a whole batch of static ad jobs in one go (e.g. a week/month of
+// daily social images) instead of the caller submitting them one at a time.
+// Reuses submitStaticAdJob per config — same client-generated job_id +
+// fire-and-forget webhook pattern.
+//
+// IMPORTANT: calls are staggered (~400ms apart by default) rather than all
+// fired at once. Each job kicks off its own Gemini text + image generation
+// pass in n8n; a dozen+ simultaneous submissions can trip provider rate
+// limits (Gemini/image API 429s), which would fail jobs that had nothing
+// wrong with their config. A small stagger smooths the burst without making
+// the caller wait meaningfully — n8n processes each job asynchronously
+// regardless, so this only delays when the *request* goes out, not when
+// results come back.
+export async function submitStaticAdBatch(
+  configs: StaticAdConfig[],
+  opts?: { staggerMs?: number },
+): Promise<{ job_ids: string[] }> {
+  const staggerMs = opts?.staggerMs ?? 400;
+  const job_ids: string[] = [];
+
+  for (let i = 0; i < configs.length; i++) {
+    if (i > 0 && staggerMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, staggerMs));
+    }
+    const { job_id } = await submitStaticAdJob(configs[i]);
+    job_ids.push(job_id);
+  }
+
+  return { job_ids };
+}
+
 // ─── 6. submitCarouselJob ────────────────────────────────────────
 export async function submitCarouselJob(
   config: CarouselAdConfig,
