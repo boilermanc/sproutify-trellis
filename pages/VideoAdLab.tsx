@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig } from '../types';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig, TextOverlayLayer } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
 import {
@@ -22,7 +22,7 @@ import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
-  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch,
+  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch, Plus,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -274,21 +274,38 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [overlayConfigs, setOverlayConfigs] = useState<Record<string, TextOverlayConfig>>({});
   const [savingLayoutJobId, setSavingLayoutJobId] = useState<string | null>(null);
 
-  // n8n writes copy as a JSON string like {"headline":"...","subtext":"...","cta":"..."}
-  // in job.script, but that field predates the JSON convention and is sometimes plain
-  // text or missing — parse defensively and fall back to the caption, then blank.
-  const parseJobCopy = (job: VideoAdJob): { headline: string; subtext?: string; cta?: string } => {
+  // n8n writes copy as a JSON string in job.script. Older jobs look like
+  // {"headline":"...","subtext":"...","cta":"..."}; newer ones add
+  // headline_variants (5 persuasion-angle options) and subhead. That field
+  // predates the JSON convention and is sometimes plain text or missing —
+  // parse defensively and fall back to the caption, then blank. Never throws.
+  const parseJobCopy = (job: VideoAdJob): {
+    headline: string;
+    subtext?: string;
+    subhead?: string;
+    cta?: string;
+    headline_variants: string[];
+  } => {
     if (job.script) {
       try {
         const parsed = JSON.parse(job.script);
         if (parsed && typeof parsed === 'object' && typeof parsed.headline === 'string') {
-          return { headline: parsed.headline, subtext: parsed.subtext, cta: parsed.cta };
+          const headline_variants = Array.isArray(parsed.headline_variants)
+            ? parsed.headline_variants.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+            : [];
+          return {
+            headline: parsed.headline,
+            subtext: typeof parsed.subtext === 'string' ? parsed.subtext : undefined,
+            subhead: typeof parsed.subhead === 'string' ? parsed.subhead : undefined,
+            cta: typeof parsed.cta === 'string' ? parsed.cta : undefined,
+            headline_variants,
+          };
         }
       } catch {
         // job.script isn't JSON — fall through to caption/blank.
       }
     }
-    return { headline: job.caption || '' };
+    return { headline: job.caption || '', headline_variants: [] };
   };
 
   const brandInfoForJob = (job: VideoAdJob) => branchContext?.allBranches.find(b => b.slug === job.branch);
@@ -313,6 +330,42 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     } finally {
       setSavingLayoutJobId(null);
     }
+  };
+
+  // Swap only the primary text layer's copy — position, font, size, color, and
+  // every other layer are left untouched. Free to try, since the headline is
+  // composited onto the image rather than baked in by the generator.
+  const applyHeadlineVariant = (job: VideoAdJob, variant: string) => {
+    const config = getOverlayConfig(job);
+    if (!config.layers.length) return;
+    const nextLayers = config.layers.map((layer, i) => (i === 0 ? { ...layer, text: variant } : layer));
+    setOverlayConfigs(prev => ({ ...prev, [job.id]: { ...config, layers: nextLayers } }));
+  };
+
+  // Convenience for the common two-line layout: append the subhead as a second
+  // layer just under the primary headline, inheriting its font/color/alignment
+  // so it reads as one cohesive design rather than a mismatched addition.
+  const handleAddSubhead = (job: VideoAdJob, subhead: string) => {
+    const config = getOverlayConfig(job);
+    const primary = config.layers[0];
+    if (!primary) return;
+    const subheadLayer: TextOverlayLayer = {
+      id: crypto.randomUUID(),
+      text: subhead,
+      x: primary.x,
+      y: Math.min(0.97, primary.y + 0.09),
+      widthPct: primary.widthPct,
+      fontSize: primary.fontSize * 0.45,
+      fontFamily: primary.fontFamily,
+      fontWeight: 400,
+      color: primary.color,
+      align: primary.align,
+      lineHeight: primary.lineHeight,
+      letterSpacing: primary.letterSpacing,
+      uppercase: false,
+      shadow: primary.shadow,
+    };
+    setOverlayConfigs(prev => ({ ...prev, [job.id]: { ...config, layers: [...config.layers, subheadLayer] } }));
   };
 
   // ── Regenerate / discard state (review loop) ──
@@ -1199,7 +1252,7 @@ STRICT RULES:
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     {([
-                      { value: 'edit', label: 'Use my photo (add the headline to it)' },
+                      { value: 'edit', label: 'Use my photo as-is' },
                       { value: 'inspire', label: 'Style inspiration (generate new)' },
                     ] as const).map(m => (
                       <button
@@ -1215,8 +1268,8 @@ STRICT RULES:
                   </div>
                   <p className="text-xs text-slate-400">
                     {refMode === 'edit'
-                      ? 'Keeps your actual photo and renders the headline text onto it — most authentic.'
-                      : 'Generates a fresh image using your photo for setting, mood and composition.'}
+                      ? 'Keeps your actual photo, untouched except for a subtle colour grade — most authentic. You add the headline afterward in the next step.'
+                      : 'Generates a fresh image using your photo for setting, mood and composition — also text-free, with the headline added afterward.'}
                   </p>
                 </div>
               )}
@@ -1918,34 +1971,76 @@ STRICT RULES:
 
             {/* Media preview — static ads get the real-text overlay editor over the
                 clean generated image; carousels/video keep the plain preview. */}
-            {job && job.format === 'static' && job.frame_url && (isReview || isDone) ? (
-              <div className="max-w-sm space-y-2">
-                <TextOverlayEditor
-                  imageUrl={job.frame_url}
-                  config={getOverlayConfig(job)}
-                  onChange={c => setOverlayConfigs(prev => ({ ...prev, [job.id]: c }))}
-                  brandColors={{
-                    primary: brandInfoForJob(job)?.primary_color,
-                    secondary: brandInfoForJob(job)?.secondary_color,
-                    accent: brandInfoForJob(job)?.accent_color,
-                  }}
-                  brandFont={brandInfoForJob(job)?.font_family || 'sans-serif'}
-                  className="rounded-xl border border-slate-200"
-                />
-                {isReview && (
-                  <div className="flex justify-end">
+            {job && job.format === 'static' && job.frame_url && (isReview || isDone) ? (() => {
+              const copy = parseJobCopy(job);
+              const overlayConfig = getOverlayConfig(job);
+              const activeHeadline = overlayConfig.layers[0]?.text;
+              const canAddSubhead = !!copy.subhead && overlayConfig.layers.length === 1;
+              return (
+                <div className="max-w-sm space-y-2">
+                  {copy.headline_variants.length > 1 && (
+                    <div className="space-y-1.5 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Headline options</span>
+                      <p className="text-[10px] text-slate-400">
+                        Free to swap — text is composited onto the image, not regenerated.
+                      </p>
+                      <div className="flex flex-col gap-1.5 mt-1">
+                        {copy.headline_variants.map((variant, i) => {
+                          const active = variant === activeHeadline;
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => applyHeadlineVariant(job, variant)}
+                              className={`text-left border rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                                active
+                                  ? 'bg-emerald-500 text-white border-emerald-500'
+                                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                              }`}
+                            >
+                              {variant}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <TextOverlayEditor
+                    imageUrl={job.frame_url}
+                    config={overlayConfig}
+                    onChange={c => setOverlayConfigs(prev => ({ ...prev, [job.id]: c }))}
+                    brandColors={{
+                      primary: brandInfoForJob(job)?.primary_color,
+                      secondary: brandInfoForJob(job)?.secondary_color,
+                      accent: brandInfoForJob(job)?.accent_color,
+                    }}
+                    brandFont={brandInfoForJob(job)?.font_family || 'sans-serif'}
+                    className="rounded-xl border border-slate-200"
+                  />
+                  {canAddSubhead && (
                     <button
-                      onClick={() => handleSaveLayout(job)}
-                      disabled={savingLayoutJobId === job.id}
-                      className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition disabled:opacity-30 flex items-center gap-2"
+                      type="button"
+                      onClick={() => handleAddSubhead(job, copy.subhead!)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition"
                     >
-                      {savingLayoutJobId === job.id ? <Loader2 size={13} className="animate-spin" /> : null}
-                      {savingLayoutJobId === job.id ? 'Saving…' : 'Save layout'}
+                      <Plus size={13} /> Add subhead
                     </button>
-                  </div>
-                )}
-              </div>
-            ) : media.length > 0 && (
+                  )}
+                  {isReview && (
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => handleSaveLayout(job)}
+                        disabled={savingLayoutJobId === job.id}
+                        className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition disabled:opacity-30 flex items-center gap-2"
+                      >
+                        {savingLayoutJobId === job.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                        {savingLayoutJobId === job.id ? 'Saving…' : 'Save layout'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })() : media.length > 0 && (
               <div className={media.length > 1 ? 'flex gap-2 overflow-x-auto pb-1' : ''}>
                 {media.map((url, i) => (
                   <img
