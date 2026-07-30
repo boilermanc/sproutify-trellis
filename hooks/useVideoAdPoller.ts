@@ -36,7 +36,9 @@ export function useVideoAdPoller(
       const job = result.value;
       const prev = map.get(job.id);
 
-      if (!prev || prev.status !== job.status) {
+      // Progress is reported inside a status too, so a progress-only change
+      // still has to reach the UI for the live tracker to move.
+      if (!prev || prev.status !== job.status || prev.progress !== job.progress) {
         onStatusChangeRef.current(job);
       }
 

@@ -95,7 +95,28 @@ const FORMAT_OPTIONS: { value: VideoAdFormat; label: string; description: string
   { value: 'carousel', label: 'Carousel', description: '3–7 swipeable slides', hint: '3–7 slides · best IG engagement', icon: Layers },
 ];
 
-type WizardStep = 0 | 1 | 2 | 3;
+type WizardStep = 0 | 1 | 2 | 3 | 4;
+
+// Live stages shown on the tracking step. Static and carousel stop at review —
+// only video continues into a render pass after the frame is approved.
+const stagesForFormat = (fmt?: VideoAdFormat): { key: VideoAdStatus; label: string }[] => {
+  if (fmt === 'static' || fmt === 'carousel') {
+    return [
+      { key: 'queued', label: 'Queued' },
+      { key: 'generating_script', label: 'Writing copy' },
+      { key: 'generating_frame', label: fmt === 'carousel' ? 'Drawing slides' : 'Drawing image' },
+      { key: 'awaiting_approval', label: 'Ready for review' },
+    ];
+  }
+  return [
+    { key: 'queued', label: 'Queued' },
+    { key: 'generating_script', label: 'Script' },
+    { key: 'generating_frame', label: 'Frame' },
+    { key: 'awaiting_approval', label: 'Review' },
+    { key: 'rendering', label: 'Rendering' },
+    { key: 'completed', label: 'Done' },
+  ];
+};
 
 type StatusFilter = 'all' | 'active' | 'completed' | 'failed';
 type FormatFilter = 'all' | VideoAdFormat;
@@ -156,12 +177,14 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
         { num: 1 as WizardStep, label: 'Message', icon: FileText },
         { num: 2 as WizardStep, label: 'Look & Feel', icon: Palette },
         { num: 3 as WizardStep, label: 'Review', icon: Eye },
+        { num: 4 as WizardStep, label: 'Progress', icon: Zap },
       ];
     }
     return [
       { num: 0 as WizardStep, label: 'Format', icon: Sliders },
       { num: 1 as WizardStep, label: format === 'static' ? 'Message' : 'Topic', icon: FileText },
       { num: 3 as WizardStep, label: 'Review', icon: Eye },
+      { num: 4 as WizardStep, label: 'Progress', icon: Zap },
     ];
   }, [format]);
 
@@ -232,6 +255,9 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [jobs, setJobs] = useState<VideoAdJob[]>([]);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Tracking state — the job the Progress step is watching ──
+  const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
 
   // ── Approval / caption state ──
   const [approvingJobId, setApprovingJobId] = useState<string | null>(null);
@@ -329,7 +355,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Poller ──
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
-    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+    // Upsert, not map: n8n inserts the row asynchronously, so a job we just
+    // submitted often isn't in the list yet when its first poll lands.
+    setJobs(prev => prev.some(j => j.id === updatedJob.id)
+      ? prev.map(j => j.id === updatedJob.id ? updatedJob : j)
+      : [updatedJob, ...prev]);
     if (updatedJob.status === 'completed') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." completed!`, 'success');
     } else if (updatedJob.status === 'awaiting_approval') {
@@ -390,6 +420,26 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     () => jobs.filter(j => j.status === 'awaiting_approval'),
     [jobs],
   );
+
+  // ── The job the Progress step is watching ──
+  const trackedJob = useMemo(
+    () => (trackedJobId ? jobs.find(j => j.id === trackedJobId) : undefined),
+    [jobs, trackedJobId],
+  );
+
+  // Clear the form and start over from the format picker.
+  const startAnother = () => {
+    setTrackedJobId(null);
+    setProductDescription('');
+    setCta('');
+    setGeneratedScript('');
+    setStaticMessage('');
+    setCarouselTopic('');
+    setTargetSegment('');
+    setStyleNotes('');
+    setRefImageUrl('');
+    setStep(0);
+  };
 
   // ── Pagination ──
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / PAGE_SIZE));
@@ -497,17 +547,15 @@ STRICT RULES:
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Video generation started!', 'success');
 
-      const fetched = await getVideoAdJobs();
-      setJobs(fetched);
-
-      // Reset
-      setStep(1);
-      setProductDescription('');
-      setTargetSegment('');
-      setCta('');
-      setGeneratedScript('');
+      // Watch it on the Progress step. Form values are kept so a failure can
+      // be retried without retyping — cleared by "Create another".
+      setTrackedJobId(result.job_id);
+      setStep(4);
       setSaveAsTemplate(false);
       setNewTemplateName('');
+
+      const fetched = await getVideoAdJobs();
+      setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
     } finally {
@@ -534,14 +582,11 @@ STRICT RULES:
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Static ad generation started!', 'success');
 
+      setTrackedJobId(result.job_id);
+      setStep(4);
+
       const fetched = await getVideoAdJobs();
       setJobs(fetched);
-
-      setStep(1);
-      setStaticMessage('');
-      setTargetSegment('');
-      setStyleNotes('');
-      setRefImageUrl('');
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
     } finally {
@@ -566,13 +611,11 @@ STRICT RULES:
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Carousel generation started!', 'success');
 
+      setTrackedJobId(result.job_id);
+      setStep(4);
+
       const fetched = await getVideoAdJobs();
       setJobs(fetched);
-
-      setStep(1);
-      setCarouselTopic('');
-      setTargetSegment('');
-      setStyleNotes('');
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
     } finally {
@@ -1624,6 +1667,194 @@ STRICT RULES:
           </div>
         </div>
       )}
+
+      {/* ── Step 4: Progress tracker ── */}
+      {step === 4 && (() => {
+        const job = trackedJob;
+        const fmt = job?.format || format;
+        const stages = stagesForFormat(fmt);
+        const status = job?.status;
+        const isFailed = status === 'failed' || status === 'cancelled';
+        const isDone = status === 'completed';
+        const isReview = status === 'awaiting_approval';
+        const stageIndex = isDone ? stages.length : stages.findIndex(s => s.key === status);
+        const media = job?.format === 'carousel' && job?.media_urls?.length
+          ? job.media_urls
+          : [job?.frame_url || job?.media_urls?.[0]].filter(Boolean) as string[];
+
+        return (
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 space-y-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 mb-1">
+                  {isFailed ? 'Generation failed'
+                    : isDone ? 'Your ad is ready'
+                    : isReview ? 'Ready for your review'
+                    : `Creating your ${formatLabel(fmt).toLowerCase()} ad`}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {isFailed ? 'Nothing was published. Your inputs are still filled in below.'
+                    : isDone ? 'Approved and saved to your library.'
+                    : isReview ? 'Check the image and caption, then approve.'
+                    : 'This usually takes 30–90 seconds. You can leave this page — it keeps running.'}
+                </p>
+              </div>
+              {job && (
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusChipClasses(job.status)}`}>
+                  {job.status.replace(/_/g, ' ')}
+                </span>
+              )}
+            </div>
+
+            {/* Stage tracker */}
+            {!isFailed && (
+              <div>
+                <div className="flex items-center gap-0 mb-3">
+                  {stages.map((s, i) => {
+                    const reached = stageIndex >= 0 && i <= stageIndex;
+                    const current = stageIndex === i && !isDone;
+                    return (
+                      <React.Fragment key={s.key}>
+                        {i > 0 && <div className={`flex-1 h-0.5 ${reached ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
+                        <div className="flex flex-col items-center gap-1.5 px-1">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
+                            current ? 'bg-emerald-500 text-white' :
+                            reached ? 'bg-emerald-500 text-white' :
+                            'bg-slate-200 text-slate-400'
+                          }`}>
+                            {current ? <Loader2 size={13} className="animate-spin" />
+                              : reached ? <Check size={13} />
+                              : <span className="text-[10px] font-bold">{i + 1}</span>}
+                          </div>
+                          <span className={`text-[10px] font-bold text-center leading-tight ${reached ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {s.label}
+                          </span>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-700"
+                    style={{ width: `${isDone ? 100 : Math.max(5, job?.progress ?? 5)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Waiting for the row to appear */}
+            {!job && (
+              <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-500">
+                <Loader2 size={16} className="animate-spin text-emerald-500" />
+                Handing off to the generation pipeline…
+              </div>
+            )}
+
+            {/* Failure */}
+            {isFailed && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <p className="text-sm font-bold text-rose-700 mb-1">
+                  {status === 'cancelled' ? 'This job was cancelled.' : 'The pipeline reported an error'}
+                </p>
+                {job?.error_message && (
+                  <p className="text-xs text-rose-600 font-mono break-words">{job.error_message}</p>
+                )}
+              </div>
+            )}
+
+            {/* Media preview */}
+            {media.length > 0 && (
+              <div className={media.length > 1 ? 'flex gap-2 overflow-x-auto pb-1' : ''}>
+                {media.map((url, i) => (
+                  <img
+                    key={i}
+                    src={url}
+                    alt={media.length > 1 ? `Slide ${i + 1}` : 'Generated ad'}
+                    className={media.length > 1
+                      ? 'w-32 h-32 rounded-lg object-cover border border-slate-200 flex-shrink-0'
+                      : 'w-full max-w-sm rounded-xl border border-slate-200'}
+                  />
+                ))}
+              </div>
+            )}
+            {job?.video_url && (
+              <video src={job.video_url} controls className="w-full max-w-sm rounded-xl border border-slate-200" />
+            )}
+
+            {/* Caption + actions for review / done */}
+            {job && (isReview || isDone) && (job.format === 'static' || job.format === 'carousel') && (
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Caption</label>
+                <textarea
+                  value={getCaptionDraft(job)}
+                  onChange={e => setCaptionDrafts(prev => ({ ...prev, [job.id]: e.target.value }))}
+                  rows={3}
+                  placeholder="Generated caption will appear here — edit as needed"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+                />
+              </div>
+            )}
+
+            {/* Footer actions */}
+            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
+              {job && isReview && (job.format === 'static' || job.format === 'carousel') && (
+                <button
+                  onClick={() => handleApprove(job)}
+                  disabled={approvingJobId === job.id}
+                  className="px-5 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center gap-2"
+                >
+                  {approvingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <ThumbsUp size={15} />}
+                  {approvingJobId === job.id ? 'Approving…' : 'Approve'}
+                </button>
+              )}
+              {job && isReview && job.format !== 'static' && job.format !== 'carousel' && (
+                <button
+                  onClick={() => handleApproveAndRender(job)}
+                  disabled={approvingJobId === job.id}
+                  className="px-5 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center gap-2"
+                >
+                  {approvingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
+                  {approvingJobId === job.id ? 'Starting…' : 'Approve & Render'}
+                </button>
+              )}
+              {job && isDone && (job.format === 'static' || job.format === 'carousel') && (
+                <button
+                  onClick={() => handlePublish(job)}
+                  disabled={publishingJobId === job.id || !getCaptionDraft(job).trim()}
+                  title={!getCaptionDraft(job).trim() ? 'Add a caption first' : 'Publish to Instagram'}
+                  className="px-5 py-2.5 bg-slate-800 text-white text-sm font-bold rounded-lg hover:bg-slate-900 transition disabled:opacity-30 flex items-center gap-2"
+                >
+                  {publishingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <Instagram size={15} />}
+                  {publishingJobId === job.id ? 'Publishing…' : 'Publish to Instagram'}
+                </button>
+              )}
+              {isFailed && (
+                <button
+                  onClick={() => setStep(3)}
+                  className="px-5 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 transition flex items-center gap-2"
+                >
+                  <RefreshCw size={15} /> Back to review &amp; retry
+                </button>
+              )}
+              {job && !isFailed && !isDone && !isReview && (
+                <button
+                  onClick={() => handleCancel(job.id)}
+                  className="px-4 py-2.5 border border-slate-200 text-slate-500 text-sm font-bold rounded-lg hover:bg-slate-50 transition"
+                >
+                  Cancel job
+                </button>
+              )}
+              <button
+                onClick={startAnother}
+                className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition"
+              >
+                Create another
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Needs Your Review ── */}
       {awaitingApprovalJobs.length > 0 && (
