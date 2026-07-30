@@ -1,4 +1,4 @@
-import { VideoAdConfig, VideoAdJob } from '../types';
+import { VideoAdConfig, VideoAdJob, TextOverlayConfig } from '../types';
 import { VIDEO_AD_WEBHOOK, STATIC_AD_WEBHOOK, CAROUSEL_AD_WEBHOOK, VIDEO_AD_RENDER_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 
@@ -302,6 +302,65 @@ export async function regenerateJob(
   });
 
   return { job_id };
+}
+
+// ─── 9b. Text overlay persistence ─────────────────────────────────
+// Generated images are kept clean (no AI-drawn text); the headline is
+// composited on top in the real brand font. The editable layer config
+// lives on the job so it can be reopened and adjusted, and the flattened
+// PNG is what actually gets published and downloaded.
+export async function saveOverlayConfig(
+  jobId: string,
+  config: TextOverlayConfig,
+): Promise<void> {
+  const { error } = await supabase
+    .from('video_ad_jobs')
+    .update({ overlay_config: config })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to save overlay for job ${jobId}: ${error.message}`);
+  }
+}
+
+// Uploads the flattened image and records it on the job. Returns the public URL.
+export async function saveComposite(
+  jobId: string,
+  blob: Blob,
+  config?: TextOverlayConfig,
+): Promise<string> {
+  const path = `static-ads/${jobId}/composite-${Date.now()}.png`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('episode-assets')
+    .upload(path, blob, { contentType: 'image/png', upsert: false });
+
+  if (uploadError) {
+    throw new Error(`Failed to upload composite: ${uploadError.message}`);
+  }
+
+  const { data } = supabase.storage.from('episode-assets').getPublicUrl(path);
+  const composite_url = data.publicUrl;
+
+  const update: Record<string, any> = { composite_url };
+  if (config) update.overlay_config = config;
+
+  const { error } = await supabase
+    .from('video_ad_jobs')
+    .update(update)
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to record composite on job ${jobId}: ${error.message}`);
+  }
+
+  return composite_url;
+}
+
+// What should actually be published/downloaded: the flattened image if one
+// exists, else the raw generated frame.
+export function publishableImageUrl(job: VideoAdJob): string {
+  return job.composite_url || job.frame_url || job.media_urls?.[0] || '';
 }
 
 // ─── 10. discardJob ───────────────────────────────────────────────

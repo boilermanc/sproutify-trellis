@@ -43,6 +43,10 @@ export interface BranchInfo {
   type: 'internal' | 'external';
   is_active: boolean;
   primary_color: string;
+  // Brand styling — used to render on-brand text overlays on generated creative.
+  secondary_color?: string;
+  accent_color?: string;
+  font_family?: string;
   logo_url?: string;
 }
 
@@ -999,6 +1003,34 @@ export interface VideoAdJob {
   request_payload?: Record<string, any>;
   revision_of?: string;
   revision_notes?: string;
+  // Real-text overlay: the generated image stays clean (no AI-drawn text) and
+  // the headline is composited on top in the actual brand font.
+  overlay_config?: TextOverlayConfig;
+  composite_url?: string;
+}
+
+// Editable text layer drawn over a generated image. Positions are fractions of
+// the image (0-1) so a config survives any output resolution.
+export interface TextOverlayLayer {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  widthPct: number;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight: number;
+  color: string;
+  align: 'left' | 'center' | 'right';
+  lineHeight: number;
+  letterSpacing: number;
+  uppercase: boolean;
+  shadow: boolean;
+}
+
+export interface TextOverlayConfig {
+  layers: TextOverlayLayer[];
+  scrim?: 'none' | 'bottom' | 'top' | 'full';
 }
 
 // ─── Trellis Studio (AI music generation) ───────────────────────────

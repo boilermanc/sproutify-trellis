@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext } from '../types';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
 import {
@@ -10,12 +10,14 @@ import {
 import {
   submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob,
   submitStaticAdJob, submitCarouselJob, approveJob, approveAndRenderVideo,
-  regenerateJob, discardJob,
+  regenerateJob, discardJob, saveOverlayConfig, saveComposite, publishableImageUrl,
 } from '../services/videoAdService';
 import { publishToSocial } from '../services/socialService';
 import { uploadSocialMedia } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
+import TextOverlayEditor from '../components/TextOverlayEditor';
+import { compositeOverlay, defaultOverlayForHeadline } from '../utils/imageComposite';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
@@ -263,8 +265,55 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Approval / caption state ──
   const [approvingJobId, setApprovingJobId] = useState<string | null>(null);
+  const [approvalPhase, setApprovalPhase] = useState<Record<string, 'compositing' | 'approving'>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const getCaptionDraft = (job: VideoAdJob) => captionDrafts[job.id] ?? job.caption ?? '';
+
+  // ── Text overlay state (static ads) — real text composited over the clean
+  //    AI-generated image, keyed by job id so review state survives re-renders. ──
+  const [overlayConfigs, setOverlayConfigs] = useState<Record<string, TextOverlayConfig>>({});
+  const [savingLayoutJobId, setSavingLayoutJobId] = useState<string | null>(null);
+
+  // n8n writes copy as a JSON string like {"headline":"...","subtext":"...","cta":"..."}
+  // in job.script, but that field predates the JSON convention and is sometimes plain
+  // text or missing — parse defensively and fall back to the caption, then blank.
+  const parseJobCopy = (job: VideoAdJob): { headline: string; subtext?: string; cta?: string } => {
+    if (job.script) {
+      try {
+        const parsed = JSON.parse(job.script);
+        if (parsed && typeof parsed === 'object' && typeof parsed.headline === 'string') {
+          return { headline: parsed.headline, subtext: parsed.subtext, cta: parsed.cta };
+        }
+      } catch {
+        // job.script isn't JSON — fall through to caption/blank.
+      }
+    }
+    return { headline: job.caption || '' };
+  };
+
+  const brandInfoForJob = (job: VideoAdJob) => branchContext?.allBranches.find(b => b.slug === job.branch);
+
+  const getOverlayConfig = (job: VideoAdJob): TextOverlayConfig => {
+    if (overlayConfigs[job.id]) return overlayConfigs[job.id];
+    if (job.overlay_config) return job.overlay_config;
+    const info = brandInfoForJob(job);
+    const { headline } = parseJobCopy(job);
+    return defaultOverlayForHeadline(headline, { fontFamily: info?.font_family, color: '#ffffff' });
+  };
+
+  const handleSaveLayout = async (job: VideoAdJob) => {
+    setSavingLayoutJobId(job.id);
+    try {
+      const config = getOverlayConfig(job);
+      await saveOverlayConfig(job.id, config);
+      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, overlay_config: config } : j));
+      addToast('Layout saved.', 'success');
+    } catch (err: any) {
+      addToast(`Failed to save layout: ${err.message}`, 'error');
+    } finally {
+      setSavingLayoutJobId(null);
+    }
+  };
 
   // ── Regenerate / discard state (review loop) ──
   const [regenerateOpenJobId, setRegenerateOpenJobId] = useState<string | null>(null);
@@ -645,9 +694,29 @@ STRICT RULES:
   };
 
   // ── Approve (static / carousel) ──
+  // Static ads composite the real text overlay onto the clean AI image before
+  // approving — if that fails (e.g. a CORS-tainted canvas), we bail out and
+  // leave the job in review rather than approve an ad whose text never got
+  // baked in.
   const handleApprove = async (job: VideoAdJob) => {
     setApprovingJobId(job.id);
     try {
+      if (job.format === 'static' && job.frame_url) {
+        const config = getOverlayConfig(job);
+        setApprovalPhase(prev => ({ ...prev, [job.id]: 'compositing' }));
+        let blob: Blob;
+        try {
+          blob = await compositeOverlay(job.frame_url, config);
+        } catch (compositeErr: any) {
+          addToast(`Couldn't render the text overlay: ${compositeErr.message || 'Unknown error'}. The ad was not approved — try again or adjust the layout.`, 'error');
+          return;
+        }
+        setApprovalPhase(prev => ({ ...prev, [job.id]: 'approving' }));
+        const compositeUrl = await saveComposite(job.id, blob, config);
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, composite_url: compositeUrl, overlay_config: config } : j));
+      } else {
+        setApprovalPhase(prev => ({ ...prev, [job.id]: 'approving' }));
+      }
       await approveJob(job.id);
       setJobs(prev => prev.map(j => j.id === job.id
         ? { ...j, status: 'completed' as VideoAdStatus, frame_approved_at: new Date().toISOString() }
@@ -658,6 +727,11 @@ STRICT RULES:
       addToast(`Approve failed: ${err.message}`, 'error');
     } finally {
       setApprovingJobId(null);
+      setApprovalPhase(prev => {
+        const next = { ...prev };
+        delete next[job.id];
+        return next;
+      });
     }
   };
 
@@ -719,14 +793,16 @@ STRICT RULES:
   };
 
   // ── Publish approved static/carousel jobs to Instagram ──
+  // Static/single-image jobs publish the flattened composite (real text
+  // baked in); carousels still send their full slide array untouched.
   const handlePublish = async (job: VideoAdJob) => {
     const caption = getCaptionDraft(job).trim();
     if (!caption) { addToast('Add a caption before publishing.', 'error'); return; }
 
     const mediaUrls = job.format === 'carousel' && job.media_urls?.length
       ? job.media_urls
-      : [job.frame_url || job.media_urls?.[0] || ''].filter(Boolean);
-    const primaryImage = job.frame_url || mediaUrls[0];
+      : [publishableImageUrl(job)].filter(Boolean);
+    const primaryImage = job.format === 'carousel' ? mediaUrls[0] : publishableImageUrl(job);
     if (!primaryImage) { addToast('No media to publish.', 'error'); return; }
 
     setPublishingJobId(job.id);
@@ -1840,8 +1916,36 @@ STRICT RULES:
               </div>
             )}
 
-            {/* Media preview */}
-            {media.length > 0 && (
+            {/* Media preview — static ads get the real-text overlay editor over the
+                clean generated image; carousels/video keep the plain preview. */}
+            {job && job.format === 'static' && job.frame_url && (isReview || isDone) ? (
+              <div className="max-w-sm space-y-2">
+                <TextOverlayEditor
+                  imageUrl={job.frame_url}
+                  config={getOverlayConfig(job)}
+                  onChange={c => setOverlayConfigs(prev => ({ ...prev, [job.id]: c }))}
+                  brandColors={{
+                    primary: brandInfoForJob(job)?.primary_color,
+                    secondary: brandInfoForJob(job)?.secondary_color,
+                    accent: brandInfoForJob(job)?.accent_color,
+                  }}
+                  brandFont={brandInfoForJob(job)?.font_family || 'sans-serif'}
+                  className="rounded-xl border border-slate-200"
+                />
+                {isReview && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => handleSaveLayout(job)}
+                      disabled={savingLayoutJobId === job.id}
+                      className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition disabled:opacity-30 flex items-center gap-2"
+                    >
+                      {savingLayoutJobId === job.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                      {savingLayoutJobId === job.id ? 'Saving…' : 'Save layout'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : media.length > 0 && (
               <div className={media.length > 1 ? 'flex gap-2 overflow-x-auto pb-1' : ''}>
                 {media.map((url, i) => (
                   <img
@@ -1960,7 +2064,9 @@ STRICT RULES:
                   className="px-5 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center gap-2"
                 >
                   {approvingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <ThumbsUp size={15} />}
-                  {approvingJobId === job.id ? 'Approving…' : 'Approve'}
+                  {approvingJobId === job.id
+                    ? (approvalPhase[job.id] === 'compositing' ? 'Rendering text…' : 'Approving…')
+                    : 'Approve'}
                 </button>
               )}
               {job && isReview && job.format !== 'static' && job.format !== 'carousel' && (
@@ -2159,7 +2265,9 @@ STRICT RULES:
                           className="flex-1 px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
                         >
                           {isApproving ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
-                          {isApproving ? 'Approving...' : 'Approve'}
+                          {isApproving
+                            ? (approvalPhase[job.id] === 'compositing' ? 'Rendering text…' : 'Approving...')
+                            : 'Approve'}
                         </button>
                       ) : (
                         <button
@@ -2286,7 +2394,7 @@ STRICT RULES:
               <tbody>
                 {paginatedJobs.map(job => {
                   const currentStage = VIDEO_AD_STAGES.find(s => s.key === job.status);
-                  const thumbnailSrc = job.thumbnail_url || job.frame_url || job.face_image_url;
+                  const thumbnailSrc = job.composite_url || job.thumbnail_url || job.frame_url || job.face_image_url;
                   const createdDate = new Date(job.created_at);
                   const isExpanded = expandedJobId === job.id;
                   const completedDate = job.completed_at ? new Date(job.completed_at) : null;
@@ -2465,7 +2573,7 @@ STRICT RULES:
                           )}
                           {job.status === 'completed' && (job.format === 'static' || job.format === 'carousel') && (job.frame_url || job.media_urls?.length) && (
                             <a
-                              href={job.format === 'carousel' ? (job.media_urls?.[0] || job.frame_url || '') : (job.frame_url || '')}
+                              href={job.format === 'carousel' ? (job.media_urls?.[0] || job.frame_url || '') : publishableImageUrl(job)}
                               download
                               target="_blank"
                               rel="noopener noreferrer"
@@ -2505,8 +2613,8 @@ STRICT RULES:
                                   setPublishDraftJobId(prev => prev === job.id ? null : job.id);
                                   setCaptionDrafts(prev => prev[job.id] !== undefined ? prev : { ...prev, [job.id]: job.caption || '' });
                                 }}
-                                disabled={!job.frame_url && !job.media_urls?.length}
-                                title={!job.frame_url && !job.media_urls?.length ? 'No media to publish' : 'Publish to Instagram'}
+                                disabled={job.format === 'carousel' ? !job.media_urls?.length : !publishableImageUrl(job)}
+                                title={(job.format === 'carousel' ? !job.media_urls?.length : !publishableImageUrl(job)) ? 'No media to publish' : 'Publish to Instagram'}
                                 className="p-1.5 text-slate-400 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
                               >
                                 <Instagram size={14} />
