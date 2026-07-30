@@ -1977,9 +1977,9 @@ STRICT RULES:
               const activeHeadline = overlayConfig.layers[0]?.text;
               const canAddSubhead = !!copy.subhead && overlayConfig.layers.length === 1;
               return (
-                <div className="max-w-sm space-y-2">
+                <div className="space-y-3">
                   {copy.headline_variants.length > 1 && (
-                    <div className="space-y-1.5 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <div className="max-w-sm space-y-1.5 bg-slate-50 border border-slate-200 rounded-xl p-3">
                       <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Headline options</span>
                       <p className="text-[10px] text-slate-400">
                         Free to swap — text is composited onto the image, not regenerated.
