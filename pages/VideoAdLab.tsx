@@ -17,12 +17,13 @@ import { uploadSocialMedia } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import TextOverlayEditor from '../components/TextOverlayEditor';
+import MetaAdExportModal from '../components/MetaAdExportModal';
 import { compositeOverlay, defaultOverlayForHeadline } from '../utils/imageComposite';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
-  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch, Plus,
+  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch, Plus, Megaphone,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -378,6 +379,9 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // ── Publish state ──
   const [publishDraftJobId, setPublishDraftJobId] = useState<string | null>(null);
   const [publishingJobId, setPublishingJobId] = useState<string | null>(null);
+
+  // ── Meta Ads export state — the job (if any) currently open in the export modal ──
+  const [adExportJobId, setAdExportJobId] = useState<string | null>(null);
 
   // ── Video Library state ──
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -2201,6 +2205,14 @@ STRICT RULES:
                   {publishingJobId === job.id ? 'Publishing…' : 'Publish to Instagram'}
                 </button>
               )}
+              {job && isDone && (job.format === 'static' || job.format === 'carousel') && (
+                <button
+                  onClick={() => setAdExportJobId(job.id)}
+                  className="px-5 py-2.5 border border-slate-200 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-50 transition flex items-center gap-2"
+                >
+                  <Megaphone size={15} /> Export for Meta Ads
+                </button>
+              )}
               {isFailed && (
                 <button
                   onClick={() => setStep(3)}
@@ -2746,6 +2758,15 @@ STRICT RULES:
                             </a>
                           )}
                           {job.status === 'completed' && (job.format === 'static' || job.format === 'carousel') && (
+                            <button
+                              onClick={() => setAdExportJobId(job.id)}
+                              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                              title="Export for Meta Ads"
+                            >
+                              <Megaphone size={14} />
+                            </button>
+                          )}
+                          {job.status === 'completed' && (job.format === 'static' || job.format === 'carousel') && (
                             job.publish_status === 'scheduled' && job.scheduled_for ? (
                               <span
                                 className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold"
@@ -3118,6 +3139,21 @@ STRICT RULES:
           </div>
         )}
       </div>
+
+      {/* ── Export for Meta Ads modal ── */}
+      {adExportJobId && (() => {
+        const exportJob = jobs.find(j => j.id === adExportJobId);
+        if (!exportJob) return null;
+        return (
+          <MetaAdExportModal
+            job={exportJob}
+            brandName={branchName(exportJob.branch)}
+            geminiApiKey={geminiApiKey}
+            onClose={() => setAdExportJobId(null)}
+            addToast={addToast}
+          />
+        );
+      })()}
     </div>
   );
 };

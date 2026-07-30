@@ -365,7 +365,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance';
 
 export interface StudioAlbum {
   id: string;
@@ -1437,4 +1437,86 @@ export interface TrellisUser {
   last_login_at: string | null;
   created_at: string;
   branches: TrellisUserBranch[];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AD PERFORMANCE (manual Meta Ads Manager import + creative matching)
+// ═══════════════════════════════════════════════════════════════
+
+/** One row parsed from a Meta Ads Manager results CSV, before creative matching. */
+export interface ParsedAdRow {
+  row_number: number;
+  campaign_name?: string;
+  adset_name?: string;
+  ad_name?: string;
+  external_ad_id?: string;
+  reporting_start?: string; // YYYY-MM-DD
+  reporting_end?: string;   // YYYY-MM-DD
+  impressions?: number;
+  reach?: number;
+  clicks?: number;
+  spend?: number;
+  conversions?: number;
+  conversion_value?: number;
+  /** Columns present in the export that weren't mapped to a known field. */
+  raw: Record<string, string>;
+}
+
+/** A ParsedAdRow after attempting to link it back to the video_ad_jobs creative that produced it. */
+export interface MatchedAdRow extends ParsedAdRow {
+  creative_job_id: string | null;
+  match_confidence: 'exact' | 'normalized' | 'none';
+  /** The ad name the match was found against (job.ad_export.ad_name), for display. */
+  matched_ad_name?: string;
+  matched_branch?: string | null;
+  matched_headline?: string | null;
+  matched_image_url?: string | null;
+}
+
+/** A row as stored in (or read back from) the Hub `ad_performance` table. */
+export interface AdPerformanceRow {
+  id: string;
+  creative_job_id: string | null;
+  branch: string | null;
+  platform: string;
+  campaign_name: string | null;
+  adset_name: string | null;
+  ad_name: string | null;
+  external_ad_id: string | null;
+  headline_used: string | null;
+  reporting_start: string | null;
+  reporting_end: string | null;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+  conversion_value: number;
+  raw: Record<string, any>;
+  imported_at: string;
+  created_at: string;
+}
+
+/** Per-creative aggregate across all imported reporting periods, joined to the video_ad_jobs row that produced it. */
+export interface CreativeLeaderboardEntry {
+  creative_job_id: string | null;
+  ad_name: string;
+  branch: string | null;
+  format: string | null;
+  image_url: string | null;
+  frame_prompt: string | null;
+  headline_used: string | null;
+  row_count: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+  conversion_value: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  cost_per_conversion: number | null;
+  roas: number | null;
+  has_enough_data: boolean;
 }
