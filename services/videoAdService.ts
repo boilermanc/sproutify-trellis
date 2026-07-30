@@ -125,6 +125,10 @@ export interface StaticAdConfig {
   aspect_ratio: string;
   setting: string;
   style_notes: string;
+  // Optional real photo: 'edit' keeps the photo and renders the headline onto it,
+  // 'inspire' generates a new image guided by the photo's setting/mood/composition.
+  reference_image_url?: string;
+  reference_mode?: 'edit' | 'inspire';
 }
 
 export interface CarouselAdConfig {
@@ -155,6 +159,8 @@ export async function submitStaticAdJob(
       aspect_ratio: config.aspect_ratio,
       setting: config.setting,
       style_notes: config.style_notes,
+      reference_image_url: config.reference_image_url || '',
+      reference_mode: config.reference_mode || 'inspire',
     }),
   }).catch(() => {
     // Expected — Cloudflare 524 timeout or CORS block on the response.

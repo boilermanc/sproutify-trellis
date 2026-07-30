@@ -12,13 +12,14 @@ import {
   submitStaticAdJob, submitCarouselJob, approveJob, approveAndRenderVideo,
 } from '../services/videoAdService';
 import { publishToSocial } from '../services/socialService';
+import { uploadSocialMedia } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
-  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders,
+  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -190,6 +191,28 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [carouselTopic, setCarouselTopic] = useState('');
   const [slideCount, setSlideCount] = useState<number>(5);
   const [styleNotes, setStyleNotes] = useState('');
+
+  // ── Reference photo (static ads): a real photo the generation works from ──
+  const [refImageUrl, setRefImageUrl] = useState('');
+  const [refMode, setRefMode] = useState<'edit' | 'inspire'>('edit');
+  const [isUploadingRef, setIsUploadingRef] = useState(false);
+
+  const handleRefImageUpload = async (fileList: FileList | null) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { addToast('Reference must be an image file.', 'error'); return; }
+    setIsUploadingRef(true);
+    try {
+      const { url, error } = await uploadSocialMedia(branch || 'creative-studio', file);
+      if (!url) throw new Error(error || 'Upload failed');
+      setRefImageUrl(url);
+      addToast('Reference photo attached.', 'success');
+    } catch (err: any) {
+      addToast(`Upload failed: ${err.message}`, 'error');
+    } finally {
+      setIsUploadingRef(false);
+    }
+  };
 
   // Reset aspect ratio to a sensible default whenever the format changes
   // (the user can still override it on the config step).
@@ -505,6 +528,8 @@ STRICT RULES:
         aspect_ratio: aspectRatio,
         setting,
         style_notes: styleNotes,
+        reference_image_url: refImageUrl,
+        reference_mode: refMode,
       });
       setActiveJobIds(prev => [...prev, result.job_id]);
       addToast('Static ad generation started!', 'success');
@@ -516,6 +541,7 @@ STRICT RULES:
       setStaticMessage('');
       setTargetSegment('');
       setStyleNotes('');
+      setRefImageUrl('');
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
     } finally {
@@ -952,6 +978,59 @@ STRICT RULES:
                 placeholder="e.g. bold typography, bright green accent color"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
               />
+            </div>
+
+            {/* Reference Photo */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">
+                Reference Photo <span className="normal-case text-slate-300">(optional)</span>
+              </label>
+              {!refImageUrl ? (
+                <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl px-4 py-6 text-sm text-slate-400 hover:border-emerald-400 hover:text-emerald-500 transition cursor-pointer ${isUploadingRef ? 'opacity-50 pointer-events-none' : ''}`}>
+                  {isUploadingRef ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                  {isUploadingRef ? 'Uploading…' : 'Upload a real photo to work from'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => { handleRefImageUpload(e.target.files); e.target.value = ''; }}
+                  />
+                </label>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative inline-block">
+                    <img src={refImageUrl} alt="Reference" className="h-32 rounded-xl border border-slate-200 object-cover" />
+                    <button
+                      onClick={() => setRefImageUrl('')}
+                      className="absolute -top-2 -right-2 bg-slate-800 text-white rounded-full p-1 hover:bg-red-500 transition"
+                      title="Remove reference photo"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {([
+                      { value: 'edit', label: 'Use my photo (add the headline to it)' },
+                      { value: 'inspire', label: 'Style inspiration (generate new)' },
+                    ] as const).map(m => (
+                      <button
+                        key={m.value}
+                        onClick={() => setRefMode(m.value)}
+                        className={`border rounded-full px-4 py-1.5 text-sm transition ${
+                          refMode === m.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {refMode === 'edit'
+                      ? 'Keeps your actual photo and renders the headline text onto it — most authentic.'
+                      : 'Generates a fresh image using your photo for setting, mood and composition.'}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

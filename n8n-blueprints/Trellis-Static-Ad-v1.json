@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Trellis Static Ad \u2014 v1\n\nGenerates ONE publish-ready static ad image + copy, with a self-check pass on the rendered on-image text.\n\n**In:** POST /webhook/trellis-static-ad-generate\n```\n{ job_id, branch, message,\n  target_segment, platform,\n  aspect_ratio, setting, style_notes }\n```\n**Out:** job row -> status `awaiting_approval`, with `frame_url`, `media_urls` (1 item), `caption`, `frame_prompt` set.\n\nApproval + publish happen in the Trellis app (Video Ad Lab), which hands off to the existing B3 social publisher webhook (`trellis-social-publish`) with `media_type: 'image'`.\n\n### Setup\n1. Credentials \u2014 reuse the same 3 as Trellis-Video-Ad-Frame-v1:\n   \u2022 **Sproutify Trellis** (Supabase) \u2014 id `IkIpi5m4OmJ9DvBS`\n   \u2022 **Gemini API** (Query Auth) \u2014 replace `REPLACE_GEMINI_CRED`\n   \u2022 **Supabase Storage (legacy eyJ service role)** (Header Auth) \u2014 replace `REPLACE_SUPABASE_STORAGE_CRED`\n2. Prerequisite SQL (Hub, run once \u2014 idempotent):\n```sql\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT;\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;\n```\n3. Activate, then point the Video Ad Lab's static-ad action at `https://n8n.sproutify.app/webhook/trellis-static-ad-generate`.\n\nThis workflow STOPS at `awaiting_approval`. It does not publish anything.",
+        "content": "## Trellis Static Ad \u2014 v1.1\n\nGenerates ONE publish-ready static ad image + copy, with a self-check pass on the rendered on-image text.\n\n**In:** POST /webhook/trellis-static-ad-generate\n```\n{ job_id, branch, message,\n  target_segment, platform,\n  aspect_ratio, setting, style_notes,\n  reference_image_url?, reference_mode? }\n```\n`reference_image_url` (optional): a public URL of a real photo.\n`reference_mode`: 'edit' = keep the photo, add the headline text onto it; 'inspire' (default) = generate a new image guided by the photo's setting/mood/composition.\n**Out:** job row -> status `awaiting_approval`, with `frame_url`, `media_urls` (1 item), `caption`, `frame_prompt` set.\n\nApproval + publish happen in the Trellis app (Video Ad Lab), which hands off to the existing B3 social publisher webhook (`trellis-social-publish`) with `media_type: 'image'`.\n\n### Setup\n1. Credentials \u2014 reuse the same 3 as Trellis-Video-Ad-Frame-v1:\n   \u2022 **Sproutify Trellis** (Supabase) \u2014 id `IkIpi5m4OmJ9DvBS`\n   \u2022 **Gemini API** (Query Auth) \u2014 replace `REPLACE_GEMINI_CRED`\n   \u2022 **Supabase Storage (legacy eyJ service role)** (Header Auth) \u2014 replace `REPLACE_SUPABASE_STORAGE_CRED`\n2. Prerequisite SQL (Hub, run once \u2014 idempotent):\n```sql\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT;\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]';\nALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;\n```\n3. Activate, then point the Video Ad Lab's static-ad action at `https://n8n.sproutify.app/webhook/trellis-static-ad-generate`.\n\nThis workflow STOPS at `awaiting_approval`. It does not publish anything.",
         "height": 620,
         "width": 480,
         "color": 4
@@ -12,7 +12,10 @@
       "name": "Sticky Note - Setup",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-700, -380]
+      "position": [
+        -700,
+        -380
+      ]
     },
     {
       "parameters": {
@@ -25,7 +28,10 @@
       "name": "Sticky Note - Design",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-700, 280]
+      "position": [
+        -700,
+        280
+      ]
     },
     {
       "parameters": {
@@ -38,7 +44,10 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-100, 0],
+      "position": [
+        -100,
+        0
+      ],
       "webhookId": "trellis-static-ad-generate"
     },
     {
@@ -46,16 +55,46 @@
         "tableId": "video_ad_jobs",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "id", "fieldValue": "={{ $json.body.job_id }}" },
-            { "fieldId": "branch", "fieldValue": "={{ $json.body.branch }}" },
-            { "fieldId": "status", "fieldValue": "queued" },
-            { "fieldId": "progress", "fieldValue": "5" },
-            { "fieldId": "format", "fieldValue": "static" },
-            { "fieldId": "script", "fieldValue": "pending" },
-            { "fieldId": "target_segment", "fieldValue": "={{ $json.body.target_segment || '' }}" },
-            { "fieldId": "platform", "fieldValue": "={{ $json.body.platform || 'general' }}" },
-            { "fieldId": "aspect_ratio", "fieldValue": "={{ $json.body.aspect_ratio || '1:1' }}" },
-            { "fieldId": "setting", "fieldValue": "={{ $json.body.setting || '' }}" }
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $json.body.job_id }}"
+            },
+            {
+              "fieldId": "branch",
+              "fieldValue": "={{ $json.body.branch }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "queued"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "5"
+            },
+            {
+              "fieldId": "format",
+              "fieldValue": "static"
+            },
+            {
+              "fieldId": "script",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "target_segment",
+              "fieldValue": "={{ $json.body.target_segment || '' }}"
+            },
+            {
+              "fieldId": "platform",
+              "fieldValue": "={{ $json.body.platform || 'general' }}"
+            },
+            {
+              "fieldId": "aspect_ratio",
+              "fieldValue": "={{ $json.body.aspect_ratio || '1:1' }}"
+            },
+            {
+              "fieldId": "setting",
+              "fieldValue": "={{ $json.body.setting || '' }}"
+            }
           ]
         }
       },
@@ -63,9 +102,15 @@
       "name": "Upsert Job Record",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [120, 0],
+      "position": [
+        120,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       },
       "onError": "continueRegularOutput",
       "notes": "Insert on first run. On a resubmit the row already exists and this 409s harmlessly - onError lets it pass through, mirrors Trellis-Video-Ad-Frame-v1."
@@ -82,22 +127,31 @@
       "name": "Lookup Brand Profile",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [340, 0],
+      "position": [
+        340,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       },
       "onError": "continueRegularOutput",
       "notes": "Prefix match so both bare slugs and domain keys in brand_profiles resolve. If nothing matches, downstream falls back to branch name + 'friendly' tone."
     },
     {
       "parameters": {
-        "jsCode": "const body = $('Webhook').item.json.body;\nconst brandItem = $('Lookup Brand Profile').all()[0];\nconst brand = brandItem ? brandItem.json : {};\n\nconst brandName = brand.brand_name || body.branch || 'the brand';\nconst tone = body.tone || brand.default_tone || 'friendly';\nconst pron = brand.pronunciation_guide || '';\nconst aspect = body.aspect_ratio || '1:1';\nconst setting = body.setting || brand.default_setting || 'a clean, bright, on-brand backdrop';\nconst platform = body.platform || 'general';\nconst styleNotes = body.style_notes || '';\nconst message = body.message || '';\nconst segment = body.target_segment || 'general audience';\n\nconst shape = { headline: 'short punchy headline, max 8 words', subtext: 'one supporting sentence, max 18 words', cta: '2-4 word call to action', caption: 'ready-to-publish social caption, 1-3 sentences, up to 3 hashtags' };\n\nconst copy_prompt = 'You are writing performance-marketing copy for a single static social ad. Brand: ' + brandName + '. Tone: ' + tone + '. Audience: ' + segment + '. Platform: ' + platform + '. Core message: ' + message + '. Pronunciation and brand rules: ' + pron + '. ' + (styleNotes ? ('Style notes: ' + styleNotes + '. ') : '') + 'Write ONLY what goes in the JSON fields - no stage directions, no markdown. Return ONLY valid JSON, no markdown fences, no commentary, in exactly this shape: ' + JSON.stringify(shape);\n\nreturn [{ json: {\n  copy_prompt,\n  brand_name: brandName,\n  tone,\n  aspect_ratio: aspect,\n  setting,\n  platform,\n  style_notes: styleNotes,\n  job_id: body.job_id,\n  branch: body.branch,\n} }];"
+        "jsCode": "const body = $('Webhook').item.json.body;\nconst brandItem = $('Lookup Brand Profile').all()[0];\nconst brand = brandItem ? brandItem.json : {};\n\nconst brandName = brand.brand_name || body.branch || 'the brand';\nconst tone = body.tone || brand.default_tone || 'friendly';\nconst pron = brand.pronunciation_guide || '';\nconst aspect = body.aspect_ratio || '1:1';\nconst setting = body.setting || brand.default_setting || 'a clean, bright, on-brand backdrop';\nconst platform = body.platform || 'general';\nconst styleNotes = body.style_notes || '';\nconst message = body.message || '';\nconst segment = body.target_segment || 'general audience';\nconst referenceImageUrl = body.reference_image_url || '';\nconst referenceMode = (body.reference_mode === 'edit') ? 'edit' : 'inspire';\n\nconst shape = { headline: 'short punchy headline, max 8 words', subtext: 'one supporting sentence, max 18 words', cta: '2-4 word call to action', caption: 'ready-to-publish social caption, 1-3 sentences, up to 3 hashtags' };\n\nconst copy_prompt = 'You are writing performance-marketing copy for a single static social ad. Brand: ' + brandName + '. Tone: ' + tone + '. Audience: ' + segment + '. Platform: ' + platform + '. Core message: ' + message + '. Pronunciation and brand rules: ' + pron + '. ' + (styleNotes ? ('Style notes: ' + styleNotes + '. ') : '') + 'Write ONLY what goes in the JSON fields - no stage directions, no markdown. Return ONLY valid JSON, no markdown fences, no commentary, in exactly this shape: ' + JSON.stringify(shape);\n\nreturn [{ json: {\n  copy_prompt,\n  brand_name: brandName,\n  tone,\n  aspect_ratio: aspect,\n  setting,\n  platform,\n  style_notes: styleNotes,\n  job_id: body.job_id,\n  branch: body.branch,\n  reference_image_url: referenceImageUrl,\n  reference_mode: referenceMode,\n} }];"
       },
       "id": "prepare-copy-prompt",
       "name": "Prepare Copy Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [560, 0]
+      "position": [
+        560,
+        0
+      ]
     },
     {
       "parameters": {
@@ -107,8 +161,14 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "generating_script" },
-            { "fieldId": "progress", "fieldValue": "15" }
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_script"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "15"
+            }
           ]
         }
       },
@@ -116,9 +176,15 @@
       "name": "Update: Generating Script",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [780, 0],
+      "position": [
+        780,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     },
     {
@@ -129,33 +195,49 @@
         "genericAuthType": "httpQueryAuth",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Copy Prompt').item.json.copy_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 500 } }) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "generate-copy-gemini",
       "name": "Generate Copy",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1000, 0],
+      "position": [
+        1000,
+        0
+      ],
       "credentials": {
-        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
       },
       "onError": "continueErrorOutput",
       "notes": "gemini-flash-latest, same model id used by Trellis-Video-Ad-Frame-v1."
     },
     {
       "parameters": {
-        "jsCode": "const raw = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] && $json.candidates[0].content.parts[0].text) || '';\nconst prep = $('Prepare Copy Prompt').item.json;\n\nfunction extractJson(text) {\n  try { return JSON.parse(text); } catch (e) {}\n  const match = text.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch (e) {}\n  }\n  return null;\n}\n\nlet copy = extractJson(raw);\nif (!copy || typeof copy !== 'object') {\n  const lines = raw.split('\\n').filter(Boolean);\n  copy = {\n    headline: (lines[0] || prep.brand_name).slice(0, 60),\n    subtext: (lines[1] || raw).slice(0, 140),\n    cta: 'Shop Now',\n    caption: raw.slice(0, 280) || (prep.brand_name + ' - new today.'),\n  };\n}\n\ncopy.headline = (copy.headline || prep.brand_name).toString();\ncopy.subtext = (copy.subtext || '').toString();\ncopy.cta = (copy.cta || 'Learn More').toString();\ncopy.caption = (copy.caption || copy.headline).toString();\n\nconst image_prompt = 'A single professional marketing static advertisement image. ' + prep.aspect_ratio + ' aspect ratio composition. Setting: ' + prep.setting + '. The headline text ' + JSON.stringify(copy.headline) + ' is rendered directly ON the image in bold, brand-consistent, highly legible typography, with clear space around it and no overlap with the subject. Colour palette and visual style consistent with ' + prep.brand_name + ', ' + prep.tone + ' tone, for ' + prep.platform + '. ' + (prep.style_notes ? ('Style notes: ' + prep.style_notes + '. ') : '') + 'No watermarks, no logos, no stock-photo badges, no placeholder or lorem-ipsum text, no extra captions or borders, no misspelled words.';\n\nreturn [{ json: {\n  headline: copy.headline,\n  subtext: copy.subtext,\n  cta: copy.cta,\n  caption: copy.caption,\n  image_prompt,\n  job_id: prep.job_id,\n  branch: prep.branch,\n  aspect_ratio: prep.aspect_ratio,\n} }];"
+        "jsCode": "const raw = ($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] && $json.candidates[0].content.parts[0].text) || '';\nconst prep = $('Prepare Copy Prompt').item.json;\n\nfunction extractJson(text) {\n  try { return JSON.parse(text); } catch (e) {}\n  const match = text.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { return JSON.parse(match[0]); } catch (e) {}\n  }\n  return null;\n}\n\nlet copy = extractJson(raw);\nif (!copy || typeof copy !== 'object') {\n  const lines = raw.split('\\n').filter(Boolean);\n  copy = {\n    headline: (lines[0] || prep.brand_name).slice(0, 60),\n    subtext: (lines[1] || raw).slice(0, 140),\n    cta: 'Shop Now',\n    caption: raw.slice(0, 280) || (prep.brand_name + ' - new today.'),\n  };\n}\n\ncopy.headline = (copy.headline || prep.brand_name).toString();\ncopy.subtext = (copy.subtext || '').toString();\ncopy.cta = (copy.cta || 'Learn More').toString();\ncopy.caption = (copy.caption || copy.headline).toString();\n\nconst hasRef = !!(prep.reference_image_url);\nconst refMode = prep.reference_mode || 'inspire';\nconst textRule = 'The headline text ' + JSON.stringify(copy.headline) + ' is rendered directly ON the image in bold, brand-consistent, highly legible typography, with clear space around it and no overlap with the main subject. ';\nconst negatives = 'No watermarks, no logos, no stock-photo badges, no placeholder or lorem-ipsum text, no extra captions or borders, no misspelled words.';\nlet image_prompt;\nif (hasRef && refMode === 'edit') {\n  image_prompt = 'The attached image is a real photograph. Edit THIS EXACT photograph into a finished marketing static advertisement. Preserve the authentic scene, people, objects and lighting exactly as photographed - do not replace, redraw or regenerate the scene. ' + textRule + 'You may apply only a subtle, tasteful colour grade consistent with ' + prep.brand_name + '. Output ' + prep.aspect_ratio + ' aspect ratio, cropping minimally if needed. ' + (prep.style_notes ? ('Style notes: ' + prep.style_notes + '. ') : '') + negatives;\n} else if (hasRef) {\n  image_prompt = 'A reference photograph is attached. Use it ONLY as guidance for the setting, mood, lighting and composition - generate a NEW original marketing static advertisement image in the same spirit. ' + prep.aspect_ratio + ' aspect ratio composition. Setting: ' + prep.setting + '. ' + textRule + 'Colour palette and visual style consistent with ' + prep.brand_name + ', ' + prep.tone + ' tone, for ' + prep.platform + '. ' + (prep.style_notes ? ('Style notes: ' + prep.style_notes + '. ') : '') + negatives;\n} else {\n  image_prompt = 'A single professional marketing static advertisement image. ' + prep.aspect_ratio + ' aspect ratio composition. Setting: ' + prep.setting + '. The headline text ' + JSON.stringify(copy.headline) + ' is rendered directly ON the image in bold, brand-consistent, highly legible typography, with clear space around it and no overlap with the subject. Colour palette and visual style consistent with ' + prep.brand_name + ', ' + prep.tone + ' tone, for ' + prep.platform + '. ' + (prep.style_notes ? ('Style notes: ' + prep.style_notes + '. ') : '') + 'No watermarks, no logos, no stock-photo badges, no placeholder or lorem-ipsum text, no extra captions or borders, no misspelled words.';\n}\n\nreturn [{ json: {\n  headline: copy.headline,\n  subtext: copy.subtext,\n  cta: copy.cta,\n  caption: copy.caption,\n  image_prompt,\n  job_id: prep.job_id,\n  branch: prep.branch,\n  aspect_ratio: prep.aspect_ratio,\n  reference_image_url: prep.reference_image_url || '',\n  reference_mode: refMode,\n} }];"
       },
       "id": "parse-copy",
       "name": "Parse Copy",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1220, 0],
+      "position": [
+        1220,
+        0
+      ],
       "notes": "Defensive JSON parse: raw JSON.parse -> regex-extracted {...} block -> hand-built fallback from the raw text. Never throws."
     },
     {
@@ -166,9 +248,18 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "script", "fieldValue": "={{ JSON.stringify({ headline: $json.headline, subtext: $json.subtext, cta: $json.cta }) }}" },
-            { "fieldId": "caption", "fieldValue": "={{ $json.caption }}" },
-            { "fieldId": "progress", "fieldValue": "30" }
+            {
+              "fieldId": "script",
+              "fieldValue": "={{ JSON.stringify({ headline: $json.headline, subtext: $json.subtext, cta: $json.cta }) }}"
+            },
+            {
+              "fieldId": "caption",
+              "fieldValue": "={{ $json.caption }}"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "30"
+            }
           ]
         }
       },
@@ -176,9 +267,15 @@
       "name": "Save Copy",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1440, 0],
+      "position": [
+        1440,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     },
     {
@@ -189,9 +286,18 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "generating_frame" },
-            { "fieldId": "progress", "fieldValue": "40" },
-            { "fieldId": "frame_prompt", "fieldValue": "={{ $('Parse Copy').item.json.image_prompt }}" }
+            {
+              "fieldId": "status",
+              "fieldValue": "generating_frame"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "40"
+            },
+            {
+              "fieldId": "frame_prompt",
+              "fieldValue": "={{ $('Parse Copy').item.json.image_prompt }}"
+            }
           ]
         }
       },
@@ -199,20 +305,29 @@
       "name": "Update: Generating Frame",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1660, 0],
+      "position": [
+        1660,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
     },
     {
       "parameters": {
-        "jsCode": "const attempt = $runIndex + 1;\nconst prep = $('Parse Copy').item.json;\nreturn [{ json: {\n  attempt,\n  image_prompt: prep.image_prompt,\n  job_id: prep.job_id,\n  branch: prep.branch,\n  aspect_ratio: prep.aspect_ratio,\n} }];"
+        "jsCode": "const attempt = $runIndex + 1;\nconst prep = $('Parse Copy').item.json;\nreturn [{ json: {\n  attempt,\n  image_prompt: prep.image_prompt,\n  job_id: prep.job_id,\n  branch: prep.branch,\n  aspect_ratio: prep.aspect_ratio,\n  reference_image_url: prep.reference_image_url || '',\n  reference_mode: prep.reference_mode || 'inspire',\n} }];"
       },
       "id": "track-frame-attempt",
       "name": "Track Frame Attempt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1880, 0],
+      "position": [
+        1880,
+        0
+      ],
       "notes": "$runIndex is this node's own execution count within the workflow run - same idiom F1 uses in 'Bump Progress'. attempt=1 first pass, attempt=2 on the single retry."
     },
     {
@@ -223,23 +338,36 @@
         "genericAuthType": "httpQueryAuth",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.image_prompt + ($json.attempt > 1 ? ' Regenerate this image with clearer, fully legible, correctly spelled on-image text than the previous attempt.' : '') }] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: $json.aspect_ratio } } }) }}",
-        "options": { "timeout": 90000 }
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: (($json.ref_base64) ? [{ text: $json.image_prompt + ($json.attempt > 1 ? ' Regenerate with clearer, fully legible, correctly spelled on-image text than the previous attempt.' : '') }, { inlineData: { mimeType: $json.ref_mime, data: $json.ref_base64 } }] : [{ text: $json.image_prompt + ($json.attempt > 1 ? ' Regenerate this image with clearer, fully legible, correctly spelled on-image text than the previous attempt.' : '') }]) }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: $json.aspect_ratio } } }) }}",
+        "options": {
+          "timeout": 90000
+        }
       },
       "id": "generate-image-nano-banana",
       "name": "Generate Image",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2100, 0],
+      "position": [
+        2640,
+        0
+      ],
       "credentials": {
-        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
       },
       "onError": "continueErrorOutput",
-      "notes": "Nano Banana 2 (gemini-3.1-flash-image). Returns inlineData base64 in candidates[].content.parts[]."
+      "notes": "Nano Banana 2 (gemini-3.1-flash-image). Returns inlineData base64 in candidates[].content.parts[]. When ref_base64 is present (reference photo), it is attached as a second inlineData part - 'edit' mode keeps the photo and adds text, 'inspire' mode generates fresh."
     },
     {
       "parameters": {
@@ -249,7 +377,10 @@
       "name": "Extract Image",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2320, 0],
+      "position": [
+        2860,
+        0
+      ],
       "onError": "continueErrorOutput",
       "notes": "Keeps base64 in json (not just binary) so Vision QA downstream can reuse it without a re-download step."
     },
@@ -262,22 +393,36 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "={{ $json.mime }}" },
-            { "name": "x-upsert", "value": "false" }
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.mime }}"
+            },
+            {
+              "name": "x-upsert",
+              "value": "false"
+            }
           ]
         },
         "sendBody": true,
         "contentType": "binaryData",
         "inputDataFieldName": "data",
-        "options": { "timeout": 60000 }
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "upload-image-to-storage",
       "name": "Upload Image to Storage",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2540, 0],
+      "position": [
+        3080,
+        0
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "REPLACE_SUPABASE_STORAGE_CRED", "name": "Supabase Storage (legacy eyJ service role)" }
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_STORAGE_CRED",
+          "name": "Supabase Storage (legacy eyJ service role)"
+        }
       },
       "onError": "continueErrorOutput",
       "notes": "Same episode-assets bucket as Trellis-Video-Ad-Frame-v1, under a static-ads/ prefix. MUST use the legacy eyJ... JWT service role key - upsert:false + a randomised filename avoids the UPDATE RLS policy on Storage, same as Frame v1."
@@ -290,20 +435,33 @@
         "genericAuthType": "httpQueryAuth",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a quality checker for a marketing static ad image. Look closely at the attached image. Is ALL text in the image fully rendered, correctly spelled, and completely readable with nothing cut off or garbled? Reply with exactly one line: the single word YES or NO, followed by a short reason.' }, { inlineData: { mimeType: $('Extract Image').item.json.mime, data: $('Extract Image').item.json.base64 } }] }], generationConfig: { temperature: 0, maxOutputTokens: 200 } }) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "vision-qa",
       "name": "Vision QA",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2760, 0],
+      "position": [
+        3300,
+        0
+      ],
       "credentials": {
-        "httpQueryAuth": { "id": "REPLACE_GEMINI_CRED", "name": "Gemini API" }
+        "httpQueryAuth": {
+          "id": "REPLACE_GEMINI_CRED",
+          "name": "Gemini API"
+        }
       },
       "onError": "continueErrorOutput",
       "notes": "One multimodal Gemini call reading back its own generated image. gemini-flash-latest is multimodal, so no new model id is introduced."
@@ -316,24 +474,38 @@
       "name": "Parse QA Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2980, 0]
+      "position": [
+        3520,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "qa-passed",
               "leftValue": "={{ $json.passed }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             },
             {
               "id": "attempt-cap",
               "leftValue": "={{ $('Track Frame Attempt').item.json.attempt }}",
               "rightValue": 2,
-              "operator": { "type": "number", "operation": "gte" }
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
             }
           ],
           "combinator": "or"
@@ -344,7 +516,10 @@
       "name": "QA Passed?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [3200, 0],
+      "position": [
+        3740,
+        0
+      ],
       "notes": "True when QA said YES, OR we've already used our one retry (attempt >= 2) - proceeds either way so the job never stalls. False loops back to Track Frame Attempt exactly once."
     },
     {
@@ -355,13 +530,34 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "awaiting_approval" },
-            { "fieldId": "progress", "fieldValue": "100" },
-            { "fieldId": "frame_url", "fieldValue": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/{{ $('Extract Image').item.json.storage_path }}" },
-            { "fieldId": "media_urls", "fieldValue": "={{ JSON.stringify(['https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/' + $('Extract Image').item.json.storage_path]) }}" },
-            { "fieldId": "frame_prompt", "fieldValue": "={{ $('Parse Copy').item.json.image_prompt }}" },
-            { "fieldId": "frame_attempt", "fieldValue": "={{ $('Track Frame Attempt').item.json.attempt }}" },
-            { "fieldId": "updated_at", "fieldValue": "={{ new Date().toISOString() }}" }
+            {
+              "fieldId": "status",
+              "fieldValue": "awaiting_approval"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "100"
+            },
+            {
+              "fieldId": "frame_url",
+              "fieldValue": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/{{ $('Extract Image').item.json.storage_path }}"
+            },
+            {
+              "fieldId": "media_urls",
+              "fieldValue": "={{ JSON.stringify(['https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/public/episode-assets/' + $('Extract Image').item.json.storage_path]) }}"
+            },
+            {
+              "fieldId": "frame_prompt",
+              "fieldValue": "={{ $('Parse Copy').item.json.image_prompt }}"
+            },
+            {
+              "fieldId": "frame_attempt",
+              "fieldValue": "={{ $('Track Frame Attempt').item.json.attempt }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
           ]
         }
       },
@@ -369,9 +565,15 @@
       "name": "Update: Awaiting Approval",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [3420, 0],
+      "position": [
+        3960,
+        0
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       },
       "notes": "Terminal state for this workflow. media_urls is written as a JSON.stringify'd array via the Supabase node - after first run, confirm in the table editor that the column stores a real JSON array and not a double-encoded string; if PostgREST stores it as a scalar string, switch this field to a raw HTTP PATCH node with Content-Type: application/json instead."
     },
@@ -383,8 +585,14 @@
         "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "status", "fieldValue": "failed" },
-            { "fieldId": "error_message", "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Static ad generation failed').toString().slice(0, 500) }}" }
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ (($json.error && ($json.error.message || $json.error)) || $json.detail || $json.message || 'Static ad generation failed').toString().slice(0, 500) }}"
+            }
           ]
         }
       },
@@ -392,57 +600,362 @@
       "name": "Mark Failed",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2100, 400],
+      "position": [
+        2100,
+        400
+      ],
       "credentials": {
-        "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" }
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-ref",
+              "leftValue": "={{ $json.reference_image_url || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-reference-if",
+      "name": "Has Reference?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        0
+      ],
+      "notes": "True -> fetch the user's reference photo and attach it to the Nano Banana request. False -> plain text-to-image, exactly as v1.0 behaved."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.reference_image_url }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "fetch-reference-image",
+      "name": "Fetch Reference Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2280,
+        -180
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Downloads the reference photo (public URL from the Trellis app's upload, avatars bucket). No auth needed."
+    },
+    {
+      "parameters": {
+        "jsCode": "const prep = $('Track Frame Attempt').item.json;\nconst binary = $input.item.binary && $input.item.binary.data;\nif (!binary) { throw new Error('Reference image fetch returned no binary data'); }\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst mime = binary.mimeType && binary.mimeType.startsWith('image/') ? binary.mimeType : 'image/jpeg';\nreturn [{ json: Object.assign({}, prep, { ref_base64: buf.toString('base64'), ref_mime: mime }) }];"
+      },
+      "id": "reference-to-base64",
+      "name": "Reference to Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2460,
+        -180
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "getBinaryDataBuffer is the safe way to read binary regardless of n8n's binary-data storage mode. Merges the Track Frame Attempt fields forward so Generate Image sees one flat json either way."
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "Upsert Job Record", "type": "main", "index": 0 }]] },
-    "Upsert Job Record": { "main": [[{ "node": "Lookup Brand Profile", "type": "main", "index": 0 }]] },
-    "Lookup Brand Profile": { "main": [[{ "node": "Prepare Copy Prompt", "type": "main", "index": 0 }]] },
-    "Prepare Copy Prompt": { "main": [[{ "node": "Update: Generating Script", "type": "main", "index": 0 }]] },
-    "Update: Generating Script": { "main": [[{ "node": "Generate Copy", "type": "main", "index": 0 }]] },
-    "Generate Copy": {
+    "Webhook": {
       "main": [
-        [{ "node": "Parse Copy", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Upsert Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Parse Copy": { "main": [[{ "node": "Save Copy", "type": "main", "index": 0 }]] },
-    "Save Copy": { "main": [[{ "node": "Update: Generating Frame", "type": "main", "index": 0 }]] },
-    "Update: Generating Frame": { "main": [[{ "node": "Track Frame Attempt", "type": "main", "index": 0 }]] },
-    "Track Frame Attempt": { "main": [[{ "node": "Generate Image", "type": "main", "index": 0 }]] },
+    "Upsert Job Record": {
+      "main": [
+        [
+          {
+            "node": "Lookup Brand Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Brand Profile": {
+      "main": [
+        [
+          {
+            "node": "Prepare Copy Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Copy Prompt": {
+      "main": [
+        [
+          {
+            "node": "Update: Generating Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Generating Script": {
+      "main": [
+        [
+          {
+            "node": "Generate Copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Copy": {
+      "main": [
+        [
+          {
+            "node": "Parse Copy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Copy": {
+      "main": [
+        [
+          {
+            "node": "Save Copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Copy": {
+      "main": [
+        [
+          {
+            "node": "Update: Generating Frame",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update: Generating Frame": {
+      "main": [
+        [
+          {
+            "node": "Track Frame Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Frame Attempt": {
+      "main": [
+        [
+          {
+            "node": "Has Reference?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Generate Image": {
       "main": [
-        [{ "node": "Extract Image", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Extract Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Extract Image": {
       "main": [
-        [{ "node": "Upload Image to Storage", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Upload Image to Storage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Upload Image to Storage": {
       "main": [
-        [{ "node": "Vision QA", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Vision QA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Vision QA": {
       "main": [
-        [{ "node": "Parse QA Result", "type": "main", "index": 0 }],
-        [{ "node": "Mark Failed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse QA Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Parse QA Result": { "main": [[{ "node": "QA Passed?", "type": "main", "index": 0 }]] },
+    "Parse QA Result": {
+      "main": [
+        [
+          {
+            "node": "QA Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "QA Passed?": {
       "main": [
-        [{ "node": "Update: Awaiting Approval", "type": "main", "index": 0 }],
-        [{ "node": "Track Frame Attempt", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Update: Awaiting Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Track Frame Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Reference?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Reference Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reference Image": {
+      "main": [
+        [
+          {
+            "node": "Reference to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reference to Base64": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
@@ -453,5 +966,12 @@
     "saveDataSuccessExecution": "all",
     "saveDataErrorExecution": "all"
   },
-  "tags": [{ "name": "video-ads" }, { "name": "trellis" }]
+  "tags": [
+    {
+      "name": "video-ads"
+    },
+    {
+      "name": "trellis"
+    }
+  ]
 }
