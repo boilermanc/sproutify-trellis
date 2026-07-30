@@ -531,9 +531,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   }), [jobs]);
 
   // ── Jobs awaiting review ──
+  // The Progress step already shows the job it's tracking in full, so exclude
+  // it here — otherwise the same creative gets two identical review panels.
   const awaitingApprovalJobs = useMemo(
-    () => jobs.filter(j => j.status === 'awaiting_approval'),
-    [jobs],
+    () => jobs.filter(j =>
+      j.status === 'awaiting_approval' && !(step === 4 && j.id === trackedJobId),
+    ),
+    [jobs, step, trackedJobId],
   );
 
   // ── The job the Progress step is watching ──
