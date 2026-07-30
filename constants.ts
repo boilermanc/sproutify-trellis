@@ -685,6 +685,57 @@ CREATE POLICY "Service Role Only" ON content_calendar_events FOR ALL TO service_
 CREATE INDEX IF NOT EXISTS idx_calendar_scheduled ON content_calendar_events (scheduled_for, branch_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_status ON content_calendar_events (status, channel);
 
+-- ═══════════════════════════════════════════════════════════
+-- 13b. SCHEDULED SOCIAL POSTS (Upload & Auto-Publish)
+-- Already live on the Hub (horvjqqifgrzxesuxtfm) — mirrored here for the
+-- record. Rows are drained by the "Trellis: Scheduled Post Publisher" n8n
+-- workflow (n8n-blueprints/S1-scheduled-post-publisher.json), which polls
+-- every 10 minutes for status='scheduled' rows past their scheduled_for
+-- time and hands them off to the existing Instagram/Facebook publish
+-- webhooks. Before this workflow existed, "scheduled" posts only ever
+-- lived in browser localStorage and were never actually sent.
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS scheduled_social_posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch_id UUID NOT NULL,
+  branch_slug TEXT,
+  platform TEXT NOT NULL DEFAULT 'instagram' CHECK (platform IN ('instagram', 'facebook')),
+  caption TEXT NOT NULL,
+  media_type TEXT NOT NULL DEFAULT 'image' CHECK (media_type IN ('image', 'video', 'carousel')),
+  media_urls JSONB DEFAULT '[]'::jsonb,
+  scheduled_for TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'publishing', 'published', 'failed', 'cancelled')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  post_id TEXT,
+  published_at TIMESTAMPTZ,
+  source TEXT NOT NULL DEFAULT 'upload',
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE scheduled_social_posts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service Role Full Access" ON scheduled_social_posts FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Anon/Authenticated Full Access" ON scheduled_social_posts FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+GRANT ALL ON scheduled_social_posts TO anon, authenticated, service_role;
+
+CREATE INDEX IF NOT EXISTS idx_ssp_due ON scheduled_social_posts (scheduled_for) WHERE status = 'scheduled';
+CREATE INDEX IF NOT EXISTS idx_ssp_branch_scheduled ON scheduled_social_posts (branch_slug, scheduled_for);
+
+CREATE OR REPLACE FUNCTION set_ssp_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_ssp_updated_at ON scheduled_social_posts;
+CREATE TRIGGER trg_ssp_updated_at
+  BEFORE UPDATE ON scheduled_social_posts
+  FOR EACH ROW EXECUTE FUNCTION set_ssp_updated_at();
+
 -- 10. MARKETING CAMPAIGN GENERATOR: BRAND PROFILES
 CREATE TABLE IF NOT EXISTS marketing_brands (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

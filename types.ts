@@ -365,7 +365,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler';
 
 export interface StudioAlbum {
   id: string;
@@ -1522,4 +1522,40 @@ export interface CreativeLeaderboardEntry {
   cost_per_conversion: number | null;
   roas: number | null;
   has_enough_data: boolean;
+}
+
+// ─── Post Scheduler: "bring your own creative" ─────────────────────
+// Queue table on Hub Supabase (scheduled_social_posts). An n8n worker
+// polls for due rows every ~10 minutes and publishes them. This is a
+// separate queue from DraftPost's localStorage-only scheduling.
+export interface ScheduledPost {
+  id: string;
+  branch_id: string;
+  branch_slug: string | null;
+  platform: 'instagram' | 'facebook';
+  caption: string;
+  media_type: 'image' | 'video' | 'carousel';
+  media_urls: string[];
+  scheduled_for: string;
+  status: 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
+  attempts: number | null;
+  last_error: string | null;
+  post_id: string | null;
+  published_at: string | null;
+  source: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewScheduledPost {
+  branch_id: string;
+  branch_slug?: string | null;
+  platform: 'instagram' | 'facebook';
+  caption: string;
+  media_type: 'image' | 'video' | 'carousel';
+  media_urls: string[];
+  scheduled_for: string;
+  source?: string;
+  created_by?: string | null;
 }

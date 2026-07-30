@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle, Sparkles, TrendingUp
+  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle, Sparkles, TrendingUp, CalendarClock
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -58,6 +58,7 @@ const NAV_GROUPS = [
       { id: 'social-hub', label: 'Social Hub', icon: Share2 },
       { id: 'reddit-growth', label: 'Reddit Growth', icon: MessageCircle },
       { id: 'video-ad-lab', label: 'Creative Studio', icon: Sparkles },
+      { id: 'post-scheduler', label: 'Post Scheduler', icon: CalendarClock },
       { id: 'ad-performance', label: 'Ad Performance', icon: TrendingUp },
       { id: 'clip-studio', label: 'Clip Studio', icon: Film },
       { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },

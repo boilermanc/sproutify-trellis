@@ -1,0 +1,560 @@
+{
+  "name": "Trellis: Scheduled Post Publisher",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Trellis: Scheduled Post Publisher\n\n**This workflow is what makes scheduling real.** Before it existed, Social Hub only ever\nmarked a post \"scheduled\" in the browser's localStorage \u2014 nothing on the server ever\nlooked at that row again, so the post never actually went out. This workflow is the missing\nhalf: it polls the `scheduled_social_posts` table on the Hub every **10 minutes**, finds rows\nthat are due, and hands each one off to the existing Instagram/Facebook publish webhooks\n(`B3-social-publisher-v2.json` and the Facebook equivalent).\n\n### Cadence\nSchedule Trigger fires every 10 minutes \u2192 144 runs/day. Most runs find nothing due and must\nno-op quietly (see \"No Due Posts?\" below) \u2014 this is normal, not an error.\n\n### FLOW\nSchedule Trigger \u2192 **Fetch Due Posts** (GET `scheduled_social_posts` where\n`status=eq.scheduled` AND `scheduled_for=lte.<now>`, ordered oldest-first, capped at 20/run so\na big backlog can never stampede the publish webhooks) \u2192 **Normalize Due Posts** (Code:\nflattens the response into one item per row regardless of how the HTTP node shaped the array)\n\u2192 **No Due Posts?** (IF: with zero rows nothing downstream executes \u2014 n8n simply has no\nitems to run the rest of the graph on, so the execution ends cleanly with no writes and no\nerror) \u2192 **Claim Post** \u2192 **Drop Unclaimed Posts** \u2192 **Route by Platform** \u2192\n**Publish Instagram** / **Publish Facebook** \u2192 **Publish Succeeded?** \u2192\n**Mark Published** or **Prepare Failure** \u2192 **Mark Failed**.\n\n### THE DOUBLE-PUBLISH GUARD (read this before touching Claim Post)\nDouble-posting to a customer's Instagram or Facebook is the worst failure mode this workflow\ncan produce, and with a 10-minute poll it is very possible for two executions to overlap (a\nslow prior run, a manual \"execute now\", n8n queue catch-up after downtime, etc.).\n\n**Claim Post** PATCHes the row with a *conditional* filter:\n`?id=eq.{id}&status=eq.scheduled` and header `Prefer: return=representation`. PostgREST only\nupdates (and only returns) a row when BOTH the id AND status match at the moment the PATCH\nruns. That means:\n- If this run is the first to reach the row, the PATCH matches, flips it to `publishing`,\n  bumps `attempts`, and returns the updated row (array with 1 element).\n- If another run already claimed it first (its status is no longer `scheduled`), the WHERE\n  clause matches nothing, and PostgREST returns an **empty array** \u2014 even though the HTTP\n  call itself succeeds with 200/204.\n\n**Drop Unclaimed Posts** (Code node right after Claim Post) is the enforcement point: it reads\neach Claim Post response and keeps only rows that actually came back non-empty. Any item whose\nclaim returned no row is silently dropped \u2014 it does NOT get published again, because some\nother execution already has it. This is the only thing standing between this workflow and a\ncustomer getting the same post published twice, so don't remove or \"simplify\" it.\n\nIf the Claim Post HTTP call itself errors (network/5xx, not just an empty match), the item is\nrouted to **Claim Error - Leave Scheduled** and dropped WITHOUT touching the row \u2014 it stays\n`status=scheduled` and will simply be picked up again on the next 10-minute run. That is\nintentional: we only know for certain a claim failed, not whether it *actually* changed\nanything on the row, so the safe default is \"leave it alone, try again later\", not\n\"guess and mark it failed\".\n\n### PUBLISH STEP \u2014 CHECK THE BODY, NOT JUST THE HTTP STATUS\n`trellis-social-publish` / `trellis-facebook-publish` are the existing synchronous publish\nwebhooks (see `services/socialService.ts` \u2192 `publishToSocial()` / `publishToFacebook()` for\nthe contract this mirrors). They can return **HTTP 200 with `{ success: false, error: ... }`**\nwhen the platform API rejects the post \u2014 an HTTP-level 200 is NOT proof of a successful\npublish. **Publish Succeeded?** explicitly checks `success === true` in the response body\nbefore routing to **Mark Published**; anything else (including a same-shaped `success:false`\nbody or a genuine HTTP/network error from either publish node) goes to **Prepare Failure** \u2192\n**Mark Failed**.\n\n### NO SILENT RETRIES\n**Mark Failed** sets `status='failed'` and `last_error` (truncated to ~500 chars) and stops\nthere \u2014 a failed post does NOT automatically retry. `attempts` is tracked on every claim\nspecifically so a future bounded-retry policy (e.g. \"re-queue if attempts < 3\") can be added\nlater; today it's informational only. A human reviews `failed` rows in the UI and decides\nwhether to re-schedule.\n\n### PREREQUISITE SQL\nAlready applied on the live Hub (`horvjqqifgrzxesuxtfm`); mirrored in `constants.ts`\n`SQL_SCHEMA` for the record (search for \"SCHEDULED SOCIAL POSTS\"):\n```sql\nCREATE TABLE IF NOT EXISTS scheduled_social_posts (\n  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  branch_id UUID NOT NULL,\n  branch_slug TEXT,\n  platform TEXT NOT NULL DEFAULT 'instagram' CHECK (platform IN ('instagram', 'facebook')),\n  caption TEXT NOT NULL,\n  media_type TEXT NOT NULL DEFAULT 'image' CHECK (media_type IN ('image', 'video', 'carousel')),\n  media_urls JSONB DEFAULT '[]'::jsonb,\n  scheduled_for TIMESTAMPTZ NOT NULL,\n  status TEXT NOT NULL DEFAULT 'scheduled'\n    CHECK (status IN ('scheduled', 'publishing', 'published', 'failed', 'cancelled')),\n  attempts INTEGER NOT NULL DEFAULT 0,\n  last_error TEXT,\n  post_id TEXT,\n  published_at TIMESTAMPTZ,\n  source TEXT NOT NULL DEFAULT 'upload',\n  created_by UUID,\n  created_at TIMESTAMPTZ DEFAULT now(),\n  updated_at TIMESTAMPTZ DEFAULT now()\n);\n-- + idx_ssp_due (partial, WHERE status='scheduled'), idx_ssp_branch_scheduled,\n-- RLS enabled (service_role ALL + anon/authenticated ALL), grants, updated_at trigger.\n```\n\n### SETUP REQUIRED\n1. Import this workflow into n8n.\n2. Every Supabase HTTP Request node (**Fetch Due Posts**, **Claim Post**, **Mark Published**,\n   **Mark Failed**) uses *Predefined Credential Type* (`supabaseApi`) pointed at the same\n   **Sproutify Trellis** credential already used by `B2-campaign-dispatch.json`\n   (`Save Send Ids` / `Mark Complete`) \u2014 no service-role key is pasted into this workflow.\n   If that credential isn't in your instance yet, create a Supabase API credential named\n   \"Sproutify Trellis\" pointed at the Hub project with the service_role key, and re-select it\n   on each of those four nodes.\n3. **Publish Instagram** / **Publish Facebook** call the existing public webhooks directly\n   (`https://n8n.sproutify.app/webhook/trellis-social-publish` and\n   `.../trellis-facebook-publish`) \u2014 no credential needed, same as the frontend's own fetch\n   calls in `socialService.ts`.\n4. Run once manually against a test row, then activate the workflow.\n\n### NOTES\n- `branch_id` sent to the publish webhooks is always the branch **UUID** stored on the row\n  (never the domain slug) \u2014 matches the contract in `socialService.ts`.\n- `image_url` sent to the publish webhooks is always `media_urls[0]` (or null for a\n  Facebook text-only post with no media).\n- `scheduled_for` sent to the publish webhooks is always `null` \u2014 by the time this workflow\n  calls them, the post is being published *now*; scheduling already happened at the\n  `scheduled_social_posts` layer.\n",
+        "width": 780,
+        "height": 1500
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1400,
+        -900
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "*"
+            },
+            {
+              "name": "status",
+              "value": "eq.scheduled"
+            },
+            {
+              "name": "scheduled_for",
+              "value": "=lte.{{ $now.toISO() }}"
+            },
+            {
+              "name": "order",
+              "value": "scheduled_for.asc"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Due Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1160,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "GET scheduled_social_posts where status=eq.scheduled AND scheduled_for=lte.now, oldest first, capped at 20/run so one backlog can't stampede the publish webhooks. Runs every 10 minutes (144x/day) -- most runs find nothing due.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The HTTP Request node's array-splitting behaviour for a top-level JSON array\n// response has varied across n8n versions, so don't assume it always turns one\n// PostgREST array into one item per row. Normalize defensively here: flatten any\n// array-shaped item.json into individual rows, drop anything without an id.\nconst inputItems = $input.all();\nconst rows = [];\nfor (const item of inputItems) {\n  const value = item.json;\n  if (Array.isArray(value)) {\n    rows.push(...value);\n  } else if (value) {\n    rows.push(value);\n  }\n}\nreturn rows.filter(row => row && row.id).map(row => ({ json: row }));"
+      },
+      "name": "Normalize Due Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -940,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ !!$json.id }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "No Due Posts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        100
+      ],
+      "notes": "With zero rows due, n8n has no items to run this (or anything downstream) on -- the execution simply ends here with no writes and no error. That's the intended no-op for the 143+ runs/day that find nothing to publish.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "name": "No Posts To Publish",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts?id=eq.{{ $json.id }}&status=eq.scheduled",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'publishing', attempts: ($json.attempts || 0) + 1 }) }}",
+        "options": {}
+      },
+      "name": "Claim Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -500,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "DOUBLE-PUBLISH GUARD: PATCH is filtered on id=eq.{id} AND status=eq.scheduled, so it only matches (and only updates attempts/status) if this run got here first. Prefer: return=representation means a row already claimed by another overlapping run comes back as an EMPTY array here -- see 'Drop Unclaimed Posts' next, which is what actually enforces the guard. A genuine HTTP/network error on this call (not an empty match) routes to 'Claim Error - Leave Scheduled' -- the row stays status=scheduled and is retried on the next 10-minute run rather than being guessed at.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "name": "Claim Error - Leave Scheduled",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        -140
+      ],
+      "notes": "Claim Post itself errored (network/5xx), not a normal 'already claimed' empty match. We don't know whether the PATCH actually landed, so the safe default is to touch nothing and let the row (still status=scheduled) get picked up again on the next run, instead of guessing and marking it failed.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// THE DOUBLE-PUBLISH GUARD. Claim Post PATCHes with ?id=eq.{id}&status=eq.scheduled,\n// so PostgREST only returns a row if THIS run's claim actually matched. If another\n// overlapping run claimed the same row first, the WHERE clause matches nothing and\n// the PATCH response is an empty array -- even though the HTTP call itself succeeded.\n//\n// Any item whose claim response came back empty is dropped here, silently, on purpose.\n// It must NOT be published again -- some other execution already owns it. This is the\n// single enforcement point standing between this workflow and double-posting to a\n// customer's Instagram or Facebook. Do not remove this filter.\n//\n// pairedItem is set explicitly (by input index) so downstream nodes can still resolve\n// $('Drop Unclaimed Posts').item on the surviving items after this filter runs.\nconst items = $input.all();\nconst kept = [];\nitems.forEach((item, index) => {\n  const raw = item.json;\n  const row = Array.isArray(raw) ? raw[0] : raw;\n  if (row && row.id) {\n    kept.push({ json: row, pairedItem: index });\n  }\n});\nreturn kept;"
+      },
+      "name": "Drop Unclaimed Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ],
+      "notes": "Enforces the double-publish guard: keeps only items whose Claim Post response actually returned a row (this run won the claim). Items whose claim came back empty (another run already claimed that row) are dropped here -- never published, never touched again by this run.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.platform }}",
+              "value2": "instagram",
+              "operation": "equals"
+            }
+          ]
+        }
+      },
+      "name": "Route by Platform",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/trellis-social-publish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ branch_id: $json.branch_id, caption: $json.caption, image_url: (Array.isArray($json.media_urls) && $json.media_urls.length ? $json.media_urls[0] : null), media_type: $json.media_type || 'image', media_urls: $json.media_urls || [], scheduled_for: null }) }}",
+        "options": {}
+      },
+      "name": "Publish Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        200,
+        -140
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Matches the trellis-social-publish contract used by publishToSocial() in services/socialService.ts. branch_id is the branch UUID stored on the row; image_url is always media_urls[0]; scheduled_for is null because this IS the send, right now.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/trellis-facebook-publish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ branch_id: $json.branch_id, caption: $json.caption, image_url: (Array.isArray($json.media_urls) && $json.media_urls.length ? $json.media_urls[0] : null), scheduled_for: null }) }}",
+        "options": {}
+      },
+      "name": "Publish Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        200,
+        140
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Matches the trellis-facebook-publish contract used by publishToFacebook() in services/socialService.ts. image_url is optional -- Facebook allows text-only posts, so a post with no media sends image_url: null.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success === true }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Publish Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        460,
+        0
+      ],
+      "notes": "Both publish webhooks can return HTTP 200 with { success: false, error }. A 200 status alone is NOT proof of a successful publish -- only success === true in the body counts.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts?id=eq.{{ $('Drop Unclaimed Posts').item.json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'published', published_at: new Date().toISOString(), post_id: $json.post_id || null }) }}",
+        "options": {}
+      },
+      "name": "Mark Published",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        700,
+        -140
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Runs for every failure path: a genuine HTTP/network error from either publish node,\n// OR a 200 response whose body says { success: false, error }. Normalizes both shapes\n// into a single { id, last_error } record for Mark Failed. The id is always read from\n// 'Drop Unclaimed Posts' (the claimed row), not from the current item, because an error\n// response body from the publish webhook won't necessarily carry the row id.\nconst body = $input.item.json || {};\nlet message;\nif (body.success === false) {\n  message = body.error || 'Publish webhook reported failure';\n} else if (body.error) {\n  message = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);\n} else if (body.message) {\n  message = body.message;\n} else {\n  message = JSON.stringify(body);\n}\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\nreturn { json: { id: claimedId, last_error: String(message).slice(0, 500) } };"
+      },
+      "name": "Prepare Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        200
+      ],
+      "notes": "Normalizes both failure shapes (HTTP error output vs. { success: false, error }) into { id, last_error } for Mark Failed. Always resolves id via 'Drop Unclaimed Posts' since the failure body itself may not carry it.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', last_error: $json.last_error }) }}",
+        "options": {}
+      },
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        940,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Terminal state. Does NOT auto-retry -- attempts is tracked on every claim specifically so a future bounded-retry policy can be layered on top, but today a failed row just sits there for a human to review and, if appropriate, re-schedule.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Due Posts": {
+      "main": [
+        [
+          {
+            "node": "Normalize Due Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Due Posts": {
+      "main": [
+        [
+          {
+            "node": "No Due Posts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Due Posts?": {
+      "main": [
+        [
+          {
+            "node": "Claim Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Posts To Publish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Post": {
+      "main": [
+        [
+          {
+            "node": "Drop Unclaimed Posts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Claim Error - Leave Scheduled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Unclaimed Posts": {
+      "main": [
+        [
+          {
+            "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Platform": {
+      "main": [
+        [
+          {
+            "node": "Publish Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Publish Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish Instagram": {
+      "main": [
+        [
+          {
+            "node": "Publish Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish Facebook": {
+      "main": [
+        [
+          {
+            "node": "Publish Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Mark Published",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Failure": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
