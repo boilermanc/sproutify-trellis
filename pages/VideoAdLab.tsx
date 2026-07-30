@@ -10,6 +10,7 @@ import {
 import {
   submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob,
   submitStaticAdJob, submitCarouselJob, approveJob, approveAndRenderVideo,
+  regenerateJob, discardJob,
 } from '../services/videoAdService';
 import { publishToSocial } from '../services/socialService';
 import { uploadSocialMedia } from '../lib/supabaseService';
@@ -19,7 +20,7 @@ import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
-  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X,
+  Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -265,6 +266,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const getCaptionDraft = (job: VideoAdJob) => captionDrafts[job.id] ?? job.caption ?? '';
 
+  // ── Regenerate / discard state (review loop) ──
+  const [regenerateOpenJobId, setRegenerateOpenJobId] = useState<string | null>(null);
+  const [regenerateNotesDraft, setRegenerateNotesDraft] = useState<Record<string, string>>({});
+  const [isRegenerating, setIsRegenerating] = useState<string | null>(null);
+  const [discardConfirmJobId, setDiscardConfirmJobId] = useState<string | null>(null);
+  const [isDiscarding, setIsDiscarding] = useState<string | null>(null);
+
   // ── Publish state ──
   const [publishDraftJobId, setPublishDraftJobId] = useState<string | null>(null);
   const [publishingJobId, setPublishingJobId] = useState<string | null>(null);
@@ -298,8 +306,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
           branch_id: job.branch,
           channel: job.platform ?? 'general',
           event_type: 'social_post',
-          title: `Video Ad - ${formatBranchName(job.branch)}`,
-          content_preview: job.script,
+          title: `${formatLabel(job.format)} Ad - ${formatBranchName(job.branch)}`,
+          content_preview: job.script || job.caption || null,
           scheduled_for: scheduledDate.toISOString(),
           status: 'scheduled',
           source: 'social_hub',
@@ -664,6 +672,49 @@ STRICT RULES:
       addToast(`Approve & render failed: ${err.message}`, 'error');
     } finally {
       setApprovingJobId(null);
+    }
+  };
+
+  // ── Regenerate: replay this job's inputs as a new job, optionally with change notes ──
+  const handleRegenerate = async (job: VideoAdJob) => {
+    if (isRegenerating) return;
+    const notes = (regenerateNotesDraft[job.id] || '').trim();
+    setIsRegenerating(job.id);
+    try {
+      const result = await regenerateJob(job, notes || undefined);
+      setActiveJobIds(prev => [...prev, result.job_id]);
+      addToast(`Regenerating your ${formatLabel(job.format).toLowerCase()} ad — new attempt queued.`, 'success');
+      setRegenerateOpenJobId(null);
+      setRegenerateNotesDraft(prev => {
+        const next = { ...prev };
+        delete next[job.id];
+        return next;
+      });
+      // If the Progress step was watching this job, follow the retry instead.
+      setTrackedJobId(prev => prev === job.id ? result.job_id : prev);
+
+      const fetched = await getVideoAdJobs();
+      setJobs(fetched);
+    } catch (err: any) {
+      addToast(err.message || 'Regenerate failed.', 'error');
+    } finally {
+      setIsRegenerating(null);
+    }
+  };
+
+  // ── Discard: reject a finished creative (distinct from cancelling an in-flight job) ──
+  const handleDiscard = async (job: VideoAdJob) => {
+    setIsDiscarding(job.id);
+    try {
+      await discardJob(job.id);
+      setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'cancelled' as VideoAdStatus } : j));
+      setActiveJobIds(prev => prev.filter(id => id !== job.id));
+      addToast(`${formatLabel(job.format)} ad discarded.`, 'info');
+      setDiscardConfirmJobId(null);
+    } catch (err: any) {
+      addToast(`Discard failed: ${err.message}`, 'error');
+    } finally {
+      setIsDiscarding(null);
     }
   };
 
@@ -1719,9 +1770,16 @@ STRICT RULES:
                 </p>
               </div>
               {job && (
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusChipClasses(job.status)}`}>
-                  {job.status.replace(/_/g, ' ')}
-                </span>
+                <div className="flex flex-col items-end gap-1.5">
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusChipClasses(job.status)}`}>
+                    {job.status.replace(/_/g, ' ')}
+                  </span>
+                  {job.revision_of && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-400">
+                      <GitBranch size={10} /> Revision
+                    </span>
+                  )}
+                </div>
               )}
             </div>
 
@@ -1801,6 +1859,21 @@ STRICT RULES:
               <video src={job.video_url} controls className="w-full max-w-sm rounded-xl border border-slate-200" />
             )}
 
+            {/* Approved success state (static / carousel) */}
+            {job && isDone && (job.format === 'static' || job.format === 'carousel') && (
+              <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center flex-shrink-0">
+                  <Check size={16} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-emerald-700">Approved — ready to publish</p>
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    Download it, publish straight to Instagram, or schedule it for later — head to the Creative Library below.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Caption + actions for review / done */}
             {job && (isReview || isDone) && (job.format === 'static' || job.format === 'carousel') && (
               <div>
@@ -1812,6 +1885,69 @@ STRICT RULES:
                   placeholder="Generated caption will appear here — edit as needed"
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
                 />
+              </div>
+            )}
+
+            {/* Revision notes, shown while a revision job is in review */}
+            {job && job.revision_of && job.revision_notes && isReview && (
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">Revision Notes</span>
+                <blockquote className="border-l-4 border-amber-400 pl-4 py-2 bg-amber-50/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
+                  {job.revision_notes}
+                </blockquote>
+              </div>
+            )}
+
+            {/* Regenerate: what should change? */}
+            {job && isReview && regenerateOpenJobId === job.id && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">What should change?</label>
+                <textarea
+                  value={regenerateNotesDraft[job.id] ?? ''}
+                  onChange={e => setRegenerateNotesDraft(prev => ({ ...prev, [job.id]: e.target.value }))}
+                  rows={2}
+                  placeholder="e.g. Make the headline smaller, warmer lighting"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleRegenerate(job)}
+                    disabled={isRegenerating === job.id}
+                    className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center gap-2"
+                  >
+                    {isRegenerating === job.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                    {isRegenerating === job.id ? 'Regenerating…' : 'Confirm regenerate'}
+                  </button>
+                  <button
+                    onClick={() => setRegenerateOpenJobId(null)}
+                    disabled={isRegenerating === job.id}
+                    className="px-4 py-2 border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50 transition disabled:opacity-30"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Discard: confirm step */}
+            {job && isReview && discardConfirmJobId === job.id && (
+              <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <span className="text-sm font-bold text-rose-700 flex-1">Discard this creative? This can't be undone.</span>
+                <button
+                  onClick={() => handleDiscard(job)}
+                  disabled={isDiscarding === job.id}
+                  className="px-4 py-2 bg-rose-500 text-white text-xs font-bold rounded-lg hover:bg-rose-600 transition disabled:opacity-30 flex items-center gap-2"
+                >
+                  {isDiscarding === job.id ? <Loader2 size={13} className="animate-spin" /> : null}
+                  {isDiscarding === job.id ? 'Discarding…' : 'Yes, discard'}
+                </button>
+                <button
+                  onClick={() => setDiscardConfirmJobId(null)}
+                  disabled={isDiscarding === job.id}
+                  className="px-4 py-2 border border-rose-200 text-rose-500 text-xs font-bold rounded-lg hover:bg-rose-100 transition disabled:opacity-30"
+                >
+                  Cancel
+                </button>
               </div>
             )}
 
@@ -1835,6 +1971,22 @@ STRICT RULES:
                 >
                   {approvingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
                   {approvingJobId === job.id ? 'Starting…' : 'Approve & Render'}
+                </button>
+              )}
+              {job && isReview && (
+                <button
+                  onClick={() => { setRegenerateOpenJobId(prev => prev === job.id ? null : job.id); setDiscardConfirmJobId(null); }}
+                  className="px-5 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition flex items-center gap-2"
+                >
+                  <RefreshCw size={15} /> Regenerate
+                </button>
+              )}
+              {job && isReview && (
+                <button
+                  onClick={() => { setDiscardConfirmJobId(prev => prev === job.id ? null : job.id); setRegenerateOpenJobId(null); }}
+                  className="px-4 py-2.5 border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 text-sm font-bold rounded-lg transition flex items-center gap-2"
+                >
+                  <Trash2 size={15} /> Discard
                 </button>
               )}
               {job && isDone && (job.format === 'static' || job.format === 'carousel') && (
@@ -1894,7 +2046,7 @@ STRICT RULES:
               const isApproving = approvingJobId === job.id;
               return (
                 <div key={job.id} className="bg-white rounded-xl border border-amber-200 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${formatBadgeClasses(job.format)}`}>
                       <FormatIcon format={job.format} />
                       {formatLabel(job.format)}
@@ -1902,6 +2054,11 @@ STRICT RULES:
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-200 text-slate-600">
                       {formatBranchName(job.branch)}
                     </span>
+                    {job.revision_of && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-400">
+                        <GitBranch size={10} /> Revision
+                      </span>
+                    )}
                   </div>
 
                   {/* Preview */}
@@ -1933,25 +2090,102 @@ STRICT RULES:
                     </div>
                   )}
 
-                  {/* Action */}
-                  {isStaticOrCarousel ? (
-                    <button
-                      onClick={() => handleApprove(job)}
-                      disabled={isApproving}
-                      className="w-full px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
-                    >
-                      {isApproving ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
-                      {isApproving ? 'Approving...' : 'Approve'}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleApproveAndRender(job)}
-                      disabled={isApproving}
-                      className="w-full px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
-                    >
-                      {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                      {isApproving ? 'Starting...' : 'Approve & Render'}
-                    </button>
+                  {/* Revision notes */}
+                  {job.revision_of && job.revision_notes && (
+                    <blockquote className="border-l-4 border-amber-400 pl-3 py-1.5 bg-amber-50/60 rounded-r-lg text-xs text-slate-600 italic whitespace-pre-wrap">
+                      {job.revision_notes}
+                    </blockquote>
+                  )}
+
+                  {/* Regenerate: what should change? */}
+                  {regenerateOpenJobId === job.id && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">What should change?</label>
+                      <textarea
+                        value={regenerateNotesDraft[job.id] ?? ''}
+                        onChange={e => setRegenerateNotesDraft(prev => ({ ...prev, [job.id]: e.target.value }))}
+                        rows={2}
+                        placeholder="e.g. Make the headline smaller, warmer lighting"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 transition resize-none"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleRegenerate(job)}
+                          disabled={isRegenerating === job.id}
+                          className="flex-1 px-3 py-1.5 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-1.5"
+                        >
+                          {isRegenerating === job.id ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                          {isRegenerating === job.id ? 'Regenerating…' : 'Confirm regenerate'}
+                        </button>
+                        <button
+                          onClick={() => setRegenerateOpenJobId(null)}
+                          disabled={isRegenerating === job.id}
+                          className="px-3 py-1.5 border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50 transition disabled:opacity-30"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Discard: confirm step */}
+                  {discardConfirmJobId === job.id && (
+                    <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                      <span className="text-xs text-rose-700 font-bold flex-1">Discard this creative?</span>
+                      <button
+                        onClick={() => handleDiscard(job)}
+                        disabled={isDiscarding === job.id}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition disabled:opacity-40"
+                      >
+                        {isDiscarding === job.id ? 'Discarding…' : 'Yes, discard'}
+                      </button>
+                      <button
+                        onClick={() => setDiscardConfirmJobId(null)}
+                        disabled={isDiscarding === job.id}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {regenerateOpenJobId !== job.id && discardConfirmJobId !== job.id && (
+                    <div className="flex gap-2">
+                      {isStaticOrCarousel ? (
+                        <button
+                          onClick={() => handleApprove(job)}
+                          disabled={isApproving}
+                          className="flex-1 px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
+                        >
+                          {isApproving ? <Loader2 size={14} className="animate-spin" /> : <ThumbsUp size={14} />}
+                          {isApproving ? 'Approving...' : 'Approve'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleApproveAndRender(job)}
+                          disabled={isApproving}
+                          className="flex-1 px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition disabled:opacity-30 flex items-center justify-center gap-2"
+                        >
+                          {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                          {isApproving ? 'Starting...' : 'Approve & Render'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setRegenerateOpenJobId(job.id)}
+                        title="Regenerate with changes"
+                        className="px-3 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition flex items-center justify-center"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                      <button
+                        onClick={() => setDiscardConfirmJobId(job.id)}
+                        title="Discard"
+                        className="px-3 py-2 border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 text-xs font-bold rounded-lg transition flex items-center justify-center"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -2130,6 +2364,11 @@ STRICT RULES:
                               <Target size={10} />{job.target_segment}
                             </span>
                           )}
+                          {job.revision_of && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-400">
+                              <GitBranch size={10} /> Revision
+                            </span>
+                          )}
                         </div>
                         {(job.script || job.caption) && (
                           <p className="text-xs text-slate-500 truncate max-w-xs" title={job.script || job.caption}>
@@ -2223,6 +2462,37 @@ STRICT RULES:
                                 </button>
                               )}
                             </>
+                          )}
+                          {job.status === 'completed' && (job.format === 'static' || job.format === 'carousel') && (job.frame_url || job.media_urls?.length) && (
+                            <a
+                              href={job.format === 'carousel' ? (job.media_urls?.[0] || job.frame_url || '') : (job.frame_url || '')}
+                              download
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition"
+                              title={job.format === 'carousel' ? 'Download first slide' : 'Download image'}
+                            >
+                              <Download size={14} />
+                            </a>
+                          )}
+                          {job.status === 'completed' && (job.format === 'static' || job.format === 'carousel') && (
+                            job.publish_status === 'scheduled' && job.scheduled_for ? (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold"
+                                title={`Scheduled for ${new Date(job.scheduled_for).toLocaleString()}`}
+                              >
+                                <CalendarClock size={12} />
+                                {new Date(job.scheduled_for).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => { setSchedulingJobId(job.id); setScheduleDateTime(''); }}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                                title={`Schedule ${formatLabel(job.format).toLowerCase()}`}
+                              >
+                                <CalendarClock size={14} />
+                              </button>
+                            )
                           )}
                           {isPublishable && (
                             job.publish_status === 'published' ? (
@@ -2493,6 +2763,18 @@ STRICT RULES:
                                   <span className="text-xs uppercase tracking-wider text-slate-400 block mb-1">Caption</span>
                                   <blockquote className="border-l-4 border-emerald-400 pl-4 py-2 bg-white/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
                                     {job.caption}
+                                  </blockquote>
+                                </div>
+                              )}
+
+                              {/* Revision notes — full width */}
+                              {job.revision_notes && (
+                                <div className="col-span-2 mt-1">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                                    <GitBranch size={11} /> Revision Notes
+                                  </span>
+                                  <blockquote className="border-l-4 border-amber-400 pl-4 py-2 bg-white/60 rounded-r-lg text-sm text-slate-600 italic whitespace-pre-wrap">
+                                    {job.revision_notes}
                                   </blockquote>
                                 </div>
                               )}

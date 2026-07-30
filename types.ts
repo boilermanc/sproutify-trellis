@@ -995,6 +995,10 @@ export interface VideoAdJob {
   actor_style?: string;
   aspect_ratio?: string;
   pipeline?: string;
+  // The original webhook body, kept so a job can be regenerated as-is.
+  request_payload?: Record<string, any>;
+  revision_of?: string;
+  revision_notes?: string;
 }
 
 // ─── Trellis Studio (AI music generation) ───────────────────────────

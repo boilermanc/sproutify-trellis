@@ -1294,6 +1294,10 @@ ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS aspect_ratio TEXT DEFAULT '9:
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS format TEXT DEFAULT 'video';
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;
+-- The original webhook body, so a job can be regenerated without retyping it.
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS request_payload JSONB;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS revision_of UUID;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS revision_notes TEXT;
 
 ALTER TABLE video_ad_jobs DROP CONSTRAINT IF EXISTS video_ad_jobs_status_check;
 ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_status_check

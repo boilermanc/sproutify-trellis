@@ -56,6 +56,30 @@ export async function submitVideoAdJob(
 
 // ─── 2. pollVideoAdJob ────────────────────────────────────────────
 // Fetch a single job by ID from Hub Supabase.
+// n8n's Supabase node writes JSONB columns by stringifying them, which
+// PostgREST stores as a JSON *string* rather than a native array/object.
+// Verified on live rows: jsonb_typeof(media_urls) = 'string'. Normalize on
+// read so callers can always trust the shape, whoever wrote the row.
+function parseJsonbField<T>(value: unknown, fallback: T): T {
+  if (value == null) return fallback;
+  if (typeof value !== 'string') return value as T;
+  try {
+    const parsed = JSON.parse(value);
+    return (parsed ?? fallback) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeJob<T extends VideoAdJob | null>(job: T): T {
+  if (!job) return job;
+  return {
+    ...job,
+    media_urls: parseJsonbField<string[]>(job.media_urls, []),
+    request_payload: parseJsonbField<Record<string, any> | undefined>(job.request_payload, undefined),
+  };
+}
+
 export async function pollVideoAdJob(
   jobId: string,
 ): Promise<VideoAdJob | null> {
@@ -69,7 +93,7 @@ export async function pollVideoAdJob(
     throw new Error(`Failed to poll video ad job ${jobId}: ${error.message}`);
   }
 
-  return data as VideoAdJob | null;
+  return normalizeJob(data as VideoAdJob | null);
 }
 
 // ─── 3. getVideoAdJobs ───────────────────────────────────────────
@@ -94,7 +118,7 @@ export async function getVideoAdJobs(
     throw new Error(`Failed to list video ad jobs: ${error.message}`);
   }
 
-  return (data as VideoAdJob[]) ?? [];
+  return ((data as VideoAdJob[]) ?? []).map(normalizeJob);
 }
 
 // ─── 4. cancelVideoAdJob ─────────────────────────────────────────
@@ -239,4 +263,57 @@ export async function approveAndRenderVideo(jobId: string): Promise<void> {
     // The request still reaches n8n and the job will appear in Supabase.
     console.log('[videoAd] Render webhook fire-and-forget completed (response unreadable, expected)');
   });
+}
+
+// ─── 9. regenerateJob ─────────────────────────────────────────────
+// "Not quite — try again." Re-runs a job from the exact inputs it was
+// created with (stored on the row by n8n as request_payload), optionally
+// with a note describing what should change. This creates a NEW job so the
+// original stays intact for comparison; the two are linked by revision_of.
+export async function regenerateJob(
+  job: VideoAdJob,
+  revisionNotes?: string,
+): Promise<{ job_id: string }> {
+  const payload = job.request_payload;
+  if (!payload) {
+    throw new Error(
+      'This job was created before revisions were supported, so its original inputs were not saved. Create a new one instead.',
+    );
+  }
+
+  const format = job.format || 'video';
+  const webhook = format === 'static' ? STATIC_AD_WEBHOOK
+    : format === 'carousel' ? CAROUSEL_AD_WEBHOOK
+    : VIDEO_AD_WEBHOOK;
+
+  const job_id = crypto.randomUUID();
+
+  fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...payload,
+      job_id,
+      revision_of: job.id,
+      revision_notes: revisionNotes || '',
+    }),
+  }).catch(() => {
+    console.log('[videoAd] Regenerate webhook fire-and-forget completed (response unreadable, expected)');
+  });
+
+  return { job_id };
+}
+
+// ─── 10. discardJob ───────────────────────────────────────────────
+// Rejecting a creative at review. Distinct from cancelling an in-flight
+// job: the work is done, we just don't want it.
+export async function discardJob(jobId: string): Promise<void> {
+  const { error } = await supabase
+    .from('video_ad_jobs')
+    .update({ status: 'cancelled' })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to discard job ${jobId}: ${error.message}`);
+  }
 }
