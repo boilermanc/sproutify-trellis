@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarClock, UploadCloud, ImagePlus, Loader2, X, Trash2, Clock,
   CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook,
-  Send, Sparkles, Info, RefreshCw, Image as ImageIcon,
+  Send, Sparkles, Info, RefreshCw, Image as ImageIcon, Pencil, Save, Zap,
 } from 'lucide-react';
 import { BranchContext, ScheduledPost, NewScheduledPost } from '../types';
 import {
   createScheduledPosts, fetchScheduledPosts, cancelScheduledPost,
-  uploadPostImage, buildSchedule,
+  uploadPostImage, buildSchedule, updateScheduledPost,
 } from '../services/scheduledPostService';
 
 interface PostSchedulerProps {
@@ -30,6 +30,14 @@ interface StagingRow {
   scheduledFor: string; // ISO
 }
 
+// Local editing draft for a row already sitting in `scheduled_social_posts`.
+// datetime-local input value + caption, kept separate from the ScheduledPost
+// itself until Save is pressed.
+interface EditDraft {
+  scheduledFor: string; // datetime-local value
+  caption: string;
+}
+
 const CADENCE_OPTIONS: { value: Cadence; label: string }[] = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekdays', label: 'Weekdays only' },
@@ -50,6 +58,19 @@ const STATUS_CHIP: Record<ScheduledPost['status'], { label: string; className: s
   cancelled: { label: 'Cancelled', className: 'bg-slate-100 text-slate-400', icon: Ban },
 };
 
+// Only a `scheduled` row is still waiting to go out — everything else is
+// either in flight or already resolved, so editing it would be misleading.
+function editBlockedReason(status: ScheduledPost['status']): string | null {
+  switch (status) {
+    case 'scheduled': return null;
+    case 'publishing': return "Can't edit — this post is publishing right now.";
+    case 'published': return "Can't edit — this post already went out.";
+    case 'failed': return "Can't edit — this post failed and won't retry from here.";
+    case 'cancelled': return "Can't edit — this post was cancelled.";
+    default: return "Can't edit this post.";
+  }
+}
+
 // datetime-local inputs work in local time strings with no timezone —
 // convert to/from ISO explicitly so we don't silently drift to UTC.
 function isoToLocalInputValue(iso: string): string {
@@ -63,6 +84,22 @@ function localInputValueToIso(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return new Date().toISOString();
   return d.toISOString();
+}
+
+// Resolves a datetime-local value back to an absolute, human-readable
+// string ("Fri, Aug 1 · 5:45 PM") so a wrong DATE — the exact mistake this
+// edit flow exists to fix — is obvious before Save, not after.
+function fmtResolvedLocalValue(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function isLocalValueInPast(value: string): boolean {
+  const iso = localInputValueToIso(value);
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return t < Date.now();
 }
 
 function todayDateInputValue(): string {
@@ -102,6 +139,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [queueLoading, setQueueLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
+  // ── Inline edit of a queued (still `scheduled`) row ──
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
+  const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+
   const loadQueue = async () => {
     if (!selectedBranch) { setQueue([]); setQueueLoading(false); return; }
     setQueueLoading(true);
@@ -116,6 +159,10 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   };
 
   useEffect(() => { loadQueue(); }, [selectedBranch?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching brands (or a refresh) while a row is mid-edit would otherwise
+  // leave a stale edit form pointing at a post that's no longer in view.
+  useEffect(() => { setEditingId(null); setEditDraft(null); }, [selectedBranch?.slug]);
 
   // ── Upload handling ──
   const handleFiles = async (fileList: FileList | null) => {
@@ -240,6 +287,59 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       addToast?.(e instanceof Error ? e.message : 'Failed to cancel that post.', 'error');
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  // ── Inline edit: reschedule / re-caption a `scheduled` row ──
+  const startEdit = (post: ScheduledPost) => {
+    if (post.status !== 'scheduled') return;
+    setEditingId(post.id);
+    setEditDraft({ scheduledFor: isoToLocalInputValue(post.scheduled_for), caption: post.caption });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditDraft(null);
+  };
+
+  const handleSaveEdit = async (post: ScheduledPost) => {
+    if (!editDraft) return;
+    if (!editDraft.caption.trim()) { addToast?.('Caption cannot be empty.', 'error'); return; }
+    if (isLocalValueInPast(editDraft.scheduledFor)) {
+      addToast?.('That date/time is in the past — pick a future date/time before saving.', 'error');
+      return;
+    }
+
+    setSavingEditId(post.id);
+    try {
+      const updated = await updateScheduledPost(post.id, {
+        scheduled_for: localInputValueToIso(editDraft.scheduledFor),
+        caption: editDraft.caption.trim(),
+      });
+      setQueue(prev => prev.map(p => (p.id === post.id ? updated : p)));
+      addToast?.('Post updated.', 'success');
+      setEditingId(null);
+      setEditDraft(null);
+    } catch (e) {
+      addToast?.(e instanceof Error ? e.message : 'Failed to update that post.', 'error');
+    } finally {
+      setSavingEditId(null);
+    }
+  };
+
+  // The exact fix for "I meant today, not tomorrow" — jump straight to now
+  // so the next worker pass (~10 min) picks it up, no date math required.
+  const handleRescheduleNow = async (post: ScheduledPost) => {
+    setReschedulingId(post.id);
+    try {
+      const updated = await updateScheduledPost(post.id, { scheduled_for: new Date().toISOString() });
+      setQueue(prev => prev.map(p => (p.id === post.id ? updated : p)));
+      addToast?.('Rescheduled to now — the next worker pass will pick it up.', 'success');
+      if (editingId === post.id) { setEditingId(null); setEditDraft(null); }
+    } catch (e) {
+      addToast?.(e instanceof Error ? e.message : 'Failed to reschedule that post.', 'error');
+    } finally {
+      setReschedulingId(null);
     }
   };
 
@@ -549,37 +649,119 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                     const platformMeta = PLATFORM_META[post.platform] ?? PLATFORM_META.instagram;
                     const PlatformIcon = platformMeta.icon;
                     const ChipIcon = chip.icon;
+                    const isEditing = editingId === post.id;
+                    const blockedReason = editBlockedReason(post.status);
+                    const editIsPast = isEditing && editDraft ? isLocalValueInPast(editDraft.scheduledFor) : false;
                     return (
-                      <div key={post.id} className="flex items-center gap-3 border border-slate-100 rounded-xl p-2.5">
-                        {post.media_urls[0] ? (
-                          <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                            <ImageIcon className="w-4 h-4 text-slate-300" />
+                      <div key={post.id} className="border border-slate-100 rounded-xl p-2.5 space-y-2">
+                        <div className="flex items-center gap-3">
+                          {post.media_urls[0] ? (
+                            <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                              <ImageIcon className="w-4 h-4 text-slate-300" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            {!isEditing && <p className="text-xs font-bold text-slate-700 truncate">{post.caption || '(no caption)'}</p>}
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                              <PlatformIcon className={`w-3 h-3 ${platformMeta.color}`} />
+                              <span>{platformMeta.label}</span>
+                              <span>·</span>
+                              <span>{fmtDateTime(post.scheduled_for)}</span>
+                            </div>
                           </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-slate-700 truncate">{post.caption || '(no caption)'}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                            <PlatformIcon className={`w-3 h-3 ${platformMeta.color}`} />
-                            <span>{platformMeta.label}</span>
-                            <span>·</span>
-                            <span>{fmtDateTime(post.scheduled_for)}</span>
-                          </div>
+                          <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shrink-0 ${chip.className}`}>
+                            <ChipIcon className={`w-3 h-3 ${post.status === 'publishing' ? 'animate-spin' : ''}`} />
+                            {chip.label}
+                          </span>
+                          {!isEditing && (
+                            blockedReason ? (
+                              <span title={blockedReason} className="shrink-0 text-slate-200 cursor-not-allowed">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => startEdit(post)}
+                                title="Edit time or caption"
+                                className="shrink-0 text-slate-400 hover:text-emerald-600 transition"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )
+                          )}
+                          {!isEditing && post.status === 'scheduled' && (
+                            <button
+                              type="button"
+                              onClick={() => handleRescheduleNow(post)}
+                              disabled={reschedulingId === post.id}
+                              title="Reschedule to now — next worker pass picks it up"
+                              className="shrink-0 text-slate-400 hover:text-emerald-600 transition disabled:opacity-40"
+                            >
+                              {reschedulingId === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                          {!isEditing && post.status === 'scheduled' && (
+                            <button
+                              type="button"
+                              onClick={() => handleCancel(post.id)}
+                              disabled={cancellingId === post.id}
+                              className="shrink-0 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition disabled:opacity-40"
+                            >
+                              {cancellingId === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Cancel'}
+                            </button>
+                          )}
                         </div>
-                        <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shrink-0 ${chip.className}`}>
-                          <ChipIcon className={`w-3 h-3 ${post.status === 'publishing' ? 'animate-spin' : ''}`} />
-                          {chip.label}
-                        </span>
-                        {post.status === 'scheduled' && (
-                          <button
-                            type="button"
-                            onClick={() => handleCancel(post.id)}
-                            disabled={cancellingId === post.id}
-                            className="shrink-0 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition disabled:opacity-40"
-                          >
-                            {cancellingId === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Cancel'}
-                          </button>
+
+                        {isEditing && editDraft && (
+                          <div className="pl-[52px] space-y-2 border-t border-slate-100 pt-2">
+                            <textarea
+                              value={editDraft.caption}
+                              onChange={e => setEditDraft(d => (d ? { ...d, caption: e.target.value } : d))}
+                              rows={2}
+                              placeholder="Write a caption…"
+                              className="w-full text-xs border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-y"
+                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="datetime-local"
+                                value={editDraft.scheduledFor}
+                                onChange={e => setEditDraft(d => (d ? { ...d, scheduledFor: e.target.value } : d))}
+                                className={`text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
+                                  editIsPast ? 'border-rose-300' : 'border-slate-200'
+                                }`}
+                              />
+                              <span className="text-[11px] font-bold text-slate-500">
+                                {fmtResolvedLocalValue(editDraft.scheduledFor)}
+                              </span>
+                            </div>
+                            {editIsPast && (
+                              <p className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                That date/time has already passed — pick a future date/time before saving.
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEdit(post)}
+                                disabled={savingEditId === post.id || editIsPast || !editDraft.caption.trim()}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-black uppercase tracking-widest transition disabled:opacity-40"
+                              >
+                                {savingEditId === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEdit}
+                                disabled={savingEditId === post.id}
+                                className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-slate-50 transition disabled:opacity-40"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     );
@@ -600,6 +782,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                     const platformMeta = PLATFORM_META[post.platform] ?? PLATFORM_META.instagram;
                     const PlatformIcon = platformMeta.icon;
                     const ChipIcon = chip.icon;
+                    const blockedReason = editBlockedReason(post.status);
                     return (
                       <div key={post.id} className="border border-slate-100 rounded-xl p-2.5 space-y-1.5">
                         <div className="flex items-center gap-3">
@@ -623,6 +806,11 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                             <ChipIcon className="w-3 h-3" />
                             {chip.label}
                           </span>
+                          {blockedReason && (
+                            <span title={blockedReason} className="shrink-0 text-slate-200 cursor-not-allowed">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </span>
+                          )}
                         </div>
                         {post.status === 'failed' && post.last_error && (
                           <p className="text-[10px] text-rose-500 pl-[52px]">{post.last_error}</p>

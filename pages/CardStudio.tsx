@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, Wand2, RefreshCw, Trash2, CheckCircle2, Loader2, Download,
   AlertTriangle, Info, CalendarClock, Image as ImageIcon, Send, BookOpen,
+  History, X,
 } from 'lucide-react';
 import { ApiKeyConfig, BranchContext, BranchInfo } from '../types';
 import { generateCardConcepts, type ScripturePolicy, CARD_BRIEF_PRESETS, CardConceptWithRef } from '../services/creativeDirectorService';
@@ -86,6 +87,122 @@ const TEMPLATE_LABEL: Record<CardConceptWithRef['template'], string> = {
 
 const NO_BIBLE_SOURCE_MESSAGE = 'Scripture unavailable for this brand — verse cards need a connected Bible source.';
 
+// ─── Draft persistence ──────────────────────────────────────────────
+// A generated batch lives only in React state until it's approved or
+// discarded, so navigating away (or a reload) used to lose it outright.
+// We persist the working batch to localStorage, keyed by branch slug so
+// switching brands never clobbers another brand's in-progress batch.
+//
+// Rendered preview data URLs are NOT persisted — they're large and cheap
+// to re-render from the concept on restore. Approved-out or discarded
+// cards are dropped from the persisted set as soon as they leave `cards`.
+// ────────────────────────────────────────────────────────────────────
+const DRAFT_STORAGE_KEY = 'trellis_card_studio_draft_v1';
+const VALID_TEMPLATES = new Set(['verse', 'statement', 'grid']);
+const VALID_PLATFORMS = new Set(['instagram', 'facebook']);
+
+interface PersistedCardDraftItem {
+  concept: CardConceptWithRef;
+  caption: string;
+  platform: Platform;
+  scheduledFor: string;
+  passageTranslation?: string;
+  passageLicense?: string;
+}
+
+interface PersistedCardDraft {
+  savedAt: string;
+  items: PersistedCardDraftItem[];
+}
+
+type CardDraftStore = Record<string, PersistedCardDraft>;
+
+// Restored data comes from a previous session (possibly an older app
+// version) — never trust its shape blindly. Anything that doesn't look
+// like a real draft item is dropped rather than crashing the page.
+function isValidDraftItem(raw: unknown): raw is PersistedCardDraftItem {
+  if (!raw || typeof raw !== 'object') return false;
+  const item = raw as Record<string, unknown>;
+  const concept = item.concept as Record<string, unknown> | undefined;
+  if (!concept || typeof concept !== 'object') return false;
+  if (typeof concept.id !== 'string' || !concept.id) return false;
+  if (typeof concept.template !== 'string' || !VALID_TEMPLATES.has(concept.template)) return false;
+  if (!concept.palette || typeof concept.palette !== 'object') return false;
+  if (typeof concept.eyebrow !== 'string') return false;
+  if (typeof concept.logoText !== 'string') return false;
+  if (typeof concept.caption !== 'string') return false;
+  if (typeof item.caption !== 'string') return false;
+  if (typeof item.platform !== 'string' || !VALID_PLATFORMS.has(item.platform)) return false;
+  if (typeof item.scheduledFor !== 'string' || Number.isNaN(new Date(item.scheduledFor).getTime())) return false;
+  return true;
+}
+
+function loadDraftStore(): CardDraftStore {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as CardDraftStore;
+  } catch {
+    return {};
+  }
+}
+
+function loadBranchDraft(branchSlug: string): PersistedCardDraft | null {
+  try {
+    const store = loadDraftStore();
+    const entry = store[branchSlug];
+    if (!entry || !Array.isArray(entry.items)) return null;
+    const items = entry.items.filter(isValidDraftItem);
+    if (items.length === 0) return null;
+    const savedAt = typeof entry.savedAt === 'string' && !Number.isNaN(new Date(entry.savedAt).getTime())
+      ? entry.savedAt
+      : new Date().toISOString();
+    return { savedAt, items };
+  } catch {
+    return null;
+  }
+}
+
+// Only `reviewing` cards are worth persisting — an approved card is already
+// safely in the scheduler queue, and a discarded one is meant to be gone.
+function saveBranchDraft(branchSlug: string, cards: ConceptCardState[]): void {
+  try {
+    const items: PersistedCardDraftItem[] = cards
+      .filter((c) => c.status === 'reviewing')
+      .map((c) => ({
+        concept: c.concept,
+        caption: c.caption,
+        platform: c.platform,
+        scheduledFor: c.scheduledFor,
+        passageTranslation: c.passageTranslation,
+        passageLicense: c.passageLicense,
+      }));
+
+    const store = loadDraftStore();
+    if (items.length === 0) {
+      delete store[branchSlug];
+    } else {
+      store[branchSlug] = { savedAt: new Date().toISOString(), items };
+    }
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // Quota exceeded, storage disabled, whatever — the batch just won't
+    // survive navigation this time. Not worth surfacing to the user.
+  }
+}
+
+function clearBranchDraft(branchSlug: string): void {
+  try {
+    const store = loadDraftStore();
+    delete store[branchSlug];
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // ignore
+  }
+}
+
 const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToast }) => {
   const branchOptions = branchContext?.allBranches ?? [];
   const [branchId, setBranchId] = useState('');
@@ -103,6 +220,10 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   const [hasBibleSource, setHasBibleSource] = useState<boolean | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [cards, setCards] = useState<ConceptCardState[]>([]);
+  // Timestamp of the restored draft this batch came from, if any — drives
+  // the "these are restored drafts, not fresh output" banner. Cleared on a
+  // fresh Generate, a branch switch, or an explicit Clear.
+  const [draftRestoredAt, setDraftRestoredAt] = useState<string | null>(null);
 
   const geminiKey = apiKeys?.gemini_api_key;
 
@@ -141,6 +262,68 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBranch?.id]);
+
+  const renderPreviewFor = async (concept: CardConceptWithRef) => {
+    try {
+      const dataUrl = await renderCardPreviewDataUrl(concept);
+      setCards((prev) => prev.map((c) => (c.concept.id === concept.id ? { ...c, previewUrl: dataUrl, isRendering: false, previewError: null } : c)));
+    } catch (e) {
+      setCards((prev) =>
+        prev.map((c) => (c.concept.id === concept.id ? { ...c, isRendering: false, previewError: e instanceof Error ? e.message : 'Preview render failed.' } : c)))
+      ;
+    }
+  };
+
+  // On mount / branch switch: restore that brand's persisted batch, if any,
+  // and re-render its previews (never persisted — cheap to redo, expensive
+  // to store). No brand, or no valid draft, just means an empty gallery.
+  useEffect(() => {
+    if (!selectedBranch) {
+      setCards([]);
+      setDraftRestoredAt(null);
+      return;
+    }
+    const draft = loadBranchDraft(selectedBranch.slug);
+    if (!draft) {
+      setCards([]);
+      setDraftRestoredAt(null);
+      return;
+    }
+    const restored: ConceptCardState[] = draft.items.map((item) => ({
+      concept: item.concept,
+      caption: item.caption,
+      previewUrl: null,
+      previewError: null,
+      isRendering: true,
+      isRegenerating: false,
+      isApproving: false,
+      status: 'reviewing',
+      platform: item.platform,
+      scheduledFor: item.scheduledFor,
+      passageTranslation: item.passageTranslation,
+      passageLicense: item.passageLicense,
+    }));
+    setCards(restored);
+    setDraftRestoredAt(draft.savedAt);
+    restored.forEach((c) => { renderPreviewFor(c.concept); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranch?.id]);
+
+  // Keep the persisted batch in sync with every edit (caption, platform,
+  // schedule, approve, discard, regenerate). Skipped while no brand is
+  // selected — there's nothing to key the entry by.
+  useEffect(() => {
+    if (!selectedBranch) return;
+    saveBranchDraft(selectedBranch.slug, cards);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards]);
+
+  const handleClearDraft = () => {
+    if (selectedBranch) clearBranchDraft(selectedBranch.slug);
+    setCards([]);
+    setDraftRestoredAt(null);
+    addToast('Cleared the draft batch.', 'success');
+  };
 
   // Fetches the real BSB text for a `verse` concept before it's ever
   // rendered or shown to the reviewer. Statement/grid concepts pass through
@@ -186,17 +369,6 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     }
   };
 
-  const renderPreviewFor = async (concept: CardConceptWithRef) => {
-    try {
-      const dataUrl = await renderCardPreviewDataUrl(concept);
-      setCards((prev) => prev.map((c) => (c.concept.id === concept.id ? { ...c, previewUrl: dataUrl, isRendering: false, previewError: null } : c)));
-    } catch (e) {
-      setCards((prev) =>
-        prev.map((c) => (c.concept.id === concept.id ? { ...c, isRendering: false, previewError: e instanceof Error ? e.message : 'Preview render failed.' } : c)))
-      ;
-    }
-  };
-
   // For a `verse` concept: fetch the real text first, then render — never
   // render (or let the reviewer approve) a verse card with missing or
   // placeholder scripture. Statement/grid concepts render immediately.
@@ -219,6 +391,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
     setIsGenerating(true);
     setCards([]);
+    setDraftRestoredAt(null);
     try {
       const concepts = await generateCardConcepts({
         apiKey: geminiKey,
@@ -385,6 +558,13 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
   const reviewingCount = useMemo(() => cards.filter((c) => c.status === 'reviewing').length, [cards]);
 
+  const draftRestoredLabel = useMemo(() => {
+    if (!draftRestoredAt) return null;
+    try {
+      return new Date(draftRestoredAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch { return null; }
+  }, [draftRestoredAt]);
+
   return (
     <div className="p-6 lg:p-10 space-y-6">
       {/* Header */}
@@ -408,6 +588,26 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           grid reliably, so an AI creative director writes the concept and a renderer draws it. Nothing gets queued until you approve it.
         </p>
       </div>
+
+      {/* Restored draft banner */}
+      {draftRestoredAt && cards.length > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2 text-amber-700 min-w-0">
+            <History className="w-4 h-4 shrink-0" />
+            <p className="text-xs font-bold truncate">
+              Restored draft{draftRestoredLabel ? ` from ${draftRestoredLabel}` : ''} — not freshly generated. Review before approving.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleClearDraft}
+            className="shrink-0 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-amber-700 hover:text-amber-900 transition"
+          >
+            <X className="w-3.5 h-3.5" />
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* Brief form */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
