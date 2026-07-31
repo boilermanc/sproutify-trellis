@@ -16,6 +16,7 @@ import TrellisEpisodes from './pages/TrellisEpisodes';
 import ClipStudio from './pages/ClipStudio';
 import AdPerformance from './pages/AdPerformance';
 import PostScheduler from './pages/PostScheduler';
+import CardStudio from './pages/CardStudio';
 import RedditGrowth from './pages/RedditGrowth';
 import SupportHub from './pages/SupportHub';
 import KnowledgeBase from './pages/KnowledgeBase';
@@ -378,6 +379,7 @@ const AppContent: React.FC = () => {
       case 'clip-studio': return <ClipStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
       case 'ad-performance': return <AdPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
+      case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'reddit-growth': return <RedditGrowth setEvents={setEvents} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} addToast={addToast} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;

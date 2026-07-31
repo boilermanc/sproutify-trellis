@@ -365,7 +365,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler';
+export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio';
 
 export interface StudioAlbum {
   id: string;
@@ -1038,6 +1038,45 @@ export interface TextOverlayLayer {
 export interface TextOverlayConfig {
   layers: TextOverlayLayer[];
   scrim?: 'none' | 'bottom' | 'top' | 'full';
+}
+
+// ─── Designed post cards ────────────────────────────────────────────
+// Some posts are layouts, not photographs — a verse on a gradient, a
+// typographic statement, a grid. Image models can't render text or lay out
+// a grid reliably, so these are DRAWN from data instead of generated: an AI
+// "creative director" writes the concept, a renderer builds the PNG.
+export type CardTemplate = 'verse' | 'statement' | 'grid';
+
+export interface CardPalette {
+  bg1: string;        // background / gradient start
+  bg2?: string;       // gradient end; flat fill when omitted
+  text: string;       // primary text
+  muted: string;      // secondary text
+  accent: string;     // emphasis, highlighted grid cell, rules
+}
+
+export interface CardConcept {
+  id: string;
+  template: CardTemplate;
+  palette: CardPalette;
+  eyebrow: string;          // small tracked label, e.g. "FOR WHEN YOU FEEL ANXIOUS"
+  logoText: string;         // brand mark line
+  caption: string;          // the Instagram caption that ships with it
+  // verse
+  body?: string;
+  reference?: string;       // "Philippians 4:6 · NIV"
+  // statement
+  statement?: string;
+  statementEmphasis?: string;
+  subline?: string;
+  // grid
+  heading?: string;
+  items?: string[];
+  highlightIndex?: number;
+  footnote?: string;
+  // provenance
+  rationale?: string;       // why this concept, for the human reviewing it
+  model?: string;
 }
 
 // ─── Trellis Studio (AI music generation) ───────────────────────────
