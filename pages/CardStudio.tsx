@@ -422,22 +422,23 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
             )}
           </div>
 
-          <div className="flex flex-col gap-1 lg:w-44">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Scripture</span>
-            <select
-              value={hasBibleSource === false ? 'avoid' : scripturePolicy}
-              onChange={(e) => setScripturePolicy(e.target.value as ScripturePolicy)}
-              disabled={hasBibleSource === false}
-              className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="mix">Mix — some with, some without</option>
-              <option value="require">Every card</option>
-              <option value="avoid">None</option>
-            </select>
-            {hasBibleSource === false && (
-              <span className="text-[10px] text-slate-400">No Bible source connected for this brand.</span>
-            )}
-          </div>
+          {/* Only brands with a connected Bible source can make verse cards, so
+              for every other brand this control is noise — hide it entirely
+              rather than showing a disabled dropdown. */}
+          {hasBibleSource === true && (
+            <div className="flex flex-col gap-1 lg:w-44">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Scripture</span>
+              <select
+                value={scripturePolicy}
+                onChange={(e) => setScripturePolicy(e.target.value as ScripturePolicy)}
+                className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              >
+                <option value="mix">Mix — some with, some without</option>
+                <option value="require">Every card</option>
+                <option value="avoid">None</option>
+              </select>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1 lg:w-40">
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">How many concepts</span>
