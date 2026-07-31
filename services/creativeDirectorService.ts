@@ -114,14 +114,28 @@ const CARD_CONCEPTS_SCHEMA = {
 
 // ─── Prompt ──────────────────────────────────────────────────────────
 
+// How much scripture the batch should contain. 'avoid' is forced automatically
+// for brands with no Bible source — a verse card there can never render, so
+// letting the director pick one just guarantees a broken card.
+export type ScripturePolicy = 'mix' | 'require' | 'avoid';
+
 function buildDirectorPrompt(opts: {
   brandName: string;
   brandContext: string;
   brief: string;
   count: number;
   palette?: { primary?: string; secondary?: string; accent?: string };
+  scripturePolicy?: ScripturePolicy;
 }): string {
   const bookVocab = USFM_BOOKS.map((b) => `${b.id} (${b.name})`).join(', ');
+
+  const policy = opts.scripturePolicy || 'mix';
+  const scriptureRule =
+    policy === 'avoid'
+      ? 'SCRIPTURE POLICY: do NOT use the "verse" template at all for this batch. Use only "statement" and "grid". Do not quote or reference scripture anywhere, including in captions.'
+      : policy === 'require'
+      ? 'SCRIPTURE POLICY: every concept should use the "verse" template, unless you genuinely cannot name a fitting passage — in that case use "statement" for that one rather than forcing a bad fit.'
+      : 'SCRIPTURE POLICY: mix the templates. Not every post needs scripture — a batch of all verse cards is monotonous. Aim for a spread across "verse", "statement" and "grid".';
 
   const paletteHint = opts.palette && (opts.palette.primary || opts.palette.secondary || opts.palette.accent)
     ? `Brand colors for INSPIRATION ONLY (not mandatory — concepts do not need to be on-brand): primary ${opts.palette.primary || 'n/a'}, secondary ${opts.palette.secondary || 'n/a'}, accent ${opts.palette.accent || 'n/a'}.`
@@ -151,6 +165,8 @@ EVERY concept, regardless of template, also needs:
 - palette: {bg1, bg2 (optional gradient end), text, muted, accent} — real CSS hex colors (e.g. "#1c2b23"). text and bg1 MUST have strong, obviously readable contrast. Each concept's palette is its OWN choice and does not need to match the brand's colors or any other concept's palette — but it must be internally consistent (muted and accent should make sense against bg1, not clash or disappear).
 
 HARD RULE — NEVER WRITE SCRIPTURE TEXT:
+${scriptureRule}
+
 If a concept uses the "verse" template, you must NEVER write out the verse's wording, and must NEVER invent a "body" or "reference" string — only supply verse_ref (book_id/chapter/verse_start/verse_end). Any wording you wrote would be ignored, so a fabricated or misquoted "quote" from you accomplishes nothing except confusing the human reviewer — the app always fetches the real text itself. If you cannot confidently name a passage that genuinely fits, use "statement" or "grid" instead of "verse" for that concept.
 
 Return ONLY the structured JSON matching the schema — no markdown, no commentary.`;
@@ -334,6 +350,7 @@ export async function generateCardConcepts(opts: {
   brief: string;
   count: number;
   palette?: { primary?: string; secondary?: string; accent?: string };
+  scripturePolicy?: ScripturePolicy;
 }): Promise<CardConceptWithRef[]> {
   if (!opts.apiKey) {
     throw new Error('Gemini API key is not configured. Add it in Settings before generating cards.');
@@ -363,7 +380,16 @@ export async function generateCardConcepts(opts: {
     const concepts: CardConceptWithRef[] = [];
     for (const raw of rawConcepts) {
       const concept = normalizeConcept(raw, MODEL);
-      if (concept) concepts.push(concept);
+      if (!concept) continue;
+      // Belt and braces: a prompt rule is a request, not a guarantee. With no
+      // Bible source a verse card can never render, so demote rather than ship
+      // a card that is certain to fail.
+      if (opts.scripturePolicy === 'avoid' && concept.template === 'verse') {
+        concept.template = 'statement';
+        concept.statement = concept.statement || concept.eyebrow || concept.caption;
+        delete (concept as any).verse_ref;
+      }
+      concepts.push(concept);
     }
     return concepts;
   } catch (err) {

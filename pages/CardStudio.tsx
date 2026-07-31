@@ -4,7 +4,7 @@ import {
   AlertTriangle, Info, CalendarClock, Image as ImageIcon, Send, BookOpen,
 } from 'lucide-react';
 import { ApiKeyConfig, BranchContext, BranchInfo } from '../types';
-import { generateCardConcepts, CARD_BRIEF_PRESETS, CardConceptWithRef } from '../services/creativeDirectorService';
+import { generateCardConcepts, type ScripturePolicy, CARD_BRIEF_PRESETS, CardConceptWithRef } from '../services/creativeDirectorService';
 import { fetchPassage } from '../services/bibleService';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
 import { uploadPostImage, createScheduledPosts } from '../services/scheduledPostService';
@@ -97,6 +97,10 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   const [brief, setBrief] = useState(CARD_BRIEF_PRESETS[0]?.brief || '');
   const [activePreset, setActivePreset] = useState<string | null>(CARD_BRIEF_PRESETS[0]?.label ?? null);
   const [count, setCount] = useState(3);
+  const [scripturePolicy, setScripturePolicy] = useState<ScripturePolicy>('mix');
+  // Null until resolved. A brand with no spoke connection has no Bible source,
+  // so verse cards can't render and scripture must be forced off.
+  const [hasBibleSource, setHasBibleSource] = useState<boolean | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [cards, setCards] = useState<ConceptCardState[]>([]);
 
@@ -123,6 +127,20 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       return null;
     }
   };
+
+  // Resolve up front whether this brand has a Bible source, so the Scripture
+  // control can disable itself before a batch is generated rather than after
+  // three verse cards come back broken.
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedBranch) { setHasBibleSource(null); return; }
+    setHasBibleSource(null);
+    resolveSpokeConnectionId(selectedBranch)
+      .then((id) => { if (!cancelled) setHasBibleSource(!!id); })
+      .catch(() => { if (!cancelled) setHasBibleSource(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBranch?.id]);
 
   // Fetches the real BSB text for a `verse` concept before it's ever
   // rendered or shown to the reviewer. Statement/grid concepts pass through
@@ -201,6 +219,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         brandContext: buildBrandContext(selectedBranch),
         brief,
         count,
+        scripturePolicy: hasBibleSource === false ? 'avoid' : scripturePolicy,
         palette: {
           primary: selectedBranch.primary_color,
           secondary: selectedBranch.secondary_color,
@@ -258,6 +277,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         brandContext: buildBrandContext(selectedBranch),
         brief: augmentedBrief,
         count: 1,
+        scripturePolicy: hasBibleSource === false ? 'avoid' : scripturePolicy,
         palette: {
           primary: selectedBranch.primary_color,
           secondary: selectedBranch.secondary_color,
@@ -399,6 +419,23 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1 lg:w-44">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Scripture</span>
+            <select
+              value={hasBibleSource === false ? 'avoid' : scripturePolicy}
+              onChange={(e) => setScripturePolicy(e.target.value as ScripturePolicy)}
+              disabled={hasBibleSource === false}
+              className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="mix">Mix — some with, some without</option>
+              <option value="require">Every card</option>
+              <option value="avoid">None</option>
+            </select>
+            {hasBibleSource === false && (
+              <span className="text-[10px] text-slate-400">No Bible source connected for this brand.</span>
             )}
           </div>
 
