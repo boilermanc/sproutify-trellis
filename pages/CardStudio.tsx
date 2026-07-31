@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, Wand2, RefreshCw, Trash2, CheckCircle2, Loader2, Download,
-  AlertTriangle, Info, CalendarClock, Image as ImageIcon, Send,
+  AlertTriangle, Info, CalendarClock, Image as ImageIcon, Send, BookOpen,
 } from 'lucide-react';
-import { ApiKeyConfig, BranchContext, BranchInfo, CardConcept } from '../types';
-import { generateCardConcepts, CARD_BRIEF_PRESETS } from '../services/creativeDirectorService';
+import { ApiKeyConfig, BranchContext, BranchInfo } from '../types';
+import { generateCardConcepts, CARD_BRIEF_PRESETS, CardConceptWithRef } from '../services/creativeDirectorService';
+import { fetchPassage } from '../services/bibleService';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
 import { uploadPostImage, createScheduledPosts } from '../services/scheduledPostService';
+import { supabase as hubClient } from '../lib/supabase';
 
 // ─── Card Studio ────────────────────────────────────────────────────
 // The review half of the designed-post-card pipeline: brief -> concepts ->
@@ -25,7 +27,7 @@ interface CardStudioProps {
 type Platform = 'instagram' | 'facebook';
 
 interface ConceptCardState {
-  concept: CardConcept;
+  concept: CardConceptWithRef;
   caption: string;
   previewUrl: string | null;
   previewError: string | null;
@@ -35,6 +37,11 @@ interface ConceptCardState {
   status: 'reviewing' | 'approved';
   platform: Platform;
   scheduledFor: string; // ISO
+  // Set only for verse concepts once their real text has been fetched —
+  // shown as a small muted attribution line since BSB attribution is good
+  // practice even though it isn't strictly required.
+  passageTranslation?: string;
+  passageLicense?: string;
 }
 
 const COUNT_OPTIONS = [2, 3, 4, 5, 6];
@@ -71,11 +78,13 @@ function slugifyForFilename(text: string): string {
   return slug || 'card';
 }
 
-const TEMPLATE_LABEL: Record<CardConcept['template'], string> = {
+const TEMPLATE_LABEL: Record<CardConceptWithRef['template'], string> = {
   verse: 'Verse',
   statement: 'Statement',
   grid: 'Grid',
 };
+
+const NO_BIBLE_SOURCE_MESSAGE = 'Scripture unavailable for this brand — verse cards need a connected Bible source.';
 
 const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToast }) => {
   const branchOptions = branchContext?.allBranches ?? [];
@@ -93,6 +102,56 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
   const geminiKey = apiKeys?.gemini_api_key;
 
+  // Spoke connection id per branch, resolved from the `branches` table and
+  // cached for the session — a ref (not state) so async lookups always see
+  // the latest value instead of a stale render's closure.
+  const branchConnectionCache = useRef<Record<string, string | null>>({});
+
+  const resolveSpokeConnectionId = async (branch: BranchInfo): Promise<string | null> => {
+    if (branch.id in branchConnectionCache.current) return branchConnectionCache.current[branch.id];
+    try {
+      const { data, error } = await hubClient
+        .from('branches')
+        .select('spoke_connection_id')
+        .eq('slug', branch.slug)
+        .maybeSingle();
+      const connectionId = !error && data?.spoke_connection_id ? String(data.spoke_connection_id) : null;
+      branchConnectionCache.current[branch.id] = connectionId;
+      return connectionId;
+    } catch {
+      branchConnectionCache.current[branch.id] = null;
+      return null;
+    }
+  };
+
+  // Fetches the real BSB text for a `verse` concept before it's ever
+  // rendered or shown to the reviewer. Statement/grid concepts pass through
+  // untouched. Never fabricates or leaves placeholder scripture — any
+  // failure (no spoke connection, RPC error, bad reference) is returned as
+  // an `error` string so the caller can block that one card instead of
+  // rendering it.
+  const hydrateVerseConcept = async (
+    concept: CardConceptWithRef,
+    branch: BranchInfo,
+  ): Promise<{ concept: CardConceptWithRef; translation?: string; license?: string; error?: string }> => {
+    if (concept.template !== 'verse') return { concept };
+    if (!concept.verse_ref) return { concept, error: 'This verse concept is missing a valid reference.' };
+
+    const connectionId = await resolveSpokeConnectionId(branch);
+    if (!connectionId) return { concept, error: NO_BIBLE_SOURCE_MESSAGE };
+
+    try {
+      const passage = await fetchPassage(connectionId, concept.verse_ref);
+      return {
+        concept: { ...concept, body: passage.text, reference: `${passage.reference} · ${passage.translation}` },
+        translation: passage.translation,
+        license: passage.license,
+      };
+    } catch (e) {
+      return { concept, error: e instanceof Error ? e.message : 'Scripture lookup failed.' };
+    }
+  };
+
   const applyPreset = (preset: (typeof CARD_BRIEF_PRESETS)[number]) => {
     setBrief(preset.brief);
     setActivePreset(preset.label);
@@ -102,7 +161,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     }
   };
 
-  const renderPreviewFor = async (concept: CardConcept) => {
+  const renderPreviewFor = async (concept: CardConceptWithRef) => {
     try {
       const dataUrl = await renderCardPreviewDataUrl(concept);
       setCards((prev) => prev.map((c) => (c.concept.id === concept.id ? { ...c, previewUrl: dataUrl, isRendering: false, previewError: null } : c)));
@@ -111,6 +170,21 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         prev.map((c) => (c.concept.id === concept.id ? { ...c, isRendering: false, previewError: e instanceof Error ? e.message : 'Preview render failed.' } : c)))
       ;
     }
+  };
+
+  // For a `verse` concept: fetch the real text first, then render — never
+  // render (or let the reviewer approve) a verse card with missing or
+  // placeholder scripture. Statement/grid concepts render immediately.
+  const hydrateAndRenderFor = async (concept: CardConceptWithRef, branch: BranchInfo, cardId: string) => {
+    const { concept: hydrated, translation, license, error } = await hydrateVerseConcept(concept, branch);
+    if (error) {
+      setCards((prev) => prev.map((c) => (c.concept.id === cardId ? { ...c, isRendering: false, previewError: error } : c)));
+      return;
+    }
+    setCards((prev) =>
+      prev.map((c) => (c.concept.id === cardId ? { ...c, concept: hydrated, passageTranslation: translation, passageLicense: license } : c)),
+    );
+    renderPreviewFor(hydrated);
   };
 
   const handleGenerate = async () => {
@@ -155,8 +229,9 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       addToast(`${concepts.length} concept${concepts.length === 1 ? '' : 's'} ready for review.`, 'success');
 
       // Render previews as they arrive, independently — one failing render
-      // shouldn't block or hide the rest of the gallery.
-      initialCards.forEach((card) => { renderPreviewFor(card.concept); });
+      // (or, for a verse concept, a failed scripture fetch) shouldn't block
+      // or hide the rest of the gallery.
+      initialCards.forEach((card) => { hydrateAndRenderFor(card.concept, selectedBranch, card.concept.id); });
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Card generation failed.', 'error');
     } finally {
@@ -208,11 +283,15 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                 previewError: null,
                 isRendering: true,
                 isRegenerating: false,
+                passageTranslation: undefined,
+                passageLicense: undefined,
               }
             : c
         )
       );
-      renderPreviewFor(newConcept);
+      // newConcept.id is now this card's key — hydrateAndRenderFor fetches
+      // real scripture first for a `verse` concept, same as first generation.
+      hydrateAndRenderFor(newConcept, selectedBranch, newConcept.id);
       addToast('Regenerated that concept.', 'success');
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Regeneration failed.', 'error');
@@ -261,7 +340,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     }
   };
 
-  const handleDownload = async (concept: CardConcept) => {
+  const handleDownload = async (concept: CardConceptWithRef) => {
     try {
       const blob = await renderCardConcept(concept);
       const url = URL.createObjectURL(blob);
@@ -437,6 +516,14 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                     <p className="text-[11px] text-slate-400 italic">"{card.concept.rationale}"</p>
                   )}
 
+                  {card.concept.template === 'verse' && card.passageTranslation && (
+                    <p className="flex items-center gap-1 text-[10px] text-slate-400">
+                      <BookOpen className="w-3 h-3 shrink-0" />
+                      {card.passageTranslation}
+                      {card.passageLicense ? ` · ${card.passageLicense}` : ''}
+                    </p>
+                  )}
+
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Caption</span>
                     <textarea
@@ -474,7 +561,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                     <button
                       type="button"
                       onClick={() => handleDownload(card.concept)}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition"
+                      disabled={!card.previewUrl}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-40"
                     >
                       <Download className="w-3.5 h-3.5" />
                       PNG

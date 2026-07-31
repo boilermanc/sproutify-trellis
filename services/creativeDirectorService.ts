@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { CardConcept, CardPalette, CardTemplate } from '../types';
 import { sanitizePII } from './aiService';
+import { USFM_BOOKS, VerseReference } from './bibleService';
 
 // ─── Card Studio: AI Creative Director ─────────────────────────────
 // Half of a two-part pipeline: this service takes a loose brief and
@@ -13,56 +14,24 @@ import { sanitizePII } from './aiService';
 
 const MODEL = 'gemini-3-flash-preview';
 
-// ─── Verse library ──────────────────────────────────────────────────
-// HAND-VERIFIED, NIV. This list is intentionally small and static — it is
-// the ONLY set of verses the AI director is allowed to use. Misquoted or
-// fabricated scripture is unacceptable for this brand, so we never let the
-// model invent a reference; it can only pick (verbatim) from here or fall
-// back to a non-scripture template. Do NOT let an AI agent "helpfully"
-// extend this list — every entry must be checked against NIV by a human
-// before it's added.
-export const VERSE_LIBRARY: { emotion: string; text: string; reference: string }[] = [
-  {
-    emotion: 'anxiety',
-    text: 'Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.',
-    reference: 'Philippians 4:6 · NIV',
-  },
-  {
-    emotion: 'grief',
-    text: 'The LORD is close to the brokenhearted and saves those who are crushed in spirit.',
-    reference: 'Psalm 34:18 · NIV',
-  },
-  {
-    emotion: 'weariness',
-    text: 'Come to me, all you who are weary and burdened, and I will give you rest.',
-    reference: 'Matthew 11:28 · NIV',
-  },
-  {
-    emotion: 'loneliness',
-    text: 'Be strong and courageous. Do not be afraid or terrified because of them, for the LORD your God goes with you; he will never leave you nor forsake you.',
-    reference: 'Deuteronomy 31:6 · NIV',
-  },
-  {
-    emotion: 'fear',
-    text: 'So do not fear, for I am with you; do not be dismayed, for I am your God. I will strengthen you and help you; I will uphold you with my righteous right hand.',
-    reference: 'Isaiah 41:10 · NIV',
-  },
-  {
-    emotion: 'doubt',
-    text: 'I do believe; help me overcome my unbelief!',
-    reference: 'Mark 9:24 · NIV',
-  },
-  {
-    emotion: 'gratitude',
-    text: 'Give thanks in all circumstances; for this is God’s will for you in Christ Jesus.',
-    reference: '1 Thessalonians 5:18 · NIV',
-  },
-  {
-    emotion: 'hope',
-    text: 'For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.',
-    reference: 'Jeremiah 29:11 · NIV',
-  },
-];
+// `CardConcept` (types.ts) has no notion of a Bible reference — it's owned
+// by a different pass and this file is not allowed to touch it. A `verse`
+// concept instead carries its reference on this local extension, which
+// `pages/CardStudio.tsx` reads to fetch the real text before rendering.
+export interface CardConceptWithRef extends CardConcept {
+  verse_ref?: VerseReference;
+}
+
+// ─── No model may author scripture text ─────────────────────────────
+// Misquoted or fabricated scripture is unacceptable for this brand, and NIV
+// text is copyrighted. So the director is NEVER allowed to write out verse
+// wording or a reference string — it may only PICK a `verse_ref`
+// (book_id/chapter/verse range) from the closed USFM_BOOKS vocabulary.
+// `pages/CardStudio.tsx` fetches the exact, licensed (Berean Standard
+// Bible) wording server-side via `services/bibleService.ts` afterward. This
+// mirrors the Rejoice app's own pattern: the model picks, the database
+// supplies the words.
+const MAX_VERSE_SPAN = 4;
 
 // ─── Brief presets ──────────────────────────────────────────────────
 export const CARD_BRIEF_PRESETS: { label: string; brief: string; branchSlug?: string }[] = [
@@ -109,9 +78,17 @@ const CARD_CONCEPT_ITEM_SCHEMA = {
     eyebrow: { type: Type.STRING },
     logoText: { type: Type.STRING },
     caption: { type: Type.STRING },
-    // verse
-    body: { type: Type.STRING },
-    reference: { type: Type.STRING },
+    // verse — a REFERENCE only. Never verse text: the app fetches the
+    // exact licensed wording server-side after the model picks this.
+    verse_ref: {
+      type: Type.OBJECT,
+      properties: {
+        book_id: { type: Type.STRING },
+        chapter: { type: Type.INTEGER },
+        verse_start: { type: Type.INTEGER },
+        verse_end: { type: Type.INTEGER },
+      },
+    },
     // statement
     statement: { type: Type.STRING },
     statementEmphasis: { type: Type.STRING },
@@ -144,7 +121,7 @@ function buildDirectorPrompt(opts: {
   count: number;
   palette?: { primary?: string; secondary?: string; accent?: string };
 }): string {
-  const verseList = VERSE_LIBRARY.map((v) => `- [${v.emotion}] "${v.text}" — ${v.reference}`).join('\n');
+  const bookVocab = USFM_BOOKS.map((b) => `${b.id} (${b.name})`).join(', ');
 
   const paletteHint = opts.palette && (opts.palette.primary || opts.palette.secondary || opts.palette.accent)
     ? `Brand colors for INSPIRATION ONLY (not mandatory — concepts do not need to be on-brand): primary ${opts.palette.primary || 'n/a'}, secondary ${opts.palette.secondary || 'n/a'}, accent ${opts.palette.accent || 'n/a'}.`
@@ -162,7 +139,7 @@ BRIEF FROM THE MARKETER:
 Produce EXACTLY ${opts.count} concepts. They must be DELIBERATELY DIFFERENT from each other: vary the template, vary the palette, vary the angle or emotion. Do not produce near-duplicates — a reviewer should look at the set and see real options, not the same idea three times.
 
 TEMPLATES (pick per concept, whichever best fits that concept's angle):
-1. "verse" — a Bible verse on a gradient. Needs: body (the verse text, copied EXACTLY, no paraphrasing), reference (e.g. "Philippians 4:6 · NIV").
+1. "verse" — a Bible passage on a gradient. Needs ONLY verse_ref: {book_id, chapter, verse_start, verse_end?}. Do NOT write the verse's words or a "reference" string yourself — the app looks up the exact wording server-side afterward, from a licensed Bible database, using only the reference you pick. book_id MUST be one of these USFM ids (write the id, not the full name): ${bookVocab}. Keep the span short: verse_end is optional for a single verse, and when given, verse_end minus verse_start must be at most ${MAX_VERSE_SPAN - 1} (i.e. at most ${MAX_VERSE_SPAN} verses). Only pick a passage that genuinely, specifically fits the emotion or angle of this concept — never force a loose or generic fit.
 2. "statement" — a bold typographic statement, no scripture. Needs: statement (a short, punchy line), and may optionally include statementEmphasis (1-3 emphasized words) and subline (a short supporting line).
 3. "grid" — a small grid of short items (a checklist, a list of feelings, steps, or ideas). Needs: heading, items (3 to 6 SHORT strings, a few words each), and may optionally include highlightIndex (the index of the one item to visually emphasize) and footnote.
 
@@ -173,10 +150,8 @@ EVERY concept, regardless of template, also needs:
 - rationale: ONE sentence explaining the idea/angle, written for the human deciding whether to approve it
 - palette: {bg1, bg2 (optional gradient end), text, muted, accent} — real CSS hex colors (e.g. "#1c2b23"). text and bg1 MUST have strong, obviously readable contrast. Each concept's palette is its OWN choice and does not need to match the brand's colors or any other concept's palette — but it must be internally consistent (muted and accent should make sense against bg1, not clash or disappear).
 
-HARD RULE — DO NOT INVENT SCRIPTURE:
-If (and only if) a concept uses the "verse" template, the body and reference MUST be copied verbatim, word-for-word, from this pre-approved list. Do not alter wording, do not invent a new reference, do not use any verse that is not on this list:
-${verseList}
-If no verse on this list genuinely fits the brief, use "statement" or "grid" instead of "verse" for that concept. A misquoted or fabricated verse is unacceptable for this brand — when in doubt, do not use "verse".
+HARD RULE — NEVER WRITE SCRIPTURE TEXT:
+If a concept uses the "verse" template, you must NEVER write out the verse's wording, and must NEVER invent a "body" or "reference" string — only supply verse_ref (book_id/chapter/verse_start/verse_end). Any wording you wrote would be ignored, so a fabricated or misquoted "quote" from you accomplishes nothing except confusing the human reviewer — the app always fetches the real text itself. If you cannot confidently name a passage that genuinely fits, use "statement" or "grid" instead of "verse" for that concept.
 
 Return ONLY the structured JSON matching the schema — no markdown, no commentary.`;
 }
@@ -225,10 +200,41 @@ function normalizePalette(raw: any): CardPalette {
   return palette;
 }
 
+// Validates a raw verse_ref from the model against the closed USFM_BOOKS
+// vocabulary and sane numeric bounds. Returns null (never throws) for
+// anything unusable — the caller demotes the concept to "statement" rather
+// than ship a verse card with a bad or missing reference.
+function normalizeVerseRef(raw: any): VerseReference | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const bookId = typeof raw.book_id === 'string' ? raw.book_id.trim().toUpperCase() : '';
+  if (!USFM_BOOKS.some((b) => b.id === bookId)) return null;
+
+  const chapter = Math.trunc(Number(raw.chapter));
+  if (!Number.isInteger(chapter) || chapter <= 0) return null;
+
+  const verseStart = Math.trunc(Number(raw.verse_start));
+  if (!Number.isInteger(verseStart) || verseStart <= 0) return null;
+
+  const hasEnd = raw.verse_end !== undefined && raw.verse_end !== null && raw.verse_end !== '';
+  let verseEnd: number | undefined;
+  if (hasEnd) {
+    verseEnd = Math.trunc(Number(raw.verse_end));
+    if (!Number.isInteger(verseEnd) || verseEnd < verseStart) return null;
+  }
+
+  const span = (verseEnd ?? verseStart) - verseStart + 1;
+  if (span > MAX_VERSE_SPAN) return null;
+
+  const ref: VerseReference = { book_id: bookId, chapter, verse_start: verseStart };
+  if (verseEnd !== undefined) ref.verse_end = verseEnd;
+  return ref;
+}
+
 // Validates one raw concept from the model and repairs what it can. Returns
 // null (never throws) for anything that isn't renderable even after repair —
 // callers filter nulls out so one bad concept never sinks the whole batch.
-function normalizeConcept(raw: any, model: string): CardConcept | null {
+function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
   if (!raw || typeof raw !== 'object') return null;
 
   const caption = typeof raw.caption === 'string' ? raw.caption.trim() : '';
@@ -241,7 +247,7 @@ function normalizeConcept(raw: any, model: string): CardConcept | null {
   // returned something outside the enum (defensive — schema should prevent
   // this, but never trust it blindly).
   if (!template) {
-    if (typeof raw.body === 'string' && raw.body.trim() && typeof raw.reference === 'string' && raw.reference.trim()) {
+    if (raw.verse_ref && typeof raw.verse_ref === 'object') {
       template = 'verse';
     } else if (Array.isArray(raw.items) && raw.items.filter((i: any) => typeof i === 'string' && i.trim()).length >= 2) {
       template = 'grid';
@@ -257,7 +263,7 @@ function normalizeConcept(raw: any, model: string): CardConcept | null {
   const rationale = typeof raw.rationale === 'string' ? raw.rationale.trim() : '';
   const palette = normalizePalette(raw.palette);
 
-  const base: CardConcept = {
+  const base: CardConceptWithRef = {
     id: crypto.randomUUID(),
     template,
     palette,
@@ -269,21 +275,21 @@ function normalizeConcept(raw: any, model: string): CardConcept | null {
   };
 
   if (template === 'verse') {
-    const body = typeof raw.body === 'string' ? raw.body.trim() : '';
-    const reference = typeof raw.reference === 'string' ? raw.reference.trim() : '';
-
-    // Belt-and-suspenders enforcement of "no invented scripture": only trust
-    // a verse template if it matches an entry in the hand-verified library
-    // (verbatim text or reference). Anything else gets demoted to a
-    // statement using its own text rather than shipped as a "verse".
-    const verified = VERSE_LIBRARY.find((v) => v.reference === reference || v.text.trim() === body);
-    if (body && reference && verified) {
-      base.body = verified.text;
-      base.reference = verified.reference;
+    // The model never writes verse text — only a reference. Validate it
+    // against the closed USFM vocabulary and a short max span; leave
+    // body/reference unset so `pages/CardStudio.tsx` can tell a card still
+    // needs its real text fetched. No model may author scripture text here:
+    // it's both a licensing problem (NIV is copyrighted) and an accuracy
+    // problem (models paraphrase/misquote), so the database is the only
+    // source of truth for wording.
+    const verseRef = normalizeVerseRef(raw.verse_ref);
+    if (verseRef) {
+      base.verse_ref = verseRef;
       return base;
     }
-    // Not a verified verse — re-template rather than drop, if there's usable text.
-    const fallbackStatement = body || (typeof raw.statement === 'string' ? raw.statement.trim() : '');
+    // No valid reference — demote to statement rather than drop, if there's
+    // usable text to demote it with.
+    const fallbackStatement = typeof raw.statement === 'string' ? raw.statement.trim() : '';
     if (!fallbackStatement) return null;
     base.template = 'statement';
     base.statement = fallbackStatement;
@@ -328,7 +334,7 @@ export async function generateCardConcepts(opts: {
   brief: string;
   count: number;
   palette?: { primary?: string; secondary?: string; accent?: string };
-}): Promise<CardConcept[]> {
+}): Promise<CardConceptWithRef[]> {
   if (!opts.apiKey) {
     throw new Error('Gemini API key is not configured. Add it in Settings before generating cards.');
   }
@@ -354,7 +360,7 @@ export async function generateCardConcepts(opts: {
     const parsed = JSON.parse(response.text || '{}');
     const rawConcepts: any[] = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
 
-    const concepts: CardConcept[] = [];
+    const concepts: CardConceptWithRef[] = [];
     for (const raw of rawConcepts) {
       const concept = normalizeConcept(raw, MODEL);
       if (concept) concepts.push(concept);

@@ -20,6 +20,8 @@
 //   { op: "fetch",    connection_id, table_type }                // runtime
 //   { op: "snapshot", connection_id }                            // runtime
 //   { op: "newsletter_audience", connection_id, tags? }           // runtime ATL RPC
+//   { op: "bible_passage", connection_id, book_id, chapter,
+//     verse_start, verse_end?, translation? }                     // runtime Rejoice BSB RPC
 //
 // SECRETS (auto-set by Supabase): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Deploy: supabase functions deploy spoke-query   (verify_jwt = true)
@@ -284,6 +286,119 @@ Deno.serve(async (req: Request) => {
       }
 
       return json({ connection_id: body.connection_id, name: resolved.conn.name, rows, errors });
+    }
+
+    // ── bible_passage: RUNTIME Berean Standard Bible verse lookup ─────
+    // Card Studio's AI director is only ever allowed to PICK a reference —
+    // this op is the ONLY thing allowed to supply verse text, read
+    // server-side from the Rejoice spoke so its key never reaches the
+    // browser. A NAMED op with strictly validated parameters (never a
+    // generic RPC/table passthrough) so a caller can't use this to dump
+    // arbitrary spoke data.
+    if (op === "bible_passage") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+
+      const bookId = typeof body.book_id === "string" ? body.book_id.trim().toUpperCase() : "";
+      if (!/^[A-Z0-9]{3}$/.test(bookId)) {
+        return json({ error: "book_id must be a 3-character USFM book id (e.g. GEN, PSA, PHP)" }, 400);
+      }
+
+      const chapter = Number(body.chapter);
+      if (!Number.isInteger(chapter) || chapter <= 0) {
+        return json({ error: "chapter must be a positive integer" }, 400);
+      }
+
+      const verseStart = Number(body.verse_start);
+      if (!Number.isInteger(verseStart) || verseStart <= 0) {
+        return json({ error: "verse_start must be a positive integer" }, 400);
+      }
+
+      const hasVerseEnd = body.verse_end !== undefined && body.verse_end !== null && body.verse_end !== "";
+      const verseEnd = hasVerseEnd ? Number(body.verse_end) : verseStart;
+      if (!Number.isInteger(verseEnd) || verseEnd < verseStart) {
+        return json({ error: "verse_end must be an integer >= verse_start" }, 400);
+      }
+
+      const MAX_VERSE_SPAN = 20;
+      if (verseEnd - verseStart + 1 > MAX_VERSE_SPAN) {
+        return json({ error: `Passage span too large — max ${MAX_VERSE_SPAN} verses per request` }, 400);
+      }
+
+      const ALLOWED_TRANSLATIONS = ["BSB"];
+      const translation = body.translation ? String(body.translation).trim().toUpperCase() : "BSB";
+      if (!ALLOWED_TRANSLATIONS.includes(translation)) {
+        return json({ error: `translation must be one of: ${ALLOWED_TRANSLATIONS.join(", ")}` }, 400);
+      }
+
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+      const fallbackReference = `${bookId} ${chapter}:${verseStart}${verseEnd > verseStart ? `-${verseEnd}` : ""}`;
+
+      // Preferred: the spoke's get_bible_passage RPC returns combined text +
+      // a human-readable reference + translation metadata in one call. Field
+      // names are read defensively since the RPC's row shape isn't part of
+      // this function's own contract.
+      const { data: rpcData, error: rpcError } = await spoke.rpc("get_bible_passage", {
+        translation,
+        book_id: bookId,
+        chapter,
+        verse_start: verseStart,
+        verse_end: verseEnd,
+      });
+
+      if (!rpcError && rpcData) {
+        const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        const pick = (keys: string[]) => {
+          for (const k of keys) {
+            if (row && row[k] !== undefined && row[k] !== null && row[k] !== "") return row[k];
+          }
+          return undefined;
+        };
+        const text = pick(["text", "passage_text", "verse_text", "combined_text"]);
+        if (text) {
+          return json({
+            ok: true,
+            reference: pick(["reference", "passage_reference", "ref"]) || fallbackReference,
+            text,
+            translation: pick(["translation", "translation_id", "translation_name"]) || translation,
+            license: pick(["license", "license_name"]),
+            verse_count: pick(["verse_count", "count"]) ?? (verseEnd - verseStart + 1),
+          });
+        }
+      }
+
+      // Fallback: direct bible_verses select, ordered by verse, joined with
+      // a space, scoped tightly by translation/book/chapter/verse range.
+      const { data: rows, error: selectError } = await spoke
+        .from("bible_verses")
+        .select("verse, verse_text, book_name")
+        .eq("translation_id", translation)
+        .eq("book_id", bookId)
+        .eq("chapter", chapter)
+        .gte("verse", verseStart)
+        .lte("verse", verseEnd)
+        .order("verse", { ascending: true });
+
+      if (selectError) return json({ error: selectError.message }, 502);
+      if (!rows || rows.length === 0) return json({ error: "No verses found for that reference" }, 404);
+
+      const text = rows
+        .map((r: any) => String(r.verse_text || "").trim())
+        .filter(Boolean)
+        .join(" ");
+      if (!text) return json({ error: "No verse text found for that reference" }, 404);
+
+      const bookName = rows[0]?.book_name || bookId;
+      return json({
+        ok: true,
+        reference: `${bookName} ${chapter}:${verseStart}${verseEnd > verseStart ? `-${verseEnd}` : ""}`,
+        text,
+        translation,
+        verse_count: rows.length,
+      });
     }
 
     // ── snapshot: RUNTIME aggregate bundle (client builds the snapshot) ─
