@@ -17,7 +17,7 @@
 // canvas keeps us in the `document.fonts` world where `ensureFontLoaded`
 // actually works.
 
-import type { CardConcept, CardPalette, CardTemplate } from '../types';
+import type { CardBullet, CardConcept, CardPalette, CardTemplate } from '../types';
 import { ensureFontLoaded, FONT_OPTIONS } from './imageComposite';
 
 // ─── Constants ───────────────────────────────────────────────────────────
@@ -624,6 +624,559 @@ function drawGrid(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
   drawLogoText(ctx, concept.logoText, palette, W, H);
 }
 
+// ─── editorial ───────────────────────────────────────────────────────────
+// A structured layout drawn OVER a photograph, rather than over a flat or
+// gradient fill: wordmark + subtitle, a large serif headline, a rule,
+// icon+text feature rows, and a footer band. The other three templates only
+// ever draw on backgrounds this module fully controls (flat colors,
+// gradients it built), so contrast is guaranteed by construction. A photo
+// is a wildcard — exposure, color, and where the interesting part of the
+// image sits are all unknown at draw time — so this template additionally
+// needs a scrim (see `paintEditorialScrim`) that the others don't.
+
+/**
+ * Loads the editorial template's background photo ahead of drawing.
+ *
+ * Background loading is intentionally kept OUT of `drawCard` (which stays
+ * fully synchronous, like every other template's draw path) so the exact
+ * same synchronous routine can be shared by the full-resolution export and
+ * the on-screen preview — only the entry points (`renderCardConcept`,
+ * `renderCardPreviewDataUrl`) need to be async, to fetch the photo first and
+ * hand the already-loaded `HTMLImageElement` in.
+ *
+ * Never rejects: a missing `backgroundUrl`, a broken URL, a network failure,
+ * or a host that doesn't send CORS headers all resolve to `null` rather than
+ * throwing, because a missing photo should degrade the editorial template to
+ * its palette-gradient fallback (see `drawEditorial`), not fail the whole
+ * card render. `crossOrigin = 'anonymous'` is required so the canvas isn't
+ * "tainted" once the image is drawn onto it and `toBlob`/`toDataURL` would
+ * otherwise throw — Supabase Storage public URLs already send permissive
+ * CORS headers (this is relied on the same way in `imageComposite.ts`), so
+ * in practice this only degrades for non-Supabase photo URLs, which is an
+ * acceptable trade for keeping the export path from ever hard-failing.
+ */
+function loadCardBackgroundImage(url: string | undefined | null): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const src = safeText(url).trim();
+    if (!src || typeof Image === 'undefined') {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/**
+ * Draws `img` to fill the `W`x`H` region, cropping overflow rather than
+ * stretching — CSS `background-size: cover` behavior, centered on both
+ * axes — so the photo's proportions are never distorted regardless of its
+ * native aspect ratio.
+ */
+function drawCoverImage(ctx: CanvasRenderingContext2D, img: HTMLImageElement, W: number, H: number): void {
+  const imgW = img.naturalWidth || img.width;
+  const imgH = img.naturalHeight || img.height;
+  if (!imgW || !imgH) return;
+
+  const targetRatio = W / H;
+  const sourceRatio = imgW / imgH;
+
+  let sx = 0;
+  let sy = 0;
+  let sw = imgW;
+  let sh = imgH;
+
+  if (sourceRatio > targetRatio) {
+    // Source is relatively wider than the card — crop the left/right edges,
+    // keep the full height.
+    sw = imgH * targetRatio;
+    sx = (imgW - sw) / 2;
+  } else {
+    // Source is relatively taller than the card — crop top/bottom, keep the
+    // full width.
+    sh = imgW / targetRatio;
+    sy = (imgH - sh) / 2;
+  }
+
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+}
+
+/**
+ * Washes the photo with `palette.bg1` so the layout on top stays legible.
+ * This is what turns "text dumped on a picture" into "designed" — biased
+ * toward the left/top where the text column and wordmark live, and eased
+ * back over a lower-right "focal" zone (via a `destination-out` erase) so
+ * the photo still reads as a photo instead of a flat wash. `strength`
+ * (`concept.scrimStrength`, default ~0.72) is intentionally heavy: the
+ * reference this template is built from washes the photo hard rather than
+ * relying on a subtle vignette, because subtle doesn't survive arbitrary
+ * source photos at feed-thumbnail size.
+ */
+function paintEditorialScrim(ctx: CanvasRenderingContext2D, palette: CardPalette, W: number, H: number, strength: number): void {
+  const bg1 = palette?.bg1 || '#221f1a';
+  const s = Math.max(0, Math.min(1, strength));
+  if (s <= 0) return;
+
+  ctx.save();
+
+  // Left-heavy horizontal wash: strong under the text column, tapering off
+  // toward the right edge of the frame.
+  const horizontal = ctx.createLinearGradient(0, 0, W, 0);
+  horizontal.addColorStop(0, hexToRgba(bg1, s));
+  horizontal.addColorStop(0.65, hexToRgba(bg1, s * 0.55));
+  horizontal.addColorStop(1, hexToRgba(bg1, s * 0.22));
+  ctx.fillStyle = horizontal;
+  ctx.fillRect(0, 0, W, H);
+
+  // Extra wash over the top band, where the wordmark sits. This compounds
+  // with the horizontal wash in the top-left corner, which is exactly where
+  // the smallest, most delicate text (the tracked subtitle) needs the most
+  // contrast help.
+  const top = ctx.createLinearGradient(0, 0, 0, H * 0.4);
+  top.addColorStop(0, hexToRgba(bg1, s * 0.45));
+  top.addColorStop(1, hexToRgba(bg1, 0));
+  ctx.fillStyle = top;
+  ctx.fillRect(0, 0, W, H * 0.4);
+
+  // Erase some of the wash back out over the photo's focal area (lower-right
+  // — clear of the left-aligned text column) so that part of the image stays
+  // recognizable rather than being uniformly greyed out. `destination-out`
+  // only uses the fill's alpha channel, so the color here is irrelevant.
+  ctx.globalCompositeOperation = 'destination-out';
+  const focal = ctx.createRadialGradient(W * 0.78, H * 0.62, 0, W * 0.78, H * 0.62, W * 0.55);
+  focal.addColorStop(0, `rgba(0,0,0,${s * 0.5})`);
+  focal.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = focal;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.restore();
+}
+
+/** Solid-ish band anchored to the bottom edge so the footer's tracked caps
+ * stay legible regardless of what's directly behind them in the photo. */
+function paintFooterBand(ctx: CanvasRenderingContext2D, palette: CardPalette, W: number, H: number, bandTop: number): void {
+  const bg1 = palette?.bg1 || '#221f1a';
+  ctx.save();
+  const gradient = ctx.createLinearGradient(0, bandTop, 0, H);
+  gradient.addColorStop(0, hexToRgba(bg1, 0));
+  gradient.addColorStop(0.4, hexToRgba(bg1, 0.82));
+  gradient.addColorStop(1, hexToRgba(bg1, 0.92));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, bandTop, W, H - bandTop);
+  ctx.restore();
+}
+
+interface BulletWord {
+  text: string;
+  bold: boolean;
+}
+
+/**
+ * Splits `text` into words tagged bold/regular by whether they fall inside
+ * the `emphasis` substring. A word that only partially overlaps the
+ * emphasis range is tagged bold in full — splitting one word across two
+ * font weights would read as a rendering glitch, not a design choice. If
+ * `emphasis` is empty, or the substring isn't actually found in `text`
+ * (author typo, emphasis drifted from the bullet copy on an edit), every
+ * word comes back regular rather than throwing.
+ */
+function tagBulletWords(text: string, emphasis: string): BulletWord[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const trimmedEmphasis = emphasis.trim();
+  if (!trimmedEmphasis) return words.map((w) => ({ text: w, bold: false }));
+
+  const emphasisStart = text.indexOf(trimmedEmphasis);
+  if (emphasisStart === -1) return words.map((w) => ({ text: w, bold: false }));
+  const emphasisEnd = emphasisStart + trimmedEmphasis.length;
+
+  let cursor = 0;
+  return words.map((w) => {
+    const start = text.indexOf(w, cursor);
+    const end = start + w.length;
+    cursor = end;
+    const bold = start < emphasisEnd && end > emphasisStart;
+    return { text: w, bold };
+  });
+}
+
+/**
+ * Word-wraps a bold/regular-tagged word stream, measuring each word at its
+ * OWN weight. A bold run is wider than the same text set in regular weight,
+ * so measuring everything in one font (the way the plain `wrapText` above
+ * does for single-weight text) would under-count width and let bold lines
+ * run past `maxWidth`.
+ */
+function wrapBulletWords(
+  ctx: CanvasRenderingContext2D,
+  words: BulletWord[],
+  maxWidth: number,
+  fontSizePx: number,
+  family: string
+): BulletWord[][] {
+  if (words.length === 0) return [[]];
+
+  const measureLine = (line: BulletWord[]): number => {
+    let w = 0;
+    line.forEach((word, i) => {
+      ctx.font = fontString(word.bold ? 700 : 400, fontSizePx, family);
+      w += ctx.measureText(word.text).width;
+      if (i < line.length - 1) {
+        ctx.font = fontString(400, fontSizePx, family);
+        w += ctx.measureText(' ').width;
+      }
+    });
+    return w;
+  };
+
+  const lines: BulletWord[][] = [];
+  let currentLine: BulletWord[] = [words[0]];
+  for (let i = 1; i < words.length; i++) {
+    const candidate = [...currentLine, words[i]];
+    if (measureLine(candidate) <= maxWidth) {
+      currentLine = candidate;
+    } else {
+      lines.push(currentLine);
+      currentLine = [words[i]];
+    }
+  }
+  lines.push(currentLine);
+  return lines;
+}
+
+/**
+ * Draws one wrapped bullet line, switching font weight run-by-run (word by
+ * word, advancing the cursor by each word's own measured width) so the
+ * emphasised fragment sits bold INLINE with the rest of the sentence rather
+ * than breaking onto its own line or needing a different color to stand out.
+ */
+function drawBulletLineRuns(
+  ctx: CanvasRenderingContext2D,
+  line: BulletWord[],
+  x: number,
+  y: number,
+  fontSizePx: number,
+  family: string,
+  color: string
+): void {
+  let cursorX = x;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = color;
+  line.forEach((word, i) => {
+    ctx.font = fontString(word.bold ? 700 : 400, fontSizePx, family);
+    ctx.fillText(word.text, cursorX, y);
+    cursorX += ctx.measureText(word.text).width;
+    if (i < line.length - 1) {
+      ctx.font = fontString(400, fontSizePx, family);
+      cursorX += ctx.measureText(' ').width;
+    }
+  });
+}
+
+/**
+ * Draws a small circular badge with a simple geometric glyph for one
+ * `CardBullet.icon`. Everything here is canvas paths — no icon font, no
+ * external asset — so the icon renders identically regardless of what's
+ * installed/loaded in the browser, same guarantee the rest of this file
+ * gives for fonts. Glyphs are deliberately simple silhouettes: at the size
+ * these badges render (a few dozen px in a feed thumbnail) fine detail would
+ * just blur into noise.
+ */
+function drawBulletIcon(
+  ctx: CanvasRenderingContext2D,
+  icon: CardBullet['icon'] | undefined,
+  cx: number,
+  cy: number,
+  radius: number,
+  accent: string
+): void {
+  ctx.save();
+
+  // Badge circle.
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fillStyle = hexToRgba(accent, 0.14);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, radius * 0.09);
+  ctx.strokeStyle = accent;
+  ctx.stroke();
+
+  const s = radius * 0.55; // glyph half-extent, kept well inside the badge
+  ctx.strokeStyle = accent;
+  ctx.fillStyle = accent;
+  ctx.lineWidth = Math.max(1.5, radius * 0.11);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  switch (icon) {
+    case 'heart': {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + s * 0.75);
+      ctx.bezierCurveTo(cx - s * 1.15, cy + s * 0.05, cx - s * 0.55, cy - s * 0.95, cx, cy - s * 0.25);
+      ctx.bezierCurveTo(cx + s * 0.55, cy - s * 0.95, cx + s * 1.15, cy + s * 0.05, cx, cy + s * 0.75);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'book': {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s * 0.5);
+      ctx.quadraticCurveTo(cx - s * 0.9, cy - s * 0.75, cx - s * 0.9, cy - s * 0.1);
+      ctx.quadraticCurveTo(cx - s * 0.9, cy + s * 0.55, cx, cy + s * 0.35);
+      ctx.moveTo(cx, cy - s * 0.5);
+      ctx.quadraticCurveTo(cx + s * 0.9, cy - s * 0.75, cx + s * 0.9, cy - s * 0.1);
+      ctx.quadraticCurveTo(cx + s * 0.9, cy + s * 0.55, cx, cy + s * 0.35);
+      ctx.stroke();
+      break;
+    }
+    case 'leaf': {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-Math.PI / 4);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 0.5, s * 0.95, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(0, -s * 0.8);
+      ctx.lineTo(0, s * 0.8);
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = Math.max(1, radius * 0.05);
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.restore();
+      break;
+    }
+    case 'sparkle': {
+      const r = s * 1.05;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.quadraticCurveTo(cx, cy, cx + r, cy);
+      ctx.quadraticCurveTo(cx, cy, cx, cy + r);
+      ctx.quadraticCurveTo(cx, cy, cx - r, cy);
+      ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'check': {
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.6, cy + s * 0.05);
+      ctx.lineTo(cx - s * 0.15, cy + s * 0.5);
+      ctx.lineTo(cx + s * 0.65, cy - s * 0.5);
+      ctx.stroke();
+      break;
+    }
+    case 'sun': {
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      const rays = 8;
+      for (let i = 0; i < rays; i++) {
+        const angle = (Math.PI * 2 * i) / rays;
+        const x1 = cx + Math.cos(angle) * s * 0.65;
+        const y1 = cy + Math.sin(angle) * s * 0.65;
+        const x2 = cx + Math.cos(angle) * s * 0.95;
+        const y2 = cy + Math.sin(angle) * s * 0.95;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      break;
+    }
+    default: {
+      // No icon, or a value we don't recognize (e.g. concept came from an
+      // older/different AI response shape) — fall back to a plain dot
+      // rather than skipping the badge circle's purpose entirely.
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Editorial template: the layout engine used by every other template, run
+ * over a photograph instead of a flat/gradient fill. `backgroundImage` is
+ * pre-loaded by the entry points (`renderCardConcept`/
+ * `renderCardPreviewDataUrl`) via `loadCardBackgroundImage` — this function
+ * stays synchronous like every other `draw*` function so `drawCard` doesn't
+ * need a different calling convention per template.
+ */
+function drawEditorial(
+  ctx: CanvasRenderingContext2D,
+  concept: CardConcept,
+  W: number,
+  H: number,
+  backgroundImage: HTMLImageElement | null
+): void {
+  const palette = concept.palette;
+  const textColor = palette?.text || '#2c2a24';
+  const accent = palette?.accent || '#a9713f';
+
+  if (backgroundImage) {
+    drawCoverImage(ctx, backgroundImage, W, H);
+  } else {
+    // No photo — `backgroundUrl` was empty, or `loadCardBackgroundImage`
+    // couldn't load it (network failure, bad URL, CORS). Degrade to the same
+    // gradient fill the other templates use rather than leaving a blank
+    // canvas or throwing; the layout below still draws on top unchanged, so
+    // the card is still usable, just without the photo.
+    paintBackground(ctx, palette, W, H, false);
+  }
+
+  const scrimStrength = typeof concept.scrimStrength === 'number' ? concept.scrimStrength : 0.72;
+  paintEditorialScrim(ctx, palette, W, H, scrimStrength);
+
+  const marginX = W * 0.09;
+  const maxWidth = W * 0.6; // left text column; leaves the photo's right side visible
+
+  // Footer band is sized first (independent of everything drawn above it) so
+  // the headline's auto-shrink target below can reserve exactly the right
+  // amount of room for it.
+  const footer = safeText(concept.footer).trim();
+  const footerBandH = footer ? H * 0.085 : 0;
+
+  // Bullet rows are sized up front too, for the same reason — fixed-height
+  // rows keep the reservation math simple; each row can still wrap its text
+  // to two lines within that height.
+  const bullets = Array.isArray(concept.bullets) ? concept.bullets.filter((b) => b && typeof b.text === 'string' && b.text.trim()) : [];
+  const bulletRowH = H * 0.072;
+  const bulletGap = H * 0.018;
+  const bulletsBlockH = bullets.length > 0 ? bullets.length * bulletRowH + (bullets.length - 1) * bulletGap : 0;
+
+  let cursorY = H * 0.09;
+
+  // Wordmark + subtitle. Short by nature (a brand mark), so unlike the
+  // headline below these are drawn as a single line rather than auto-shrunk
+  // — matches how `drawLogoText` treats `logoText` elsewhere in this file.
+  const wordmark = safeText(concept.wordmark).trim();
+  if (wordmark) {
+    const sizePx = W * 0.062;
+    ctx.save();
+    // Italic serif approximates the reference's script wordmark without
+    // pulling in a new font family — the same trick `drawLogoText` already
+    // uses for `logoText`, just larger.
+    ctx.font = fontString(600, sizePx, CARD_FONTS.serif, true);
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(wordmark, marginX, cursorY + sizePx * 0.8);
+    ctx.restore();
+    cursorY += sizePx * 0.95;
+  }
+
+  const wordmarkSubtitle = safeText(concept.wordmarkSubtitle).trim();
+  if (wordmarkSubtitle) {
+    const sizePx = W * 0.02;
+    ctx.save();
+    ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
+    ctx.fillStyle = accent;
+    ctx.textBaseline = 'alphabetic';
+    drawTracked(ctx, wordmarkSubtitle.toUpperCase(), marginX, cursorY + sizePx * 0.8, sizePx * 0.22, 'left');
+    ctx.restore();
+    cursorY += sizePx * 1.9;
+  }
+
+  cursorY += H * 0.025; // breathing room before the headline
+
+  // The headline reuses the generic `heading` field (the same field the grid
+  // template uses for its large heading line) — editorial doesn't get its
+  // own dedicated headline field in the type contract, and `heading` already
+  // means "the big serif line" elsewhere in this file.
+  const headline = safeText(concept.heading).trim();
+
+  const ruleReserve = H * 0.05; // rule stroke + the margins drawn around it
+  const bulletsGapReserve = bullets.length > 0 ? H * 0.03 : 0;
+  const reservedBelow = ruleReserve + bulletsBlockH + bulletsGapReserve + footerBandH + H * 0.02;
+  const headlineMaxHeight = Math.max(H * 0.12, H - cursorY - reservedBelow);
+
+  if (headline) {
+    // fitTextBlock so a long headline shrinks to fit above the bullets
+    // instead of colliding/overlapping with them.
+    const fit = fitTextBlock(ctx, headline, maxWidth, headlineMaxHeight, W * 0.078, W * 0.04, W * 0.004, 1.08, (sizePx) => {
+      ctx.font = fontString(600, sizePx, CARD_FONTS.serif);
+    });
+    ctx.fillStyle = textColor;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    let lineTop = cursorY;
+    for (const line of fit.lines) {
+      ctx.fillText(line, marginX, lineTop + fit.fontSizePx * 0.85);
+      lineTop += fit.lineHeightPx;
+    }
+    cursorY = lineTop + H * 0.015;
+  } else {
+    cursorY += headlineMaxHeight * 0.3;
+  }
+
+  // Short decorative rule.
+  const ruleWidth = W * 0.12;
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = Math.max(1.5, W * 0.004);
+  ctx.beginPath();
+  ctx.moveTo(marginX, cursorY);
+  ctx.lineTo(marginX + ruleWidth, cursorY);
+  ctx.stroke();
+  ctx.restore();
+  cursorY += H * 0.035;
+
+  // Bullet rows: icon badge + wrapped, mixed-weight text.
+  if (bullets.length > 0) {
+    const iconRadius = bulletRowH * 0.36;
+    const textFontSizePx = W * 0.026;
+    const textX = marginX + iconRadius * 2 + W * 0.025;
+    const bulletTextMaxWidth = Math.max(W * 0.15, maxWidth - (textX - marginX));
+
+    for (const bullet of bullets) {
+      const rowCenterY = cursorY + bulletRowH / 2;
+      drawBulletIcon(ctx, bullet.icon, marginX + iconRadius, rowCenterY, iconRadius, accent);
+
+      const words = tagBulletWords(safeText(bullet.text), safeText(bullet.emphasis));
+      const lines = wrapBulletWords(ctx, words, bulletTextMaxWidth, textFontSizePx, CARD_FONTS.sans);
+      const lineHeightPx = textFontSizePx * 1.25;
+      const blockHeight = lines.length * lineHeightPx;
+      let lineTop = rowCenterY - blockHeight / 2;
+      for (const line of lines) {
+        drawBulletLineRuns(ctx, line, textX, lineTop + textFontSizePx * 0.85, textFontSizePx, CARD_FONTS.sans, textColor);
+        lineTop += lineHeightPx;
+      }
+
+      cursorY += bulletRowH + bulletGap;
+    }
+  }
+
+  // Footer band: pinned to the bottom edge (computed from footerBandH, not
+  // from cursorY) so it always sits flush with the bottom regardless of how
+  // much room the content above actually used.
+  if (footer) {
+    const bandTop = H - footerBandH;
+    paintFooterBand(ctx, palette, W, H, bandTop);
+
+    const sizePx = W * 0.022;
+    ctx.save();
+    ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
+    ctx.fillStyle = textColor;
+    ctx.textBaseline = 'alphabetic';
+    const footerY = bandTop + footerBandH / 2 + sizePx * 0.32;
+    drawTracked(ctx, footer.toUpperCase(), marginX, footerY, sizePx * 0.2, 'left');
+    ctx.restore();
+  }
+
+  // Deliberately NOT calling `drawLogoText` here: the wordmark + footer band
+  // already carry the brand identity for this template, both anchored near
+  // the same top/bottom edges `drawLogoText` targets, so adding it back
+  // would either duplicate the wordmark or visually collide with the
+  // footer band.
+}
+
 // ─── Entry points ────────────────────────────────────────────────────────
 
 /**
@@ -638,9 +1191,22 @@ function drawGrid(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
  * simply skipped (see the `safeText`/`Array.isArray` guards throughout each
  * template's draw function) so a malformed concept still renders whatever it
  * legitimately has.
+ *
+ * `preloadedBackground` is only consulted for the `editorial` template, and
+ * only exists because that template needs an async-loaded photo — see
+ * `loadCardBackgroundImage`'s comment for why loading isn't done in here.
+ * Callers that don't pass it (or pass `null`/`undefined`) just get the
+ * editorial template's palette-gradient fallback instead of the photo.
  */
-export function drawCard(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number, H: number): void {
-  const template: CardTemplate = concept?.template === 'statement' || concept?.template === 'grid' ? concept.template : 'verse';
+export function drawCard(
+  ctx: CanvasRenderingContext2D,
+  concept: CardConcept,
+  W: number,
+  H: number,
+  preloadedBackground?: HTMLImageElement | null
+): void {
+  const template: CardTemplate =
+    concept?.template === 'statement' || concept?.template === 'grid' || concept?.template === 'editorial' ? concept.template : 'verse';
 
   try {
     switch (template) {
@@ -649,6 +1215,9 @@ export function drawCard(ctx: CanvasRenderingContext2D, concept: CardConcept, W:
         break;
       case 'grid':
         drawGrid(ctx, concept, W, H);
+        break;
+      case 'editorial':
+        drawEditorial(ctx, concept, W, H, preloadedBackground ?? null);
         break;
       case 'verse':
       default:
@@ -675,7 +1244,19 @@ async function loadFontsForConcept(): Promise<void> {
   // finishes loading. If we measured/wrapped text before the swap, the
   // wrap decisions and auto-shrink sizing would be computed against the
   // wrong metrics and could visibly reflow once the real font pops in.
-  await Promise.all([ensureFontLoaded(CARD_FONTS.serif, 300), ensureFontLoaded(CARD_FONTS.serif, 600), ensureFontLoaded(CARD_FONTS.sans, 400), ensureFontLoaded(CARD_FONTS.sans, 500), ensureFontLoaded(CARD_FONTS.sans, 600)]);
+  // Sans weight 700 is only used by the editorial template's bold emphasis
+  // runs (see `drawBulletLineRuns`), but it's loaded here alongside the rest
+  // rather than conditionally per-template so every template shares one
+  // font-loading path — the cost of one extra weight fetch is trivial next
+  // to the risk of a template-specific loader drifting out of sync.
+  await Promise.all([
+    ensureFontLoaded(CARD_FONTS.serif, 300),
+    ensureFontLoaded(CARD_FONTS.serif, 600),
+    ensureFontLoaded(CARD_FONTS.sans, 400),
+    ensureFontLoaded(CARD_FONTS.sans, 500),
+    ensureFontLoaded(CARD_FONTS.sans, 600),
+    ensureFontLoaded(CARD_FONTS.sans, 700),
+  ]);
 }
 
 function createCardCanvas(scale: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
@@ -698,10 +1279,16 @@ function createCardCanvas(scale: number): { canvas: HTMLCanvasElement; ctx: Canv
  */
 export async function renderCardConcept(concept: CardConcept, opts: { scale?: number } = {}): Promise<Blob> {
   const scale = opts.scale && opts.scale > 0 ? opts.scale : 1;
-  await loadFontsForConcept();
+  // Fonts and (for editorial) the background photo both need to be ready
+  // BEFORE drawCard runs, since drawCard itself is synchronous — load them
+  // in parallel since neither depends on the other.
+  const [, backgroundImage] = await Promise.all([
+    loadFontsForConcept(),
+    concept?.template === 'editorial' ? loadCardBackgroundImage(concept.backgroundUrl) : Promise.resolve(null),
+  ]);
 
   const { canvas, ctx } = createCardCanvas(scale);
-  drawCard(ctx, concept, CARD_SIZE.width, CARD_SIZE.height);
+  drawCard(ctx, concept, CARD_SIZE.width, CARD_SIZE.height, backgroundImage);
 
   return new Promise<Blob>((resolve, reject) => {
     try {
@@ -732,10 +1319,13 @@ const PREVIEW_SCALE = 0.5;
  * pixel-faithful to what the full export produces — only resolution differs.
  */
 export async function renderCardPreviewDataUrl(concept: CardConcept): Promise<string> {
-  await loadFontsForConcept();
+  const [, backgroundImage] = await Promise.all([
+    loadFontsForConcept(),
+    concept?.template === 'editorial' ? loadCardBackgroundImage(concept.backgroundUrl) : Promise.resolve(null),
+  ]);
 
   const { canvas, ctx } = createCardCanvas(PREVIEW_SCALE);
-  drawCard(ctx, concept, CARD_SIZE.width, CARD_SIZE.height);
+  drawCard(ctx, concept, CARD_SIZE.width, CARD_SIZE.height, backgroundImage);
 
   return canvas.toDataURL('image/png');
 }

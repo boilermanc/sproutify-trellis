@@ -1045,7 +1045,7 @@ export interface TextOverlayConfig {
 // typographic statement, a grid. Image models can't render text or lay out
 // a grid reliably, so these are DRAWN from data instead of generated: an AI
 // "creative director" writes the concept, a renderer builds the PNG.
-export type CardTemplate = 'verse' | 'statement' | 'grid';
+export type CardTemplate = 'verse' | 'statement' | 'grid' | 'editorial';
 
 export interface CardPalette {
   bg1: string;        // background / gradient start
@@ -1053,6 +1053,14 @@ export interface CardPalette {
   text: string;       // primary text
   muted: string;      // secondary text
   accent: string;     // emphasis, highlighted grid cell, rules
+}
+
+// One row of an editorial card's feature list: an icon, a line of text, and an
+// optional fragment within it to emphasise.
+export interface CardBullet {
+  text: string;
+  emphasis?: string;
+  icon?: 'heart' | 'book' | 'leaf' | 'sparkle' | 'check' | 'sun';
 }
 
 export interface CardConcept {
@@ -1074,6 +1082,16 @@ export interface CardConcept {
   items?: string[];
   highlightIndex?: number;
   footnote?: string;
+  // editorial — a structured layout drawn OVER a photograph, rather than over a
+  // flat or gradient fill. The layout engine is the same; only the backdrop and
+  // the extra zones differ.
+  backgroundUrl?: string;   // the photo the layout sits on
+  wordmark?: string;        // brand mark line, set larger than logoText
+  wordmarkSubtitle?: string;// small tracked line under the wordmark
+  bullets?: CardBullet[];   // icon + text feature rows
+  footer?: string;          // tracked caps line in a footer band
+  scrimStrength?: number;   // 0-1, how strongly to wash the photo for legibility
+
   // provenance
   rationale?: string;       // why this concept, for the human reviewing it
   model?: string;
