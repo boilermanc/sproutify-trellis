@@ -357,7 +357,9 @@ export async function compositeOverlay(imageUrl: string, config: TextOverlayConf
           return;
         }
         resolve(blob);
-      }, 'image/png');
+      // JPEG, not PNG: Instagram's publishing API rejects PNG at container
+      // creation. Flattened ad creative has no transparency to preserve.
+      }, 'image/jpeg', 0.92);
     } catch (err) {
       reject(
         new Error(

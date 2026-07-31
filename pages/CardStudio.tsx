@@ -515,7 +515,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     updateCard(id, { isApproving: true });
     try {
       const blob = await renderCardConcept(card.concept);
-      const file = new File([blob], `card-${card.concept.id}.png`, { type: 'image/png' });
+      const file = new File([blob], `card-${card.concept.id}.jpg`, { type: 'image/jpeg' });
       const url = await uploadPostImage(selectedBranch.slug, file);
 
       await createScheduledPosts([
@@ -546,7 +546,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${slugifyForFilename(concept.eyebrow || concept.logoText || concept.template)}.png`;
+      a.download = `${slugifyForFilename(concept.eyebrow || concept.logoText || concept.template)}.jpg`;
       document.body.appendChild(a);
       a.click();
       a.remove();

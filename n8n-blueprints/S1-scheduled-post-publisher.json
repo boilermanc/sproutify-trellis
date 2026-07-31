@@ -255,7 +255,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ branch_id: $json.branch_id, caption: $json.caption, image_url: (Array.isArray($json.media_urls) && $json.media_urls.length ? $json.media_urls[0] : null), media_type: $json.media_type || 'image', media_urls: $json.media_urls || [], scheduled_for: null }) }}",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
       },
       "name": "Publish Instagram",
       "type": "n8n-nodes-base.httpRequest",
@@ -265,7 +273,7 @@
         -140
       ],
       "onError": "continueErrorOutput",
-      "notes": "Matches the trellis-social-publish contract used by publishToSocial() in services/socialService.ts. branch_id is the branch UUID stored on the row; image_url is always media_urls[0]; scheduled_for is null because this IS the send, right now.",
+      "notes": "Matches the trellis-social-publish contract used by publishToSocial() in services/socialService.ts. branch_id is the branch UUID stored on the row; image_url is always media_urls[0]; scheduled_for is null because this IS the send, right now. RESPONSE HANDLING: raw TEXT body with neverError+fullResponse, so an unreadable reply can't masquerade as a publish failure. 'Interpret Publish Result' decides the outcome, not the HTTP node.",
       "notesInFlow": true
     },
     {
@@ -284,7 +292,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ branch_id: $json.branch_id, caption: $json.caption, image_url: (Array.isArray($json.media_urls) && $json.media_urls.length ? $json.media_urls[0] : null), scheduled_for: null }) }}",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
       },
       "name": "Publish Facebook",
       "type": "n8n-nodes-base.httpRequest",
@@ -294,47 +310,13 @@
         140
       ],
       "onError": "continueErrorOutput",
-      "notes": "Matches the trellis-facebook-publish contract used by publishToFacebook() in services/socialService.ts. image_url is optional -- Facebook allows text-only posts, so a post with no media sends image_url: null.",
-      "notesInFlow": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
-            {
-              "id": "publish-ok",
-              "leftValue": "={{ $json.success === true }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "name": "Publish Succeeded?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        460,
-        0
-      ],
-      "notes": "Both publish webhooks can return HTTP 200 with { success: false, error }. A 200 status alone is NOT proof of a successful publish -- only success === true in the body counts.",
+      "notes": "Matches the trellis-facebook-publish contract used by publishToFacebook() in services/socialService.ts. image_url is optional -- Facebook allows text-only posts, so a post with no media sends image_url: null. RESPONSE HANDLING: raw TEXT body with neverError+fullResponse, so an unreadable reply can't masquerade as a publish failure. 'Interpret Publish Result' decides the outcome, not the HTTP node.",
       "notesInFlow": true
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts?id=eq.{{ $('Drop Unclaimed Posts').item.json.id }}",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts?id=eq.{{ $json.id }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendHeaders": true,
@@ -372,7 +354,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Runs for every failure path: a genuine HTTP/network error from either publish node,\n// OR a 200 response whose body says { success: false, error }. Normalizes both shapes\n// into a single { id, last_error } record for Mark Failed. The id is always read from\n// 'Drop Unclaimed Posts' (the claimed row), not from the current item, because an error\n// response body from the publish webhook won't necessarily carry the row id.\nconst body = $input.item.json || {};\nlet message;\nif (body.success === false) {\n  message = body.error || 'Publish webhook reported failure';\n} else if (body.error) {\n  message = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);\n} else if (body.message) {\n  message = body.message;\n} else {\n  message = JSON.stringify(body);\n}\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\nreturn { json: { id: claimedId, last_error: String(message).slice(0, 500) } };"
+        "jsCode": "// Only reached when a publish node errored at the transport level. Normal\n// responses - including unparseable ones - go to 'Interpret Publish Result'.\nconst body = $input.item.json || {};\nconst message = (body.error && (body.error.message || body.error)) || body.message || JSON.stringify(body);\nreturn { json: { id: $('Drop Unclaimed Posts').item.json.id, last_error: String(message).slice(0, 500) } };"
       },
       "name": "Prepare Failure",
       "type": "n8n-nodes-base.code",
@@ -423,6 +405,127 @@
       },
       "notes": "Terminal state. Does NOT auto-retry -- attempts is tracked on every claim specifically so a future bounded-retry policy can be layered on top, but today a failed row just sits there for a human to review and, if appropriate, re-schedule.",
       "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Three outcomes, not two. Treating \"we couldn't read the reply\" as a failure is\n// dangerous: 'failed' invites a retry, and a retry double-posts to a real account.\n// Only an explicit success or an explicit failure is trusted; anything else goes\n// to a human as needs_review.\nconst res = $input.item.json || {};\nconst status = Number(res.statusCode || res.status || 0);\nconst rawBody = typeof res.body === 'string' ? res.body : JSON.stringify(res.body ?? '');\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\n\nlet parsed = null;\ntry { parsed = rawBody ? JSON.parse(rawBody) : null; } catch (e) { parsed = null; }\n\nif (parsed && parsed.success === true) {\n  return { json: { id: claimedId, outcome: 'published', post_id: parsed.post_id || null, last_error: null } };\n}\nif (parsed && parsed.success === false) {\n  return { json: { id: claimedId, outcome: 'failed', post_id: null,\n    last_error: String(parsed.error || 'Publish webhook reported failure').slice(0, 500) } };\n}\nconst detail = rawBody ? rawBody.slice(0, 300) : ('HTTP ' + status + ' with empty body');\nreturn { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n  last_error: ('Publish reply could not be parsed (HTTP ' + status + '). CHECK THE ACCOUNT - this may already be live. Reply was: ' + detail).slice(0, 500) } };"
+      },
+      "name": "Interpret Publish Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        704
+      ],
+      "notesInFlow": true,
+      "id": "9c1f77aa3c214d648f0e2a1f0c6c51aa",
+      "notes": "Decides published / failed / needs_review. needs_review exists because an unreadable reply after a 2xx most likely means the post DID go out - recording that as 'failed' would invite a retry and double-post."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "ok",
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "published",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "published"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "bad",
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "needs_review"
+        }
+      },
+      "name": "Route Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        2336,
+        704
+      ],
+      "id": "3d5b2e917c440f0ab0d25e9a41c73b12"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'needs_review', last_error: $json.last_error }) }}",
+        "options": {}
+      },
+      "name": "Mark Needs Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2576,
+        704
+      ],
+      "notesInFlow": true,
+      "id": "7b2c9e401f834d559a618c4e2b7d0f36",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Terminal, and deliberately NOT 'failed'. The post probably went out; a human checks the account and decides. Never auto-retried."
     }
   ],
   "connections": {
@@ -528,7 +631,7 @@
       "main": [
         [
           {
-            "node": "Publish Succeeded?",
+            "node": "Interpret Publish Result",
             "type": "main",
             "index": 0
           }
@@ -546,25 +649,7 @@
       "main": [
         [
           {
-            "node": "Publish Succeeded?",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prepare Failure",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Publish Succeeded?": {
-      "main": [
-        [
-          {
-            "node": "Mark Published",
+            "node": "Interpret Publish Result",
             "type": "main",
             "index": 0
           }
@@ -583,6 +668,42 @@
         [
           {
             "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpret Publish Result": {
+      "main": [
+        [
+          {
+            "node": "Route Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Outcome": {
+      "main": [
+        [
+          {
+            "node": "Mark Published",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Needs Review",
             "type": "main",
             "index": 0
           }

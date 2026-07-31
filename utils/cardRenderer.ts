@@ -711,7 +711,10 @@ export async function renderCardConcept(concept: CardConcept, opts: { scale?: nu
           return;
         }
         resolve(blob);
-      }, 'image/png');
+      // JPEG, not PNG: Instagram's content publishing API rejects PNG at
+      // container creation, which fails the publish with an opaque error. These
+      // cards are full-bleed with no transparency, so JPEG costs nothing.
+      }, 'image/jpeg', 0.92);
     } catch (err) {
       reject(new Error(`Card rendering failed: ${err instanceof Error ? err.message : String(err)}`));
     }
