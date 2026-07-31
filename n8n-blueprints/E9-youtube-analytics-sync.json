@@ -10,7 +10,10 @@
       "name": "Setup Notes",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [120, -460]
+      "position": [
+        120,
+        -460
+      ]
     },
     {
       "parameters": {
@@ -26,7 +29,10 @@
       "name": "Daily Schedule",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [180, 260]
+      "position": [
+        180,
+        260
+      ]
     },
     {
       "parameters": {
@@ -36,7 +42,10 @@
       "name": "Config",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 260]
+      "position": [
+        400,
+        260
+      ]
     },
     {
       "parameters": {
@@ -47,15 +56,26 @@
         "limit": "={{ $('Config').item.json.publication_limit }}",
         "filters": {
           "conditions": [
-            { "keyName": "platform", "condition": "eq", "keyValue": "youtube" },
-            { "keyName": "status", "condition": "eq", "keyValue": "live" }
+            {
+              "keyName": "platform",
+              "condition": "eq",
+              "keyValue": "youtube"
+            },
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "live"
+            }
           ]
         }
       },
       "name": "Fetch Live YouTube Publications",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [620, 260],
+      "position": [
+        620,
+        260
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL",
@@ -71,7 +91,10 @@
       "name": "Build Video Jobs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [840, 260]
+      "position": [
+        840,
+        260
+      ]
     },
     {
       "parameters": {
@@ -82,8 +105,14 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "part", "value": "statistics" },
-            { "name": "id", "value": "={{ $('Build Video Jobs').item.json.youtube_video_id }}" }
+            {
+              "name": "part",
+              "value": "statistics"
+            },
+            {
+              "name": "id",
+              "value": "={{ $('Build Video Jobs').item.json.youtube_video_id }}"
+            }
           ]
         },
         "options": {}
@@ -91,7 +120,10 @@
       "name": "YouTube Video Stats",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1060, 260],
+      "position": [
+        1060,
+        260
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "REPLACE_WITH_GOOGLE_ANALYTICS_CREDENTIAL",
@@ -108,13 +140,34 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "ids", "value": "channel==MINE" },
-            { "name": "startDate", "value": "={{ $('Build Video Jobs').item.json.start_date }}" },
-            { "name": "endDate", "value": "={{ $('Build Video Jobs').item.json.end_date }}" },
-            { "name": "metrics", "value": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost" },
-            { "name": "dimensions", "value": "day" },
-            { "name": "filters", "value": "={{ 'video==' + $('Build Video Jobs').item.json.youtube_video_id }}" },
-            { "name": "sort", "value": "day" }
+            {
+              "name": "ids",
+              "value": "channel==MINE"
+            },
+            {
+              "name": "startDate",
+              "value": "={{ $('Build Video Jobs').item.json.start_date }}"
+            },
+            {
+              "name": "endDate",
+              "value": "={{ $('Build Video Jobs').item.json.end_date }}"
+            },
+            {
+              "name": "metrics",
+              "value": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost"
+            },
+            {
+              "name": "dimensions",
+              "value": "day"
+            },
+            {
+              "name": "filters",
+              "value": "={{ 'video==' + $('Build Video Jobs').item.json.youtube_video_id }}"
+            },
+            {
+              "name": "sort",
+              "value": "day"
+            }
           ]
         },
         "options": {}
@@ -122,7 +175,10 @@
       "name": "YouTube Daily Analytics",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1280, 260],
+      "position": [
+        1280,
+        260
+      ],
       "credentials": {
         "googleOAuth2Api": {
           "id": "REPLACE_WITH_GOOGLE_ANALYTICS_CREDENTIAL",
@@ -138,7 +194,10 @@
       "name": "Build Metric Rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1500, 260]
+      "position": [
+        1500,
+        260
+      ]
     },
     {
       "parameters": {
@@ -149,8 +208,16 @@
         "limit": 1,
         "filters": {
           "conditions": [
-            { "keyName": "youtube_video_id", "condition": "eq", "keyValue": "={{ $('Build Metric Rows').item.json.youtube_video_id }}" },
-            { "keyName": "metric_date", "condition": "eq", "keyValue": "={{ $('Build Metric Rows').item.json.metric_date }}" }
+            {
+              "keyName": "youtube_video_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Build Metric Rows').item.json.youtube_video_id }}"
+            },
+            {
+              "keyName": "metric_date",
+              "condition": "eq",
+              "keyValue": "={{ $('Build Metric Rows').item.json.metric_date }}"
+            }
           ]
         },
         "options": {
@@ -160,7 +227,10 @@
       "name": "Find Existing Metric",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1720, 260],
+      "position": [
+        1720,
+        260
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL",
@@ -171,18 +241,34 @@
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "value1": "={{ !!$json.id }}",
-              "value2": true
+              "id": "metric-exists-b0",
+              "leftValue": "={{ !!$json.id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "name": "Metric Exists?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1940, 260]
+      "typeVersion": 2,
+      "position": [
+        1940,
+        260
+      ]
     },
     {
       "parameters": {
@@ -191,33 +277,82 @@
         "tableId": "trellis_youtube_daily_metrics",
         "filters": {
           "conditions": [
-            { "keyName": "id", "condition": "eq", "keyValue": "={{ $json.id }}" }
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
           ]
         },
         "dataToSend": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "views", "fieldValue": "={{ $('Build Metric Rows').item.json.views }}" },
-            { "fieldId": "engaged_views", "fieldValue": "={{ $('Build Metric Rows').item.json.engaged_views }}" },
-            { "fieldId": "estimated_minutes_watched", "fieldValue": "={{ $('Build Metric Rows').item.json.estimated_minutes_watched }}" },
-            { "fieldId": "average_view_duration", "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_duration }}" },
-            { "fieldId": "average_view_percentage", "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_percentage }}" },
-            { "fieldId": "likes", "fieldValue": "={{ $('Build Metric Rows').item.json.likes }}" },
-            { "fieldId": "comments", "fieldValue": "={{ $('Build Metric Rows').item.json.comments }}" },
-            { "fieldId": "shares", "fieldValue": "={{ $('Build Metric Rows').item.json.shares }}" },
-            { "fieldId": "subscribers_gained", "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_gained }}" },
-            { "fieldId": "subscribers_lost", "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_lost }}" },
-            { "fieldId": "traffic_sources", "fieldValue": "={{ $('Build Metric Rows').item.json.traffic_sources }}" },
-            { "fieldId": "countries", "fieldValue": "={{ $('Build Metric Rows').item.json.countries }}" },
-            { "fieldId": "raw", "fieldValue": "={{ $('Build Metric Rows').item.json.raw }}" },
-            { "fieldId": "synced_at", "fieldValue": "={{ $('Build Metric Rows').item.json.synced_at }}" }
+            {
+              "fieldId": "views",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.views }}"
+            },
+            {
+              "fieldId": "engaged_views",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.engaged_views }}"
+            },
+            {
+              "fieldId": "estimated_minutes_watched",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.estimated_minutes_watched }}"
+            },
+            {
+              "fieldId": "average_view_duration",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_duration }}"
+            },
+            {
+              "fieldId": "average_view_percentage",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_percentage }}"
+            },
+            {
+              "fieldId": "likes",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.likes }}"
+            },
+            {
+              "fieldId": "comments",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.comments }}"
+            },
+            {
+              "fieldId": "shares",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.shares }}"
+            },
+            {
+              "fieldId": "subscribers_gained",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_gained }}"
+            },
+            {
+              "fieldId": "subscribers_lost",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_lost }}"
+            },
+            {
+              "fieldId": "traffic_sources",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.traffic_sources }}"
+            },
+            {
+              "fieldId": "countries",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.countries }}"
+            },
+            {
+              "fieldId": "raw",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.raw }}"
+            },
+            {
+              "fieldId": "synced_at",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.synced_at }}"
+            }
           ]
         }
       },
       "name": "Update Metric Row",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2160, 160],
+      "position": [
+        2160,
+        160
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL",
@@ -233,31 +368,88 @@
         "dataToSend": "defineBelow",
         "fieldsUi": {
           "fieldValues": [
-            { "fieldId": "episode_id", "fieldValue": "={{ $('Build Metric Rows').item.json.episode_id }}" },
-            { "fieldId": "publication_id", "fieldValue": "={{ $('Build Metric Rows').item.json.publication_id }}" },
-            { "fieldId": "youtube_video_id", "fieldValue": "={{ $('Build Metric Rows').item.json.youtube_video_id }}" },
-            { "fieldId": "metric_date", "fieldValue": "={{ $('Build Metric Rows').item.json.metric_date }}" },
-            { "fieldId": "views", "fieldValue": "={{ $('Build Metric Rows').item.json.views }}" },
-            { "fieldId": "engaged_views", "fieldValue": "={{ $('Build Metric Rows').item.json.engaged_views }}" },
-            { "fieldId": "estimated_minutes_watched", "fieldValue": "={{ $('Build Metric Rows').item.json.estimated_minutes_watched }}" },
-            { "fieldId": "average_view_duration", "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_duration }}" },
-            { "fieldId": "average_view_percentage", "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_percentage }}" },
-            { "fieldId": "likes", "fieldValue": "={{ $('Build Metric Rows').item.json.likes }}" },
-            { "fieldId": "comments", "fieldValue": "={{ $('Build Metric Rows').item.json.comments }}" },
-            { "fieldId": "shares", "fieldValue": "={{ $('Build Metric Rows').item.json.shares }}" },
-            { "fieldId": "subscribers_gained", "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_gained }}" },
-            { "fieldId": "subscribers_lost", "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_lost }}" },
-            { "fieldId": "traffic_sources", "fieldValue": "={{ $('Build Metric Rows').item.json.traffic_sources }}" },
-            { "fieldId": "countries", "fieldValue": "={{ $('Build Metric Rows').item.json.countries }}" },
-            { "fieldId": "raw", "fieldValue": "={{ $('Build Metric Rows').item.json.raw }}" },
-            { "fieldId": "synced_at", "fieldValue": "={{ $('Build Metric Rows').item.json.synced_at }}" }
+            {
+              "fieldId": "episode_id",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.episode_id }}"
+            },
+            {
+              "fieldId": "publication_id",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.publication_id }}"
+            },
+            {
+              "fieldId": "youtube_video_id",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.youtube_video_id }}"
+            },
+            {
+              "fieldId": "metric_date",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.metric_date }}"
+            },
+            {
+              "fieldId": "views",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.views }}"
+            },
+            {
+              "fieldId": "engaged_views",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.engaged_views }}"
+            },
+            {
+              "fieldId": "estimated_minutes_watched",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.estimated_minutes_watched }}"
+            },
+            {
+              "fieldId": "average_view_duration",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_duration }}"
+            },
+            {
+              "fieldId": "average_view_percentage",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.average_view_percentage }}"
+            },
+            {
+              "fieldId": "likes",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.likes }}"
+            },
+            {
+              "fieldId": "comments",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.comments }}"
+            },
+            {
+              "fieldId": "shares",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.shares }}"
+            },
+            {
+              "fieldId": "subscribers_gained",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_gained }}"
+            },
+            {
+              "fieldId": "subscribers_lost",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.subscribers_lost }}"
+            },
+            {
+              "fieldId": "traffic_sources",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.traffic_sources }}"
+            },
+            {
+              "fieldId": "countries",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.countries }}"
+            },
+            {
+              "fieldId": "raw",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.raw }}"
+            },
+            {
+              "fieldId": "synced_at",
+              "fieldValue": "={{ $('Build Metric Rows').item.json.synced_at }}"
+            }
           ]
         }
       },
       "name": "Create Metric Row",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [2160, 360],
+      "position": [
+        2160,
+        360
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL",
@@ -267,18 +459,110 @@
     }
   ],
   "connections": {
-    "Daily Schedule": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
-    "Config": { "main": [[{ "node": "Fetch Live YouTube Publications", "type": "main", "index": 0 }]] },
-    "Fetch Live YouTube Publications": { "main": [[{ "node": "Build Video Jobs", "type": "main", "index": 0 }]] },
-    "Build Video Jobs": { "main": [[{ "node": "YouTube Video Stats", "type": "main", "index": 0 }]] },
-    "YouTube Video Stats": { "main": [[{ "node": "YouTube Daily Analytics", "type": "main", "index": 0 }]] },
-    "YouTube Daily Analytics": { "main": [[{ "node": "Build Metric Rows", "type": "main", "index": 0 }]] },
-    "Build Metric Rows": { "main": [[{ "node": "Find Existing Metric", "type": "main", "index": 0 }]] },
-    "Find Existing Metric": { "main": [[{ "node": "Metric Exists?", "type": "main", "index": 0 }]] },
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Live YouTube Publications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Live YouTube Publications": {
+      "main": [
+        [
+          {
+            "node": "Build Video Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Video Jobs": {
+      "main": [
+        [
+          {
+            "node": "YouTube Video Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube Video Stats": {
+      "main": [
+        [
+          {
+            "node": "YouTube Daily Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube Daily Analytics": {
+      "main": [
+        [
+          {
+            "node": "Build Metric Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Metric Rows": {
+      "main": [
+        [
+          {
+            "node": "Find Existing Metric",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Existing Metric": {
+      "main": [
+        [
+          {
+            "node": "Metric Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Metric Exists?": {
       "main": [
-        [{ "node": "Update Metric Row", "type": "main", "index": 0 }],
-        [{ "node": "Create Metric Row", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Update Metric Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Metric Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

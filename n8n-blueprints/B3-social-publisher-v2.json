@@ -20,25 +20,45 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.body.branch_id }}",
-              "operation": "isNotEmpty"
+              "id": "validate-payload-0",
+              "leftValue": "={{ $json.body.branch_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             },
             {
-              "value1": "={{ $json.body.caption }}",
-              "operation": "isNotEmpty"
+              "id": "validate-payload-1",
+              "leftValue": "={{ $json.body.caption }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "name": "Validate Payload",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         -1100,
         100
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -116,22 +136,34 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.media_type }}",
-              "value2": "carousel",
-              "operation": "equals"
+              "id": "is-carousel-0",
+              "leftValue": "={{ $json.media_type }}",
+              "rightValue": "carousel",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "name": "Is Carousel?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         -400,
         100
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -232,22 +264,34 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.media_type }}",
-              "value2": "video",
-              "operation": "equals"
+              "id": "is-reel-0",
+              "leftValue": "={{ $json.media_type }}",
+              "rightValue": "video",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "name": "Is Reel?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         -180,
         140
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -326,22 +370,34 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.status_code || $json.status }}",
-              "value2": "FINISHED",
-              "operation": "equals"
+              "id": "reel-ready-0",
+              "leftValue": "={{ $json.status_code || $json.status }}",
+              "rightValue": "FINISHED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "name": "Reel Ready?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         760,
         80
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -510,6 +566,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -561,6 +624,13 @@
         [
           {
             "node": "Is Reel?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
             "type": "main",
             "index": 0
           }
@@ -654,6 +724,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -716,6 +793,13 @@
         [
           {
             "node": "Wait for Reel Processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
             "type": "main",
             "index": 0
           }
