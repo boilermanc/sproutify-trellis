@@ -34,21 +34,24 @@ export interface CardConceptWithRef extends CardConcept {
 const MAX_VERSE_SPAN = 4;
 
 // ─── Brief presets ──────────────────────────────────────────────────
+// branchSlug must match `branches.slug` (bare, e.g. 'rejoice') — NOT the domain
+// key used by brand_profiles ('letsrejoice.app'). A preset with no branchSlug is
+// shown for every brand.
 export const CARD_BRIEF_PRESETS: { label: string; brief: string; branchSlug?: string }[] = [
   {
     label: 'Rejoice — daily motivational posts',
     brief:
       "Create some Instagram ads, motivational ideas we'd post daily that tie into Rejoice — the Bible study app that starts with how you feel. Give me a few strong, visually different examples. Some can use a real, verified verse if one genuinely fits; others should be a bold typographic statement or a short grid of feelings/steps. Warm and encouraging, never preachy or guilt-driven.",
-    branchSlug: 'letsrejoice.app',
+    branchSlug: 'rejoice',
   },
   {
     label: 'ATL Urban Farms — weekly harvest hype',
     brief:
       "Create Instagram post concepts hyping this week's fresh seedlings and harvest at ATL Urban Farms. Earthy, warm, grow-your-own energy — not corporate. No scripture needed here.",
-    branchSlug: 'atlurbanfarms.com',
+    branchSlug: 'atlurbanfarms',
   },
   {
-    label: 'General — bold brand statement pack',
+    label: 'Any brand — bold statement pack',
     brief:
       'Create a few bold, typographic Instagram statement posts about why our brand exists and what makes it different. No verses — just punchy, confident copy that stops the scroll.',
   },

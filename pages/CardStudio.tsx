@@ -170,6 +170,13 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     }
   };
 
+  // A preset tagged to another brand is just noise — show only this brand's
+  // presets plus the brand-agnostic ones.
+  const visiblePresets = useMemo(
+    () => CARD_BRIEF_PRESETS.filter((p) => !p.branchSlug || p.branchSlug === selectedBranch?.slug),
+    [selectedBranch?.slug],
+  );
+
   const applyPreset = (preset: (typeof CARD_BRIEF_PRESETS)[number]) => {
     setBrief(preset.brief);
     setActivePreset(preset.label);
@@ -466,7 +473,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {CARD_BRIEF_PRESETS.map((preset) => (
+          {visiblePresets.map((preset) => (
             <button
               key={preset.label}
               type="button"
