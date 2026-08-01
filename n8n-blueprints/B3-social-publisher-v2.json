@@ -490,7 +490,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Publish to Instagram').first().json.id, message: 'Published successfully to Instagram' }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id || null, message: 'Published successfully to Instagram' }) }}",
         "options": {
           "responseCode": 200
         }
@@ -501,7 +501,8 @@
       "position": [
         1460,
         120
-      ]
+      ],
+      "notes": "Reads $json.id - the DIRECT input from Publish to Instagram's own success output - instead of a $('Publish to Instagram') cross-node lookup. That node gained a second (error) output when onError was added, and a name-based lookup against a multi-output node is the suspected cause of a prior empty-body failure (expression threw after the response had already started). Never revert to a $('...') lookup here."
     },
     {
       "parameters": {
@@ -537,6 +538,48 @@
       "notesInFlow": true,
       "id": "b3error0respond0node00000000000",
       "notes": "Responds 200 with success:false ON PURPOSE. Callers (the scheduler and publishToSocial in the app) read the body for the real reason; a bare non-200 would collapse every distinct Instagram failure into 'Webhook returned 500'. Without this node ANY failure returned an empty 200 body and the caller had nothing to report."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/marketing_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_type: 'social_publish', source: 'instagram', payload: { branch_id: $('Use Image or Carousel Container').item.json.branch_id, post_id: $json.id || null, caption: $('Use Image or Carousel Container').item.json.caption, image_url: $('Use Image or Carousel Container').item.json.image_url, platform: 'instagram', media_type: $('Use Image or Carousel Container').item.json.media_type, published_at: new Date().toISOString() } }) }}",
+        "options": {}
+      },
+      "name": "Log Marketing Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2240,
+        400
+      ],
+      "notesInFlow": true,
+      "id": "b3logmarketingevent0000000000000",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Writes the event Dashboard and Social Hub > Reports read (event_type='social_publish'). onError=continueRegularOutput: a logging failure must never block the actual publish response reaching the caller - Success Response still fires either way."
     }
   ],
   "connections": {
@@ -864,7 +907,7 @@
       "main": [
         [
           {
-            "node": "Success Response",
+            "node": "Log Marketing Event",
             "type": "main",
             "index": 0
           }
@@ -883,6 +926,17 @@
         [
           {
             "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Marketing Event": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
             "type": "main",
             "index": 0
           }
