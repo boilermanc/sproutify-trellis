@@ -512,15 +512,30 @@ export async function generateCardConcepts(opts: {
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
     const prompt = buildDirectorPrompt({ ...opts, count });
 
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: CARD_CONCEPTS_SCHEMA,
-      },
-    });
+    // The SDK call has no timeout of its own, so a stalled request hangs
+    // forever: the button sits disabled on "already generating", nothing
+    // resolves, nothing rejects, and no error ever surfaces. Race it so a
+    // stall becomes a real, reportable failure instead of a silent freeze.
+    const GENERATION_TIMEOUT_MS = 90_000;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const response = await Promise.race([
+      ai.models.generateContent({
+        model: MODEL,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: CARD_CONCEPTS_SCHEMA,
+        },
+      }),
+      new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`Gemini did not respond within ${GENERATION_TIMEOUT_MS / 1000}s — request timed out.`)),
+          GENERATION_TIMEOUT_MS,
+        );
+      }),
+    ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle); });
 
+    console.log('[creativeDirector] Gemini responded, raw length:', response.text?.length ?? 0);
     const parsed = JSON.parse(response.text || '{}');
     const rawConcepts: any[] = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
 
@@ -538,6 +553,10 @@ export async function generateCardConcepts(opts: {
       }
       concepts.push(concept);
     }
+    // Raw vs kept: normalizeConcept drops anything unrenderable, so a gap
+    // between these two numbers is where concepts silently disappear.
+    console.log('[creativeDirector] concepts raw:', rawConcepts.length, 'kept:', concepts.length,
+      concepts.map((c) => c.template));
     return concepts;
   } catch (err) {
     throw new Error(err instanceof Error ? `Card concept generation failed: ${err.message}` : 'Card concept generation failed.');
