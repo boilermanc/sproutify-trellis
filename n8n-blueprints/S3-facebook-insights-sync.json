@@ -190,7 +190,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $json.page_id }}",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.page_id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
