@@ -275,7 +275,9 @@ ${scriptureRule}
 
 If a concept uses the "verse" template, you must NEVER write out the verse's wording, and must NEVER invent a "body" or "reference" string — only supply verse_ref (book_id/chapter/verse_start/verse_end). Any wording you wrote would be ignored, so a fabricated or misquoted "quote" from you accomplishes nothing except confusing the human reviewer — the app always fetches the real text itself. If you cannot confidently name a passage that genuinely fits, use "statement" or "grid" instead of "verse" for that concept. "editorial" concepts must never carry scripture text either — they are not a vehicle for verses, they're for photo-backed feature/benefit posts.
 
-Return ONLY the structured JSON matching the schema — no markdown, no commentary.`;
+Return ONLY a JSON object of exactly this shape — no markdown, no commentary:
+{"concepts": [ { ...concept 1... }, { ...concept 2... } ]}
+Every concept goes inside the "concepts" array, even when there is only one.`;
 }
 
 // ─── Validation / repair ────────────────────────────────────────────
@@ -620,7 +622,19 @@ export async function generateCardConcepts(opts: {
         let rawConcepts: any[];
         try {
           const parsed = JSON.parse(rawText);
-          rawConcepts = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
+          // Accept every envelope the model actually produces, not just the
+          // requested one. Without a responseSchema the wrapper is only a
+          // prompt instruction, and with count=1 the model readily returns the
+          // bare concept object itself — which is valid JSON, parses fine, and
+          // then died here as "concepts raw: 0" when only {concepts:[...]} was
+          // accepted.
+          if (Array.isArray(parsed?.concepts)) rawConcepts = parsed.concepts;
+          else if (Array.isArray(parsed)) rawConcepts = parsed;
+          else if (parsed && typeof parsed === 'object' && typeof parsed.template === 'string') rawConcepts = [parsed];
+          else rawConcepts = [];
+          if (rawConcepts.length === 0) {
+            console.warn('[creativeDirector] parsed OK but no concepts found — response head:', rawText.slice(0, 300));
+          }
         } catch (parseErr) {
           // A runaway response degenerates AFTER writing good concepts: the
           // observed failures start with a perfectly-formed first concept and
