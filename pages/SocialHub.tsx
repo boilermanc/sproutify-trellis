@@ -4,7 +4,7 @@ import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Bran
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
-import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook, checkConnections } from '../services/socialService';
+import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook, publishToTikTok, checkConnections } from '../services/socialService';
 import { createScheduledPosts } from '../services/scheduledPostService';
 import { uploadSocialMedia, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
@@ -297,7 +297,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   // Publish Now (Instagram + Facebook) — confirm modal + in-flight tracking.
   // Tracked per (draft, platform) so a draft can publish to each platform separately.
-  const [publishConfirm, setPublishConfirm] = useState<{ draftId: string; platform: 'instagram' | 'facebook' } | null>(null);
+  const [publishConfirm, setPublishConfirm] = useState<{ draftId: string; platform: 'instagram' | 'facebook' | 'tiktok' } | null>(null);
   const [publishingKey, setPublishingKey] = useState<string | null>(null); // `${draftId}_${platform}` while in flight
 
   // Scheduling controls — drafts land on the calendar AND, for Instagram/Facebook,
@@ -787,6 +787,10 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         const caption = String(rawCaption || '').trim();
         if (!caption) return;
 
+        if (plat === 'tiktok') {
+          skipReasons.push(`${brandLabel} → TikTok: not queued through Schedule yet — use Publish Now on the draft instead`);
+          return;
+        }
         if (plat !== 'instagram' && plat !== 'facebook') {
           skipReasons.push(`${brandLabel} → ${SOCIAL_PLATFORM_META[plat]?.label || plat}: direct publishing isn't connected yet, copy the text instead`);
           return;
@@ -944,7 +948,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         id: `import_${Date.now()}_${branchId}`,
         branch_id: branchId,
         base_content: description,
-        versions: { instagram: '', facebook: '' },
+        versions: { instagram: '', facebook: '', tiktok: '' },
         image_urls: mediaType === 'video' ? undefined : urls,
         media_urls: urls,
         media_type: mediaType,
@@ -1003,24 +1007,24 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setArchivedPosts(prev => [{ ...draft, status: 'archived' }, ...prev]);
   };
 
-  // ─── Publish Now (Instagram + Facebook) ───────────────────────────
-  // Only these two platforms are wired to live webhooks today.
-  const WIRED_PUBLISH_PLATFORMS: Array<'instagram' | 'facebook'> = ['instagram', 'facebook'];
-  const PLATFORM_LABEL: Record<'instagram' | 'facebook', string> = { instagram: 'Instagram', facebook: 'Facebook' };
+  // ─── Publish Now (Instagram + Facebook + TikTok) ───────────────────
+  // Only these platforms are wired to live webhooks today.
+  const WIRED_PUBLISH_PLATFORMS: Array<'instagram' | 'facebook' | 'tiktok'> = ['instagram', 'facebook', 'tiktok'];
+  const PLATFORM_LABEL: Record<'instagram' | 'facebook' | 'tiktok', string> = { instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok' };
 
   // Has this draft already been published to the given platform?
   const isPlatformPublished = (draft: DraftPost, platform: string) =>
     (draft.publish_results || []).some(r => r.platform === platform && r.success);
 
   // Open the confirmation modal for a (draft, platform). Publish fires in confirmPublish.
-  const requestPublish = (draft: DraftPost, platform: 'instagram' | 'facebook') =>
+  const requestPublish = (draft: DraftPost, platform: 'instagram' | 'facebook' | 'tiktok') =>
     setPublishConfirm({ draftId: draft.id, platform });
 
   // Record a successful publish. Tracks per-platform: the draft is kept in the
   // active list (with the platform's result recorded) until EVERY wired platform
   // present on the draft has been published — only then is it removed. This lets a
   // draft be published to Instagram and Facebook separately without one blocking the other.
-  const recordPublish = (draft: DraftPost, platform: 'instagram' | 'facebook', postId?: string) => {
+  const recordPublish = (draft: DraftPost, platform: 'instagram' | 'facebook' | 'tiktok', postId?: string) => {
     const publishedAt = new Date().toISOString();
     const newResult = { platform, success: true, post_id: postId };
     const mergedResults = [
@@ -1082,14 +1086,18 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       onNavigate?.('branches');
       return;
     }
-    // Instagram requires attached media; Facebook also supports caption-only posts.
+    // Instagram and TikTok require attached media; Facebook also supports caption-only posts.
     if (platform === 'instagram' && !mediaUrl) { addToast?.('Instagram requires media to publish.', 'error'); setPublishConfirm(null); return; }
+    if (platform === 'tiktok' && mediaUrls.length === 0) { addToast?.('TikTok requires media to publish — there is no text-only TikTok post.', 'error'); setPublishConfirm(null); return; }
 
     setPublishingKey(`${draftId}_${platform}`);
-    addToast?.(`Publishing to ${label}…`, 'info');
+    addToast?.(platform === 'tiktok' ? `Publishing to ${label}… this can take up to ~2 minutes.` : `Publishing to ${label}…`, 'info');
 
+    const mediaType = draft.media_type || (mediaUrls.length > 1 ? 'carousel' : 'image');
     const result = platform === 'instagram'
-      ? await publishToSocial(draft.branch_id, caption, mediaUrl!, null, undefined, { media_type: draft.media_type || (mediaUrls.length > 1 ? 'carousel' : 'image'), media_urls: mediaUrls })
+      ? await publishToSocial(draft.branch_id, caption, mediaUrl!, null, undefined, { media_type: mediaType, media_urls: mediaUrls })
+      : platform === 'tiktok'
+      ? await publishToTikTok(draft.branch_id, caption, mediaUrls, mediaType, null)
       : await publishToFacebook(draft.branch_id, caption, mediaUrl || null, null);
 
     setPublishingKey(null);
@@ -1105,7 +1113,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   };
 
   // Render the per-platform Publish Now control (or a "Published" badge once done).
-  const renderPublishControl = (draft: DraftPost, platform: 'instagram' | 'facebook') => {
+  const renderPublishControl = (draft: DraftPost, platform: 'instagram' | 'facebook' | 'tiktok') => {
     if (isPlatformPublished(draft, platform)) {
       return (
         <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-wider cursor-default">
@@ -1147,16 +1155,18 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
     const hasMedia = getDraftMediaUrls(draft).length > 0;
     const publishing = publishingKey === `${draft.id}_${platform}`;
-    const needsMedia = platform === 'instagram' && !hasMedia;
+    const needsMedia = (platform === 'instagram' || platform === 'tiktok') && !hasMedia;
     const disabled = !hasBranch || needsMedia || publishing;
     const reason = !hasBranch
       ? 'Select a brand to publish'
       : needsMedia
-      ? 'Instagram requires media — import it first'
+      ? `${platform === 'tiktok' ? 'TikTok' : 'Instagram'} requires media — import it first`
       : platform === 'instagram'
       ? 'Publish this caption + image to Instagram now'
+      : platform === 'tiktok'
+      ? 'Publish this caption + media to TikTok now (private/SELF_ONLY until audit clears)'
       : 'Publish this caption to Facebook now';
-    const activeClass = platform === 'instagram' ? 'bg-pink-600 hover:bg-pink-700' : 'bg-blue-600 hover:bg-blue-700';
+    const activeClass = platform === 'instagram' ? 'bg-pink-600 hover:bg-pink-700' : platform === 'tiktok' ? 'bg-slate-900 hover:bg-slate-800' : 'bg-blue-600 hover:bg-blue-700';
     return (
       <button
         type="button"
@@ -1306,8 +1316,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         const label = PLATFORM_LABEL[platform];
         const brandName = getBranchForDraft(draft)?.name || 'Brand';
         const publishing = publishingKey === `${draft.id}_${platform}`;
-        const iconBg = platform === 'instagram' ? 'bg-pink-50 border-pink-200' : 'bg-blue-50 border-blue-200';
-        const iconColor = platform === 'instagram' ? 'text-pink-500' : 'text-blue-600';
+        const iconBg = platform === 'instagram' ? 'bg-pink-50 border-pink-200' : platform === 'tiktok' ? 'bg-slate-100 border-slate-300' : 'bg-blue-50 border-blue-200';
+        const iconColor = platform === 'instagram' ? 'text-pink-500' : platform === 'tiktok' ? 'text-slate-900' : 'text-blue-600';
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if (!publishing) setPublishConfirm(null); }} />
@@ -1321,6 +1331,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
               <p className="text-sm font-medium text-slate-600 leading-relaxed mb-6">
                 Publish this post to {label} for <strong className="text-slate-900">{brandName}</strong>? It will go live immediately.
               </p>
+              {platform === 'tiktok' && (
+                <p className="flex items-start gap-2 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-6">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  TikTok posts stay private (SELF_ONLY) until the app clears TikTok's audit — this will not be publicly visible yet. Publishing can also take up to ~2 minutes.
+                </p>
+              )}
               <div className="flex gap-3">
                 <button onClick={() => setPublishConfirm(null)} disabled={publishing} className="flex-1 py-3.5 rounded-2xl border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 transition disabled:opacity-40">Cancel</button>
                 <button onClick={confirmPublish} disabled={publishing} className="flex-1 py-3.5 rounded-2xl bg-slate-900 text-white font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-emerald-600 transition disabled:opacity-60">
@@ -1507,7 +1523,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                               <AlertTriangle size={16} className="text-amber-500 shrink-0" />
                               <p className="text-[12px] font-bold text-amber-800 flex-1 min-w-[180px]">
                                 {noneConnected
-                                  ? `No social platforms are connected for ${brand?.name || 'this brand'}. Connect Instagram or Facebook to publish directly — you can still copy the text for Meta Business Suite.`
+                                  ? `No social platforms are connected for ${brand?.name || 'this brand'}. Connect ${WIRED_PUBLISH_PLATFORMS.map(p => PLATFORM_LABEL[p]).join(', ')} to publish directly — you can still copy the text for Meta Business Suite.`
                                   : `${missing.map(p => PLATFORM_LABEL[p]).join(' & ')} ${missing.length > 1 ? 'are' : 'is'} not connected for ${brand?.name || 'this brand'}. Connect to publish directly.`}
                               </p>
                               <button
@@ -1535,7 +1551,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                                     <button type="button" onClick={() => copyText(text, `${draft.id}_${plat}`)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
                                       {copiedKey === `${draft.id}_${plat}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy</>}
                                     </button>
-                                    {(plat === 'instagram' || plat === 'facebook') && renderPublishControl(draft, plat)}
+                                    {(plat === 'instagram' || plat === 'facebook' || plat === 'tiktok') && renderPublishControl(draft, plat)}
                                     {(plat === 'x' || plat === 'linkedin') && (
                                       <span title="Direct publishing for this platform isn't connected yet — copy the text for now" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-wider cursor-default">
                                         <Clock size={12} /> Publish soon
@@ -1546,6 +1562,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                                 <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-6 text-sm font-medium" value={text} onChange={(e) => updateDraftVersion(draft.id, plat, e.target.value)} />
                                 {plat === 'instagram' && getDraftMediaUrls(draft).length === 0 && (
                                   <p className="mt-2 text-[10px] font-bold text-amber-600 flex items-center gap-1.5"><AlertTriangle size={11} /> Import media below — Instagram requires it to publish.</p>
+                                )}
+                                {plat === 'tiktok' && getDraftMediaUrls(draft).length === 0 && (
+                                  <p className="mt-2 text-[10px] font-bold text-amber-600 flex items-center gap-1.5"><AlertTriangle size={11} /> Import media below — TikTok requires it to publish, there is no text-only TikTok post.</p>
+                                )}
+                                {plat === 'tiktok' && (
+                                  <p className="mt-2 text-[10px] font-bold text-slate-400 flex items-center gap-1.5"><Info size={11} /> TikTok posts stay private (SELF_ONLY) until the app clears TikTok's audit.</p>
                                 )}
                               </div>
                             );

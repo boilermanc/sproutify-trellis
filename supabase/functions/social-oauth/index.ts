@@ -185,6 +185,44 @@ const PLATFORM_CONFIGS: Record<string, PlatformOAuthConfig> = {
     },
   },
 
+  // ── TikTok — OAuth 2.0 (Login Kit) ──────────────────────
+  tiktok: {
+    authorizeUrl: "https://www.tiktok.com/v2/auth/authorize/",
+    tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
+    defaultScopes: [
+      "user.info.basic",
+      "video.publish",
+      "video.upload",
+    ],
+    buildAuthUrl(appId, state, scopes) {
+      // TikTok uses client_key, not client_id — the single most common integration bug.
+      const params = new URLSearchParams({
+        client_key: appId,
+        redirect_uri: CALLBACK_URL,
+        state,
+        scope: scopes.join(","),
+        response_type: "code",
+      });
+      return `${this.authorizeUrl}?${params.toString()}`;
+    },
+    buildTokenBody(appId, appSecret, code) {
+      return new URLSearchParams({
+        client_key: appId,
+        client_secret: appSecret,
+        redirect_uri: CALLBACK_URL,
+        code,
+        grant_type: "authorization_code",
+      });
+    },
+    extractTokens(data) {
+      return {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || undefined,
+        expires_in: data.expires_in,
+      };
+    },
+  },
+
   // ── LinkedIn — OAuth 2.0 ────────────────────────────────
   linkedin: {
     authorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
@@ -341,7 +379,7 @@ Deno.serve(async (req: Request) => {
       if (!PLATFORM_CONFIGS[platform]) {
         return errorPage(
           "Invalid Platform",
-          `"${platform}" is not a supported platform. Use: instagram, facebook, x, or linkedin.`
+          `"${platform}" is not a supported platform. Use: instagram, facebook, x, linkedin, or tiktok.`
         );
       }
 
@@ -542,7 +580,8 @@ Deno.serve(async (req: Request) => {
       try {
         platformMetadata = await fetchPlatformMetadata(
           platform,
-          tokens.access_token
+          tokens.access_token,
+          tokenData
         );
       } catch (err) {
         console.error(`Metadata fetch failed for ${platform}:`, err);
@@ -609,7 +648,8 @@ Deno.serve(async (req: Request) => {
 
 async function fetchPlatformMetadata(
   platform: string,
-  accessToken: string
+  accessToken: string,
+  tokenData?: Record<string, any>
 ): Promise<Record<string, any>> {
   switch (platform) {
     case "instagram": {
@@ -714,6 +754,38 @@ async function fetchPlatformMetadata(
         profile_picture_url: meData.picture || null,
         connected_at: new Date().toISOString(),
       };
+    }
+
+    case "tiktok": {
+      // open_id is the identifier publishing depends on — TikTok returns it at the
+      // top level of the token response, so grab it before the user-info call
+      // (which can fail independently) so we never lose it.
+      const openId = tokenData?.open_id ?? null;
+      try {
+        const meRes = await fetch(
+          "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name,avatar_url,username",
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        const meData = await meRes.json();
+        const user = meData?.data?.user;
+
+        if (user) {
+          return {
+            open_id: user.open_id || openId,
+            union_id: user.union_id || null,
+            username: user.username || null,
+            display_name: user.display_name || null,
+            avatar_url: user.avatar_url || null,
+            connected_at: new Date().toISOString(),
+          };
+        }
+      } catch (err) {
+        console.error("TikTok user-info fetch failed:", err);
+      }
+
+      // User-info call failed or returned no user — a credential without open_id
+      // can't publish, so still persist it from the token response if we have it.
+      return { open_id: openId, connected_at: new Date().toISOString() };
     }
 
     default:

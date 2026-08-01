@@ -3,7 +3,7 @@
 // one minimal authenticated call to the platform API. The decrypted token is read
 // server-side via get_social_credential and never reaches the browser.
 //
-// Call: POST /test-social-connection  { "branch_id": "<uuid>", "platform": "instagram|facebook|x|linkedin" }
+// Call: POST /test-social-connection  { "branch_id": "<uuid>", "platform": "instagram|facebook|x|linkedin|tiktok" }
 //
 // Returns: { ok: boolean, username?: string, error?: string }
 //
@@ -29,7 +29,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const VALID_PLATFORMS = ["instagram", "facebook", "x", "linkedin"];
+const VALID_PLATFORMS = ["instagram", "facebook", "x", "linkedin", "tiktok"];
 
 // One minimal authenticated read per platform → { ok, username?, error? }.
 async function probe(platform: string, token: string, meta: any): Promise<{ ok: boolean; username?: string; error?: string }> {
@@ -72,6 +72,20 @@ async function probe(platform: string, token: string, meta: any): Promise<{ ok: 
         return { ok: false, error: data?.message || `LinkedIn API returned ${res.status}` };
       }
       return { ok: true, username: data?.name ?? data?.email ?? undefined };
+    }
+
+    if (platform === "tiktok") {
+      const res = await fetch(
+        "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name,avatar_url,username",
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      if (!res.ok || data?.error?.code && data.error.code !== "ok") {
+        return { ok: false, error: data?.error?.message || `TikTok API returned ${res.status}` };
+      }
+      const user = data?.data?.user;
+      if (!user) return { ok: false, error: "TikTok API returned no user data" };
+      return { ok: true, username: user.username ?? user.display_name ?? undefined };
     }
 
     return { ok: false, error: `Unsupported platform: ${platform}` };

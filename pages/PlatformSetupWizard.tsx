@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Instagram, Twitter, Linkedin, Facebook,
+  Instagram, Twitter, Linkedin, Facebook, Music,
   ChevronRight, ChevronLeft, ExternalLink, Copy, Check,
   ShieldCheck, AlertTriangle, Loader2, CheckCircle2,
   Eye, EyeOff, Sparkles, ArrowRight, Globe, Lock,
@@ -11,7 +11,7 @@ import { Branch, SocialPlatform, SocialConnectionStatus } from '../types';
 import { saveAppCredentials, openSocialOAuthPopup, checkConnections, disconnectPlatform, testConnection } from '../services/socialService';
 
 // ——— Types ————————————————————————————————————————————————
-type Platform = 'instagram' | 'x' | 'linkedin' | 'facebook';
+type Platform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok';
 
 interface WizardStep {
   id: string;
@@ -621,6 +621,136 @@ const getLinkedInSteps = (supabaseUrl: string): WizardStep[] => [
   },
 ];
 
+// ——— TikTok Steps ——————————————————————————————————————————
+const getTikTokSteps = (supabaseUrl: string): WizardStep[] => [
+  {
+    id: 'tiktok-account',
+    title: 'Create a TikTok for Developers App',
+    subtitle: 'Register Trellis on the TikTok for Developers portal',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>
+          Go to <strong>TikTok for Developers</strong> and sign in with the TikTok account that will own the app.
+        </Step>
+        <div className="pl-12">
+          <ExtLink href="https://developers.tiktok.com/">Open TikTok for Developers</ExtLink>
+        </div>
+        <Step n={2}>
+          Click <strong>"Manage apps"</strong> then <strong>"Connect an app"</strong> and fill in the app details:
+        </Step>
+        <div className="pl-12">
+          <div className="bg-slate-50 rounded-xl p-5 border border-slate-200 space-y-3">
+            <div className="flex items-center space-x-3">
+              <span className="text-[9px] font-black text-slate-400 uppercase w-28">App Name:</span>
+              <span className="text-sm font-bold text-slate-800">Sproutify Trellis</span>
+            </div>
+            <div className="flex items-center space-x-3">
+              <span className="text-[9px] font-black text-slate-400 uppercase w-28">Category:</span>
+              <span className="text-sm font-bold text-slate-800">Social Media Management / Marketing</span>
+            </div>
+          </div>
+        </div>
+        <Callout type="warning">
+          A new TikTok app is <strong>unaudited</strong> by default. Read the next step carefully — unaudited apps
+          have real, hard limits on what they can post before TikTok reviews the app.
+        </Callout>
+      </div>
+    ),
+  },
+  {
+    id: 'tiktok-products',
+    title: 'Add Login Kit & Content Posting API',
+    subtitle: 'Enable the products Trellis needs, and know the unaudited limits',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>
+          From your app's dashboard, add the <strong>"Login Kit"</strong> product — this powers the OAuth popup Trellis uses to connect.
+        </Step>
+        <Step n={2}>
+          Also add the <strong>"Content Posting API"</strong> product — this is what lets Trellis publish video and photo posts.
+        </Step>
+        <Step n={3}>
+          Request the following scopes on the app:
+        </Step>
+        <div className="pl-12">
+          <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+            {[
+              { scope: 'user.info.basic', desc: 'Read basic profile info (open_id, username, avatar)', required: true },
+              { scope: 'video.publish', desc: 'Publish videos directly to the account', required: true },
+              { scope: 'video.upload', desc: 'Upload video/photo content for posting', required: true },
+            ].map((perm, i) => (
+              <div key={perm.scope} className={`flex items-center justify-between px-5 py-3.5 ${i > 0 ? 'border-t border-slate-200' : ''}`}>
+                <div className="flex items-center space-x-3">
+                  <code className="text-xs font-mono font-bold text-slate-800 bg-white px-2 py-1 rounded border border-slate-200">{perm.scope}</code>
+                  {perm.required && <span className="text-[8px] font-black uppercase text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">Required</span>}
+                </div>
+                <span className="text-[10px] text-slate-500 font-bold">{perm.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <Callout type="warning">
+          <strong>Until this app passes TikTok's Content Posting API audit, every post it makes is forced to
+          "SELF_ONLY" (private) visibility</strong> — it cannot post publicly. On top of that, the TikTok account
+          being posted to must itself be set to private, and only <strong>5 users total can post through the app
+          per 24 hours</strong>. If you try to publish a public post before the audit, TikTok rejects it with a
+          <code className="mx-1 bg-white px-1.5 py-0.5 rounded text-[10px] border border-amber-200">403 unaudited_client_can_only_post_to_private_accounts</code>
+          error. Plan for the audit before you rely on TikTok for real campaigns.
+        </Callout>
+      </div>
+    ),
+  },
+  {
+    id: 'tiktok-redirect',
+    title: 'Configure the Redirect URI',
+    subtitle: 'Tell TikTok where to send users after they authorize — and know the media-URL catch',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>
+          In the <strong>Login Kit</strong> product settings, find <strong>"Redirect URI"</strong> and add:
+        </Step>
+        <div className="pl-12">
+          <CopyBlock
+            label="Redirect URI"
+            value={`${supabaseUrl}/functions/v1/social-oauth/callback`}
+          />
+        </div>
+        <Step n={2}>
+          Save your changes. This is the same shared callback endpoint every platform in Trellis uses.
+        </Step>
+        <Callout type="warning">
+          <strong>TikTok requires domain/URL ownership verification for any media URL it fetches during
+          publishing.</strong> Supabase Storage URLs live on <code className="mx-1 bg-white px-1.5 py-0.5 rounded text-[10px] border border-amber-200">supabase.co</code>,
+          a domain Trellis doesn't own and can't verify by DNS. Photo/video posting will not work until media is
+          served from a domain we control — for example a <code className="mx-1 bg-white px-1.5 py-0.5 rounded text-[10px] border border-amber-200">media.sproutify.app</code> proxy
+          in front of Storage. Connecting the account will still work without this, but publishing will fail
+          until that proxy exists.
+        </Callout>
+      </div>
+    ),
+  },
+  {
+    id: 'tiktok-credentials',
+    title: 'Copy Your Credentials',
+    subtitle: 'Grab the Client Key and Client Secret from TikTok for Developers',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>
+          On your app's <strong>"Basic Information"</strong> tab, copy the <strong>Client Key</strong>.
+        </Step>
+        <Step n={2}>
+          Reveal and copy the <strong>Client Secret</strong> next to it.
+        </Step>
+        <Callout type="info">
+          TikTok's OAuth calls this <code className="bg-white px-1.5 py-0.5 rounded text-[10px] border border-blue-200">client_key</code>,
+          not <code className="bg-white px-1.5 py-0.5 rounded text-[10px] border border-blue-200">client_id</code> like most other platforms.
+          Trellis handles that naming difference for you — just paste the Client Key and Client Secret exactly as shown.
+        </Callout>
+      </div>
+    ),
+  },
+];
+
 // ——— Platform Configs ——————————————————————————————————————
 const getPlatformConfigs = (supabaseUrl: string): Record<Platform, PlatformConfig> => ({
   instagram: {
@@ -670,6 +800,18 @@ const getPlatformConfigs = (supabaseUrl: string): Record<Platform, PlatformConfi
     devConsoleName: 'Meta Developer Console',
     credentialLabels: { key: 'Meta App ID', secret: 'Meta App Secret' },
     steps: getMetaSteps(supabaseUrl), // Same Meta app, different permissions
+  },
+  tiktok: {
+    id: 'tiktok',
+    name: 'TikTok',
+    icon: Music,
+    color: 'text-slate-900',
+    bgColor: 'bg-gradient-to-br from-slate-50 to-slate-100',
+    borderColor: 'border-slate-300',
+    devConsoleUrl: 'https://developers.tiktok.com/',
+    devConsoleName: 'TikTok for Developers',
+    credentialLabels: { key: 'Client Key', secret: 'Client Secret' },
+    steps: getTikTokSteps(supabaseUrl),
   },
 });
 
@@ -856,7 +998,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
 
   // ——— Management View (landing dashboard) ————————————————————————
   if (mode === 'manage') {
-    const PLATFORM_ORDER: Platform[] = ['instagram', 'facebook', 'x', 'linkedin'];
+    const PLATFORM_ORDER: Platform[] = ['instagram', 'facebook', 'x', 'linkedin', 'tiktok'];
     const statusMeta = {
       active: { label: 'Connected', cls: 'bg-emerald-100 text-emerald-700' },
       pending: { label: 'Saved · not connected', cls: 'bg-amber-100 text-amber-700' },

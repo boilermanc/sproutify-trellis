@@ -1,0 +1,398 @@
+{
+  "name": "Trellis: TikTok Token Refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/social_credentials",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,branch_id,platform,token_expires_at,status"
+            },
+            {
+              "name": "platform",
+              "value": "eq.tiktok"
+            },
+            {
+              "name": "status",
+              "value": "eq.active"
+            },
+            {
+              "name": "token_expires_at",
+              "value": "=lt.{{ new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Expiring Credentials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -680,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "alwaysOutputData": true,
+      "notes": "Anything expiring within 12h. Access tokens live 24h and the job runs every 6h, so a token gets several chances before it lapses."
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = [];\nfor (const item of $input.all()) {\n  const v = item.json;\n  if (Array.isArray(v)) { rows.push(...v); } else if (v) { rows.push(v); }\n}\nreturn rows.filter(r => r && r.branch_id).map(r => ({ json: r }));",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Normalize Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "any",
+              "leftValue": "={{ !!$json.branch_id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Any To Refresh?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "Nothing To Refresh",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_branch_id",
+              "value": "={{ $json.branch_id }}"
+            },
+            {
+              "name": "p_platform",
+              "value": "tiktok"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Full Credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -20,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('Normalize Rows').item.json;\nconst cred = $input.item.json || {};\nif (!cred.success) throw new Error('Credential lookup failed for branch ' + row.branch_id + ': ' + (cred.error || 'unknown'));\nconst refreshToken = (cred.refresh_token || '').trim();\nif (!refreshToken) throw new Error('No refresh_token stored for branch ' + row.branch_id + ' - the brand must reconnect TikTok');\nconst clientKey = (cred.app_id || '').trim();\nconst clientSecret = (cred.app_secret || '').trim();\nif (!clientKey || !clientSecret) throw new Error('client_key/client_secret missing for branch ' + row.branch_id);\nreturn { json: { branch_id: row.branch_id, client_key: clientKey, client_secret: clientSecret, refresh_token: refreshToken } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Build Refresh Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/oauth/token/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_key",
+              "value": "={{ $json.client_key }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $json.client_secret }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $json.refresh_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Refresh Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        420,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Build Refresh Request').item.json;\nconst res = $input.item.json || {};\nif (res.error && res.error !== 'ok' && typeof res.error === 'string') {\n  throw new Error('Refresh failed for branch ' + src.branch_id + ': ' + (res.error_description || res.error));\n}\nconst accessToken = res.access_token;\nif (!accessToken) throw new Error('Refresh returned no access_token for branch ' + src.branch_id);\n// TikTok ROTATES refresh tokens: the response may carry a different one, and the\n// old one stops working. Storing only the access token silently kills the\n// connection a day later.\nconst newRefresh = res.refresh_token || src.refresh_token;\nconst expiresAt = new Date(Date.now() + (Number(res.expires_in || 86400) * 1000)).toISOString();\nconsole.log('[T1] refreshed TikTok token for branch ' + src.branch_id + ', expires ' + expiresAt + ', refresh_token rotated: ' + (res.refresh_token && res.refresh_token !== src.refresh_token));\nreturn { json: { branch_id: src.branch_id, access_token: accessToken, refresh_token: newRefresh, token_expires_at: expiresAt } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Prepare Stored Tokens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/upsert_social_credential",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_branch_id: $json.branch_id, p_platform: 'tiktok', p_access_token: $json.access_token, p_refresh_token: $json.refresh_token, p_token_expires_at: $json.token_expires_at, p_status: 'active' }) }}",
+        "options": {}
+      },
+      "name": "Store Refreshed Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        860,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Re-encrypts both tokens via the RPC. Never writes social_credentials directly -- the columns are encrypted at rest."
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: TikTok Token Refresh\n\n**Without this workflow, TikTok publishing breaks every 24 hours.**\n\nTikTok access tokens live 24h (Meta's are long-lived, so nothing else in Trellis\nneeds this). Refresh tokens last 365 days but **rotate on every refresh** -- the\nresponse can carry a NEW refresh_token and the old one stops working, so we\nalways persist whatever comes back.\n\nRuns every 6h, refreshes anything expiring within 12h, so each token gets\nseveral attempts before it lapses.\n\n### Setup after import\nConfirm the `Sproutify Trellis` Supabase credential on the three HTTP nodes and\nactivate. Nothing else -- client_key/client_secret come from each brand's own\nstored credential row, so this covers every brand automatically.\n\nIf a brand's refresh token is missing or rejected, that brand must reconnect\nTikTok in Settings > Platform Setup; the workflow raises a clear error naming\nthe branch.",
+        "height": 460,
+        "width": 460
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        -240
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Expiring Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Expiring Credentials": {
+      "main": [
+        [
+          {
+            "node": "Normalize Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Rows": {
+      "main": [
+        [
+          {
+            "node": "Any To Refresh?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any To Refresh?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Full Credential",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nothing To Refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Full Credential": {
+      "main": [
+        [
+          {
+            "node": "Build Refresh Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Refresh Request": {
+      "main": [
+        [
+          {
+            "node": "Refresh Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Token": {
+      "main": [
+        [
+          {
+            "node": "Prepare Stored Tokens",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nothing To Refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Stored Tokens": {
+      "main": [
+        [
+          {
+            "node": "Store Refreshed Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

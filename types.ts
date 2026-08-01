@@ -1594,7 +1594,7 @@ export interface ScheduledPost {
   id: string;
   branch_id: string;
   branch_slug: string | null;
-  platform: 'instagram' | 'facebook';
+  platform: 'instagram' | 'facebook' | 'tiktok';
   caption: string;
   media_type: 'image' | 'video' | 'carousel';
   media_urls: string[];
@@ -1613,7 +1613,7 @@ export interface ScheduledPost {
 export interface NewScheduledPost {
   branch_id: string;
   branch_slug?: string | null;
-  platform: 'instagram' | 'facebook';
+  platform: 'instagram' | 'facebook' | 'tiktok';
   caption: string;
   media_type: 'image' | 'video' | 'carousel';
   media_urls: string[];

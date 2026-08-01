@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarClock, UploadCloud, ImagePlus, Loader2, X, Trash2, Clock,
-  CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook,
+  CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook, Music,
   Send, Sparkles, Info, RefreshCw, Image as ImageIcon, Pencil, Save, Zap,
   Eye, Bookmark, Share2, Users, MousePointerClick,
 } from 'lucide-react';
@@ -18,7 +18,7 @@ interface PostSchedulerProps {
 }
 
 type Cadence = 'daily' | 'weekdays' | 'every_2_days' | 'weekly';
-type Platform = 'instagram' | 'facebook';
+type Platform = 'instagram' | 'facebook' | 'tiktok';
 
 interface StagingRow {
   localId: string;
@@ -50,6 +50,7 @@ const CADENCE_OPTIONS: { value: Cadence; label: string }[] = [
 const PLATFORM_META: Record<Platform, { label: string; icon: typeof Instagram; color: string }> = {
   instagram: { label: 'Instagram', icon: Instagram, color: 'text-pink-500' },
   facebook: { label: 'Facebook', icon: Facebook, color: 'text-blue-500' },
+  tiktok: { label: 'TikTok', icon: Music, color: 'text-slate-900' },
 };
 
 const STATUS_CHIP: Record<ScheduledPost['status'], { label: string; className: string; icon: typeof Clock }> = {
@@ -73,15 +74,17 @@ function editBlockedReason(status: ScheduledPost['status']): string | null {
   }
 }
 
-// Instagram genuinely requires media; Facebook Page posts can go out as
-// caption-only (the publish worker maps an empty media_urls to a text
-// feed post). This is the single source of truth for both the Save
-// button's disabled state and the per-row validation message, so they
-// can never drift apart.
+// Instagram and TikTok genuinely require media (TikTok has no text-only post
+// at all); Facebook Page posts can go out as caption-only (the publish worker
+// maps an empty media_urls to a text feed post). This is the single source of
+// truth for both the Save button's disabled state and the per-row validation
+// message, so they can never drift apart.
 function rowBlockingReason(row: StagingRow): string | null {
   if (row.uploading) return 'still uploading';
   if (!row.caption.trim()) return 'needs a caption';
-  if (row.platform === 'instagram' && !row.url) return 'needs an image — Instagram requires media';
+  if ((row.platform === 'instagram' || row.platform === 'tiktok') && !row.url) {
+    return `needs an image — ${row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} requires media`;
+  }
   return null;
 }
 
@@ -589,7 +592,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             {/* Staging rows */}
             <div className="space-y-3">
               {rows.map(row => {
-                const needsImage = row.platform === 'instagram' && !row.url;
+                const needsImage = (row.platform === 'instagram' || row.platform === 'tiktok') && !row.url;
                 const imageOptional = row.platform === 'facebook' && !row.url;
                 return (
                 <div key={row.localId} className="flex flex-col lg:flex-row gap-3 border border-slate-200 rounded-xl p-3">
@@ -622,6 +625,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                       >
                         <option value="instagram">Instagram</option>
                         <option value="facebook">Facebook</option>
+                        <option value="tiktok">TikTok</option>
                       </select>
                       <input
                         type="datetime-local"
@@ -659,13 +663,19 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                     {needsImage && (
                       <p className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        Image required for Instagram — upload one, retry the failed upload, or switch this row to Facebook.
+                        Image required for {row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} — upload one, retry the failed upload, or switch this row to Facebook.
                       </p>
                     )}
                     {imageOptional && (
                       <p className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
                         <Info className="w-3.5 h-3.5 shrink-0" />
                         Image optional for Facebook — this row can go out as a caption-only post.
+                      </p>
+                    )}
+                    {row.platform === 'tiktok' && (
+                      <p className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        TikTok posts stay private (SELF_ONLY) until the app clears TikTok's audit — this row will not be publicly visible.
                       </p>
                     )}
                   </div>

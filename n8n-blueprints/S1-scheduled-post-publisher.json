@@ -210,34 +210,69 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
+        "rules": {
+          "values": [
             {
-              "id": "is-instagram",
-              "leftValue": "={{ $json.platform }}",
-              "rightValue": "instagram",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "route-instagram",
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "instagram",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "instagram"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "route-facebook",
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "facebook",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "facebook"
             }
-          ],
-          "combinator": "and"
+          ]
         },
-        "options": {}
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "tiktok"
+        }
       },
       "name": "Route by Platform",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
       "position": [
         -40,
         0
-      ]
+      ],
+      "notes": "Explicit three-way routing. The previous IF sent 'anything not instagram' to Facebook, so adding a platform would have silently posted it to the wrong network."
     },
     {
       "parameters": {
@@ -409,7 +444,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Three outcomes, not two. Treating \"we couldn't read the reply\" as a failure is\n// dangerous: 'failed' invites a retry, and a retry double-posts to a real account.\n// Only an explicit success or an explicit failure is trusted; anything else goes\n// to a human as needs_review.\nconst res = $input.item.json || {};\nconst status = Number(res.statusCode || res.status || 0);\nconst rawBody = typeof res.body === 'string' ? res.body : JSON.stringify(res.body ?? '');\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\n\nlet parsed = null;\ntry { parsed = rawBody ? JSON.parse(rawBody) : null; } catch (e) { parsed = null; }\n\nif (parsed && parsed.success === true) {\n  return { json: { id: claimedId, outcome: 'published', post_id: parsed.post_id || null, last_error: null } };\n}\nif (parsed && parsed.success === false) {\n  return { json: { id: claimedId, outcome: 'failed', post_id: null,\n    last_error: String(parsed.error || 'Publish webhook reported failure').slice(0, 500) } };\n}\nconst detail = rawBody ? rawBody.slice(0, 300) : ('HTTP ' + status + ' with empty body');\nreturn { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n  last_error: ('Publish reply could not be parsed (HTTP ' + status + '). CHECK THE ACCOUNT - this may already be live. Reply was: ' + detail).slice(0, 500) } };"
+        "jsCode": "// Three outcomes, not two. Treating \"we couldn't read the reply\" as a failure is\n// dangerous: 'failed' invites a retry, and a retry double-posts to a real account.\n// Only an explicit success or an explicit failure is trusted; anything else goes\n// to a human as needs_review.\nconst res = $input.item.json || {};\nconst status = Number(res.statusCode || res.status || 0);\nconst rawBody = typeof res.body === 'string' ? res.body : JSON.stringify(res.body ?? '');\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\n\nlet parsed = null;\ntry { parsed = rawBody ? JSON.parse(rawBody) : null; } catch (e) { parsed = null; }\n\nif (parsed && parsed.success === true) {\n  return { json: { id: claimedId, outcome: 'published', post_id: parsed.post_id || null, last_error: null } };\n}\n// A publisher can explicitly say \"I could not confirm this\" -- the TikTok one\n// does that when it stops polling while the post is still processing. That is\n// needs_review, NOT failed: a retry could double-post.\nif (parsed && parsed.success === false && parsed.needs_review === true) {\n  return { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n    last_error: String(parsed.error || 'Publisher could not confirm the post').slice(0, 500) } };\n}\nif (parsed && parsed.success === false) {\n  return { json: { id: claimedId, outcome: 'failed', post_id: null,\n    last_error: String(parsed.error || 'Publish webhook reported failure').slice(0, 500) } };\n}\nconst detail = rawBody ? rawBody.slice(0, 300) : ('HTTP ' + status + ' with empty body');\nreturn { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n  last_error: ('Publish reply could not be parsed (HTTP ' + status + '). CHECK THE ACCOUNT - this may already be live. Reply was: ' + detail).slice(0, 500) } };"
       },
       "name": "Interpret Publish Result",
       "type": "n8n-nodes-base.code",
@@ -526,6 +561,43 @@
         }
       },
       "notes": "Terminal, and deliberately NOT 'failed'. The post probably went out; a human checks the account and decides. Never auto-retried."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.sproutify.app/webhook/trellis-tiktok-publish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ branch_id: $json.branch_id, caption: $json.caption, media_type: $json.media_type || 'image', media_urls: $json.media_urls || [], scheduled_for: null }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Publish TikTok",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        200,
+        260
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "TikTok always requires media and can take up to ~2 minutes: the publisher polls TikTok to a terminal state before replying. A 'needs_review' reply means it may yet publish - never auto-retry.",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -624,6 +696,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Publish TikTok",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -704,6 +783,24 @@
         [
           {
             "node": "Mark Needs Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish TikTok": {
+      "main": [
+        [
+          {
+            "node": "Interpret Publish Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
             "type": "main",
             "index": 0
           }

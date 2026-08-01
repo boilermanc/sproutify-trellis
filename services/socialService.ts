@@ -29,7 +29,7 @@ export async function saveCredential(
     return { success: false, error: 'Missing required fields' };
   }
 
-  const { error } = await supabase.rpc('upsert_social_credential', {
+  const { data, error } = await supabase.rpc('upsert_social_credential', {
     p_branch_id: branchId,
     p_platform: platform,
     p_access_token: tokens.access_token,
@@ -42,6 +42,12 @@ export async function saveCredential(
 
   if (error) {
     return { success: false, error: error.message };
+  }
+  // The RPC signals a rejected write (e.g. an invalid platform) by RETURNING
+  // { success: false, error } rather than raising — a PostgREST-level `error`
+  // check alone would miss that and report success while nothing was saved.
+  if (data && (data as any).success === false) {
+    return { success: false, error: (data as any).error || 'Failed to save credential' };
   }
   return { success: true };
 }
@@ -66,7 +72,7 @@ export async function saveAppCredentials(
     return { success: false, error: 'App ID and App Secret are required' };
   }
 
-  const { error } = await supabase.rpc('upsert_social_credential', {
+  const { data, error } = await supabase.rpc('upsert_social_credential', {
     p_branch_id: branchId,
     p_platform: platform,
     p_access_token: null,        // app creds only — no user token yet
@@ -77,6 +83,11 @@ export async function saveAppCredentials(
 
   if (error) {
     return { success: false, error: error.message };
+  }
+  // Same gotcha as saveCredential above — a rejected platform comes back as
+  // { success: false, error } inside `data`, not as a PostgREST `error`.
+  if (data && (data as any).success === false) {
+    return { success: false, error: (data as any).error || 'Failed to save app credentials' };
   }
   return { success: true };
 }
@@ -288,6 +299,56 @@ export async function publishToFacebook(
     branch_id: branchId,
     caption,
     image_url: imageUrl,      // optional — null = text-only Facebook post
+    scheduled_for: scheduledFor,
+  });
+}
+
+// ─── 4c. publishToTikTok ────────────────────────────────────────────
+// Publishes a TikTok video, single photo, or photo carousel (caption + media)
+// for a branch via the TikTok n8n webhook. Unlike Instagram/Facebook, TikTok
+// has NO text-only post — media is always required. Publishing on TikTok's
+// side is asynchronous (the workflow polls a publish_id until terminal), so
+// this call can take up to ~2 minutes; the caller must show an in-progress
+// state rather than assuming a fast round trip.
+//
+// Until the app clears TikTok's audit, every post is forced to SELF_ONLY
+// (private) visibility on TikTok's side — that is an external constraint
+// this function cannot change; callers must surface it in the UI.
+//
+// Payload contract (matches the deployed trellis-tiktok-publish webhook):
+//   { branch_id, caption, media_type, media_urls, scheduled_for }
+// - branch_id MUST be the branch UUID.
+// - media_urls is never empty — TikTok requires at least one media item.
+export async function publishToTikTok(
+  branchId: string,
+  caption: string,
+  mediaUrls: string[],
+  mediaType: 'video' | 'image' | 'carousel',
+  scheduledFor: string | null = null,
+  webhookUrl?: string
+): Promise<PublishOutcome> {
+  if (!branchId) return { ok: false, error: 'Branch ID is required' };
+  if (!caption) return { ok: false, error: 'Caption is required' };
+  if (!mediaUrls || mediaUrls.length === 0) {
+    return { ok: false, error: 'Media is required to publish to TikTok — there is no text-only TikTok post' };
+  }
+  if (mediaType === 'video' && mediaUrls.length !== 1) {
+    return { ok: false, error: 'A TikTok video post needs exactly one video URL' };
+  }
+  if (mediaType === 'carousel' && (mediaUrls.length < 2 || mediaUrls.length > 35)) {
+    return { ok: false, error: 'A TikTok photo carousel needs between 2 and 35 images' };
+  }
+
+  const url = webhookUrl || WEBHOOK_SPECS.tiktok_publish;
+  if (!url) {
+    return { ok: false, error: 'TikTok publish webhook URL not configured' };
+  }
+
+  return postToPublishWebhook(url, {
+    branch_id: branchId,
+    caption,
+    media_type: mediaType,
+    media_urls: mediaUrls,
     scheduled_for: scheduledFor,
   });
 }

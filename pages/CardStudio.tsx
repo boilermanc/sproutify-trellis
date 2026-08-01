@@ -26,7 +26,7 @@ interface CardStudioProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-type Platform = 'instagram' | 'facebook';
+type Platform = 'instagram' | 'facebook' | 'tiktok';
 
 interface ConceptCardState {
   concept: CardConceptWithRef;
@@ -132,7 +132,7 @@ interface LibraryImage {
 // ────────────────────────────────────────────────────────────────────
 const DRAFT_STORAGE_KEY = 'trellis_card_studio_draft_v1';
 const VALID_TEMPLATES = new Set(['verse', 'statement', 'grid', 'editorial']);
-const VALID_PLATFORMS = new Set(['instagram', 'facebook']);
+const VALID_PLATFORMS = new Set(['instagram', 'facebook', 'tiktok']);
 
 interface PersistedCardDraftItem {
   concept: CardConceptWithRef;
@@ -1173,6 +1173,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                         >
                           <option value="instagram">Instagram</option>
                           <option value="facebook">Facebook</option>
+                          <option value="tiktok">TikTok</option>
                         </select>
                         <div className="flex items-center gap-1">
                           <CalendarClock className="w-3.5 h-3.5 text-slate-400" />
@@ -1183,6 +1184,12 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                             className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                           />
                         </div>
+                        {card.platform === 'tiktok' && (
+                          <p className="basis-full flex items-center gap-1.5 text-[10px] font-bold text-amber-600">
+                            <Info className="w-3 h-3 shrink-0" />
+                            TikTok posts stay private (SELF_ONLY) until the app clears TikTok's audit.
+                          </p>
+                        )}
                       </div>
                     )}
 

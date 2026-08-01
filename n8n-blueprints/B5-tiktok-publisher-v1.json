@@ -1,0 +1,908 @@
+{
+  "name": "Trellis: TikTok Publisher (Video & Photo)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-tiktok-publish",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1600,
+        300
+      ],
+      "webhookId": "3b7e91c4-8a2f-4d16-9c05-1e8b7d4a6f22",
+      "notes": "Contract matches publishToTikTok() in services/socialService.ts: { branch_id (UUID), caption, media_type: video|image|carousel, media_urls: string[], scheduled_for }. TikTok has NO text-only post -- media_urls is always required."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "v0",
+              "leftValue": "={{ $json.body.branch_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.body.caption }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1380,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: 'Missing required fields: branch_id and caption are required' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "name": "Error: Missing Fields",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -1160,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_branch_id",
+              "value": "={{ $json.body.branch_id }}"
+            },
+            {
+              "name": "p_platform",
+              "value": "tiktok"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch TikTok Credentials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1160,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Trellis Supabase Secret Key"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "After importing, RE-ATTACH the Header Auth credential here (apikey = Hub service_role key). n8n links credentials by name, so imports arrive dangling and every publish fails with n8n's generic 'Credentials not found' before any logic runs."
+    },
+    {
+      "parameters": {
+        "jsCode": "const credentials = $input.first().json;\nconst body = $('Webhook').first().json.body || {};\nif (!credentials.success) throw new Error('Credential lookup failed: ' + (credentials.error || 'unknown error'));\nconst accessToken = (credentials.access_token || '').trim();\nif (!accessToken) throw new Error('No TikTok access token stored - reconnect this brand');\n// TikTok access tokens live only 24 hours. T1-tiktok-token-refresh keeps them\n// fresh; if it is not running this is where the failures show up.\nconst expiresAt = credentials.token_expires_at ? new Date(credentials.token_expires_at) : null;\nif (expiresAt && expiresAt.getTime() < Date.now()) {\n  throw new Error('TikTok access token expired at ' + credentials.token_expires_at + ' - is the T1 refresh workflow active?');\n}\nconst caption = (body.caption || '').trim();\nif (!caption) throw new Error('caption is required');\nconst mediaUrls = (Array.isArray(body.media_urls) ? body.media_urls : [])\n  .filter(u => typeof u === 'string' && u.trim());\nif (!mediaUrls.length) throw new Error('TikTok has no text-only post - media_urls is required');\nconst mediaType = body.media_type || (mediaUrls.length > 1 ? 'carousel' : 'image');\nif (mediaType === 'video' && mediaUrls.length !== 1) throw new Error('A TikTok video requires exactly one URL');\nif (mediaType === 'carousel' && (mediaUrls.length < 2 || mediaUrls.length > 35)) throw new Error('A TikTok photo carousel requires 2 to 35 images');\n// TikTok truncates hard: 2200 for a video title, 90 for a photo post title.\nconst isPhoto = mediaType !== 'video';\nconst titleCap = isPhoto ? 90 : 2200;\nconst title = caption.slice(0, titleCap);\nreturn [{ json: {\n  access_token: accessToken,\n  branch_id: body.branch_id,\n  caption: caption,\n  title: title,\n  description: isPhoto ? caption.slice(0, 4000) : '',\n  media_type: mediaType,\n  media_urls: mediaUrls,\n  is_photo: isPhoto,\n  requested_privacy: body.privacy_level || null\n} }];",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Extract & Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -940,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=UTF-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {}
+      },
+      "name": "Query Creator Info",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -720,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "TikTok REQUIRES this before any direct post. It returns the privacy levels this account may actually use, plus comment/duet/stitch locks that we must honour."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Extract & Normalize Request').first().json;\nconst res = $input.first().json || {};\nif (res.error && res.error.code && res.error.code !== 'ok') {\n  throw new Error('creator_info failed: ' + (res.error.message || res.error.code));\n}\nconst info = res.data || {};\nconst options = Array.isArray(info.privacy_level_options) ? info.privacy_level_options : [];\nif (!options.length) throw new Error('TikTok returned no privacy_level_options for this account');\n\n// Never silently publish MORE publicly than asked, and never silently downgrade\n// to private while reporting success -- either surprise is worse than a clear\n// error. An unaudited app only ever gets SELF_ONLY here, which is exactly the\n// signal the operator needs to see.\nconst requested = src.requested_privacy;\nlet privacy;\nif (requested) {\n  if (!options.includes(requested)) {\n    throw new Error('privacy_level ' + requested + ' is not available for this account. TikTok offers: ' + options.join(', ') + '. An app that has not passed TikTok\\'s Content Posting audit only ever gets SELF_ONLY.');\n  }\n  privacy = requested;\n} else {\n  privacy = options.includes('PUBLIC_TO_EVERYONE') ? 'PUBLIC_TO_EVERYONE' : options[0];\n}\n\nreturn [{ json: { ...src,\n  privacy_level: privacy,\n  privacy_options: options,\n  creator_nickname: info.creator_nickname || null,\n  creator_username: info.creator_username || null,\n  disable_comment: !!info.comment_disabled,\n  disable_duet: !!info.duet_disabled,\n  disable_stitch: !!info.stitch_disabled,\n  max_video_post_duration_sec: info.max_video_post_duration_sec || null\n} }];",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Choose Privacy & Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-photo",
+              "leftValue": "={{ $json.is_photo }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is Photo Post?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/content/init/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=UTF-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ media_type: 'PHOTO', post_mode: 'DIRECT_POST', post_info: { title: $json.title, description: $json.description, privacy_level: $json.privacy_level, disable_comment: $json.disable_comment, auto_add_music: true, brand_organic_toggle: true }, source_info: { source: 'PULL_FROM_URL', photo_images: $json.media_urls, photo_cover_index: 0 } }) }}",
+        "options": {}
+      },
+      "name": "Init Photo Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -60,
+        160
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Photos are PULL_FROM_URL ONLY -- there is no file-upload path for images. That makes TikTok URL-ownership verification mandatory: the image host must be a domain we have verified in the TikTok developer portal. Supabase Storage lives on supabase.co, which we cannot verify, so photo posts fail with 403 url_ownership_unverified until media is served from a domain we own."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/video/init/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=UTF-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ post_info: { title: $json.title, privacy_level: $json.privacy_level, disable_comment: $json.disable_comment, disable_duet: $json.disable_duet, disable_stitch: $json.disable_stitch, brand_organic_toggle: true }, source_info: { source: 'PULL_FROM_URL', video_url: $json.media_urls[0] } }) }}",
+        "options": {}
+      },
+      "name": "Init Video Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -60,
+        440
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "PULL_FROM_URL requires a verified URL. If URL verification is not in place, switch source_info to FILE_UPLOAD (video only) -- that path needs no domain verification but must chunk the bytes (5-64MB per chunk)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Choose Privacy & Settings').first().json;\nconst res = $input.first().json || {};\nif (res.error && res.error.code && res.error.code !== 'ok') {\n  throw new Error('TikTok rejected the post: ' + (res.error.message || res.error.code));\n}\nconst publishId = res.data && res.data.publish_id;\nif (!publishId) throw new Error('TikTok returned no publish_id');\n// Init succeeding means almost nothing -- format, duration and URL-fetch checks\n// all happen asynchronously, so we must poll to a terminal state before\n// reporting success to the caller.\nreturn [{ json: { ...src, publish_id: publishId, attempt: 0 } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Start Polling",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "name": "Wait Before Status Check",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        380,
+        300
+      ],
+      "webhookId": "c1d8e4b2-7f36-4a91-b5e0-9d2c8a7f1e64",
+      "notes": "15s. TikTok allows only 6 requests per minute per user token, shared with the init call -- a tighter loop trips 429 rate_limit_exceeded."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json; charset=UTF-8"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ publish_id: $json.publish_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Check Publish Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        600,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Start Polling').first().json;\nconst prev = $input.first().json || {};\n// The previous loop iteration's attempt count rides on the Wait node's item.\nconst attempt = Number($('Wait Before Status Check').first().json.attempt || 0) + 1;\nconst MAX_ATTEMPTS = 8;   // 8 x 15s = ~2 minutes\n\nlet parsed = prev.body;\nif (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; } }\nconst data = (parsed && parsed.data) || {};\nconst errObj = (parsed && parsed.error) || {};\nconst status = data.status || null;\n\nif (errObj.code && errObj.code !== 'ok') {\n  return [{ json: { ...src, attempt, done: true, outcome: 'failed',\n    error: 'Status check failed: ' + (errObj.message || errObj.code) } }];\n}\n\nif (status === 'PUBLISH_COMPLETE' || status === 'SEND_TO_USER_INBOX') {\n  const ids = data.publicaly_available_post_id;   // TikTok's own spelling\n  const postId = Array.isArray(ids) && ids.length ? String(ids[0]) : null;\n  return [{ json: { ...src, attempt, done: true, outcome: 'published',\n    status: status,\n    // A post id comes back ONLY for public, moderation-approved posts, so an\n    // unaudited (SELF_ONLY) post legitimately has none. Fall back to publish_id\n    // so the row is still traceable.\n    post_id: postId || src.publish_id, has_public_post_id: !!postId } }];\n}\n\nif (status === 'FAILED') {\n  return [{ json: { ...src, attempt, done: true, outcome: 'failed',\n    error: 'TikTok rejected the media: ' + (data.fail_reason || 'unknown reason') } }];\n}\n\nif (attempt >= MAX_ATTEMPTS) {\n  return [{ json: { ...src, attempt, done: true, outcome: 'needs_review',\n    error: 'Still ' + (status || 'processing') + ' after ' + (attempt * 15) + 's. CHECK THE ACCOUNT - this may still publish on its own. Not retried automatically because that risks a double post.' } }];\n}\n\nreturn [{ json: { ...src, attempt, done: false, status: status } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Interpret Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "is-done",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Terminal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "o-pub",
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "published",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "published"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "o-fail",
+                    "leftValue": "={{ $json.outcome }}",
+                    "rightValue": "failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "failed"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "needs_review"
+        }
+      },
+      "name": "Route Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1260,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/marketing_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_type: 'social_publish', source: 'tiktok', payload: { branch_id: $json.branch_id, post_id: $json.post_id, caption: $json.caption, platform: 'tiktok', media_type: $json.media_type, privacy_level: $json.privacy_level, published_at: new Date().toISOString() } }) }}",
+        "options": {}
+      },
+      "name": "Log Marketing Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1480,
+        160
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Interpret Status').first().json.post_id, privacy_level: $('Interpret Status').first().json.privacy_level, message: $('Interpret Status').first().json.privacy_level === 'SELF_ONLY' ? 'Published to TikTok as PRIVATE (SELF_ONLY) - the app has not passed TikTok content-posting audit' : 'Published successfully to TikTok' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        160
+      ],
+      "notes": "Reads from Interpret Status BY NAME, not $json: Log Marketing Event sits in between and its HTTP response would otherwise replace $json (the bug that returned null post ids from the Instagram publisher on 2026-08-01)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $input.first().json || {};\n// needs_review is a distinct outcome from failed: the post may yet go live, so\n// S1 must NOT retry it. Its 'Interpret Publish Result' honours this flag.\nreturn [{ json: { success: false, needs_review: true, code: 'processing_timeout',\n  error: src.error || 'TikTok was still processing when we stopped polling' } }];",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Prepare Timeout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json || {};\nconst err = item.error || item;\nlet message =\n  (err && err.error && err.error.message) ||\n  (err && err.message) ||\n  (typeof err === 'string' ? err : null) ||\n  item.reason || null;\nif (!message) { try { message = JSON.stringify(err).slice(0, 400); } catch (e) { message = 'Unknown publish error'; } }\nconst code = (err && err.error && (err.error.code || err.error.error_subcode)) || null;\nreturn { json: { success: false, error: String(message).slice(0, 500), code: code } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Prepare Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error, code: $json.code || null, needs_review: $json.needs_review || false }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        560
+      ],
+      "notes": "HTTP 200 with success:false is deliberate -- a bare non-200 collapses every distinct failure into 'Webhook returned 500' for the caller."
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: TikTok Publisher\n\nServes **`trellis-tiktok-publish`** for `publishToTikTok()` and the S1 scheduler.\n\n### Setup after import\n1. **Fetch TikTok Credentials** -> re-attach the Header Auth credential\n   (`apikey` = Hub service_role key). Imports always arrive dangling.\n2. **Log Marketing Event** -> confirm the `Sproutify Trellis` Supabase credential.\n3. Activate. Also import and activate **T1-tiktok-token-refresh.json** -- TikTok\n   access tokens expire every 24 HOURS, so without it publishing dies daily.\n\n### TWO EXTERNAL BLOCKERS (not fixable in code)\n1. **App audit.** Until the TikTok app passes the Content Posting API audit,\n   every post is forced to `SELF_ONLY` (private), the posting account itself must\n   be private, and only 5 users may post per 24h. A public attempt returns 403\n   `unaudited_client_can_only_post_to_private_accounts`. This workflow surfaces\n   the forced privacy level in its success message rather than pretending.\n2. **URL ownership verification.** TikTok fetches media by URL and only accepts\n   URLs on a domain verified in the developer portal. Supabase Storage is on\n   `supabase.co`, which we do not control and cannot DNS-verify. Serve media from\n   a domain we own (e.g. `media.sproutify.app` proxying Storage -- it must return\n   the bytes with 200, NOT a 302 redirect, which TikTok rejects).\n   Photos are PULL_FROM_URL only. Video could instead use FILE_UPLOAD, which\n   needs no verification but must chunk the bytes.\n\n### Flow\nvalidate -> credential -> creator_info (mandatory) -> choose privacy from the\naccount's real options -> init (photo or video) -> poll status every 15s up to\n~2 min -> published / failed / needs_review.\n\nPolling is bounded because TikTok allows only **6 requests per minute** per user\ntoken. A timeout answers `needs_review`, never a retry -- retrying risks a\ndouble post.",
+        "height": 820,
+        "width": 540
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1600,
+        -560
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Fetch TikTok Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error: Missing Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch TikTok Credentials": {
+      "main": [
+        [
+          {
+            "node": "Extract & Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Query Creator Info",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Creator Info": {
+      "main": [
+        [
+          {
+            "node": "Choose Privacy & Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choose Privacy & Settings": {
+      "main": [
+        [
+          {
+            "node": "Is Photo Post?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Photo Post?": {
+      "main": [
+        [
+          {
+            "node": "Init Photo Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Init Video Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Photo Post": {
+      "main": [
+        [
+          {
+            "node": "Start Polling",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Video Post": {
+      "main": [
+        [
+          {
+            "node": "Start Polling",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Polling": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Status Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Status Check": {
+      "main": [
+        [
+          {
+            "node": "Check Publish Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Publish Status": {
+      "main": [
+        [
+          {
+            "node": "Interpret Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpret Status": {
+      "main": [
+        [
+          {
+            "node": "Terminal?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terminal?": {
+      "main": [
+        [
+          {
+            "node": "Route Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Before Status Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Outcome": {
+      "main": [
+        [
+          {
+            "node": "Log Marketing Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Marketing Event": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Timeout": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
