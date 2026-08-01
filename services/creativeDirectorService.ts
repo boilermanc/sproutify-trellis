@@ -270,6 +270,9 @@ EVERY concept, regardless of template, also needs:
 - rationale: ONE sentence explaining the idea/angle, written for the human deciding whether to approve it
 - palette: {bg1, bg2 (optional gradient end), text, muted, accent} — real CSS hex colors (e.g. "#1c2b23"). text and bg1 MUST have strong, obviously readable contrast. Each concept's palette is its OWN choice and does not need to match the brand's colors or any other concept's palette — but it must be internally consistent (muted and accent should make sense against bg1, not clash or disappear). For "editorial" concepts the palette still matters (it colors the wordmark, headline and footer band over the photo scrim), even though the background itself is a photo, not this palette.
 
+HARD RULE — NEVER INVENT URLS, DOMAINS OR HANDLES:
+Only reference a website if one is explicitly given in BRAND CONTEXT above, and copy it exactly. If none is given, do not mention any domain or URL anywhere — not in the footer, not in the caption. A made-up domain on a published card sends real people to a site that doesn't exist.
+
 HARD RULE — NEVER WRITE SCRIPTURE TEXT:
 ${scriptureRule}
 

@@ -182,7 +182,7 @@ const AppContent: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from('branches')
-          .select('id, name, slug, type, is_active, primary_color, secondary_color, accent_color, font_family, logo_url')
+          .select('id, name, slug, type, is_active, primary_color, secondary_color, accent_color, font_family, website_url, logo_url')
           .eq('is_active', true)
           .order('name');
         if (data && !error) {

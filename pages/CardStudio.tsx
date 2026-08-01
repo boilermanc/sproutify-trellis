@@ -80,7 +80,11 @@ function localInputValueToIso(value: string): string {
 
 function buildBrandContext(branch: BranchInfo | null): string {
   if (!branch) return 'n/a';
-  return `Brand: ${branch.name}. Site: ${branch.slug}.`;
+  // Give the model the REAL website or none at all. This used to send
+  // "Site: rejoice" (the slug) — a half-domain the model happily completed
+  // into an invented "REJOICE.SITE" on a rendered card's footer.
+  const site = branch.website_url ? ` Website: ${branch.website_url}.` : '';
+  return `Brand: ${branch.name}.${site}`;
 }
 
 function slugifyForFilename(text: string): string {

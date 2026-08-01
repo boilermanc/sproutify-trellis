@@ -47,6 +47,7 @@ export interface BranchInfo {
   secondary_color?: string;
   accent_color?: string;
   font_family?: string;
+  website_url?: string;
   logo_url?: string;
 }
 
