@@ -54,7 +54,7 @@ interface ConceptCardState {
   backgroundSource?: 'upload' | 'library';
 }
 
-const COUNT_OPTIONS = [2, 3, 4, 5, 6];
+const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6];
 
 function tomorrowMorningIso(): string {
   const d = new Date();
@@ -282,16 +282,44 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     }
   };
 
+  // Whether a brand actually has BSB installed in its spoke — cached per
+  // branch, since it takes a real probe query to know (see below).
+  const bibleSourceCache = useRef<Record<string, boolean>>({});
+
   // Resolve up front whether this brand has a Bible source, so the Scripture
   // control can disable itself before a batch is generated rather than after
   // three verse cards come back broken.
+  //
+  // Having a spoke connection is NOT the same as having scripture: ATL and
+  // Rekkrd both have their own spoke databases (for customer data) with no
+  // bible_verses table, so checking "does a connection exist" showed the
+  // Scripture control on every brand. The only way to know for certain is to
+  // actually ask for a verse — Genesis 1:1 is the cheapest possible probe,
+  // and its success/failure IS the real answer.
   useEffect(() => {
     let cancelled = false;
     if (!selectedBranch) { setHasBibleSource(null); return; }
+    if (selectedBranch.id in bibleSourceCache.current) {
+      setHasBibleSource(bibleSourceCache.current[selectedBranch.id]);
+      return;
+    }
     setHasBibleSource(null);
-    resolveSpokeConnectionId(selectedBranch)
-      .then((id) => { if (!cancelled) setHasBibleSource(!!id); })
-      .catch(() => { if (!cancelled) setHasBibleSource(false); });
+    (async () => {
+      try {
+        const connectionId = await resolveSpokeConnectionId(selectedBranch);
+        if (!connectionId) throw new Error('no connection');
+        await fetchPassage(connectionId, { book_id: 'GEN', chapter: 1, verse_start: 1, verse_end: 1 });
+        if (!cancelled) {
+          bibleSourceCache.current[selectedBranch.id] = true;
+          setHasBibleSource(true);
+        }
+      } catch {
+        if (!cancelled) {
+          bibleSourceCache.current[selectedBranch.id] = false;
+          setHasBibleSource(false);
+        }
+      }
+    })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBranch?.id]);
