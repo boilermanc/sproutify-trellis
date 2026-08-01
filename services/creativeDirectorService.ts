@@ -524,12 +524,14 @@ export async function generateCardConcepts(opts: {
         config: {
           responseMimeType: 'application/json',
           responseSchema: CARD_CONCEPTS_SCHEMA,
-          // Bounded on purpose. Left unset, a runaway generation ran to the
-          // model's own ceiling (~190k chars) and returned truncated,
-          // unparseable JSON. ~2.5k tokens per concept is generous for this
-          // schema, and hitting this cap now fails fast with a clear message
-          // rather than after a long silent stall.
-          maxOutputTokens: Math.min(16000, 2500 * count + 1500),
+          // Bounded so a runaway can't reach the model's own ceiling again —
+          // but generously, because THINKING TOKENS COME OUT OF THIS BUDGET on
+          // gemini-3-flash-preview. A first attempt at 2.5k/concept truncated
+          // one concept at ~6.8k characters: reasoning had eaten most of the
+          // allowance before any JSON was written. This is a runaway guard,
+          // not a cost control, so it should sit far above what a well-behaved
+          // response needs.
+          maxOutputTokens: Math.min(48000, 12000 * count + 8000),
         },
       }),
       new Promise<never>((_, reject) => {
@@ -547,14 +549,16 @@ export async function generateCardConcepts(opts: {
     try {
       parsed = JSON.parse(rawText);
     } catch (parseErr) {
-      // Almost always truncation: the response hit the token ceiling mid-string,
-      // so the JSON is structurally incomplete. Say that plainly instead of
-      // surfacing a raw "Unterminated string at position 190476", which reads
-      // like a code bug rather than an over-long generation.
-      const truncated = rawText.length > 20_000;
+      // Detect truncation by SHAPE, not length. A response cut off at the token
+      // ceiling simply stops mid-structure, so it won't close its JSON — that's
+      // true whether it died at 6k characters or 190k, and an earlier
+      // length-threshold check wrongly reported a 6.8k truncation as a generic
+      // parse error.
+      const trimmed = rawText.trimEnd();
+      const looksTruncated = !trimmed.endsWith('}') && !trimmed.endsWith(']');
       throw new Error(
-        truncated
-          ? `The director's response was too long (${Math.round(rawText.length / 1000)}k characters) and got cut off. Try a shorter brief or fewer concepts.`
+        looksTruncated
+          ? `The director's response was cut off mid-answer (${rawText.length.toLocaleString()} characters). It ran out of output budget — try fewer concepts or a shorter brief.`
           : `Could not parse the director's response: ${parseErr instanceof Error ? parseErr.message : 'invalid JSON'}`,
       );
     }

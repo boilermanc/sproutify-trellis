@@ -249,22 +249,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
   const geminiKey = apiKeys?.gemini_api_key;
 
-  // Diagnostic: the Generate button is disabled by a compound condition, and a
-  // disabled <button> fires no onClick — so a mis-set input looks identical to
-  // "nothing happened", with no error anywhere. Log whenever readiness changes
-  // so the reason is visible instead of inferred. Never logs the key itself.
-  useEffect(() => {
-    const blockers: string[] = [];
-    if (!selectedBranch) blockers.push('no brand selected (branchId=' + JSON.stringify(branchId) + ')');
-    if (!brief.trim()) blockers.push('brief is empty');
-    if (isGenerating) blockers.push('already generating');
-    if (!geminiKey) blockers.push('no Gemini key in apiKeys (button still enabled — this fails inside the handler)');
-    console.log(
-      '[CardStudio] Generate readiness:',
-      blockers.length === 0 ? 'READY' : 'BLOCKED — ' + blockers.join('; '),
-      { branchOptions: branchOptions.length, hasBibleSource },
-    );
-  }, [selectedBranch, branchId, brief, isGenerating, geminiKey, branchOptions.length, hasBibleSource]);
+  // (The Generate button's blockers are now surfaced in the UI next to the
+  // button itself, so no console diagnostic is needed for them.)
 
   // ── Editorial background photo: upload ──────────────────────────
   // One shared hidden file input, retargeted per click via `uploadTargetId`
@@ -928,15 +914,24 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           ))}
         </div>
 
-        <div className="flex items-center justify-end pt-2">
+        {/* A disabled button that explains nothing is indistinguishable from a
+            broken one — say out loud why it can't run, instead of leaving the
+            click to do nothing silently. */}
+        <div className="flex items-center justify-end gap-3 pt-2">
+          {!isGenerating && !selectedBranch && (
+            <span className="text-xs text-amber-600 font-medium">Pick a brand first.</span>
+          )}
+          {!isGenerating && selectedBranch && !brief.trim() && (
+            <span className="text-xs text-amber-600 font-medium">Write a brief (or click a preset) first.</span>
+          )}
           <button
             type="button"
             onClick={handleGenerate}
             disabled={isGenerating || !selectedBranch || !brief.trim()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition disabled:opacity-40 shadow-sm"
+            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
           >
             {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-            {isGenerating ? 'Directing…' : `Generate ${count} Concepts`}
+            {isGenerating ? 'Directing…' : `Generate ${count} Concept${count === 1 ? '' : 's'}`}
           </button>
         </div>
       </div>
