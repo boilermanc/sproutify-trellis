@@ -495,7 +495,17 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
         const mediaUrls = job.format === 'carousel' && job.media_urls?.length
           ? job.media_urls
           : [publishableImageUrl(job)].filter(Boolean);
-        const branchUuid = branchIdForSlug(job.branch);
+        // Strict UUID resolution — queueing the raw slug would make the S1
+        // worker fail at publish time with "No credential found for <slug>".
+        const branchEntry = branchContext?.allBranches.find(b => b.slug === job.branch);
+        if (!branchEntry) {
+          console.error('[VideoAdLab] cannot resolve branch UUID for schedule', {
+            jobBranch: job.branch,
+            loadedBranchSlugs: branchContext?.allBranches.map(b => b.slug) ?? '(branchContext missing)',
+          });
+          throw new Error(`Brand "${job.branch}" isn't loaded yet — wait a moment and try again.`);
+        }
+        const branchUuid = branchEntry.id;
 
         if (!caption) throw new Error('Add a caption before scheduling — it publishes exactly as written.');
         if (!mediaUrls.length) throw new Error('No media to schedule.');
@@ -1027,7 +1037,26 @@ STRICT RULES:
 
     setPublishingJobId(job.id);
     try {
-      const branchId = branchIdForSlug(job.branch);
+      // Resolve the branch UUID strictly. The old fallback sent the raw slug
+      // to n8n when the branch list hadn't loaded (or the slug was unknown),
+      // which surfaced as "No credential found for instagram on branch <slug>".
+      const branchEntry = branchContext?.allBranches.find(b => b.slug === job.branch);
+      if (!branchEntry) {
+        console.error('[VideoAdLab] cannot resolve branch UUID for publish', {
+          jobBranch: job.branch,
+          loadedBranchSlugs: branchContext?.allBranches.map(b => b.slug) ?? '(branchContext missing)',
+        });
+        addToast(`Brand "${job.branch}" isn't loaded yet — wait a moment and try again.`, 'error');
+        return;
+      }
+      const branchId = branchEntry.id;
+      console.info('[VideoAdLab] publishing to Instagram', {
+        jobId: job.id,
+        branch: job.branch,
+        branchId,
+        mediaType: job.format === 'carousel' ? 'carousel' : 'image',
+        mediaCount: mediaUrls.length,
+      });
       const result = await publishToSocial(
         branchId,
         caption,
@@ -1068,9 +1097,11 @@ STRICT RULES:
           console.warn('[VideoAdLab] publish succeeded but tracking insert failed:', trackEx);
         }
       } else {
+        console.error('[VideoAdLab] publish failed', result);
         addToast(`Publish failed: ${result.error || 'Unknown error'}`, 'error');
       }
     } catch (err: any) {
+      console.error('[VideoAdLab] publish threw', err);
       addToast(`Publish failed: ${err.message}`, 'error');
     } finally {
       setPublishingJobId(null);
