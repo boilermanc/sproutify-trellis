@@ -813,7 +813,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
               for every other brand this control is noise — hide it entirely
               rather than showing a disabled dropdown. */}
           {hasBibleSource === true && (
-            <div className="flex flex-col gap-1 lg:w-44">
+            <div className="flex flex-col gap-1 lg:w-72">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Scripture</span>
               <select
                 value={scripturePolicy}
@@ -858,6 +858,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
               key={preset.label}
               type="button"
               onClick={() => applyPreset(preset)}
+              title={preset.hint}
               className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition ${
                 activePreset === preset.label
                   ? 'bg-emerald-600 border-emerald-600 text-white'
