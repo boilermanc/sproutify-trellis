@@ -249,6 +249,23 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
   const geminiKey = apiKeys?.gemini_api_key;
 
+  // Diagnostic: the Generate button is disabled by a compound condition, and a
+  // disabled <button> fires no onClick — so a mis-set input looks identical to
+  // "nothing happened", with no error anywhere. Log whenever readiness changes
+  // so the reason is visible instead of inferred. Never logs the key itself.
+  useEffect(() => {
+    const blockers: string[] = [];
+    if (!selectedBranch) blockers.push('no brand selected (branchId=' + JSON.stringify(branchId) + ')');
+    if (!brief.trim()) blockers.push('brief is empty');
+    if (isGenerating) blockers.push('already generating');
+    if (!geminiKey) blockers.push('no Gemini key in apiKeys (button still enabled — this fails inside the handler)');
+    console.log(
+      '[CardStudio] Generate readiness:',
+      blockers.length === 0 ? 'READY' : 'BLOCKED — ' + blockers.join('; '),
+      { branchOptions: branchOptions.length, hasBibleSource },
+    );
+  }, [selectedBranch, branchId, brief, isGenerating, geminiKey, branchOptions.length, hasBibleSource]);
+
   // ── Editorial background photo: upload ──────────────────────────
   // One shared hidden file input, retargeted per click via `uploadTargetId`
   // rather than mounting a dozen file inputs (one per card).
@@ -448,6 +465,14 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   };
 
   const handleGenerate = async () => {
+    console.log('[CardStudio] Generate clicked', {
+      brand: selectedBranch?.name ?? null,
+      briefLength: brief.trim().length,
+      count,
+      scripturePolicy,
+      hasBibleSource,
+      hasGeminiKey: !!geminiKey,
+    });
     if (!selectedBranch) { addToast('Choose a brand first.', 'error'); return; }
     if (!brief.trim()) { addToast('Write a brief first.', 'error'); return; }
     if (!geminiKey) { addToast('Gemini API key not configured. Set it in Settings.', 'error'); return; }
@@ -456,6 +481,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     setCards([]);
     setDraftRestoredAt(null);
     try {
+      console.log('[CardStudio] Calling Gemini…');
       const concepts = await generateCardConcepts({
         apiKey: geminiKey,
         brandName: selectedBranch.name,
@@ -469,6 +495,9 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           accent: selectedBranch.accent_color,
         },
       });
+
+      console.log('[CardStudio] Gemini returned', concepts.length, 'usable concept(s):',
+        concepts.map((c) => c.template));
 
       if (concepts.length === 0) {
         addToast('The director came back empty-handed — try a different brief.', 'error');
@@ -495,6 +524,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       // or hide the rest of the gallery.
       initialCards.forEach((card) => { hydrateAndRenderFor(card.concept, selectedBranch, card.concept.id); });
     } catch (e) {
+      console.error('[CardStudio] Generate failed:', e);
       addToast(e instanceof Error ? e.message : 'Card generation failed.', 'error');
     } finally {
       setIsGenerating(false);

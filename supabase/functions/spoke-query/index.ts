@@ -382,7 +382,18 @@ Deno.serve(async (req: Request) => {
         .lte("verse", verseEnd)
         .order("verse", { ascending: true });
 
-      if (selectError) return json({ error: selectError.message }, 502);
+      // A spoke with no bible_verses table at all (most of them — only the
+      // Rejoice spoke has BSB installed) lands here. That's "this brand has no
+      // Bible source", NOT a gateway failure, so it must not be a 502: the app
+      // probes every brand's Bible availability, and a 502 both misreports the
+      // cause and fills the console with alarming noise on normal use.
+      if (selectError) {
+        const missingTable = /relation .*bible_verses.* does not exist|could not find the table/i.test(selectError.message || "");
+        return json(
+          { error: missingTable ? "This brand has no Bible source (no bible_verses table on its spoke)" : selectError.message },
+          missingTable ? 404 : 502,
+        );
+      }
       if (!rows || rows.length === 0) return json({ error: "No verses found for that reference" }, 404);
 
       const text = rows
