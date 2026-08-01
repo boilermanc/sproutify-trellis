@@ -55,6 +55,10 @@ interface ConceptCardState {
   backgroundSource?: 'upload' | 'library' | 'generated';
   // Set while "Generate photo" is running its ~60-90s Creative Studio job.
   isGeneratingBackground?: boolean;
+  // User-editable scene description for "Generate photo" — seeded from the
+  // director's photo_brief but fully overridable ("flowers and a coffee cup
+  // at a kitchen table"). undefined = not touched, fall back to the brief.
+  photoBriefDraft?: string;
 }
 
 const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6];
@@ -618,7 +622,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   const handleGenerateBackground = async (card: ConceptCardState) => {
     if (!selectedBranch) return;
     const concept = card.concept;
-    const scene = (concept.photo_brief || '').trim()
+    const scene = (card.photoBriefDraft ?? concept.photo_brief ?? '').trim()
       || `A warm, inviting still-life scene that fits this message: ${concept.statement || concept.eyebrow || card.caption}`;
 
     setCards((prev) => prev.map((c) => (c.concept.id === card.concept.id ? { ...c, isGeneratingBackground: true } : c)));
@@ -1094,6 +1098,14 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                             <span className="text-[9px] font-bold uppercase tracking-widest text-amber-600">Using gradient fallback</span>
                           )}
                         </div>
+                        <textarea
+                          value={card.photoBriefDraft ?? card.concept.photo_brief ?? ''}
+                          onChange={(e) => updateCard(card.concept.id, { photoBriefDraft: e.target.value })}
+                          rows={2}
+                          disabled={card.isGeneratingBackground || card.status === 'approved'}
+                          placeholder="Describe the photo — e.g. flowers and a coffee cup on a kitchen table, soft morning light"
+                          className="w-full text-[11px] border border-slate-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-y disabled:opacity-50"
+                        />
                         <div className="flex items-center gap-2">
                           {card.concept.backgroundUrl ? (
                             <img
