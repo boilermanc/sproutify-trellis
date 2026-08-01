@@ -544,6 +544,13 @@ export async function generateCardConcepts(opts: {
 
     const rawText = response.text || '{}';
     console.log('[creativeDirector] Gemini responded, raw length:', rawText.length);
+    // On an over-long response, show both ends: the head reveals which field it
+    // started with, the tail reveals what it was still repeating when the budget
+    // ran out. That pair identifies a runaway far faster than guessing at causes.
+    if (rawText.length > 20_000) {
+      console.warn('[creativeDirector] RUNAWAY head:', rawText.slice(0, 400));
+      console.warn('[creativeDirector] RUNAWAY tail:', rawText.slice(-400));
+    }
 
     let parsed: any;
     try {
