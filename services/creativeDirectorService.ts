@@ -147,6 +147,12 @@ const CARD_CONCEPT_ITEM_SCHEMA = {
   required: ['template', 'palette', 'eyebrow', 'logoText', 'caption', 'rationale'],
 };
 
+// ⚠️ DELIBERATELY NOT PASSED TO THE API. Sending this as responseSchema made
+// gemini-3-flash-preview degenerate into a repetition loop mid-generation
+// (large many-optional-field schema + thinking model = known constrained-
+// decoding failure; it burned 76k characters repeating one Chinese fragment).
+// Kept only as documentation of the expected shape — normalizeConcept() is
+// the actual enforcement. Do not re-wire this into generateContent's config.
 const CARD_CONCEPTS_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -511,85 +517,102 @@ export async function generateCardConcepts(opts: {
     const ai = new GoogleGenAI({ apiKey: opts.apiKey });
     const prompt = buildDirectorPrompt({ ...opts, count });
 
-    // The SDK call has no timeout of its own, so a stalled request hangs
-    // forever: the button sits disabled on "already generating", nothing
-    // resolves, nothing rejects, and no error ever surfaces. Race it so a
-    // stall becomes a real, reportable failure instead of a silent freeze.
+    // WHY NO responseSchema: the head/tail runaway logging caught the model
+    // degenerating mid-generation — it flipped into Chinese and repeated one
+    // fragment ("英文版建议文字：A SPACE FOR YOUR SOUL...") hundreds of times
+    // until the token budget died. That's a known constrained-decoding failure
+    // when a LARGE schema with many optional fields (ours carries every
+    // template's fields on every concept) meets a thinking model. JSON mode
+    // alone (responseMimeType) still guarantees syntactically valid JSON, and
+    // normalizeConcept() already validates/repairs every field — so the schema
+    // was redundant enforcement that was actively breaking generation.
+    //
+    // Fallback chain mirrors SocialHub's proven CONTENT_MODELS pattern: retry
+    // once on the older model, which doesn't exhibit the degeneration. One
+    // retry only — a failed 20k-token attempt isn't free.
+    const DIRECTOR_MODELS = [MODEL, 'gemini-2.5-flash'];
     const GENERATION_TIMEOUT_MS = 90_000;
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const response = await Promise.race([
-      ai.models.generateContent({
-        model: MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: CARD_CONCEPTS_SCHEMA,
-          // Bounded so a runaway can't reach the model's own ceiling again —
-          // but generously, because THINKING TOKENS COME OUT OF THIS BUDGET on
-          // gemini-3-flash-preview. A first attempt at 2.5k/concept truncated
-          // one concept at ~6.8k characters: reasoning had eaten most of the
-          // allowance before any JSON was written. This is a runaway guard,
-          // not a cost control, so it should sit far above what a well-behaved
-          // response needs.
-          maxOutputTokens: Math.min(48000, 12000 * count + 8000),
-        },
-      }),
-      new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(
-          () => reject(new Error(`Gemini did not respond within ${GENERATION_TIMEOUT_MS / 1000}s — request timed out.`)),
-          GENERATION_TIMEOUT_MS,
-        );
-      }),
-    ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle); });
+    // Generous because THINKING TOKENS COME OUT OF THIS BUDGET on
+    // gemini-3-flash-preview (a 4k cap truncated a single concept at 6.8k
+    // chars). This is a runaway guard, not a cost control.
+    const maxOutputTokens = Math.min(48000, 12000 * count + 8000);
 
-    const rawText = response.text || '{}';
-    console.log('[creativeDirector] Gemini responded, raw length:', rawText.length);
-    // On an over-long response, show both ends: the head reveals which field it
-    // started with, the tail reveals what it was still repeating when the budget
-    // ran out. That pair identifies a runaway far faster than guessing at causes.
-    if (rawText.length > 20_000) {
-      console.warn('[creativeDirector] RUNAWAY head:', rawText.slice(0, 400));
-      console.warn('[creativeDirector] RUNAWAY tail:', rawText.slice(-400));
-    }
+    let lastError: Error | null = null;
+    for (const model of DIRECTOR_MODELS) {
+      try {
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const response = await Promise.race([
+          ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              // Explicit, moderate temperature — the degeneration loop is a
+              // sampling failure, and the SDK default leaves it to the model.
+              temperature: 0.7,
+              maxOutputTokens,
+            },
+          }),
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(
+              () => reject(new Error(`Gemini did not respond within ${GENERATION_TIMEOUT_MS / 1000}s — request timed out.`)),
+              GENERATION_TIMEOUT_MS,
+            );
+          }),
+        ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle); });
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch (parseErr) {
-      // Detect truncation by SHAPE, not length. A response cut off at the token
-      // ceiling simply stops mid-structure, so it won't close its JSON — that's
-      // true whether it died at 6k characters or 190k, and an earlier
-      // length-threshold check wrongly reported a 6.8k truncation as a generic
-      // parse error.
-      const trimmed = rawText.trimEnd();
-      const looksTruncated = !trimmed.endsWith('}') && !trimmed.endsWith(']');
-      throw new Error(
-        looksTruncated
-          ? `The director's response was cut off mid-answer (${rawText.length.toLocaleString()} characters). It ran out of output budget — try fewer concepts or a shorter brief.`
-          : `Could not parse the director's response: ${parseErr instanceof Error ? parseErr.message : 'invalid JSON'}`,
-      );
-    }
-    const rawConcepts: any[] = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
+        const rawText = response.text || '{}';
+        console.log(`[creativeDirector] ${model} responded, raw length:`, rawText.length);
+        if (rawText.length > 20_000) {
+          console.warn('[creativeDirector] RUNAWAY head:', rawText.slice(0, 400));
+          console.warn('[creativeDirector] RUNAWAY tail:', rawText.slice(-400));
+        }
 
-    const concepts: CardConceptWithRef[] = [];
-    for (const raw of rawConcepts) {
-      const concept = normalizeConcept(raw, MODEL);
-      if (!concept) continue;
-      // Belt and braces: a prompt rule is a request, not a guarantee. With no
-      // Bible source a verse card can never render, so demote rather than ship
-      // a card that is certain to fail.
-      if (opts.scripturePolicy === 'avoid' && concept.template === 'verse') {
-        concept.template = 'statement';
-        concept.statement = concept.statement || concept.eyebrow || concept.caption;
-        delete (concept as any).verse_ref;
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawText);
+        } catch (parseErr) {
+          // Truncation detection by SHAPE, not length: a response cut off at
+          // the token ceiling never closes its JSON, whether it died at 6k
+          // characters or 190k.
+          const trimmed = rawText.trimEnd();
+          const looksTruncated = !trimmed.endsWith('}') && !trimmed.endsWith(']');
+          throw new Error(
+            looksTruncated
+              ? `The director's response was cut off mid-answer (${rawText.length.toLocaleString()} characters).`
+              : `Could not parse the director's response: ${parseErr instanceof Error ? parseErr.message : 'invalid JSON'}`,
+          );
+        }
+        const rawConcepts: any[] = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
+
+        const concepts: CardConceptWithRef[] = [];
+        for (const raw of rawConcepts) {
+          const concept = normalizeConcept(raw, model);
+          if (!concept) continue;
+          // Belt and braces: a prompt rule is a request, not a guarantee. With no
+          // Bible source a verse card can never render, so demote rather than ship
+          // a card that is certain to fail.
+          if (opts.scripturePolicy === 'avoid' && concept.template === 'verse') {
+            concept.template = 'statement';
+            concept.statement = concept.statement || concept.eyebrow || concept.caption;
+            delete (concept as any).verse_ref;
+          }
+          concepts.push(concept);
+        }
+        // Raw vs kept: normalizeConcept drops anything unrenderable, so a gap
+        // between these two numbers is where concepts silently disappear.
+        console.log('[creativeDirector] concepts raw:', rawConcepts.length, 'kept:', concepts.length,
+          concepts.map((c) => c.template));
+        if (concepts.length === 0 && rawConcepts.length > 0) {
+          throw new Error('Every returned concept failed validation.');
+        }
+        return concepts;
+      } catch (attemptErr) {
+        lastError = attemptErr instanceof Error ? attemptErr : new Error(String(attemptErr));
+        console.warn(`[creativeDirector] ${model} attempt failed:`, lastError.message);
       }
-      concepts.push(concept);
     }
-    // Raw vs kept: normalizeConcept drops anything unrenderable, so a gap
-    // between these two numbers is where concepts silently disappear.
-    console.log('[creativeDirector] concepts raw:', rawConcepts.length, 'kept:', concepts.length,
-      concepts.map((c) => c.template));
-    return concepts;
+    throw lastError ?? new Error('All director models failed.');
   } catch (err) {
     throw new Error(err instanceof Error ? `Card concept generation failed: ${err.message}` : 'Card concept generation failed.');
   }
