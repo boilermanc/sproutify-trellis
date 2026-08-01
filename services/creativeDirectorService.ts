@@ -118,18 +118,17 @@ const CARD_CONCEPT_ITEM_SCHEMA = {
     // editorial — a structured layout drawn over a photograph
     wordmark: { type: Type.STRING },
     wordmarkSubtitle: { type: Type.STRING },
-    // minItems/maxItems are enforced by Gemini's structured-output layer, not
-    // just prose the model can drift from — without them an "editorial"
-    // concept could satisfy the schema with an empty bullets array, which
-    // silently demotes it to a plain "statement" card (see normalizeConcept)
-    // while its rationale still describes the editorial idea it never became.
-    // This applies to every concept regardless of template (schema fields
-    // can't be conditionally required per-template), but non-editorial
-    // templates never read raw.bullets, so it's harmlessly ignored there.
+    // NO minItems/maxItems here, deliberately. Adding them (an attempt to
+    // force editorial cards to actually carry bullets) sent the model into a
+    // runaway generation loop: a single concept produced a 190,000-character
+    // response that hit the token ceiling and came back as truncated,
+    // unparseable JSON — which surfaced as a silent hang. Constrained arrays
+    // are a known trigger for that. The count is asked for in the prompt
+    // instead, and normalizeConcept caps the array at MAX_BULLETS; an
+    // editorial concept renders fine with none (drawEditorial handles an
+    // empty list), so nothing needs enforcing at the schema level.
     bullets: {
       type: Type.ARRAY,
-      minItems: '2',
-      maxItems: '4',
       items: {
         type: Type.OBJECT,
         properties: {
@@ -525,6 +524,12 @@ export async function generateCardConcepts(opts: {
         config: {
           responseMimeType: 'application/json',
           responseSchema: CARD_CONCEPTS_SCHEMA,
+          // Bounded on purpose. Left unset, a runaway generation ran to the
+          // model's own ceiling (~190k chars) and returned truncated,
+          // unparseable JSON. ~2.5k tokens per concept is generous for this
+          // schema, and hitting this cap now fails fast with a clear message
+          // rather than after a long silent stall.
+          maxOutputTokens: Math.min(16000, 2500 * count + 1500),
         },
       }),
       new Promise<never>((_, reject) => {
@@ -535,8 +540,24 @@ export async function generateCardConcepts(opts: {
       }),
     ]).finally(() => { if (timeoutHandle) clearTimeout(timeoutHandle); });
 
-    console.log('[creativeDirector] Gemini responded, raw length:', response.text?.length ?? 0);
-    const parsed = JSON.parse(response.text || '{}');
+    const rawText = response.text || '{}';
+    console.log('[creativeDirector] Gemini responded, raw length:', rawText.length);
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (parseErr) {
+      // Almost always truncation: the response hit the token ceiling mid-string,
+      // so the JSON is structurally incomplete. Say that plainly instead of
+      // surfacing a raw "Unterminated string at position 190476", which reads
+      // like a code bug rather than an over-long generation.
+      const truncated = rawText.length > 20_000;
+      throw new Error(
+        truncated
+          ? `The director's response was too long (${Math.round(rawText.length / 1000)}k characters) and got cut off. Try a shorter brief or fewer concepts.`
+          : `Could not parse the director's response: ${parseErr instanceof Error ? parseErr.message : 'invalid JSON'}`,
+      );
+    }
     const rawConcepts: any[] = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
 
     const concepts: CardConceptWithRef[] = [];
