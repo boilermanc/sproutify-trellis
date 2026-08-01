@@ -1,0 +1,463 @@
+{
+  "name": "Trellis: Facebook Insights Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,branch_id,branch_slug,platform,post_id,published_at,caption"
+            },
+            {
+              "name": "status",
+              "value": "eq.published"
+            },
+            {
+              "name": "platform",
+              "value": "eq.facebook"
+            },
+            {
+              "name": "post_id",
+              "value": "not.is.null"
+            },
+            {
+              "name": "published_at",
+              "value": "=gte.{{ new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "name": "order",
+              "value": "published_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Posts To Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -900,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// The HTTP node's array-splitting for a top-level PostgREST array has varied\n// across n8n versions, so flatten defensively rather than assuming one row per item.\nconst rows = [];\nfor (const item of $input.all()) {\n  const value = item.json;\n  if (Array.isArray(value)) { rows.push(...value); }\n  else if (value) { rows.push(value); }\n}\nreturn rows.filter(row => row && row.id && row.post_id).map(row => ({ json: row }));",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Normalize Posts To Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-post-to-check",
+              "leftValue": "={{ !!$json.id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "No Posts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "No Posts To Check",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_branch_id",
+              "value": "={{ $json.branch_id }}"
+            },
+            {
+              "name": "p_platform",
+              "value": "facebook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Facebook Credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -240,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The HTTP node replaced $json with the credential response, dropping the post\n// row's own fields. Pull the row back at the same item index and merge.\nconst post = $('Normalize Posts To Check').item.json;\nconst cred = $input.item.json || {};\nif (!cred.success) {\n  throw new Error('Credential lookup failed for branch ' + post.branch_id + ': ' + (cred.error || 'unknown error'));\n}\nconst pageId = cred.platform_metadata?.page_id;\nif (!pageId) throw new Error('page_id missing from platform_metadata for branch ' + post.branch_id);\n// Page post insights require a PAGE token; use one directly if stored, else the\n// user token, which 'Resolve Page Token' exchanges downstream.\nconst token = (cred.platform_metadata?.page_access_token || cred.access_token || '').trim();\nif (!token) throw new Error('No Facebook token stored for branch ' + post.branch_id);\nreturn { json: { ...post, page_id: pageId, stored_token: token } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Merge Credential With Post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.page_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.stored_token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "access_token"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Resolve Page Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        200,
+        300
+      ],
+      "notes": "Same exchange the B4 publisher uses. neverError so a permissions hiccup degrades to the stored token instead of killing the sync."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Merge Credential With Post').item.json;\nconst res = $input.item.json || {};\nlet parsed = res.body;\nif (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; } }\nconst exchanged = parsed && typeof parsed.access_token === 'string' ? parsed.access_token.trim() : '';\nreturn { json: { ...src, access_token: exchanged || src.stored_token } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Choose Page Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.post_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "post_impressions,post_impressions_unique,post_engaged_users,post_clicks,post_reactions_by_type_total"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        640,
+        300
+      ],
+      "notes": "Facebook Page post metrics. These are NOT the Instagram set: there is no 'saved' equivalent, and reach is post_impressions_unique."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Facebook returns one entry per metric in data[], each with values[0].value.\n// A metric can be absent entirely (varies by post type and API version), so look\n// each up by name and leave it null rather than failing the row or inventing a 0.\nconst response = $input.item.json || {};\nconst source = $('Choose Page Token').item.json || {};\nconst metricsData = Array.isArray(response.data) ? response.data : [];\n\nfunction metricValue(name) {\n  const entry = metricsData.find(m => m && m.name === name);\n  const raw = entry && Array.isArray(entry.values) && entry.values.length ? entry.values[0].value : undefined;\n  if (raw === undefined || raw === null) return null;\n  return raw;\n}\n\nconst impressions = metricValue('post_impressions');\nconst reachUnique = metricValue('post_impressions_unique');\nconst engaged = metricValue('post_engaged_users');\nconst clicks = metricValue('post_clicks');\nconst reactionsByType = metricValue('post_reactions_by_type_total');\n\n// post_reactions_by_type_total is an object like { like: 4, love: 1 } -- sum it\n// for a single 'likes' figure, but keep the breakdown in raw.\nlet reactionTotal = null;\nif (reactionsByType && typeof reactionsByType === 'object') {\n  reactionTotal = Object.values(reactionsByType).reduce((sum, v) => sum + (Number(v) || 0), 0);\n}\n\nreturn { json: {\n  platform: 'facebook',\n  scheduled_post_id: source.id,\n  ig_media_id: source.post_id,\n  branch_slug: source.branch_slug,\n  impressions: impressions,\n  reach: reachUnique,\n  likes: reactionTotal,\n  comments: null,\n  saves: null,\n  shares: null,\n  raw: {\n    post_impressions: impressions,\n    post_impressions_unique: reachUnique,\n    post_engaged_users: engaged,\n    post_clicks: clicks,\n    post_reactions_by_type_total: reactionsByType\n  },\n  fetched_at: new Date().toISOString()\n} };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Parse Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/social_post_insights",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ platform: 'facebook', scheduled_post_id: $json.scheduled_post_id, ig_media_id: $json.ig_media_id, branch_slug: $json.branch_slug, impressions: $json.impressions, reach: $json.reach, likes: $json.likes, comments: $json.comments, saves: $json.saves, shares: $json.shares, raw: $json.raw, fetched_at: $json.fetched_at }) }}",
+        "options": {}
+      },
+      "name": "Insert Post Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1080,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "ig_media_id is the generic post-id column (named for its Instagram origin); for Facebook it holds the <page>_<post> id. saves stays NULL - Facebook has no equivalent, and the UI renders a missing metric as missing rather than 0."
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Facebook Insights Sync\n\nThe Facebook half of the post-performance loop. Mirrors\n`S2-instagram-insights-sync.json`, which now filters to `platform=eq.instagram`\nso the two never collide.\n\nEvery 6 hours: read published **Facebook** rows from `scheduled_social_posts`\n(last 30 days, `post_id` present) -> resolve that brand's Page token ->\n`GET /{post_id}/insights` -> append a snapshot row to `social_post_insights`\nwith `platform='facebook'`.\n\n### Setup after import\nConfirm the `Sproutify Trellis` Supabase credential on the three HTTP nodes, then activate.\n\n### Metric mapping (NOT the same as Instagram)\n| Column | Facebook metric |\n|---|---|\n| impressions | post_impressions |\n| reach | post_impressions_unique |\n| likes | sum of post_reactions_by_type_total |\n| saves / shares / comments | **NULL** - no equivalent in this metric set |\n\nThe full breakdown is kept in `raw`, which is what the Post Scheduler history\nreads to show Impressions / Engaged / Clicks for Facebook rows.\nSnapshots are append-only, so a post accumulates a time series.",
+        "height": 560,
+        "width": 480
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1120,
+        -340
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Posts To Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Posts To Check": {
+      "main": [
+        [
+          {
+            "node": "Normalize Posts To Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Posts To Check": {
+      "main": [
+        [
+          {
+            "node": "No Posts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Posts?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Facebook Credential",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Posts To Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Facebook Credential": {
+      "main": [
+        [
+          {
+            "node": "Merge Credential With Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Credential With Post": {
+      "main": [
+        [
+          {
+            "node": "Resolve Page Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Page Token": {
+      "main": [
+        [
+          {
+            "node": "Choose Page Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choose Page Token": {
+      "main": [
+        [
+          {
+            "node": "Fetch Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Insights": {
+      "main": [
+        [
+          {
+            "node": "Parse Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Insights": {
+      "main": [
+        [
+          {
+            "node": "Insert Post Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

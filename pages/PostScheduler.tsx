@@ -3,14 +3,14 @@ import {
   CalendarClock, UploadCloud, ImagePlus, Loader2, X, Trash2, Clock,
   CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook,
   Send, Sparkles, Info, RefreshCw, Image as ImageIcon, Pencil, Save, Zap,
-  Eye, Bookmark, Share2,
+  Eye, Bookmark, Share2, Users, MousePointerClick,
 } from 'lucide-react';
 import { BranchContext, ScheduledPost, NewScheduledPost } from '../types';
 import {
   createScheduledPosts, fetchScheduledPosts, cancelScheduledPost,
   uploadPostImage, buildSchedule, updateScheduledPost,
 } from '../services/scheduledPostService';
-import { fetchLatestInsights, PostInsightSnapshot } from '../services/socialInsightsService';
+import { fetchLatestInsights, getDisplayInsights, PostInsightSnapshot } from '../services/socialInsightsService';
 
 interface PostSchedulerProps {
   branchContext?: BranchContext;
@@ -73,6 +73,18 @@ function editBlockedReason(status: ScheduledPost['status']): string | null {
   }
 }
 
+// Instagram genuinely requires media; Facebook Page posts can go out as
+// caption-only (the publish worker maps an empty media_urls to a text
+// feed post). This is the single source of truth for both the Save
+// button's disabled state and the per-row validation message, so they
+// can never drift apart.
+function rowBlockingReason(row: StagingRow): string | null {
+  if (row.uploading) return 'still uploading';
+  if (!row.caption.trim()) return 'needs a caption';
+  if (row.platform === 'instagram' && !row.url) return 'needs an image — Instagram requires media';
+  return null;
+}
+
 // datetime-local inputs work in local time strings with no timezone —
 // convert to/from ISO explicitly so we don't silently drift to UTC.
 function isoToLocalInputValue(iso: string): string {
@@ -122,6 +134,12 @@ function fmtCompactCount(n: number): string {
   return String(n);
 }
 
+// Same compact formatting, but null-safe — a Facebook metric that never
+// synced (or doesn't apply) renders as "—", never a fabricated 0.
+function fmtCompactOrDash(n: number | null): string {
+  return n === null ? '—' : fmtCompactCount(n);
+}
+
 const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }) => {
   // ── Branch selection ──
   const branchOptions = branchContext?.allBranches ?? [];
@@ -156,7 +174,8 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
 
-  // ── Per-post Instagram insights for History rows (impressions/saves/shares) ──
+  // ── Per-post insights for History rows (platform-aware — Instagram gets
+  // saves/shares/impressions, Facebook gets impressions/reach/engagement) ──
   const [postInsights, setPostInsights] = useState<Map<string, PostInsightSnapshot>>(new Map());
   const [insightsLoading, setInsightsLoading] = useState(false);
 
@@ -255,16 +274,23 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   };
 
   // ── Save to queue ──
+  // "Ready" (for the progress label below) still means "image attached" —
+  // that's distinct from "saveable", which a medialess Facebook row is.
   const readyRows = rows.filter(r => r.url && !r.uploading);
-  const canSave = !!selectedBranch && readyRows.length > 0 && readyRows.length === rows.length
-    && readyRows.every(r => r.caption.trim().length > 0);
+  const canSave = !!selectedBranch && rows.length > 0 && rows.every(r => !rowBlockingReason(r));
 
   const handleSave = async () => {
     if (!selectedBranch) { addToast?.('Choose a brand first.', 'error'); return; }
-    if (rows.some(r => r.uploading)) { addToast?.('Wait for uploads to finish.', 'error'); return; }
-    if (rows.some(r => !r.url)) { addToast?.('Remove or retry rows that failed to upload.', 'error'); return; }
-    if (rows.some(r => !r.caption.trim())) { addToast?.('Every post needs a caption before it can be queued.', 'error'); return; }
     if (rows.length === 0) { addToast?.('Add some images first.', 'error'); return; }
+
+    const blockedIndex = rows.findIndex(r => rowBlockingReason(r) !== null);
+    if (blockedIndex !== -1) {
+      const row = rows[blockedIndex];
+      const reason = rowBlockingReason(row);
+      const label = row.caption.trim() ? `"${row.caption.trim().slice(0, 40)}"` : `Row ${blockedIndex + 1}`;
+      addToast?.(`${label} ${reason}.`, 'error');
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -274,7 +300,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         platform: r.platform,
         caption: r.caption.trim(),
         media_type: 'image',
-        media_urls: [r.url as string],
+        media_urls: r.url ? [r.url] : [],
         scheduled_for: r.scheduledFor,
         source: 'upload',
       }));
@@ -370,7 +396,9 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
     [queue],
   );
 
-  // ── Load insights for published posts with a real Instagram media id ──
+  // ── Load insights for published posts with a real platform post id —
+  // Instagram media synced by S2-instagram-insights-sync, Facebook Page
+  // posts synced by a separate job. Both land in the same table. ──
   const insightablePostIds = useMemo(
     () => history.filter(p => p.status === 'published' && p.post_id).map(p => p.id),
     [history],
@@ -560,7 +588,10 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
 
             {/* Staging rows */}
             <div className="space-y-3">
-              {rows.map(row => (
+              {rows.map(row => {
+                const needsImage = row.platform === 'instagram' && !row.url;
+                const imageOptional = row.platform === 'facebook' && !row.url;
+                return (
                 <div key={row.localId} className="flex flex-col lg:flex-row gap-3 border border-slate-200 rounded-xl p-3">
                   <div className="relative w-full lg:w-28 h-28 shrink-0 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
                     <img src={row.previewUrl} alt="" className="w-full h-full object-cover" />
@@ -625,9 +656,22 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                         Remove
                       </button>
                     </div>
+                    {needsImage && (
+                      <p className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        Image required for Instagram — upload one, retry the failed upload, or switch this row to Facebook.
+                      </p>
+                    )}
+                    {imageOptional && (
+                      <p className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
+                        <Info className="w-3.5 h-3.5 shrink-0" />
+                        Image optional for Facebook — this row can go out as a caption-only post.
+                      </p>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Save to queue */}
@@ -853,19 +897,38 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                             {(() => {
                               const snapshot = postInsights.get(post.id);
                               if (snapshot) {
+                                const display = getDisplayInsights(snapshot);
+                                if (display.platform === 'facebook') {
+                                  return (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                                        <Eye className="w-3 h-3" />
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactOrDash(display.impressions)} Impressions</span>
+                                      </span>
+                                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                                        <Users className="w-3 h-3" />
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactOrDash(display.engagedUsers)} Engaged</span>
+                                      </span>
+                                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                                        <MousePointerClick className="w-3 h-3" />
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactOrDash(display.clicks)} Clicks</span>
+                                      </span>
+                                    </div>
+                                  );
+                                }
                                 return (
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
                                       <Bookmark className="w-3 h-3" />
-                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(snapshot.saves)} Saves</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactOrDash(display.saves)} Saves</span>
                                     </span>
                                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
                                       <Share2 className="w-3 h-3" />
-                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(snapshot.shares)} Shares</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(display.shares)} Shares</span>
                                     </span>
                                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
                                       <Eye className="w-3 h-3" />
-                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(snapshot.impressions)} Impressions</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(display.impressions)} Impressions</span>
                                     </span>
                                   </div>
                                 );

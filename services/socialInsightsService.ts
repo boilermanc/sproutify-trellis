@@ -2,20 +2,56 @@ import { supabase } from '../lib/supabase';
 
 // ─── Social Insights Service ────────────────────────────────────────
 // Reads `social_post_insights` — a TIME SERIES table (one row per fetch,
-// never an upsert) that `S2-instagram-insights-sync.json` writes to every
-// 6 hours for posts this app already published to Instagram. This service
-// only ever reads the latest snapshot per post; it never writes — writing
-// is the n8n workflow's job.
+// never an upsert). Two independent n8n sync jobs write here on a
+// schedule: `S2-instagram-insights-sync.json` for Instagram media, and a
+// Facebook Page-insights sync for Facebook posts. Each row carries a
+// `platform` column so callers can tell which shape applies:
+//   - Instagram rows populate the flat impressions/reach/likes/comments/
+//     saves/shares columns.
+//   - Facebook Page posts have no `saves` metric (that column is always
+//     NULL) and carry their real numbers in `raw` (post_impressions,
+//     post_impressions_unique, post_engaged_users, post_clicks,
+//     post_reactions_by_type_total) — the flat columns don't mean
+//     anything for a Facebook Page post.
+// This service only ever reads the latest snapshot per post; it never
+// writes — writing is the n8n workflows' job.
 // ────────────────────────────────────────────────────────────────────
 
+export type SocialInsightPlatform = 'instagram' | 'facebook';
+
+export interface FacebookRawInsights {
+  post_impressions?: number | null;
+  post_impressions_unique?: number | null;
+  post_engaged_users?: number | null;
+  post_clicks?: number | null;
+  post_reactions_by_type_total?: number | Record<string, number> | null;
+  [key: string]: unknown;
+}
+
 export interface PostInsightSnapshot {
+  platform: SocialInsightPlatform;
   impressions: number;
   reach: number;
   likes: number;
   comments: number;
-  saves: number;
+  saves: number | null; // null on Facebook rows — Page posts have no saves metric
   shares: number;
+  raw: FacebookRawInsights | Record<string, unknown> | null;
   fetched_at: string;
+}
+
+// n8n's Supabase node (and, defensively, any other writer) can stringify a
+// JSONB column instead of leaving it native — normalize on read the same
+// way services/scheduledPostService.ts and pages/PostPerformance.tsx do.
+function parseJsonbField<T>(value: unknown, fallback: T): T {
+  if (value == null) return fallback;
+  if (typeof value !== 'string') return value as T;
+  try {
+    const parsed = JSON.parse(value);
+    return (parsed ?? fallback) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 /**
@@ -35,7 +71,7 @@ export async function fetchLatestInsights(scheduledPostIds: string[]): Promise<M
   try {
     const { data, error } = await supabase
       .from('social_post_insights')
-      .select('scheduled_post_id, impressions, reach, likes, comments, saves, shares, fetched_at')
+      .select('scheduled_post_id, platform, impressions, reach, likes, comments, saves, shares, raw, fetched_at')
       .in('scheduled_post_id', ids)
       .order('fetched_at', { ascending: false });
 
@@ -45,12 +81,14 @@ export async function fetchLatestInsights(scheduledPostIds: string[]): Promise<M
       const postId = row.scheduled_post_id;
       if (!postId || result.has(postId)) continue; // first occurrence = newest, thanks to the order() above
       result.set(postId, {
+        platform: (row.platform as SocialInsightPlatform) ?? 'instagram',
         impressions: row.impressions ?? 0,
         reach: row.reach ?? 0,
         likes: row.likes ?? 0,
         comments: row.comments ?? 0,
-        saves: row.saves ?? 0,
+        saves: row.saves ?? null,
         shares: row.shares ?? 0,
+        raw: parseJsonbField<Record<string, unknown> | null>(row.raw, null),
         fetched_at: row.fetched_at,
       });
     }
@@ -62,20 +100,68 @@ export async function fetchLatestInsights(scheduledPostIds: string[]): Promise<M
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Platform-aware display metrics — never fabricates: a missing number
+// stays null so the UI can render "—" instead of a fake zero. Instagram
+// rows read the flat columns; Facebook rows read `raw`, since the flat
+// columns don't correspond to real Facebook metrics.
+// ═══════════════════════════════════════════════════════════════
+
+export type DisplayInsightMetrics =
+  | { platform: 'instagram'; impressions: number; reach: number; saves: number | null; shares: number }
+  | {
+      platform: 'facebook';
+      impressions: number | null;
+      reachUnique: number | null;
+      engagedUsers: number | null;
+      clicks: number | null;
+      reactions: number | null;
+    };
+
+/** Picks the right numbers for a snapshot's platform — never mixes the two shapes. */
+export function getDisplayInsights(snapshot: PostInsightSnapshot): DisplayInsightMetrics {
+  if (snapshot.platform === 'facebook') {
+    const raw = (snapshot.raw ?? {}) as FacebookRawInsights;
+    const reactionsRaw = raw.post_reactions_by_type_total;
+    const reactions =
+      typeof reactionsRaw === 'number'
+        ? reactionsRaw
+        : reactionsRaw && typeof reactionsRaw === 'object'
+          ? Object.values(reactionsRaw).reduce((sum: number, v) => sum + (Number(v) || 0), 0)
+          : null;
+    return {
+      platform: 'facebook',
+      impressions: raw.post_impressions ?? null,
+      reachUnique: raw.post_impressions_unique ?? null,
+      engagedUsers: raw.post_engaged_users ?? null,
+      clicks: raw.post_clicks ?? null,
+      reactions,
+    };
+  }
+  return {
+    platform: 'instagram',
+    impressions: snapshot.impressions,
+    reach: snapshot.reach,
+    saves: snapshot.saves,
+    shares: snapshot.shares,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Derived metrics — pure helpers, divide-by-zero-safe (null, not NaN/Infinity),
 // same convention as ctr()/cpc()/cpm() in services/adPerformanceService.ts.
+// Instagram-only: Facebook Page posts have no saves metric to rate.
 // ═══════════════════════════════════════════════════════════════
 
 /** (likes + comments + saves + shares) / impressions, as a percentage. */
 export function engagementRate(snapshot: PostInsightSnapshot): number | null {
-  if (!snapshot.impressions) return null;
+  if (!snapshot.impressions || snapshot.saves === null) return null;
   const engagements = snapshot.likes + snapshot.comments + snapshot.saves + snapshot.shares;
   return (engagements / Math.max(snapshot.impressions, 1)) * 100;
 }
 
 /** saves / impressions, as a percentage. */
 export function saveRate(snapshot: PostInsightSnapshot): number | null {
-  if (!snapshot.impressions) return null;
+  if (!snapshot.impressions || snapshot.saves === null) return null;
   return (snapshot.saves / Math.max(snapshot.impressions, 1)) * 100;
 }
 

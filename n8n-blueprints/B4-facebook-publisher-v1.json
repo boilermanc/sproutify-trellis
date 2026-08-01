@@ -1,0 +1,841 @@
+{
+  "name": "Trellis: Facebook Page Publisher (Text, Photo & Multi-Photo)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trellis-facebook-publish",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1360,
+        300
+      ],
+      "webhookId": "8f41c07a-5d92-4c18-9b3e-2ad7f1c66b40",
+      "notes": "Contract matches publishToFacebook() in services/socialService.ts AND the 'Publish Facebook' node in S1-scheduled-post-publisher.json: { branch_id (UUID), caption, image_url (nullable), media_urls (optional array), scheduled_for }. Unlike Instagram, image_url may be null -- Facebook allows a text-only Page post."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "validate-payload-0",
+              "leftValue": "={{ $json.body.branch_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "validate-payload-1",
+              "leftValue": "={{ $json.body.caption }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1140,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: 'Missing required fields: branch_id and caption are required' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "name": "Error: Missing Fields",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -920,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_branch_id",
+              "value": "={{ $json.body.branch_id }}"
+            },
+            {
+              "name": "p_platform",
+              "value": "facebook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Facebook Credentials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -920,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Trellis Supabase Secret Key"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "IMPORTANT: after importing this workflow you MUST re-attach the Header Auth credential here. n8n matches it by NAME, so an imported workflow arrives with a dangling reference and every publish fails with n8n's own generic 'Credentials not found' -- which looks exactly like a real missing-credential error but happens before any node logic runs. Header: apikey = Hub service_role key."
+    },
+    {
+      "parameters": {
+        "jsCode": "const credentials = $input.first().json;\nconst body = $('Webhook').first().json.body || {};\nif (!credentials.success) throw new Error('Credential lookup failed: ' + (credentials.error || 'unknown error'));\nconst pageId = credentials.platform_metadata?.page_id;\nif (!pageId) throw new Error('page_id missing from platform_metadata - reconnect this brand under Settings > Platform Setup');\n// Publishing to a Page needs a PAGE token. Brands connected through the OAuth\n// wizard store one directly; brands set up by hand only have the user token,\n// which the next node exchanges for a page token.\nconst storedToken = (credentials.platform_metadata?.page_access_token || credentials.access_token || '').trim();\nif (!storedToken) throw new Error('No Facebook access token stored for this brand');\nconst caption = (body.caption || '').trim();\nif (!caption) throw new Error('caption is required');\nconst rawUrls = Array.isArray(body.media_urls) && body.media_urls.length\n  ? body.media_urls\n  : (body.image_url ? [body.image_url] : []);\nconst mediaUrls = rawUrls.filter(u => typeof u === 'string' && u.trim()).slice(0, 10);\n// Unlike Instagram, Facebook is happy to post text with no media at all.\nconst postKind = mediaUrls.length > 1 ? 'multi_photo' : (mediaUrls.length === 1 ? 'photo' : 'text');\nreturn [{ json: {\n  page_id: pageId,\n  stored_token: storedToken,\n  branch_id: body.branch_id,\n  caption: caption,\n  media_urls: mediaUrls,\n  image_url: mediaUrls[0] || null,\n  post_kind: postKind,\n  scheduled_for: body.scheduled_for || null\n} }];"
+      },
+      "name": "Extract & Normalize Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.page_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.stored_token }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "access_token"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Resolve Page Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -480,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "GET /{page_id}?fields=access_token returns the PAGE token when called with a user token that manages the Page. neverError so a permissions failure cannot kill the publish - the next node falls back to the stored token, which is already a page token for OAuth-connected brands."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Extract & Normalize Request').first().json;\nconst res = $input.first().json || {};\nconst status = Number(res.statusCode || res.status || 0);\nlet parsed = res.body;\nif (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; } }\nconst exchanged = parsed && typeof parsed.access_token === 'string' ? parsed.access_token.trim() : '';\nconst token = exchanged || src.stored_token;\nif (!token) throw new Error('Could not resolve a Facebook Page access token');\n// Never log the token itself - only which path produced it.\nconsole.log('[B4] page token resolved via ' + (exchanged ? 'exchange' : 'stored') + ' (HTTP ' + status + ')');\nreturn [{ json: { ...src, access_token: token, token_source: exchanged ? 'exchanged' : 'stored' } }];"
+      },
+      "name": "Choose Page Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "kind-multi",
+                    "leftValue": "={{ $json.post_kind }}",
+                    "rightValue": "multi_photo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "multi_photo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "id": "kind-photo",
+                    "leftValue": "={{ $json.post_kind }}",
+                    "rightValue": "photo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "photo"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "text"
+        }
+      },
+      "name": "Route Post Kind",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -40,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Choose Page Token').first().json;\n// One item per photo so the upload node fans out.\nreturn src.media_urls.map((url, index) => ({ json: { ...src, photo_url: url, photo_index: index } }));"
+      },
+      "name": "Prepare Photo Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.page_id }}/photos",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.photo_url }}"
+            },
+            {
+              "name": "published",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Upload Unpublished Photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        400,
+        80
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "published=false uploads the photo without posting it. The ids are then attached to a single feed post so a multi-image job becomes ONE post, not N separate ones."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst src = $('Choose Page Token').first().json;\nconst ids = items.map(i => (i.json || {}).id).filter(Boolean);\n// Refuse to publish a partial gallery - better to fail loudly than post half of it.\nif (ids.length !== src.media_urls.length) {\n  throw new Error('Only ' + ids.length + ' of ' + src.media_urls.length + ' photos uploaded - not publishing a partial post');\n}\nreturn [{ json: { ...src, attached_media: JSON.stringify(ids.map(id => ({ media_fbid: id }))) } }];"
+      },
+      "name": "Collect Photo Ids",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.page_id }}/feed",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{ $json.caption }}"
+            },
+            {
+              "name": "attached_media",
+              "value": "={{ $json.attached_media }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Create Multi-Photo Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        840,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.page_id }}/photos",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.image_url }}"
+            },
+            {
+              "name": "caption",
+              "value": "={{ $json.caption }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Create Photo Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        400,
+        300
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Returns { id: <photo id>, post_id: <page>_<post> }. post_id is the one that resolves to a permalink."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.page_id }}/feed",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{ $json.caption }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Create Text Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        400,
+        520
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Caption-only Page post. Instagram cannot do this; Facebook can, and PostScheduler/SocialHub allow queueing one."
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $('Choose Page Token').first().json;\nconst res = $input.first().json || {};\n// /feed returns { id: '<page>_<post>' }; /photos returns { id: <photo>, post_id: '<page>_<post>' }.\n// post_id is what resolves to a real permalink, so prefer it.\nconst postId = res.post_id || res.id || null;\nif (!postId) throw new Error('Facebook accepted the request but returned no post id');\nreturn [{ json: {\n  post_id: postId,\n  photo_id: res.id || null,\n  page_id: src.page_id,\n  branch_id: src.branch_id,\n  caption: src.caption,\n  image_url: src.image_url,\n  media_count: src.media_urls.length,\n  post_kind: src.post_kind\n} }];"
+      },
+      "name": "Normalize Post Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        300
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/marketing_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_type: 'social_publish', source: 'facebook', payload: { branch_id: $json.branch_id, post_id: $json.post_id, caption: $json.caption, image_url: $json.image_url, platform: 'facebook', media_type: $json.post_kind === 'multi_photo' ? 'carousel' : ($json.post_kind === 'photo' ? 'image' : 'text'), published_at: new Date().toISOString() } }) }}",
+        "options": {}
+      },
+      "name": "Log Marketing Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "continueRegularOutput: a logging failure must never turn a real publish into an error response."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Normalize Post Result').first().json.post_id, message: 'Published successfully to Facebook' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        300
+      ],
+      "notes": "Reads post_id from Normalize Post Result BY NAME, not $json. This node sits downstream of Log Marketing Event, whose HTTP response replaces $json - the exact bug that made the Instagram publisher return success with a null post_id (fixed 2026-08-01). Normalize Post Result is a single-output code node, so a by-name lookup is deterministic here."
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json || {};\nconst err = item.error || item;\nlet message =\n  (err && err.error && err.error.message) ||\n  (err && err.message) ||\n  (typeof err === 'string' ? err : null) ||\n  item.reason || null;\nif (!message) { try { message = JSON.stringify(err).slice(0, 400); } catch (e) { message = 'Unknown publish error'; } }\nconst code = (err && err.error && (err.error.code || err.error.error_subcode)) || null;\nreturn { json: { success: false, error: String(message).slice(0, 500), code: code } };",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Prepare Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error, code: $json.code || null }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        700
+      ],
+      "notes": "HTTP 200 with success:false is deliberate. S1's 'Interpret Publish Result' treats an unparseable/non-200 reply as needs_review (a human must check the account), and reserves 'failed' for an explicit success:false. A bare 500 would turn every distinct error into 'Webhook returned 500'."
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Facebook Page Publisher\n\nServes **`trellis-facebook-publish`** -- the webhook `publishToFacebook()` and the\nS1 scheduled-post worker have been calling all along. Until now nothing answered it.\n\n### Setup (required after import)\n1. **Fetch Facebook Credentials** -> re-attach the Header Auth credential\n   (`apikey` = Hub service_role key). n8n links credentials by NAME, so an imported\n   workflow always arrives with this dangling. Symptom if you skip it: every publish\n   fails with `Credentials not found` before any logic runs.\n2. **Log Marketing Event** -> confirm the `Sproutify Trellis` Supabase credential.\n3. Activate the workflow.\n\n### Prerequisites per brand\n`social_credentials` needs a row with `platform='facebook'`, `status='active'`,\n`platform_metadata.page_id`, and a token. A Page token in\n`platform_metadata.page_access_token` is used directly; otherwise the stored user\ntoken is exchanged for one via `GET /{page_id}?fields=access_token`.\nRequires `pages_manage_posts` + `pages_read_engagement`.\n\n### Post kinds\n- 0 media -> `POST /{page_id}/feed` (text-only; Instagram cannot do this)\n- 1 media -> `POST /{page_id}/photos`\n- 2-10    -> unpublished photos, then ONE feed post with `attached_media`\n\n### Response contract (S1 depends on this)\nAlways HTTP 200: `{success:true, post_id}` or `{success:false, error}`.\nAn empty or non-200 reply makes S1 mark the row `needs_review`, not `failed`,\nbecause a retry could double-post.",
+        "height": 720,
+        "width": 520
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1360,
+        -460
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Fetch Facebook Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error: Missing Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Facebook Credentials": {
+      "main": [
+        [
+          {
+            "node": "Extract & Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Resolve Page Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Page Token": {
+      "main": [
+        [
+          {
+            "node": "Choose Page Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choose Page Token": {
+      "main": [
+        [
+          {
+            "node": "Route Post Kind",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Post Kind": {
+      "main": [
+        [
+          {
+            "node": "Prepare Photo Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Photo Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Text Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Photo Items": {
+      "main": [
+        [
+          {
+            "node": "Upload Unpublished Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Unpublished Photo": {
+      "main": [
+        [
+          {
+            "node": "Collect Photo Ids",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Photo Ids": {
+      "main": [
+        [
+          {
+            "node": "Create Multi-Photo Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Multi-Photo Post": {
+      "main": [
+        [
+          {
+            "node": "Normalize Post Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Photo Post": {
+      "main": [
+        [
+          {
+            "node": "Normalize Post Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Text Post": {
+      "main": [
+        [
+          {
+            "node": "Normalize Post Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Post Result": {
+      "main": [
+        [
+          {
+            "node": "Log Marketing Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Marketing Event": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

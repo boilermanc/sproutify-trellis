@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig } from '../types';
+import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig, NewScheduledPost } from '../types';
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
 import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook, checkConnections } from '../services/socialService';
+import { createScheduledPosts } from '../services/scheduledPostService';
 import { uploadSocialMedia, getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { runBrandComplianceAudit } from '../services/aiService';
 import {
@@ -299,10 +300,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const [publishConfirm, setPublishConfirm] = useState<{ draftId: string; platform: 'instagram' | 'facebook' } | null>(null);
   const [publishingKey, setPublishingKey] = useState<string | null>(null); // `${draftId}_${platform}` while in flight
 
-  // Scheduling controls (content-only: drafts land on the calendar, not published)
+  // Scheduling controls — drafts land on the calendar AND, for Instagram/Facebook,
+  // get queued in scheduled_social_posts for the S1 cron worker to actually publish.
   const [scheduleAt, setScheduleAt] = useState<string>(() => defaultScheduleAt());
   const [recurrence, setRecurrence] = useState<Recurrence>('none');
   const [recurrenceCount, setRecurrenceCount] = useState<number>(4);
+  const [isScheduling, setIsScheduling] = useState(false);
 
   // Queue filters
   const [queuePlatformFilter, setQueuePlatformFilter] = useState<SocialPlatform | 'all'>('all');
@@ -749,14 +752,82 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     } finally { setIsGenerating(false); }
   };
 
-  // Schedule one or more drafts onto the Content Calendar, expanding each by the chosen cadence.
-  const scheduleDrafts = (drafts: DraftPost[]) => {
+  // Schedule one or more drafts: queue Instagram/Facebook rows in scheduled_social_posts
+  // (the only table the S1 cron worker publishes from) AND reflect the whole batch on the
+  // local Content Calendar. Platforms scheduled_social_posts can't hold (x, linkedin) and
+  // Instagram drafts with no media are skipped from the queue with an explicit toast —
+  // they are never silently dropped.
+  const scheduleDrafts = async (drafts: DraftPost[]) => {
     if (drafts.length === 0) return;
     const startIso = scheduleAt ? new Date(scheduleAt).toISOString() : new Date(Date.now() + 86400000).toISOString();
     const dates = buildScheduleDates(startIso, recurrence, recurrenceCount);
 
-    const newPosts: DraftPost[] = [];
+    // Build the rows that will actually auto-publish. The DB CHECK constraint on
+    // scheduled_social_posts.platform only allows 'instagram' | 'facebook'.
+    const rows: NewScheduledPost[] = [];
+    const skipReasons: string[] = [];
+    const unresolvedBranchDraftIds = new Set<string>();
+
     drafts.forEach(draft => {
+      const branch = getBranchForDraft(draft);
+      const brandLabel = branch?.name || 'this brand';
+
+      // Never send a slug where a UUID is required — that's the exact bug that broke
+      // publishing before. If the brand can't be resolved to its branch row, bail loudly.
+      if (!draft.branch_id || !branch) {
+        unresolvedBranchDraftIds.add(draft.id);
+        skipReasons.push(`${brandLabel}: couldn't resolve a brand id — nothing queued for this draft`);
+        return;
+      }
+
+      const mediaUrls = getDraftMediaUrls(draft);
+      const mediaType: DraftPost['media_type'] = draft.media_type || (mediaUrls.length > 1 ? 'carousel' : 'image');
+
+      Object.entries(draft.versions).forEach(([plat, rawCaption]) => {
+        const caption = String(rawCaption || '').trim();
+        if (!caption) return;
+
+        if (plat !== 'instagram' && plat !== 'facebook') {
+          skipReasons.push(`${brandLabel} → ${SOCIAL_PLATFORM_META[plat]?.label || plat}: direct publishing isn't connected yet, copy the text instead`);
+          return;
+        }
+        if (plat === 'instagram' && mediaUrls.length === 0) {
+          skipReasons.push(`${brandLabel} → Instagram: requires media and none is attached`);
+          return;
+        }
+
+        dates.forEach(iso => {
+          rows.push({
+            branch_id: branch.id,
+            branch_slug: branch.slug,
+            platform: plat as 'instagram' | 'facebook',
+            caption,
+            media_type: mediaType,
+            media_urls: mediaUrls,
+            scheduled_for: iso,
+            source: 'social_hub',
+          });
+        });
+      });
+    });
+
+    setIsScheduling(true);
+    if (rows.length > 0) {
+      try {
+        await createScheduledPosts(rows);
+      } catch (error) {
+        addToast?.(error instanceof Error ? error.message : 'Failed to queue scheduled posts — nothing was scheduled.', 'error');
+        setIsScheduling(false);
+        return; // Bail before touching any local state — the UI must not claim success.
+      }
+    }
+    setIsScheduling(false);
+
+    // Local Content Calendar reflects every draft whose brand resolved, including
+    // x/linkedin-only drafts (they still show for planning, they just won't auto-publish).
+    const calendarDrafts = drafts.filter(d => !unresolvedBranchDraftIds.has(d.id));
+    const newPosts: DraftPost[] = [];
+    calendarDrafts.forEach(draft => {
       const root = baseDraftId(draft.id);
       dates.forEach((iso, i) => {
         newPosts.push({
@@ -768,33 +839,46 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       });
     });
 
-    // Idempotent: drop any previously-scheduled posts from the same draft series before adding the fresh set,
-    // so editing + re-scheduling replaces rather than duplicating.
-    const bases = new Set(drafts.map(d => baseDraftId(d.id)));
-    setScheduledPosts(prev => [...newPosts, ...prev.filter(p => !bases.has(baseDraftId(p.id)))]);
+    if (calendarDrafts.length > 0) {
+      // Idempotent: drop any previously-scheduled posts from the same draft series before adding the fresh set,
+      // so editing + re-scheduling replaces rather than duplicating.
+      const bases = new Set(calendarDrafts.map(d => baseDraftId(d.id)));
+      setScheduledPosts(prev => [...newPosts, ...prev.filter(p => !bases.has(baseDraftId(p.id)))]);
 
-    const scheduledIds = new Set(drafts.map(d => d.id));
-    setInboundQueue(prev => prev.filter(p => !scheduledIds.has(p.id)));
-    const remaining = activeDrafts.filter(p => !scheduledIds.has(p.id));
+      const primaryPlatform = Object.keys(calendarDrafts[0].versions)[0] || 'instagram';
+      const event: MarketingEvent = {
+        id: `soc_${Date.now()}`,
+        profile_id: 'SYSTEM',
+        event_type: 'social_intent',
+        source: primaryPlatform as any,
+        payload: { brands: calendarDrafts.length, scheduled_count: newPosts.length, queued_count: rows.length },
+        created_at: new Date().toISOString()
+      };
+      setEvents(prev => [event, ...prev]);
+    }
+
+    // Only drop drafts from the working queue once they've actually landed on the calendar —
+    // an unresolved-branch draft stays put so it can be fixed and retried.
+    const handledIds = new Set(calendarDrafts.map(d => d.id));
+    setInboundQueue(prev => prev.filter(p => !handledIds.has(p.id)));
+    const remaining = activeDrafts.filter(p => !handledIds.has(p.id));
     setActiveDrafts(remaining);
     if (remaining.length === 0) setWorkflowStatus('idle');
 
-    const primaryPlatform = Object.keys(drafts[0].versions)[0] || 'instagram';
-    const event: MarketingEvent = {
-      id: `soc_${Date.now()}`,
-      profile_id: 'SYSTEM',
-      event_type: 'social_intent',
-      source: primaryPlatform as any,
-      payload: { brands: drafts.length, scheduled_count: newPosts.length },
-      created_at: new Date().toISOString()
-    };
-    setEvents(prev => [event, ...prev]);
-    addToast?.(`Scheduled ${newPosts.length} post${newPosts.length > 1 ? 's' : ''}${drafts.length > 1 ? ` across ${drafts.length} brands` : ''} onto the calendar.`, 'success');
-    setActiveTab('pipeline');
+    if (skipReasons.length > 0) {
+      addToast?.(`Skipped: ${skipReasons.join('; ')}.`, rows.length === 0 ? 'error' : 'info');
+    }
+    if (rows.length > 0) {
+      addToast?.(
+        `Queued ${rows.length} post${rows.length > 1 ? 's' : ''} to auto-publish (worker runs every ~10 minutes, so the time is approximate to that window).`,
+        'success'
+      );
+    }
+    if (calendarDrafts.length > 0) setActiveTab('pipeline');
   };
 
-  const handleQuickApprove = (draft: DraftPost) => scheduleDrafts([draft]);
-  const handleApproveAll = () => scheduleDrafts(activeDrafts);
+  const handleQuickApprove = async (draft: DraftPost) => { await scheduleDrafts([draft]); };
+  const handleApproveAll = async () => { await scheduleDrafts(activeDrafts); };
 
   const updateDraftVersion = (draftId: string, platform: string, value: string) => {
     setActiveDrafts(prev => prev.map(d => d.id === draftId ? { ...d, versions: { ...d.versions, [platform]: value } } : d));
@@ -1369,10 +1453,16 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                           : `Creates ${recurrenceCount} ${recurrence} posts per brand (${recurrenceCount * activeDrafts.length} total).`}
                       </p>
                     </div>
+                    <div className="flex items-start gap-2 mb-4 px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100">
+                      <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                      <p className="text-[11px] font-bold text-slate-400">
+                        Instagram and Facebook drafts are queued to publish automatically — the worker checks for due posts roughly every 10 minutes, so the time is approximate to that window. X and LinkedIn aren't connected yet; those stay on the calendar for you to copy manually.
+                      </p>
+                    </div>
                     <div className="flex flex-wrap gap-4">
-                      <button onClick={handleApproveAll} className="flex-1 min-w-[160px] py-4 sm:py-6 bg-white border-2 border-slate-200 text-slate-800 rounded-[2rem] font-black text-base sm:text-lg flex items-center justify-center gap-3 shadow-sm hover:border-emerald-500 hover:text-emerald-700 transition">
-                        <CalendarDays size={24} className="text-emerald-500" />
-                        <span>Schedule All{activeDrafts.length > 1 ? ` (${activeDrafts.length} brands)` : ''}</span>
+                      <button onClick={handleApproveAll} disabled={isScheduling} className="flex-1 min-w-[160px] py-4 sm:py-6 bg-white border-2 border-slate-200 text-slate-800 rounded-[2rem] font-black text-base sm:text-lg flex items-center justify-center gap-3 shadow-sm hover:border-emerald-500 hover:text-emerald-700 transition disabled:opacity-50">
+                        {isScheduling ? <Loader2 size={24} className="text-emerald-500 animate-spin" /> : <CalendarDays size={24} className="text-emerald-500" />}
+                        <span>{isScheduling ? 'Scheduling…' : `Schedule All${activeDrafts.length > 1 ? ` (${activeDrafts.length} brands)` : ''}`}</span>
                       </button>
                       <button onClick={copyAllBrands} className="flex-1 min-w-[160px] py-4 sm:py-6 bg-slate-900 text-white rounded-[2rem] font-black text-base sm:text-lg flex items-center justify-center gap-3 shadow-2xl hover:bg-emerald-600 transition">
                         {copiedKey === 'all_brands' ? <Check size={24} className="text-emerald-400" /> : <Copy size={24} className="text-emerald-400" />}
@@ -1400,8 +1490,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                             <button onClick={() => copyAllVariants(draft)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 text-[10px] font-black uppercase tracking-wider transition">
                               {copiedKey === `all_${draft.id}` ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy brand</>}
                             </button>
-                            <button onClick={() => handleQuickApprove(draft)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-wider transition">
-                              <CalendarDays size={12} /> Schedule
+                            <button onClick={() => handleQuickApprove(draft)} disabled={isScheduling} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-wider transition disabled:opacity-50">
+                              {isScheduling ? <Loader2 size={12} className="animate-spin" /> : <CalendarDays size={12} />} Schedule
                             </button>
                           </div>
                         </div>

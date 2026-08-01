@@ -52,6 +52,10 @@
               "value": "eq.published"
             },
             {
+              "name": "platform",
+              "value": "eq.instagram"
+            },
+            {
               "name": "post_id",
               "value": "not.is.null"
             },
@@ -85,7 +89,7 @@
         }
       },
       "onError": "continueErrorOutput",
-      "notes": "GET scheduled_social_posts where status=eq.published AND post_id=not.is.null AND published_at=gte.30-days-ago, newest first, capped at 50/run. Runs every 6 hours -- engagement takes days to accrue, so faster polling would just waste Graph API calls.",
+      "notes": "Instagram rows ONLY. Without the platform filter this sweeps up Facebook rows too and hands them to the Instagram credential lookup and the IG media-insights endpoint, which fails or returns nonsense. Facebook is handled by S3-facebook-insights-sync.json.",
       "notesInFlow": true
     },
     {
@@ -275,7 +279,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ scheduled_post_id: $json.scheduled_post_id, ig_media_id: $json.ig_media_id, branch_slug: $json.branch_slug, impressions: $json.impressions, reach: $json.reach, likes: $json.likes, comments: $json.comments, saves: $json.saves, shares: $json.shares, raw: $json.raw, fetched_at: $json.fetched_at }) }}",
+        "jsonBody": "={{ JSON.stringify({ platform: 'instagram', scheduled_post_id: $json.scheduled_post_id, ig_media_id: $json.ig_media_id, branch_slug: $json.branch_slug, impressions: $json.impressions, reach: $json.reach, likes: $json.likes, comments: $json.comments, saves: $json.saves, shares: $json.shares, raw: $json.raw, fetched_at: $json.fetched_at }) }}",
         "options": {}
       },
       "name": "Insert Post Insights",

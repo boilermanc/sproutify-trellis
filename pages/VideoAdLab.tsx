@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig, TextOverlayLayer } from '../types';
 import { GoogleGenAI } from '@google/genai';
-import { BRANCH_DISPLAY_NAMES, formatBranchName } from '../utils';
+import { BRANCH_DISPLAY_NAMES, formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
 import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
@@ -12,7 +12,7 @@ import {
   submitStaticAdJob, submitStaticAdBatch, submitCarouselJob, approveJob, approveAndRenderVideo,
   regenerateJob, discardJob, saveOverlayConfig, saveComposite, publishableImageUrl,
 } from '../services/videoAdService';
-import { publishToSocial } from '../services/socialService';
+import { publishToSocial, publishToFacebook } from '../services/socialService';
 import { uploadSocialMedia } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
@@ -445,6 +445,14 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // ── Publish state ──
   const [publishDraftJobId, setPublishDraftJobId] = useState<string | null>(null);
   const [publishingJobId, setPublishingJobId] = useState<string | null>(null);
+  // Which platforms a publish/schedule action targets. Shared across the row
+  // (like scheduleDateTime) rather than keyed per job — only one publish or
+  // schedule form is ever open at a time.
+  const [publishTargets, setPublishTargets] = useState<('instagram' | 'facebook')[]>(['instagram']);
+  const togglePublishTarget = (platform: 'instagram' | 'facebook') => {
+    setPublishTargets(prev => prev.includes(platform) ? prev.filter(p => p !== platform) : [...prev, platform]);
+  };
+  const publishTargetsLabel = publishTargets.map(p => SOCIAL_PLATFORM_META[p]?.label || p).join(' & ') || 'a platform';
 
   // ── Meta Ads export state — the job (if any) currently open in the export modal ──
   const [adExportJobId, setAdExportJobId] = useState<string | null>(null);
@@ -509,19 +517,22 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
         if (!caption) throw new Error('Add a caption before scheduling — it publishes exactly as written.');
         if (!mediaUrls.length) throw new Error('No media to schedule.');
+        if (publishTargets.length === 0) throw new Error('Select at least one platform to schedule.');
 
+        // One row per selected platform so the S1 cron worker publishes to
+        // each independently.
         const { error: queueError } = await supabase
           .from('scheduled_social_posts')
-          .insert({
+          .insert(publishTargets.map(platform => ({
             branch_id: branchUuid,
             branch_slug: job.branch,
-            platform: 'instagram',
+            platform,
             caption,
             media_type: job.format === 'carousel' ? 'carousel' : 'image',
             media_urls: mediaUrls,
             scheduled_for: scheduledDate.toISOString(),
             source: 'creative_studio',
-          });
+          })));
         if (queueError) throw new Error(queueError.message);
       }
 
@@ -552,7 +563,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     }
     // captionDrafts/branchContext are read via getCaptionDraft/branchIdForSlug —
     // without them a stale closure would queue the pre-edit caption.
-  }, [scheduleDateTime, addToast, captionDrafts, branchContext]);
+  }, [scheduleDateTime, addToast, captionDrafts, branchContext, publishTargets]);
 
   // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
@@ -1022,12 +1033,15 @@ STRICT RULES:
     }
   };
 
-  // ── Publish approved static/carousel jobs to Instagram ──
+  // ── Publish approved static/carousel jobs to the selected platform(s) ──
   // Static/single-image jobs publish the flattened composite (real text
   // baked in); carousels still send their full slide array untouched.
+  // Instagram requires media (always present here); Facebook also accepts
+  // caption-only posts but every Creative Studio job has an image.
   const handlePublish = async (job: VideoAdJob) => {
     const caption = getCaptionDraft(job).trim();
     if (!caption) { addToast('Add a caption before publishing.', 'error'); return; }
+    if (publishTargets.length === 0) { addToast('Select at least one platform to publish to.', 'error'); return; }
 
     const mediaUrls = job.format === 'carousel' && job.media_urls?.length
       ? job.media_urls
@@ -1050,23 +1064,34 @@ STRICT RULES:
         return;
       }
       const branchId = branchEntry.id;
-      console.info('[VideoAdLab] publishing to Instagram', {
-        jobId: job.id,
-        branch: job.branch,
-        branchId,
-        mediaType: job.format === 'carousel' ? 'carousel' : 'image',
-        mediaCount: mediaUrls.length,
-      });
-      const result = await publishToSocial(
-        branchId,
-        caption,
-        primaryImage,
-        null,
-        undefined,
-        { media_type: job.format === 'carousel' ? 'carousel' : 'image', media_urls: mediaUrls },
-      );
-      if (result.ok) {
-        addToast(`Published to Instagram${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
+      const mediaType = job.format === 'carousel' ? 'carousel' : 'image';
+
+      // Fire each selected platform's publish call and collect a per-platform
+      // outcome — a Facebook failure must not mask an Instagram success (or
+      // vice versa).
+      const outcomes = await Promise.all(publishTargets.map(async (platform) => {
+        console.info(`[VideoAdLab] publishing to ${platform}`, {
+          jobId: job.id,
+          branch: job.branch,
+          branchId,
+          mediaType,
+          mediaCount: mediaUrls.length,
+        });
+        const result = platform === 'instagram'
+          ? await publishToSocial(branchId, caption, primaryImage, null, undefined, { media_type: mediaType, media_urls: mediaUrls })
+          : await publishToFacebook(branchId, caption, primaryImage, null);
+        if (result.ok) {
+          console.info(`[VideoAdLab] publish succeeded on ${platform}`, { jobId: job.id, postId: result.postId });
+        } else {
+          console.error(`[VideoAdLab] publish failed on ${platform}`, result);
+        }
+        return { platform, ...result };
+      }));
+
+      const succeeded = outcomes.filter(o => o.ok);
+      const failed = outcomes.filter(o => !o.ok);
+
+      if (succeeded.length > 0) {
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, publish_status: 'published', caption } : j));
         setPublishDraftJobId(null);
 
@@ -1082,31 +1107,47 @@ STRICT RULES:
         // sat in the queue. That table IS the posting tracker: Post Scheduler
         // history reads it, and the S2 insights sync ONLY fetches stats for
         // posts in it -- so a direct publish that skipped this row would be
-        // invisible to history and never collect saves/shares. Best-effort:
-        // a tracking failure must not turn a successful publish into an error.
-        try {
-          const now = new Date().toISOString();
-          const { error: trackErr } = await supabase.from('scheduled_social_posts').insert({
-            branch_id: branchId,
-            branch_slug: job.branch,
-            platform: 'instagram',
-            caption,
-            media_type: job.format === 'carousel' ? 'carousel' : 'image',
-            media_urls: mediaUrls,
-            scheduled_for: now,
-            status: 'published',
-            post_id: result.postId || null,
-            published_at: now,
-            source: 'creative_studio',
-            creative_meta: { creative_job_id: job.id, format: job.format || 'video' },
-          });
-          if (trackErr) console.warn('[VideoAdLab] publish succeeded but tracking insert failed:', trackErr.message);
-        } catch (trackEx) {
-          console.warn('[VideoAdLab] publish succeeded but tracking insert failed:', trackEx);
+        // invisible to history and never collect saves/shares. One tracking
+        // row per successful platform. Best-effort: a tracking failure must
+        // not turn a successful publish into an error.
+        for (const outcome of succeeded) {
+          try {
+            const now = new Date().toISOString();
+            const { error: trackErr } = await supabase.from('scheduled_social_posts').insert({
+              branch_id: branchId,
+              branch_slug: job.branch,
+              platform: outcome.platform,
+              caption,
+              media_type: mediaType,
+              media_urls: mediaUrls,
+              scheduled_for: now,
+              status: 'published',
+              post_id: outcome.postId || null,
+              published_at: now,
+              source: 'creative_studio',
+              creative_meta: { creative_job_id: job.id, format: job.format || 'video' },
+            });
+            if (trackErr) console.warn(`[VideoAdLab] publish succeeded but tracking insert failed for ${outcome.platform}:`, trackErr.message);
+          } catch (trackEx) {
+            console.warn(`[VideoAdLab] publish succeeded but tracking insert failed for ${outcome.platform}:`, trackEx);
+          }
         }
+      }
+
+      // One clean success toast when everything lands; a specific mixed
+      // message when only some platforms succeeded, so a partial failure is
+      // never mistaken for a total one (or a total one for a partial one).
+      if (failed.length === 0) {
+        const summary = succeeded
+          .map(o => `${SOCIAL_PLATFORM_META[o.platform]?.label || o.platform}${o.postId ? ` · post ${o.postId}` : ''}`)
+          .join(' · ');
+        addToast(`Published to ${summary}`, 'success');
       } else {
-        console.error('[VideoAdLab] publish failed', result);
-        addToast(`Publish failed: ${result.error || 'Unknown error'}`, 'error');
+        const parts = [
+          ...succeeded.map(o => `${SOCIAL_PLATFORM_META[o.platform]?.label || o.platform} ✓${o.postId ? ` · post ${o.postId}` : ''}`),
+          ...failed.map(o => `${SOCIAL_PLATFORM_META[o.platform]?.label || o.platform} failed: ${o.error || 'Unknown error'}`),
+        ];
+        addToast(parts.join(' — '), succeeded.length > 0 ? 'info' : 'error');
       }
     } catch (err: any) {
       console.error('[VideoAdLab] publish threw', err);
@@ -2574,11 +2615,11 @@ STRICT RULES:
                 <button
                   onClick={() => handlePublish(job)}
                   disabled={publishingJobId === job.id || !getCaptionDraft(job).trim()}
-                  title={!getCaptionDraft(job).trim() ? 'Add a caption first' : 'Publish to Instagram'}
+                  title={!getCaptionDraft(job).trim() ? 'Add a caption first' : `Publish to ${publishTargetsLabel}`}
                   className="px-5 py-2.5 bg-slate-800 text-white text-sm font-bold rounded-lg hover:bg-slate-900 transition disabled:opacity-30 flex items-center gap-2"
                 >
                   {publishingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <Instagram size={15} />}
-                  {publishingJobId === job.id ? 'Publishing…' : 'Publish to Instagram'}
+                  {publishingJobId === job.id ? 'Publishing…' : 'Publish now'}
                 </button>
               )}
               {job && isDone && (job.format === 'static' || job.format === 'carousel') && (
@@ -3173,7 +3214,7 @@ STRICT RULES:
                                   setCaptionDrafts(prev => prev[job.id] !== undefined ? prev : { ...prev, [job.id]: job.caption || '' });
                                 }}
                                 disabled={job.format === 'carousel' ? !job.media_urls?.length : !publishableImageUrl(job)}
-                                title={(job.format === 'carousel' ? !job.media_urls?.length : !publishableImageUrl(job)) ? 'No media to publish' : 'Publish to Instagram'}
+                                title={(job.format === 'carousel' ? !job.media_urls?.length : !publishableImageUrl(job)) ? 'No media to publish' : `Publish to ${publishTargetsLabel}`}
                                 className="p-1.5 text-slate-400 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
                               >
                                 <Instagram size={14} />
@@ -3236,7 +3277,7 @@ STRICT RULES:
                               <button
                                 onClick={() => handlePublish(job)}
                                 disabled={isPublishing || !getCaptionDraft(job).trim()}
-                                title={!getCaptionDraft(job).trim() ? 'Add a caption before publishing' : 'Publish to Instagram'}
+                                title={!getCaptionDraft(job).trim() ? 'Add a caption before publishing' : `Publish to ${publishTargetsLabel}`}
                                 className="px-2.5 py-1 text-[11px] font-bold bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                               >
                                 {isPublishing ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -3482,7 +3523,7 @@ STRICT RULES:
                                   <div className="flex flex-wrap gap-2">
                                     {job.publish_status === 'published' ? (
                                       <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold">
-                                        <Check size={13} /> Published to Instagram
+                                        <Check size={13} /> Published
                                       </span>
                                     ) : (
                                       <button
@@ -3492,7 +3533,7 @@ STRICT RULES:
                                         }}
                                         className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition"
                                       >
-                                        <Instagram size={13} /> Publish to Instagram now
+                                        <Instagram size={13} /> Publish now
                                       </button>
                                     )}
                                     {job.publish_status === 'scheduled' && job.scheduled_for ? (
@@ -3531,6 +3572,31 @@ STRICT RULES:
                                       which read as "I clicked and nothing happened". */}
                                   {publishDraftJobId === job.id && (
                                     <div className="mt-3 max-w-md bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                                      <div>
+                                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Publish to</label>
+                                        <div className="flex items-center gap-1.5">
+                                          {(['instagram', 'facebook'] as const).map(platform => {
+                                            const Icon = PLATFORM_ICONS[platform];
+                                            const active = publishTargets.includes(platform);
+                                            return (
+                                              <button
+                                                key={platform}
+                                                type="button"
+                                                onClick={() => togglePublishTarget(platform)}
+                                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border transition ${
+                                                  active ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-100 border-slate-200 text-slate-400 hover:text-slate-500'
+                                                }`}
+                                              >
+                                                <Icon size={12} className={active ? PLATFORM_COLORS[platform] : 'text-slate-300'} />
+                                                {SOCIAL_PLATFORM_META[platform].label}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        {publishTargets.length === 0 && (
+                                          <p className="mt-1 text-[10px] font-bold text-rose-500">Select at least one platform to publish to.</p>
+                                        )}
+                                      </div>
                                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Caption &mdash; publishes exactly as written</label>
                                       <textarea
                                         value={getCaptionDraft(job)}
@@ -3548,8 +3614,8 @@ STRICT RULES:
                                         </button>
                                         <button
                                           onClick={() => handlePublish(job)}
-                                          disabled={publishingJobId === job.id || !getCaptionDraft(job).trim()}
-                                          title={!getCaptionDraft(job).trim() ? 'Add a caption before publishing' : 'Publish to Instagram'}
+                                          disabled={publishingJobId === job.id || !getCaptionDraft(job).trim() || publishTargets.length === 0}
+                                          title={!getCaptionDraft(job).trim() ? 'Add a caption before publishing' : publishTargets.length === 0 ? 'Select at least one platform' : `Publish to ${publishTargetsLabel}`}
                                           className="px-3 py-1.5 text-[11px] font-bold bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                                         >
                                           {publishingJobId === job.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -3560,6 +3626,31 @@ STRICT RULES:
                                   )}
                                   {schedulingJobId === job.id && (
                                     <div className="mt-3 max-w-md bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                                      <div>
+                                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Publish to</label>
+                                        <div className="flex items-center gap-1.5">
+                                          {(['instagram', 'facebook'] as const).map(platform => {
+                                            const Icon = PLATFORM_ICONS[platform];
+                                            const active = publishTargets.includes(platform);
+                                            return (
+                                              <button
+                                                key={platform}
+                                                type="button"
+                                                onClick={() => togglePublishTarget(platform)}
+                                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border transition ${
+                                                  active ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-100 border-slate-200 text-slate-400 hover:text-slate-500'
+                                                }`}
+                                              >
+                                                <Icon size={12} className={active ? PLATFORM_COLORS[platform] : 'text-slate-300'} />
+                                                {SOCIAL_PLATFORM_META[platform].label}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                        {publishTargets.length === 0 && (
+                                          <p className="mt-1 text-[10px] font-bold text-rose-500">Select at least one platform to schedule for.</p>
+                                        )}
+                                      </div>
                                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Publish at</label>
                                       <div className="flex items-center gap-2">
                                         <input
@@ -3576,7 +3667,7 @@ STRICT RULES:
                                         </button>
                                         <button
                                           onClick={() => handleSchedule(job)}
-                                          disabled={!scheduleDateTime || isScheduling}
+                                          disabled={!scheduleDateTime || isScheduling || publishTargets.length === 0}
                                           className="px-3 py-1.5 text-[11px] font-bold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-40 flex items-center gap-1.5"
                                         >
                                           {isScheduling ? <Loader2 size={12} className="animate-spin" /> : <CalendarClock size={12} />}
