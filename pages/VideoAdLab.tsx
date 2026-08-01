@@ -1070,6 +1070,14 @@ STRICT RULES:
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, publish_status: 'published', caption } : j));
         setPublishDraftJobId(null);
 
+        // Persist the published status -- local state alone means the
+        // "Published" chip silently disappears on the next page load.
+        const { error: statusErr } = await supabase
+          .from('video_ad_jobs')
+          .update({ publish_status: 'published', caption })
+          .eq('id', job.id);
+        if (statusErr) console.warn('[VideoAdLab] publish succeeded but status persist failed:', statusErr.message);
+
         // Record the publish in scheduled_social_posts even though it never
         // sat in the queue. That table IS the posting tracker: Post Scheduler
         // history reads it, and the S2 insights sync ONLY fetches stats for

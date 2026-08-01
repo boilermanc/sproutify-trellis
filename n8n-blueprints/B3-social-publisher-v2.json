@@ -490,7 +490,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id || null, message: 'Published successfully to Instagram' }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Publish to Instagram').first().json.id || null, message: 'Published successfully to Instagram' }) }}",
         "options": {
           "responseCode": 200
         }
