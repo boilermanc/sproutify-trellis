@@ -147,6 +147,55 @@ const CARD_CONCEPT_ITEM_SCHEMA = {
   required: ['template', 'palette', 'eyebrow', 'logoText', 'caption', 'rationale'],
 };
 
+// Extracts complete top-level objects from the `concepts` array of a TRUNCATED
+// JSON response. A degenerating model writes good concepts first and garbage
+// after, so the front of the stream is usually intact even when the whole
+// document can't parse. Walks the text with a string/escape-aware brace
+// counter — a regex can't do this, since concept fields legally contain
+// braces, brackets and quotes inside strings.
+function salvageConceptObjects(rawText: string): any[] {
+  const anchor = rawText.indexOf('"concepts"');
+  if (anchor === -1) return [];
+  const arrayStart = rawText.indexOf('[', anchor);
+  if (arrayStart === -1) return [];
+
+  const out: any[] = [];
+  let i = arrayStart + 1;
+  let objStart = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (; i < rawText.length; i++) {
+    const ch = rawText[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        try {
+          out.push(JSON.parse(rawText.slice(objStart, i + 1)));
+        } catch {
+          // A structurally-balanced but invalid object — skip it; later
+          // objects may still be fine.
+        }
+        objStart = -1;
+      }
+    } else if (ch === ']' && depth === 0) {
+      break; // clean end of the concepts array
+    }
+  }
+  return out;
+}
+
 // ⚠️ DELIBERATELY NOT PASSED TO THE API. Sending this as responseSchema made
 // gemini-3-flash-preview degenerate into a repetition loop mid-generation
 // (large many-optional-field schema + thinking model = known constrained-
@@ -568,22 +617,34 @@ export async function generateCardConcepts(opts: {
           console.warn('[creativeDirector] RUNAWAY tail:', rawText.slice(-400));
         }
 
-        let parsed: any;
+        let rawConcepts: any[];
         try {
-          parsed = JSON.parse(rawText);
+          const parsed = JSON.parse(rawText);
+          rawConcepts = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
         } catch (parseErr) {
-          // Truncation detection by SHAPE, not length: a response cut off at
-          // the token ceiling never closes its JSON, whether it died at 6k
-          // characters or 190k.
-          const trimmed = rawText.trimEnd();
-          const looksTruncated = !trimmed.endsWith('}') && !trimmed.endsWith(']');
-          throw new Error(
-            looksTruncated
-              ? `The director's response was cut off mid-answer (${rawText.length.toLocaleString()} characters).`
-              : `Could not parse the director's response: ${parseErr instanceof Error ? parseErr.message : 'invalid JSON'}`,
-          );
+          // A runaway response degenerates AFTER writing good concepts: the
+          // observed failures start with a perfectly-formed first concept and
+          // then loop (repeated fragments, or endless extra array items) until
+          // the token budget kills the stream mid-structure. So don't throw the
+          // whole response away — salvage the complete objects from the front
+          // of the concepts array. This turns "the model misbehaved" from a
+          // hard failure into, usually, exactly the concepts asked for.
+          rawConcepts = salvageConceptObjects(rawText);
+          console.warn(`[creativeDirector] response unparseable (${rawText.length.toLocaleString()} chars) — salvaged ${rawConcepts.length} complete concept(s)`);
+          if (rawConcepts.length === 0) {
+            const trimmed = rawText.trimEnd();
+            const looksTruncated = !trimmed.endsWith('}') && !trimmed.endsWith(']');
+            throw new Error(
+              looksTruncated
+                ? `The director's response was cut off mid-answer (${rawText.length.toLocaleString()} characters) and nothing usable could be recovered.`
+                : `Could not parse the director's response: ${parseErr instanceof Error ? parseErr.message : 'invalid JSON'}`,
+            );
+          }
         }
-        const rawConcepts: any[] = Array.isArray(parsed?.concepts) ? parsed.concepts : [];
+        // A degenerating model may also produce MORE array items than asked for
+        // (observed: count=1 request, second concept mid-stream at 60k chars).
+        // Never keep more than requested.
+        if (rawConcepts.length > count) rawConcepts = rawConcepts.slice(0, count);
 
         const concepts: CardConceptWithRef[] = [];
         for (const raw of rawConcepts) {
