@@ -1040,6 +1040,33 @@ STRICT RULES:
         addToast(`Published to Instagram${result.postId ? ` · post ${result.postId}` : ''}`, 'success');
         setJobs(prev => prev.map(j => j.id === job.id ? { ...j, publish_status: 'published', caption } : j));
         setPublishDraftJobId(null);
+
+        // Record the publish in scheduled_social_posts even though it never
+        // sat in the queue. That table IS the posting tracker: Post Scheduler
+        // history reads it, and the S2 insights sync ONLY fetches stats for
+        // posts in it -- so a direct publish that skipped this row would be
+        // invisible to history and never collect saves/shares. Best-effort:
+        // a tracking failure must not turn a successful publish into an error.
+        try {
+          const now = new Date().toISOString();
+          const { error: trackErr } = await supabase.from('scheduled_social_posts').insert({
+            branch_id: branchId,
+            branch_slug: job.branch,
+            platform: 'instagram',
+            caption,
+            media_type: job.format === 'carousel' ? 'carousel' : 'image',
+            media_urls: mediaUrls,
+            scheduled_for: now,
+            status: 'published',
+            post_id: result.postId || null,
+            published_at: now,
+            source: 'creative_studio',
+            creative_meta: { creative_job_id: job.id, format: job.format || 'video' },
+          });
+          if (trackErr) console.warn('[VideoAdLab] publish succeeded but tracking insert failed:', trackErr.message);
+        } catch (trackEx) {
+          console.warn('[VideoAdLab] publish succeeded but tracking insert failed:', trackEx);
+        }
       } else {
         addToast(`Publish failed: ${result.error || 'Unknown error'}`, 'error');
       }
@@ -3457,6 +3484,69 @@ STRICT RULES:
                                       <Download size={13} /> Download
                                     </a>
                                   </div>
+
+                                  {/* The publish/schedule forms MUST render here, in the
+                                      panel the user is looking at. The original toggle
+                                      opened a small form up in the collapsed row's action
+                                      cell -- off-screen if you'd scrolled into this panel,
+                                      which read as "I clicked and nothing happened". */}
+                                  {publishDraftJobId === job.id && (
+                                    <div className="mt-3 max-w-md bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Caption &mdash; publishes exactly as written</label>
+                                      <textarea
+                                        value={getCaptionDraft(job)}
+                                        onChange={e => setCaptionDrafts(prev => ({ ...prev, [job.id]: e.target.value }))}
+                                        rows={3}
+                                        placeholder="Write a caption before publishing..."
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-emerald-500 transition resize-y"
+                                      />
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button
+                                          onClick={() => setPublishDraftJobId(null)}
+                                          className="px-3 py-1.5 text-[11px] font-bold bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={() => handlePublish(job)}
+                                          disabled={publishingJobId === job.id || !getCaptionDraft(job).trim()}
+                                          title={!getCaptionDraft(job).trim() ? 'Add a caption before publishing' : 'Publish to Instagram'}
+                                          className="px-3 py-1.5 text-[11px] font-bold bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                        >
+                                          {publishingJobId === job.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                                          {publishingJobId === job.id ? 'Publishing…' : 'Confirm publish'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {schedulingJobId === job.id && (
+                                    <div className="mt-3 max-w-md bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Publish at</label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="datetime-local"
+                                          value={scheduleDateTime}
+                                          onChange={e => setScheduleDateTime(e.target.value)}
+                                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-emerald-500 transition"
+                                        />
+                                        <button
+                                          onClick={() => { setSchedulingJobId(null); setScheduleDateTime(''); }}
+                                          className="px-3 py-1.5 text-[11px] font-bold bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={() => handleSchedule(job)}
+                                          disabled={!scheduleDateTime || isScheduling}
+                                          className="px-3 py-1.5 text-[11px] font-bold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-40 flex items-center gap-1.5"
+                                        >
+                                          {isScheduling ? <Loader2 size={12} className="animate-spin" /> : <CalendarClock size={12} />}
+                                          {isScheduling ? 'Scheduling…' : 'Confirm schedule'}
+                                        </button>
+                                      </div>
+                                      <p className="text-[10px] text-slate-400">The worker publishes on a ~10-minute cycle, so times are approximate to that window.</p>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
