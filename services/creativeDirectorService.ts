@@ -118,8 +118,18 @@ const CARD_CONCEPT_ITEM_SCHEMA = {
     // editorial — a structured layout drawn over a photograph
     wordmark: { type: Type.STRING },
     wordmarkSubtitle: { type: Type.STRING },
+    // minItems/maxItems are enforced by Gemini's structured-output layer, not
+    // just prose the model can drift from — without them an "editorial"
+    // concept could satisfy the schema with an empty bullets array, which
+    // silently demotes it to a plain "statement" card (see normalizeConcept)
+    // while its rationale still describes the editorial idea it never became.
+    // This applies to every concept regardless of template (schema fields
+    // can't be conditionally required per-template), but non-editorial
+    // templates never read raw.bullets, so it's harmlessly ignored there.
     bullets: {
       type: Type.ARRAY,
+      minItems: '2',
+      maxItems: '4',
       items: {
         type: Type.OBJECT,
         properties: {
@@ -431,6 +441,12 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
       if (!fallbackStatement) return null;
       base.template = 'statement';
       base.statement = fallbackStatement;
+      // The original rationale describes an editorial/photo concept that no
+      // longer exists once demoted — leaving it verbatim would tell the
+      // reviewer this card has a photo treatment it doesn't have.
+      base.rationale = rationale
+        ? `${rationale} (Simplified to a plain statement — the editorial layout needs feature bullets, and this concept didn't have valid ones.)`
+        : 'Simplified to a plain statement — the editorial layout needs feature bullets, and this concept didn\'t have valid ones.';
       return base;
     }
 
