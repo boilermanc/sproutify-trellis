@@ -156,6 +156,11 @@ export interface StaticAdConfig {
   // 'background' = a text-led canvas (devotional/quote posts): atmospheric, no
   // subject, no people. 'photo' = a normal ad photograph with a subject.
   image_style?: 'photo' | 'background';
+  // Why this job exists. 'card_background' = Card Studio requested this image
+  // as an editorial card's backdrop — it is consumed there directly, so
+  // Creative Studio must NOT surface it for review/approval. Rides into
+  // request_payload via the webhook body; no blueprint change needed.
+  purpose?: string;
 }
 
 export interface CarouselAdConfig {
@@ -189,6 +194,7 @@ export async function submitStaticAdJob(
       reference_image_url: config.reference_image_url || '',
       reference_mode: config.reference_mode || 'inspire',
       image_style: config.image_style || 'photo',
+      purpose: config.purpose || '',
     }),
   }).catch(() => {
     // Expected — Cloudflare 524 timeout or CORS block on the response.

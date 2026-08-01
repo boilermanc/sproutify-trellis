@@ -131,6 +131,16 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
   // "lost" inside a collapsed section. This doesn't overwrite the saved state.
   const activeGroupId = NAV_GROUPS.find(g => g.items.some(i => i.id === activeView))?.id;
 
+  // Page title = the nav item's label, so the header can never disagree with
+  // the sidebar. The old fallback rendered the raw route id via
+  // activeView.replace('-', ' ') — which replaces only the FIRST hyphen, so
+  // 'video-ad-lab' showed as "Video Ad-Lab" while the sidebar said
+  // "Creative Studio".
+  const pageTitle =
+    PINNED.find(i => i.id === activeView)?.label
+    ?? NAV_GROUPS.flatMap(g => g.items).find(i => i.id === activeView)?.label
+    ?? activeView.replace(/-/g, ' ');
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Mobile backdrop */}
@@ -283,7 +293,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
               <Menu size={22} />
             </button>
             <h2 className="text-lg lg:text-xl font-semibold text-slate-800 capitalize truncate">
-              {activeView.replace('-', ' ')}
+              {pageTitle}
             </h2>
           </div>
           <div className="flex items-center space-x-2 lg:space-x-4 shrink-0">

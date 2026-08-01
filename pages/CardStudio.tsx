@@ -640,6 +640,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         // lives: subject weighted right, LEFT side calm for the text column.
         style_notes: 'Warm editorial still life, soft natural light, cozy and inviting. Compose with the subject weighted to the RIGHT side of the frame and keep the LEFT half calm, bright and uncluttered — a designed text column will be placed over the left side.',
         image_style: 'photo',
+        purpose: 'card_background',
       });
 
       // Poll until the frame exists. The static pipeline lands at

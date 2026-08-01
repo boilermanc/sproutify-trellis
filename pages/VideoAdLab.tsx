@@ -626,12 +626,18 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     carousel: jobs.filter(j => j.format === 'carousel').length,
   }), [jobs]);
 
+  // A job requested by Card Studio purely as an editorial card's backdrop.
+  // Card Studio consumes its frame_url directly the moment it exists — there
+  // is nothing here for a human to approve, and the review panel would show
+  // it with auto-seeded headline text it was never meant to carry.
+  const isCardBackground = (j: VideoAdJob) => j.request_payload?.purpose === 'card_background';
+
   // ── Jobs awaiting review ──
   // The Progress step already shows the job it's tracking in full, so exclude
   // it here — otherwise the same creative gets two identical review panels.
   const awaitingApprovalJobs = useMemo(
     () => jobs.filter(j =>
-      j.status === 'awaiting_approval' && !(step === 4 && j.id === trackedJobId),
+      j.status === 'awaiting_approval' && !isCardBackground(j) && !(step === 4 && j.id === trackedJobId),
     ),
     [jobs, step, trackedJobId],
   );
