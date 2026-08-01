@@ -20,6 +20,10 @@ const MODEL = 'gemini-3-flash-preview';
 // `pages/CardStudio.tsx` reads to fetch the real text before rendering.
 export interface CardConceptWithRef extends CardConcept {
   verse_ref?: VerseReference;
+  // Editorial only: the director's description of the ideal PHOTOGRAPH behind
+  // the layout — used by Card Studio's "Generate photo" button to brief the
+  // Creative Studio photo pipeline for a matching background.
+  photo_brief?: string;
 }
 
 // ─── No model may author scripture text ─────────────────────────────
@@ -261,6 +265,7 @@ TEMPLATES (pick per concept, whichever best fits that concept's angle):
    - bullets: 2 to 4 feature/benefit rows, each ONE short line. Every bullet is {text, emphasis, icon}: "text" is the full line, "emphasis" MUST be a VERBATIM SUBSTRING of that same bullet's "text" (copy the exact characters — the renderer bolds that fragment inline, and if it isn't an exact substring the whole line just renders in regular weight, so get it right), and "icon" MUST be exactly one of: heart, book, leaf, sparkle, check, sun — pick whichever best fits that line's meaning.
    - footer: a short tracked-caps closing line, roughly 6 words or fewer (e.g. "GROWN WITH CARE, SHARED WITH LOVE")
    - scrimStrength: a number 0 to 1 for how strongly to wash the photo for text legibility (0.6-0.8 is typically right; higher for busier photos)
+   - photo_brief: 1-2 sentences describing the ideal PHOTOGRAPH behind this layout — a warm, real scene with actual objects and light (e.g. an open book, a mug, flowers, morning light; people optional and usually unnecessary). Compose it so the LEFT side of the frame stays calm and uncluttered, because that's where the text column sits. Describe ONLY what the camera sees — no text, graphics or logos in the scene.
    Do NOT invent or include a backgroundUrl — the app supplies the actual photograph separately. Do not use "editorial" for a verse concept; if scripture is the point of the card, use "verse" instead.
 
 EVERY concept, regardless of template, also needs:
@@ -523,6 +528,7 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
     if (wordmarkSubtitle) base.wordmarkSubtitle = wordmarkSubtitle;
     base.bullets = bullets;
     if (footer) base.footer = footer;
+    if (typeof raw.photo_brief === 'string' && raw.photo_brief.trim()) base.photo_brief = raw.photo_brief.trim();
     base.scrimStrength = scrimStrength;
     return base;
   }

@@ -9,6 +9,7 @@ import { generateCardConcepts, type ScripturePolicy, CARD_BRIEF_PRESETS, CardCon
 import { fetchPassage } from '../services/bibleService';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
 import { uploadPostImage, createScheduledPosts } from '../services/scheduledPostService';
+import { submitStaticAdJob, pollVideoAdJob } from '../services/videoAdService';
 import { supabase as hubClient } from '../lib/supabase';
 
 // ─── Card Studio ────────────────────────────────────────────────────
@@ -51,7 +52,9 @@ interface ConceptCardState {
   // approve step can record creative provenance (see handleApprove) for
   // the Post Performance leaderboard. Absent whenever backgroundUrl is
   // absent, i.e. the card is falling back to its gradient/flat fill.
-  backgroundSource?: 'upload' | 'library';
+  backgroundSource?: 'upload' | 'library' | 'generated';
+  // Set while "Generate photo" is running its ~60-90s Creative Studio job.
+  isGeneratingBackground?: boolean;
 }
 
 const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6];
@@ -594,7 +597,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   // editorial card's concept and re-renders its preview. This is the only
   // place `concept.backgroundUrl` is ever set — the director never invents
   // one, per the contract in creativeDirectorService.
-  const applyBackgroundUrl = (id: string, url: string, source: 'upload' | 'library') => {
+  const applyBackgroundUrl = (id: string, url: string, source: 'upload' | 'library' | 'generated') => {
     const card = cards.find((c) => c.concept.id === id);
     if (!card) return;
     const updatedConcept: CardConceptWithRef = { ...card.concept, backgroundUrl: url };
@@ -602,6 +605,66 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       prev.map((c) => (c.concept.id === id ? { ...c, concept: updatedConcept, previewUrl: null, previewError: null, isRendering: true, backgroundSource: source } : c)),
     );
     renderPreviewFor(updatedConcept);
+  };
+
+  // "Generate photo" — the missing third background source. Upload and
+  // "Use existing" both assume a suitable photo already exists somewhere;
+  // this one briefs the Creative Studio photo pipeline FROM the card itself
+  // (the director's photo_brief, or a scene derived from the card's copy),
+  // waits for the render, and attaches it. The reference look this exists
+  // for: a warm still-life scene with the left side kept calm for the text
+  // column — which Background-mode images (deliberately empty washes) and
+  // random uploads rarely give you.
+  const handleGenerateBackground = async (card: ConceptCardState) => {
+    if (!selectedBranch) return;
+    const concept = card.concept;
+    const scene = (concept.photo_brief || '').trim()
+      || `A warm, inviting still-life scene that fits this message: ${concept.statement || concept.eyebrow || card.caption}`;
+
+    setCards((prev) => prev.map((c) => (c.concept.id === card.concept.id ? { ...c, isGeneratingBackground: true } : c)));
+    addToast('Generating a background photo — takes about a minute.', 'info');
+    try {
+      const { job_id } = await submitStaticAdJob({
+        branch: selectedBranch.slug,
+        message: scene,
+        target_segment: '',
+        platform: 'general',
+        aspect_ratio: '4:5',
+        setting: '',
+        // Style notes take priority over the pipeline's default photographic
+        // direction, so this is where the editorial-specific composition
+        // lives: subject weighted right, LEFT side calm for the text column.
+        style_notes: 'Warm editorial still life, soft natural light, cozy and inviting. Compose with the subject weighted to the RIGHT side of the frame and keep the LEFT half calm, bright and uncluttered — a designed text column will be placed over the left side.',
+        image_style: 'photo',
+      });
+
+      // Poll until the frame exists. The static pipeline lands at
+      // awaiting_approval with frame_url set; that image IS our background —
+      // approval of the background job itself is irrelevant here.
+      const POLL_MS = 5000;
+      const TIMEOUT_MS = 4 * 60 * 1000;
+      const started = Date.now();
+      let attached = false;
+      while (Date.now() - started < TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const job = await pollVideoAdJob(job_id).catch(() => null);
+        if (!job) continue;
+        if (job.status === 'failed' || job.status === 'cancelled') {
+          throw new Error(job.error_message || 'Background generation failed.');
+        }
+        if (job.frame_url) {
+          applyBackgroundUrl(card.concept.id, job.frame_url, 'generated');
+          attached = true;
+          break;
+        }
+      }
+      if (!attached) throw new Error('Background generation timed out — check Creative Studio for the job, it may still finish.');
+      addToast('Background photo attached.', 'success');
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Background generation failed.', 'error');
+    } finally {
+      setCards((prev) => prev.map((c) => (c.concept.id === card.concept.id ? { ...c, isGeneratingBackground: false } : c)));
+    }
   };
 
   const triggerUploadFor = (id: string) => {
@@ -1046,8 +1109,18 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                           <div className="flex flex-wrap gap-1.5">
                             <button
                               type="button"
+                              onClick={() => handleGenerateBackground(card)}
+                              disabled={card.isGeneratingBackground || card.isUploadingBackground || card.status === 'approved'}
+                              title="Generate a matching background photo with Creative Studio (~1 min)"
+                              className="flex items-center gap-1 px-2 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold hover:bg-emerald-700 transition disabled:opacity-40"
+                            >
+                              {card.isGeneratingBackground ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                              {card.isGeneratingBackground ? 'Generating…' : 'Generate photo'}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => triggerUploadFor(card.concept.id)}
-                              disabled={card.isUploadingBackground || card.status === 'approved'}
+                              disabled={card.isUploadingBackground || card.isGeneratingBackground || card.status === 'approved'}
                               className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-40"
                             >
                               {card.isUploadingBackground ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
@@ -1056,7 +1129,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                             <button
                               type="button"
                               onClick={() => openLibraryPicker(card.concept.id)}
-                              disabled={card.isUploadingBackground || card.status === 'approved'}
+                              disabled={card.isUploadingBackground || card.isGeneratingBackground || card.status === 'approved'}
                               className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition disabled:opacity-40"
                             >
                               <Images className="w-3 h-3" />
