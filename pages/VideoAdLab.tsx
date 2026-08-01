@@ -3404,6 +3404,61 @@ STRICT RULES:
                                   )}
                                 </div>
                               )}
+
+                              {/* What's next — the row's action icons are easy to miss
+                                  up in the Actions column, so an approved creative
+                                  looked like a dead end from this panel ("it's just
+                                  sitting here — where do I actually do something with
+                                  it?"). Same handlers as the icons, with words. */}
+                              {job.status === 'completed' && (job.format === 'static' || job.format === 'carousel') && (
+                                <div className="col-span-2 mt-2 pt-3 border-t border-slate-200">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-2">What's next</span>
+                                  <div className="flex flex-wrap gap-2">
+                                    {job.publish_status === 'published' ? (
+                                      <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold">
+                                        <Check size={13} /> Published to Instagram
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          setPublishDraftJobId(prev => prev === job.id ? null : job.id);
+                                          setCaptionDrafts(prev => prev[job.id] !== undefined ? prev : { ...prev, [job.id]: job.caption || '' });
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition"
+                                      >
+                                        <Instagram size={13} /> Publish to Instagram now
+                                      </button>
+                                    )}
+                                    {job.publish_status === 'scheduled' && job.scheduled_for ? (
+                                      <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold">
+                                        <CalendarClock size={13} /> Scheduled · {new Date(job.scheduled_for).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={() => { setSchedulingJobId(job.id); setScheduleDateTime(''); }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 transition"
+                                      >
+                                        <CalendarClock size={13} /> Schedule for later
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setAdExportJobId(job.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 transition"
+                                    >
+                                      <Megaphone size={13} /> Export for Meta Ads
+                                    </button>
+                                    <a
+                                      href={job.format === 'carousel' ? (job.media_urls?.[0] || job.frame_url || '') : publishableImageUrl(job)}
+                                      download
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 transition"
+                                    >
+                                      <Download size={13} /> Download
+                                    </a>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
