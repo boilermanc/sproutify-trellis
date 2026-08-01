@@ -431,12 +431,21 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
     const bullets = normalizeBullets(raw.bullets);
     const scrimStrength = normalizeScrimStrength(raw.scrimStrength);
 
-    // Not renderable as editorial without at least a headline-ish field
-    // (the big serif "statement" headline or the wordmark line) and one
-    // usable bullet — demote to "statement" rather than drop, the same way
-    // an invalid verse concept is demoted rather than lost.
+    // Not renderable as editorial without at least a headline-ish field (the
+    // big serif "statement" headline or the wordmark line) — demote to
+    // "statement" rather than drop, the same way an invalid verse concept is
+    // demoted rather than lost.
+    //
+    // Bullets are NOT required to keep the editorial template. The prompt
+    // asks for 2-4, and the schema hints minItems/maxItems, but Gemini's
+    // structured-output layer doesn't reliably enforce array length even
+    // when the field is present, so a model can legally return an empty
+    // array. drawEditorial() already tolerates zero bullets (bulletsBlockH
+    // is just 0 — no crash, no layout break), so there's no real reason to
+    // throw away the photo layout, wordmark and headline over a missing
+    // bullet list. Demoting here was blocking a perfectly renderable card.
     const hasHeadline = !!statement || !!wordmark;
-    if (!hasHeadline || bullets.length === 0) {
+    if (!hasHeadline) {
       const fallbackStatement = statement || wordmark || eyebrow || caption;
       if (!fallbackStatement) return null;
       base.template = 'statement';
@@ -445,8 +454,8 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
       // longer exists once demoted — leaving it verbatim would tell the
       // reviewer this card has a photo treatment it doesn't have.
       base.rationale = rationale
-        ? `${rationale} (Simplified to a plain statement — the editorial layout needs feature bullets, and this concept didn't have valid ones.)`
-        : 'Simplified to a plain statement — the editorial layout needs feature bullets, and this concept didn\'t have valid ones.';
+        ? `${rationale} (Simplified to a plain statement — no headline or wordmark to build the editorial layout around.)`
+        : 'Simplified to a plain statement — no headline or wordmark to build the editorial layout around.';
       return base;
     }
 
