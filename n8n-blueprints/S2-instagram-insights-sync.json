@@ -1,0 +1,459 @@
+{
+  "name": "Trellis: Instagram Insights Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Trellis: Instagram Insights Sync\n\n**Purpose.** Pulls per-post performance (impressions, reach, likes, comments, saves, shares) for posts this app already published to Instagram, and writes it into `social_post_insights` -- the badges on Post Scheduler's History tab (and anything built on top of it later) read from that table.\n\n### Cadence: every 6 hours, not more\nEngagement on a fresh Instagram post keeps climbing for days -- checking every 10 minutes like the publisher workflow (`S1-scheduled-post-publisher.json`) would just burn Graph API quota for no benefit. Every 6 hours (4 runs/day) is enough resolution to see a save/share curve without hammering the API. This table is a TIME SERIES ON PURPOSE: every run INSERTS a new row per post, it never updates/upserts an existing one -- that's how 'engagement over the days after publish' becomes chartable later. Do not add an upsert/onConflict here.\n\n### FLOW\nSchedule Trigger (6h) -> **Fetch Posts To Check** (GET `scheduled_social_posts` where `status=eq.published` AND `post_id=not.is.null` AND `published_at=gte.<30 days ago>`, capped at 50/run) -> **Normalize Posts To Check** (Code: flattens the HTTP response into one item per row, same defensive pattern as S1's 'Normalize Due Posts') -> **No Posts?** (IF v2 -- with zero rows the execution just ends cleanly, same no-op shape as every other polling workflow in this repo) -> **Fetch Instagram Credential** (RPC `get_social_credential`, one call per post row keyed on that row's `branch_id` -- same RPC contract `B3-social-publisher-v2.json` uses) -> **Merge Credential With Post** (Code: reunites the credential response with the post row, which the HTTP node's own output otherwise overwrites) -> **Fetch Insights** (GET `graph.facebook.com/.../{post_id}/insights`) -> **Parse Insights** (Code: see below) -> **Insert Post Insights** (POST, always an INSERT, never PATCH/upsert).\n\n### PREREQUISITE\n`social_post_insights` already exists on the Hub (created ahead of this workflow) -- id, scheduled_post_id (FK -> scheduled_social_posts), ig_media_id, branch_slug, impressions, reach, likes, comments, saves, shares, raw jsonb, fetched_at timestamptz default now(). RLS already allows anon/authenticated read+write; nothing to run before importing this.\n\n### METRIC PARSING IS DELIBERATELY TOLERANT OF PARTIAL DATA\nInstagram's Graph API is inconsistent about which metrics it returns for a given piece of media: the field name for saves is `saved`, not `saves`; `shares` may be entirely absent depending on API version and whether the media is an image, carousel, or Reel; and older posts can lose metric availability altogether as they age out of Instagram's own insight retention window. **Parse Insights** looks each metric up by name in the response's `data[]` array and defaults to `0` for anything missing, rather than throwing and losing the whole row over one absent field. A row with mostly zeros because Instagram simply didn't return that metric is expected behavior here, not a bug to chase.\n\n### EVERY FALLIBLE NODE FAILS QUIETLY\nFetch Posts To Check, Fetch Instagram Credential, Merge Credential With Post, Fetch Insights, Parse Insights, and Insert Post Insights all set `onError: continueErrorOutput`, routed to a single shared **Failure Log** NoOp. This is background telemetry sync, not a customer-facing action -- a bad row (missing credential, a post too old for Instagram to still have insights on, a transient Graph API hiccup) should never halt the run or page anyone. It's just skipped.\n\n### SETUP REQUIRED\n1. Import this workflow into n8n.\n2. Every Supabase HTTP Request node (**Fetch Posts To Check**, **Fetch Instagram Credential**, **Insert Post Insights**) uses *Predefined Credential Type* (`supabaseApi`) pointed at the same **Sproutify Trellis** credential used everywhere else in this repo's blueprints -- no service-role key is pasted in.\n3. **Fetch Insights** calls the public Graph API directly with the access token resolved from `get_social_credential` -- no n8n credential needed there, same as `B3-social-publisher-v2.json`.\n4. Run once manually against a branch with a real published post, then activate.\n\n### NOTE ON IF NODE VERSION\n**No Posts?** is IF **typeVersion 2**. This n8n instance is on 1.121.3, where IF v1 crashes with \"compareOperationFunctions is not a function\" -- that bug already broke two other workflows today. Never emit an IF v1 node in this repo.",
+        "width": 820,
+        "height": 1500
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1400,
+        -1600
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/scheduled_social_posts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,branch_id,branch_slug,platform,post_id,published_at,caption"
+            },
+            {
+              "name": "status",
+              "value": "eq.published"
+            },
+            {
+              "name": "post_id",
+              "value": "not.is.null"
+            },
+            {
+              "name": "published_at",
+              "value": "=gte.{{ new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }}"
+            },
+            {
+              "name": "order",
+              "value": "published_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Posts To Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1160,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "GET scheduled_social_posts where status=eq.published AND post_id=not.is.null AND published_at=gte.30-days-ago, newest first, capped at 50/run. Runs every 6 hours -- engagement takes days to accrue, so faster polling would just waste Graph API calls.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The HTTP Request node's array-splitting behaviour for a top-level JSON array\n// response has varied across n8n versions, so don't assume it always turns one\n// PostgREST array into one item per row. Normalize defensively here: flatten any\n// array-shaped item.json into individual rows, drop anything without an id or post_id\n// (both are required for everything downstream).\nconst inputItems = $input.all();\nconst rows = [];\nfor (const item of inputItems) {\n  const value = item.json;\n  if (Array.isArray(value)) {\n    rows.push(...value);\n  } else if (value) {\n    rows.push(value);\n  }\n}\nreturn rows.filter(row => row && row.id && row.post_id).map(row => ({ json: row }));"
+      },
+      "name": "Normalize Posts To Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -940,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-post-to-check",
+              "leftValue": "={{ !!$json.id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "No Posts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        100
+      ],
+      "notes": "With zero published posts due for a check, n8n has no items to run the rest of the graph on -- the execution ends here cleanly, no writes, no error. IF typeVersion 2 -- v1 crashes on this n8n instance (1.121.3).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "name": "No Posts To Check",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -500,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/get_social_credential",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_branch_id",
+              "value": "={{ $json.branch_id }}"
+            },
+            {
+              "name": "p_platform",
+              "value": "instagram"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Instagram Credential",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -500,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Same get_social_credential RPC contract as 'Fetch Instagram Credentials' in B3-social-publisher-v2.json, called once per post row keyed on that row's branch_id. Returns { success, access_token, platform_metadata }.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Fetch Instagram Credential's HTTP output replaced $json with the credential\n// lookup's response body, which drops the post row's own fields (post_id,\n// branch_slug, etc). Pull the post row back from 'Normalize Posts To Check' at\n// the same item index and merge in the resolved access token.\nconst post = $('Normalize Posts To Check').item.json;\nconst cred = $input.item.json || {};\n\nif (!cred.success) {\n  throw new Error('Credential lookup failed for branch ' + post.branch_id + ': ' + (cred.error || 'unknown error'));\n}\nconst accessToken = (cred.access_token || '').trim();\nif (!accessToken) {\n  throw new Error('access_token came back empty for branch ' + post.branch_id);\n}\n\nreturn { json: { ...post, access_token: accessToken } };"
+      },
+      "name": "Merge Credential With Post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Reunites the credential response with the original post row. Throws (routed to Failure Log) if the branch has no active Instagram credential or the token came back empty -- that post's insights are simply skipped this run.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.post_id }}/insights",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "impressions,reach,likes,comments,saved,shares"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -40,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "GET /{ig_media_id}/insights. Response shape is { data: [ { name, values: [{ value }] }, ... ] } -- 'Parse Insights' next reads it defensively since not every metric is guaranteed present for every media type/age.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Instagram's Graph API metric names don't line up 1:1 with our column names\n// (it's \"saved\", not \"saves\"), and \"shares\" in particular may be entirely\n// absent depending on API version and whether the media is an image, carousel,\n// or Reel. Look each metric up by name in data[] and default to 0 rather than\n// fail the whole row over one missing field -- a mostly-zero row because\n// Instagram simply didn't return that metric is expected, not an error.\nconst response = $input.item.json || {};\nconst source = $('Merge Credential With Post').item.json || {};\nconst metricsData = Array.isArray(response.data) ? response.data : [];\n\nfunction metricValue(name) {\n  const entry = metricsData.find(m => m && m.name === name);\n  const raw = entry && Array.isArray(entry.values) && entry.values.length ? entry.values[0].value : undefined;\n  const num = Number(raw);\n  return Number.isFinite(num) ? num : 0;\n}\n\nreturn { json: {\n  scheduled_post_id: source.id || null,\n  ig_media_id: source.post_id || null,\n  branch_slug: source.branch_slug || null,\n  impressions: metricValue('impressions'),\n  reach: metricValue('reach'),\n  likes: metricValue('likes'),\n  comments: metricValue('comments'),\n  saves: metricValue('saved'),\n  shares: metricValue('shares'),\n  raw: response,\n  fetched_at: new Date().toISOString(),\n} };"
+      },
+      "name": "Parse Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Defensive metric-name mapping with 0 defaults for anything Instagram didn't return. This is the node the task spec calls out: 'saved' not 'saves', and 'shares' may not exist on all API versions/media types.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/social_post_insights",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ scheduled_post_id: $json.scheduled_post_id, ig_media_id: $json.ig_media_id, branch_slug: $json.branch_slug, impressions: $json.impressions, reach: $json.reach, likes: $json.likes, comments: $json.comments, saves: $json.saves, shares: $json.shares, raw: $json.raw, fetched_at: $json.fetched_at }) }}",
+        "options": {}
+      },
+      "name": "Insert Post Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "ALWAYS an INSERT, never an upsert/PATCH -- social_post_insights is a time series, one row per fetch, so engagement can be charted over the days after a post goes out. Do not add onConflict here.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "name": "Failure Log",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        200,
+        320
+      ],
+      "notes": "Shared per-item failure sink for every fallible node in this workflow. This is background telemetry, not a customer-facing action -- a bad row (missing credential, an aged-out post, a transient Graph API hiccup) is simply skipped, never surfaced as an alert.",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Posts To Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Posts To Check": {
+      "main": [
+        [
+          {
+            "node": "Normalize Posts To Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Posts To Check": {
+      "main": [
+        [
+          {
+            "node": "No Posts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Posts?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Instagram Credential",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Posts To Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Instagram Credential": {
+      "main": [
+        [
+          {
+            "node": "Merge Credential With Post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Credential With Post": {
+      "main": [
+        [
+          {
+            "node": "Fetch Insights",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Insights": {
+      "main": [
+        [
+          {
+            "node": "Parse Insights",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Insights": {
+      "main": [
+        [
+          {
+            "node": "Insert Post Insights",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Post Insights": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Failure Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

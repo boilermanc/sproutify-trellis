@@ -3,12 +3,14 @@ import {
   CalendarClock, UploadCloud, ImagePlus, Loader2, X, Trash2, Clock,
   CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook,
   Send, Sparkles, Info, RefreshCw, Image as ImageIcon, Pencil, Save, Zap,
+  Eye, Bookmark, Share2,
 } from 'lucide-react';
 import { BranchContext, ScheduledPost, NewScheduledPost } from '../types';
 import {
   createScheduledPosts, fetchScheduledPosts, cancelScheduledPost,
   uploadPostImage, buildSchedule, updateScheduledPost,
 } from '../services/scheduledPostService';
+import { fetchLatestInsights, PostInsightSnapshot } from '../services/socialInsightsService';
 
 interface PostSchedulerProps {
   branchContext?: BranchContext;
@@ -111,6 +113,15 @@ function todayDateInputValue(): string {
 let rowIdCounter = 0;
 const nextRowId = () => `row_${Date.now()}_${rowIdCounter++}`;
 
+// Compact display for insight badges ("1.2K" instead of "1234") — these are
+// small pills next to a status chip, not a report, so precision beyond one
+// decimal just adds noise.
+function fmtCompactCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }) => {
   // ── Branch selection ──
   const branchOptions = branchContext?.allBranches ?? [];
@@ -144,6 +155,10 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+
+  // ── Per-post Instagram insights for History rows (impressions/saves/shares) ──
+  const [postInsights, setPostInsights] = useState<Map<string, PostInsightSnapshot>>(new Map());
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   const loadQueue = async () => {
     if (!selectedBranch) { setQueue([]); setQueueLoading(false); return; }
@@ -354,6 +369,24 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       .sort((a, b) => new Date(b.scheduled_for).getTime() - new Date(a.scheduled_for).getTime()),
     [queue],
   );
+
+  // ── Load insights for published posts with a real Instagram media id ──
+  const insightablePostIds = useMemo(
+    () => history.filter(p => p.status === 'published' && p.post_id).map(p => p.id),
+    [history],
+  );
+  const insightablePostIdsKey = insightablePostIds.join(',');
+
+  useEffect(() => {
+    if (insightablePostIds.length === 0) { setPostInsights(new Map()); return; }
+    let cancelled = false;
+    setInsightsLoading(true);
+    fetchLatestInsights(insightablePostIds)
+      .then(map => { if (!cancelled) setPostInsights(map); })
+      .finally(() => { if (!cancelled) setInsightsLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insightablePostIdsKey]);
 
   const fmtDateTime = (iso: string): string => {
     try {
@@ -814,6 +847,44 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                         </div>
                         {post.status === 'failed' && post.last_error && (
                           <p className="text-[10px] text-rose-500 pl-[52px]">{post.last_error}</p>
+                        )}
+                        {post.status === 'published' && post.post_id && (
+                          <div className="pl-[52px]">
+                            {(() => {
+                              const snapshot = postInsights.get(post.id);
+                              if (snapshot) {
+                                return (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                                      <Bookmark className="w-3 h-3" />
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(snapshot.saves)} Saves</span>
+                                    </span>
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                                      <Share2 className="w-3 h-3" />
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(snapshot.shares)} Shares</span>
+                                    </span>
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                                      <Eye className="w-3 h-3" />
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">{fmtCompactCount(snapshot.impressions)} Impressions</span>
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              if (insightsLoading) {
+                                return (
+                                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Loading insights…
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                                  No insights yet — check back in a few hours
+                                </span>
+                              );
+                            })()}
+                          </div>
                         )}
                       </div>
                     );

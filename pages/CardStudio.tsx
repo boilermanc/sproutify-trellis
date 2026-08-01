@@ -47,6 +47,11 @@ interface ConceptCardState {
   // flight — the "use existing" pick is synchronous-feeling enough not to
   // need its own flag (the modal itself shows the loading state).
   isUploadingBackground?: boolean;
+  // How `concept.backgroundUrl` was set — captured alongside it so the
+  // approve step can record creative provenance (see handleApprove) for
+  // the Post Performance leaderboard. Absent whenever backgroundUrl is
+  // absent, i.e. the card is falling back to its gradient/flat fill.
+  backgroundSource?: 'upload' | 'library';
 }
 
 const COUNT_OPTIONS = [2, 3, 4, 5, 6];
@@ -541,12 +546,12 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   // editorial card's concept and re-renders its preview. This is the only
   // place `concept.backgroundUrl` is ever set — the director never invents
   // one, per the contract in creativeDirectorService.
-  const applyBackgroundUrl = (id: string, url: string) => {
+  const applyBackgroundUrl = (id: string, url: string, source: 'upload' | 'library') => {
     const card = cards.find((c) => c.concept.id === id);
     if (!card) return;
     const updatedConcept: CardConceptWithRef = { ...card.concept, backgroundUrl: url };
     setCards((prev) =>
-      prev.map((c) => (c.concept.id === id ? { ...c, concept: updatedConcept, previewUrl: null, previewError: null, isRendering: true } : c)),
+      prev.map((c) => (c.concept.id === id ? { ...c, concept: updatedConcept, previewUrl: null, previewError: null, isRendering: true, backgroundSource: source } : c)),
     );
     renderPreviewFor(updatedConcept);
   };
@@ -566,7 +571,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     updateCard(targetId, { isUploadingBackground: true });
     try {
       const url = await uploadPostImage(selectedBranch.slug, file);
-      applyBackgroundUrl(targetId, url);
+      applyBackgroundUrl(targetId, url, 'upload');
       addToast('Background photo attached.', 'success');
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to upload that photo.', 'error');
@@ -584,7 +589,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     updateCard(id, { isUploadingBackground: true });
     try {
       const url = await uploadPostImage(selectedBranch.slug, file);
-      applyBackgroundUrl(id, url);
+      applyBackgroundUrl(id, url, 'upload');
       addToast('Background photo attached.', 'success');
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to upload that photo.', 'error');
@@ -638,7 +643,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
   const handlePickLibraryImage = (url: string) => {
     if (!libraryModalForId) return;
-    applyBackgroundUrl(libraryModalForId, url);
+    applyBackgroundUrl(libraryModalForId, url, 'library');
     addToast('Background photo attached.', 'success');
     closeLibraryPicker();
   };
@@ -654,7 +659,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       const file = new File([blob], `card-${card.concept.id}.jpg`, { type: 'image/jpeg' });
       const url = await uploadPostImage(selectedBranch.slug, file);
 
-      await createScheduledPosts([
+      const created = await createScheduledPosts([
         {
           branch_id: selectedBranch.id,
           branch_slug: selectedBranch.slug,
@@ -666,6 +671,34 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           source: 'card_studio',
         },
       ]);
+
+      // Capture the creative DNA of the card that was actually approved —
+      // template + palette + the director's rationale — so Post Performance
+      // can later attribute engagement back to "which template/angle wins"
+      // instead of a pile of numbers with no creative signal. This lands via
+      // a follow-up update rather than the insert above because
+      // createScheduledPosts() (services/scheduledPostService.ts) only
+      // accepts NewScheduledPost's fixed field set; scoped this way, the
+      // post is still queued even if this best-effort write fails.
+      const createdId = created[0]?.id;
+      if (createdId) {
+        const isEditorial = card.concept.template === 'editorial';
+        const creativeMeta: Record<string, unknown> = {
+          palette: card.concept.palette,
+          rationale: card.concept.rationale ?? null,
+          has_scripture: card.concept.template === 'verse',
+          ...(isEditorial
+            ? { background_source: card.concept.backgroundUrl ? (card.backgroundSource ?? 'upload') : 'gradient' }
+            : {}),
+        };
+        const { error: metaError } = await hubClient
+          .from('scheduled_social_posts')
+          .update({ creative_template: card.concept.template, creative_meta: creativeMeta })
+          .eq('id', createdId);
+        if (metaError) {
+          console.warn('Failed to attach creative metadata to scheduled post', metaError);
+        }
+      }
 
       updateCard(id, { isApproving: false, status: 'approved' });
       const when = new Date(card.scheduledFor).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
