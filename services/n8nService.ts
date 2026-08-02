@@ -58,8 +58,11 @@ export async function triggerEmailCampaign(
     // exact deduped audience + a personalizable template. Optional for back-compat.
     html_template?: string;
     from?: string;
-    recipients?: Array<{ email: string; first_name: string }>;
+    recipients?: Array<{ email: string; first_name: string; unsubscribe_token?: string }>;
     recipient_count?: number;
+    // Brand unsubscribe URL template with a {{token}} placeholder, filled per
+    // recipient in n8n. Optional; falls back to the email-based Hub unsubscribe.
+    unsubscribe_url_template?: string;
   }
 ): Promise<WebhookResult> {
   if (!webhookUrl) {

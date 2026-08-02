@@ -264,6 +264,7 @@ const AppContent: React.FC = () => {
         churn_risk: engagement ? engagement.churn_risk : ('unknown' as const),
         engagement_score: engagement ? engagement.engagement_score : null,
         last_active: p.order_stats?.last_purchase_at || p.created_at,
+        unsubscribe_token: p.unsubscribe_token,
         metadata: {
           consent_source: consent.consent_source,
           spoke_origin: p._spoke_name,

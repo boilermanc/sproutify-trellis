@@ -34,6 +34,9 @@ interface NewsletterAudienceRow {
   last_name?: string | null;
   customer_id?: string | null;
   tags?: string[] | null;
+  // Per-subscriber token for the spoke's native newsletter unsubscribe link.
+  // resolve_newsletter_audience already selects this column.
+  unsubscribe_token?: string | null;
 }
 
 async function fetchNewsletterAudience(connectionId: string): Promise<NewsletterAudienceRow[]> {
@@ -925,6 +928,10 @@ export const fetchEnrichedProfiles = async (
     if (!authoritativeNewsletterConnectionIds.has(profile._spoke_id)) continue;
     const key = audienceKey(profile._spoke_id, profile.email);
     profile.subscribed = key ? activeNewsletterKeys.has(key) : false;
+    // Carry the subscriber's native unsubscribe token so sends can build a
+    // brand-native, per-recipient unsubscribe URL.
+    const token = key ? newsletterRowsByKey.get(key)?.unsubscribe_token : null;
+    if (token) profile.unsubscribe_token = token;
   }
 
   // Build a map of existing profiles by lowercase email + spoke_id
@@ -950,6 +957,7 @@ export const fetchEnrichedProfiles = async (
       first_name: row.first_name || undefined,
       last_name: row.last_name || undefined,
       subscribed: true,
+      unsubscribe_token: row.unsubscribe_token || undefined,
       _spoke_id: spokeId,
       _spoke_name: connection.name,
     };

@@ -175,6 +175,10 @@ export interface NormalizedSpokeProfile {
   sms_notifications?: boolean;
   billing_address?: ProfileAddress;
   shipping_address?: ProfileAddress;
+  // Per-subscriber token for the spoke's native newsletter unsubscribe link
+  // (e.g. ATL's /functions/v1/newsletter-unsubscribe?token=...). Only present
+  // for rows sourced from a spoke's newsletter_subscribers table.
+  unsubscribe_token?: string;
   _spoke_id: string;
   _spoke_name: string;
 }
@@ -338,6 +342,10 @@ export interface Profile {
   last_active?: string;
   last_event_timestamp?: string; // For Version-Based Upserts
   engagement_score?: number | null; // null = not computable yet, render as '—' not 0
+  // Per-subscriber token for the spoke's native newsletter unsubscribe link.
+  // Carried from the federated fetch so campaign sends can build a real, brand-
+  // native unsubscribe URL per recipient.
+  unsubscribe_token?: string;
   metadata?: Record<string, any>;
   role?: Role; // For team members: admin, marketer, developer, viewer
 }
@@ -704,6 +712,10 @@ export interface BrandIdentity {
   marketing_hooks: string[];
   site_preview_description?: string;
   extracted_images?: string[];
+  // Per-brand unsubscribe URL template used to fill {{unsubscribe_url}} in
+  // emails. Put {{token}} where the recipient's unsubscribe_token goes, e.g.
+  // https://<spoke>.supabase.co/functions/v1/newsletter-unsubscribe?token={{token}}
+  unsubscribe_url?: string;
   status: 'draft' | 'active' | 'archived';
   created_at: string;
   updated_at: string;

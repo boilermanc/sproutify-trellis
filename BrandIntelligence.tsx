@@ -2265,6 +2265,23 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm resize-none"
                 />
               </div>
+
+              {/* Unsubscribe URL — fills {{unsubscribe_url}} in campaign emails */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Unsubscribe URL <span className="text-slate-300 normal-case tracking-normal">(fills {'{{unsubscribe_url}}'} in emails)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingBrand.unsubscribe_url || ''}
+                  onChange={(e) => setEditingBrand({ ...editingBrand, unsubscribe_url: e.target.value })}
+                  placeholder="https://<spoke>.supabase.co/functions/v1/newsletter-unsubscribe?token={{token}}"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
+                  Put <span className="font-mono text-violet-500">{'{{token}}'}</span> where each subscriber's unsubscribe token goes — it's filled in per recipient at send. Leave blank to use the default email-based unsubscribe.
+                </p>
+              </div>
             </div>
 
             <div className="sticky bottom-0 bg-white border-t border-slate-200 p-6 flex items-center justify-end gap-3 rounded-b-[2rem]">

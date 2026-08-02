@@ -15,7 +15,7 @@ import { fetchSecrets } from '../services/secretsService';
 import { triggerEmailCampaign } from '../services/n8nService';
 import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
-import { fetchTemplatesForBranch } from '../brandRepository';
+import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
 import { WEBHOOK_SPECS, BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
@@ -174,6 +174,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
 
   // Custom email templates from DB
   const [customTemplates, setCustomTemplates] = useState<EmailTemplate[]>([]);
+  // Brand's unsubscribe URL template (Brand DNA), with a {{token}} placeholder
+  // filled per recipient at send. Empty = fall back to the email-based unsubscribe.
+  const [brandUnsubscribeUrl, setBrandUnsubscribeUrl] = useState<string>('');
   // Fill-in values keyed by token name (e.g. { headline: '', body_copy: '' }).
   // Keys are discovered from the selected template — NOT hardcoded — so the
   // Compose form always matches whatever tokens the template author placed.
@@ -268,28 +271,36 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     loadNameCache();
   }, []);
 
-  // Load custom email templates when branches change
+  // Load custom email templates + the brand's unsubscribe URL when branches change
   useEffect(() => {
-    const loadCustomTemplates = async () => {
+    const loadBranchBrandData = async () => {
       if (selectedBranches.length === 0) {
         setCustomTemplates([]);
+        setBrandUnsubscribeUrl('');
         return;
       }
+      // Templates are keyed by the stable branch UUID. Resolve the selected
+      // branch to it, normalizing slug/domain/hyphen variants (atl-urban-farms,
+      // atlurbanfarms.com, atlurbanfarms all match the same branch).
+      const norm = (s: string) => (s || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
+      const target = norm(selectedBranches[0]);
+      const branchId = branchContext?.allBranches.find(b => norm(b.slug) === target)?.id || selectedBranches[0];
       try {
-        // Templates are keyed by the stable branch UUID. Resolve the selected
-        // branch to it, normalizing slug/domain/hyphen variants (atl-urban-farms,
-        // atlurbanfarms.com, atlurbanfarms all match the same branch).
-        const norm = (s: string) => (s || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
-        const target = norm(selectedBranches[0]);
-        const branchId = branchContext?.allBranches.find(b => norm(b.slug) === target)?.id || selectedBranches[0];
         const branchTemplates = await fetchTemplatesForBranch(branchId);
         setCustomTemplates(branchTemplates);
       } catch (err) {
         console.error('Failed to load custom templates:', err);
         setCustomTemplates([]);
       }
+      try {
+        const brand = await fetchBrandByBranch(branchId);
+        setBrandUnsubscribeUrl(brand?.unsubscribe_url || '');
+      } catch (err) {
+        console.error('Failed to load brand unsubscribe URL:', err);
+        setBrandUnsubscribeUrl('');
+      }
     };
-    loadCustomTemplates();
+    loadBranchBrandData();
   }, [selectedBranches]);
 
   // Initialize timing rules when channels change
@@ -736,9 +747,18 @@ Return ONLY the post content, no explanations or labels.`,
       // send passes a real profile, so we resolve them here — otherwise the test
       // email's unsubscribe link would be a literal {{unsubscribe_url}} (the
       // send_resend_email RPC is a passthrough and substitutes nothing).
-      const unsubUrl = profile.email
-        ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&source=global`
-        : '{{unsubscribe_url}}';
+      // Unsubscribe link resolution, in order of preference:
+      //  1. Brand-native token URL (Brand DNA) when we have this recipient's token
+      //     — the authoritative spoke unsubscribe. Real launches hit this via n8n.
+      //  2. Hub email-based unsubscribe — a working fallback for test sends to
+      //     addresses that aren't subscribers (no token).
+      //  3. Keep the {{unsubscribe_url}} token intact for the launch path (empty
+      //     profile) so n8n fills it per recipient from the brand template.
+      const unsubUrl = (brandUnsubscribeUrl && profile.unsubscribe_token)
+        ? brandUnsubscribeUrl.replace(/\{\{\s*token\s*\}\}/gi, () => profile.unsubscribe_token!)
+        : profile.email
+          ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&source=global`
+          : '{{unsubscribe_url}}';
       return out
         .replace(/\{\{\s*first_name\s*\}\}/gi, () => profile.first_name || '{{first_name}}')
         .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, () => unsubUrl);
@@ -874,9 +894,12 @@ Return ONLY the post content, no explanations or labels.`,
         ...segmentProfiles.map(p => ({
           email: p.email,
           first_name: p.first_name || '',
+          // Native per-subscriber unsubscribe token (spoke newsletter_subscribers).
+          // n8n builds the unsubscribe link from the brand template + this token.
+          unsubscribe_token: p.unsubscribe_token || '',
         })),
         // Test-list addresses: emailed directly, bypassing branch scope + consent.
-        ...extraTestEmails.map(email => ({ email, first_name: '' })),
+        ...extraTestEmails.map(email => ({ email, first_name: '', unsubscribe_token: '' })),
       ];
 
       const webhookResult = await triggerEmailCampaign(
@@ -888,6 +911,10 @@ Return ONLY the post content, no explanations or labels.`,
           from: activeBranch?.resend_from_address || undefined,
           recipients,
           recipient_count: recipients.length,
+          // Brand's unsubscribe URL template (with a {{token}} placeholder). n8n
+          // fills {{unsubscribe_url}} per recipient from this + their token; if
+          // absent it falls back to the email-based Hub unsubscribe.
+          unsubscribe_url_template: brandUnsubscribeUrl || undefined,
           // legacy fields retained for backward-compat with older dispatch workflows
           tags: null,
           html_body: htmlTemplate,

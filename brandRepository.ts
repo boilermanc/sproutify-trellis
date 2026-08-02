@@ -22,6 +22,7 @@ interface DbBrandIdentity {
   marketing_hooks: string[];
   site_preview_description: string | null;
   extracted_images: string[];
+  unsubscribe_url: string | null;
   status: 'draft' | 'active' | 'archived';
   created_at: string;
   updated_at: string;
@@ -56,6 +57,7 @@ function dbToBrandIdentity(db: DbBrandIdentity): BrandIdentity {
     marketing_hooks: db.marketing_hooks || [],
     site_preview_description: db.site_preview_description || undefined,
     extracted_images: db.extracted_images || [],
+    unsubscribe_url: db.unsubscribe_url || undefined,
     status: db.status,
     created_at: db.created_at,
     updated_at: db.updated_at
@@ -79,6 +81,7 @@ function brandIdentityToDb(brand: Omit<BrandIdentity, 'id' | 'created_at' | 'upd
     marketing_hooks: brand.marketing_hooks,
     site_preview_description: brand.site_preview_description || null,
     extracted_images: brand.extracted_images || [],
+    unsubscribe_url: brand.unsubscribe_url || null,
     status: brand.status
   };
 }
