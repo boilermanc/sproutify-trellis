@@ -22,8 +22,10 @@
 // SECRETS (set via Supabase Dashboard → Edge Functions → Secrets):
 //   SUPABASE_URL            (auto-set by Supabase)
 //   SUPABASE_SERVICE_ROLE_KEY (auto-set by Supabase)
-//   TRELLIS_ENCRYPTION_KEY  (your custom encryption key)
 //   TRELLIS_APP_URL         (e.g. https://trellis.sproutify.app)
+// The encryption key is NOT read here — the SQL functions own it via
+// get_encryption_key(), so there is one source of truth and no way for this
+// function to disagree with what the columns were encrypted with.
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -31,7 +33,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ─── Environment ────────────────────────────────────────────
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ENCRYPTION_KEY = Deno.env.get("TRELLIS_ENCRYPTION_KEY") || "trellis-vault-key-change-me";
 const APP_URL = Deno.env.get("TRELLIS_APP_URL") || "https://trellis.sproutify.app";
 
 // Service role client — bypasses RLS
@@ -383,13 +384,16 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Read stored credentials from database
+      // Read stored credentials from database. No p_encryption_key — the
+      // function defaults it to get_encryption_key(), the same key the column
+      // was encrypted with. (This route only reads app_id, which is stored
+      // plaintext, so it worked even with the wrong key before — but passing
+      // the wrong key was the bug that broke the callback route below.)
       const { data: credResult, error: credError } = await supabase.rpc(
         "get_social_credential",
         {
           p_branch_id: branchId,
           p_platform: platform,
-          p_encryption_key: ENCRYPTION_KEY,
         }
       );
 
@@ -491,13 +495,21 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Read stored credentials (need app_secret for token exchange)
+      // Read stored credentials (need app_secret for token exchange).
+      // Do NOT pass p_encryption_key. The column was encrypted with the key from
+      // get_encryption_key() (that is what upsert_social_credential uses), and
+      // the function defaults p_encryption_key to exactly that. Passing the
+      // Edge Function's own ENCRYPTION_KEY env value overrode that default with
+      // a DIFFERENT key ("trellis-vault-key-change-me" when the env var is
+      // unset), so pgp_sym_decrypt failed, app_secret came back null, and the
+      // callback reported "Incomplete Credentials" for a secret that was
+      // present and valid. n8n calls this RPC with no key and works for exactly
+      // this reason — the DB is the single source of truth for the key.
       const { data: credResult, error: credError } = await supabase.rpc(
         "get_social_credential",
         {
           p_branch_id: branchId,
           p_platform: platform,
-          p_encryption_key: ENCRYPTION_KEY,
         }
       );
 
