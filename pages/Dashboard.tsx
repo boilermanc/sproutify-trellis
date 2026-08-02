@@ -21,6 +21,7 @@ import {
 import ControlRoom from '../components/dashboard/ControlRoom';
 import MorningStandup from '../components/dashboard/MorningStandup';
 import BranchBoard from '../components/dashboard/BranchBoard';
+import EmailPulse from '../components/dashboard/EmailPulse';
 import { RefreshCw, Loader2 } from 'lucide-react';
 
 // The three tabs replace the old overview page wholesale. Sage is deliberately
@@ -214,8 +215,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
 
   const timeline = useMemo(
-    () => buildTimeline(publishedPosts, dbScheduled, recentEvents, webhooks, scopedBranches, spokeConnections),
-    [publishedPosts, dbScheduled, recentEvents, webhooks, scopedBranches, spokeConnections],
+    // Email events and creative jobs are the densest live signals in the app;
+    // without them the timeline reads as a quiet day when it isn't.
+    () => buildTimeline(
+      publishedPosts, dbScheduled, recentEvents, webhooks, scopedBranches,
+      spokeConnections, emailEvents, videoAdJobs,
+    ),
+    [publishedPosts, dbScheduled, recentEvents, webhooks, scopedBranches,
+     spokeConnections, emailEvents, videoAdJobs],
   );
 
   const queue = useMemo(() => {
@@ -350,6 +357,20 @@ const Dashboard: React.FC<DashboardProps> = ({
             onSeeAllQueue={goToStandup}
             onConnectSpoke={goToBranches}
           />
+        )}
+
+        {/* Email is the richest live dataset in the app right now, so it gets
+            its own card beneath the Control Room grid rather than a single row
+            inside the totals panel. */}
+        {tab === 'control' && (
+          <div className="mt-[18px] max-w-[520px]">
+            <EmailPulse
+              events={emailEvents}
+              window={timeWindow}
+              isLoading={isLoading}
+              onViewChange={onViewChange}
+            />
+          </div>
         )}
 
         {tab === 'standup' && (

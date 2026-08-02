@@ -286,6 +286,8 @@ export function buildTimeline(
   webhooks: WebhookHealth[],
   branches: Branch[],
   spokeConnections: SpokeConnection[],
+  emailEvents: EmailEventRow[] = [],
+  videoAdJobs: VideoAdJob[] = [],
 ): TimelineItem[] {
   const { dayStart, dayEnd } = dayBounds();
   const branchById = new Map(branches.map(b => [b.id, b] as const));
@@ -422,6 +424,88 @@ export function buildTimeline(
       ...meta,
       text: `${event.event_type} event recorded`,
       state: 'synced',
+    });
+  }
+
+  // ── Email campaign activity (email_events) ──────────────────────────
+  // Events are per-recipient — a single campaign send produces hundreds of
+  // rows. Emitting one timeline row per event would drown out every other
+  // signal on the page, so today's events are grouped by campaign_subject
+  // and rolled up into one summary row per campaign.
+  const emailByCampaign = new Map<string, EmailEventRow[]>();
+  for (const evt of emailEvents) {
+    const ts = tsOf(evt.occurred_at);
+    if (!inRange(ts, dayStart, dayEnd)) continue;
+    const key = evt.campaign_subject || 'Untitled campaign';
+    if (!emailByCampaign.has(key)) emailByCampaign.set(key, []);
+    emailByCampaign.get(key)!.push(evt);
+  }
+  for (const [subject, events] of emailByCampaign) {
+    const delivered = events.filter(e => e.event_type === 'delivered').length;
+    const opened = events.filter(e => e.event_type === 'opened').length;
+    const bounced = events.filter(e => e.event_type === 'bounced').length;
+    const clauses: string[] = [];
+    if (delivered > 0) clauses.push(`${delivered.toLocaleString()} delivered`);
+    if (opened > 0) clauses.push(`${opened.toLocaleString()} opened`);
+    if (bounced > 0) clauses.push(`${bounced.toLocaleString()} bounced`);
+    // A bounce spike (>10% of delivered) is a real deliverability problem
+    // worth surfacing as an error, not just a footnote on an otherwise-ok send.
+    const isBounceSpike = delivered > 0 && bounced / delivered > 0.1;
+    const earliestTs = Math.min(...events.map(e => tsOf(e.occurred_at) as number));
+    items.push({
+      id: `email:${subject}`,
+      at: new Date(earliestTs).toISOString(),
+      // email_events has no branch column — spoke sends go through Resend,
+      // not a per-branch pipe, so there is no honest branch to attribute
+      // this to. 'All branches' + a neutral color, never a guessed branch.
+      branchName: 'All branches',
+      branchColor: '#64748B',
+      branchSlug: null,
+      text: `Campaign "${truncate(subject, 60)}"${clauses.length ? ` — ${clauses.join(' · ')}` : ''}`,
+      state: isBounceSpike ? 'error' : 'posted',
+    });
+  }
+
+  // ── Creative jobs (Video Ad Lab), today only ─────────────────────────
+  // queued/processing/rendering states are mid-flight — not events yet —
+  // so only the three terminal-ish states below are represented.
+  for (const job of videoAdJobs) {
+    if (job.status !== 'awaiting_approval' && job.status !== 'failed' && job.status !== 'completed') continue;
+    const ts = tsOf(job.completed_at || job.created_at);
+    if (!inRange(ts, dayStart, dayEnd)) continue;
+
+    const branch = branchBySlug.get(job.branch);
+    const meta = branchMeta(branch, formatBranchName(job.branch));
+    if (meta.branchSlug) touchedBranchSlugs.add(meta.branchSlug);
+
+    let state: TimelineState;
+    let text: string;
+    let actionLabel: string | undefined;
+    let actionView: ViewState | undefined;
+
+    if (job.status === 'awaiting_approval') {
+      state = 'waiting';
+      text = 'Creative finished rendering — awaiting approval';
+      actionLabel = 'Approve';
+      actionView = 'video-ad-lab';
+    } else if (job.status === 'failed') {
+      state = 'error';
+      text = `Creative render failed${job.error_message ? `: ${truncate(job.error_message, 80)}` : ''}`;
+      actionLabel = 'Fix';
+      actionView = 'video-ad-lab';
+    } else {
+      state = 'posted';
+      text = 'Creative generated';
+    }
+
+    items.push({
+      id: `creative:${job.id}`,
+      at: new Date(ts as number).toISOString(),
+      ...meta,
+      text,
+      state,
+      actionLabel,
+      actionView,
     });
   }
 

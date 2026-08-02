@@ -1,0 +1,306 @@
+{
+  "name": "Trellis: Daily Brand Metrics",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        300
+      ],
+      "notes": "Once a day at 06:00. Follower counts move slowly; the point is one clean point per day, not frequency."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/branches",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,slug,name"
+            },
+            {
+              "name": "is_active",
+              "value": "eq.true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Branches",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -680,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// PostgREST returns one array; n8n's splitting behaviour has varied by version,\n// so flatten defensively rather than assuming one item per row.\nconst rows = [];\nfor (const item of $input.all()) {\n  const v = item.json;\n  if (Array.isArray(v)) { rows.push(...v); } else if (v) { rows.push(v); }\n}\nreturn rows.filter(r => r && r.id).map(r => ({ json: r }));",
+        "mode": "runOnceForAllItems"
+      },
+      "name": "Normalize Branches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "any",
+              "leftValue": "={{ !!$json.id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Any Branches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "No Branches",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/meta-insights",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ branch_id: $json.id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Fetch Meta Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -20,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Reuses the deployed meta-insights function rather than re-implementing Graph API calls. neverError so one unconnected brand cannot end the run for the others."
+    },
+    {
+      "parameters": {
+        "jsCode": "const branch = $('Normalize Branches').item.json;\nconst res = $input.item.json || {};\nlet parsed = res.body;\nif (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; } }\n\n// A brand with no Meta credentials returns { connected: false }. That is a\n// normal state, not a failure \u2014 emit nothing rather than writing a row of\n// zeros, which would later read as \"followers dropped to 0\".\nif (!parsed || parsed.connected === false) return [];\n\nconst today = new Date().toISOString().slice(0, 10);\nconst rows = [];\nfor (const platform of ['facebook', 'instagram']) {\n  const stats = parsed[platform];\n  if (!stats || stats.error) continue;\n  // fans is Facebook's wording, followers is Instagram's.\n  const followers = stats.followers ?? stats.fans ?? null;\n  if (followers === null && stats.reach_28d == null) continue;\n  rows.push({ json: {\n    branch_id: branch.id,\n    captured_on: today,\n    platform,\n    followers,\n    posts: stats.posts ?? null,\n    reach_28d: stats.reach_28d ?? null,\n    raw: stats\n  } });\n}\nreturn rows;",
+        "mode": "runOnceForEachItem"
+      },
+      "name": "Build Metric Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/brand_daily_metrics",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ branch_id: $json.branch_id, captured_on: $json.captured_on, platform: $json.platform, followers: $json.followers, posts: $json.posts, reach_28d: $json.reach_28d, raw: $json.raw }) }}",
+        "options": {}
+      },
+      "name": "Upsert Daily Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        420,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "merge-duplicates against the (branch_id, captured_on, platform) unique key, so a re-run overwrites the day rather than duplicating it."
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Daily Brand Metrics\n\n**Why this exists:** follower counts are the ONLY dashboard metric with no other\nsource of history. Revenue, new profiles, posts published and email opens are\nall computed from dated source rows (`orders.paid_at`, `profiles.created_at`,\n`email_events.occurred_at`), so they need no snapshotting and already show real\ndeltas. Meta only ever reports \"right now\" \u2014 so without this job, a follower\ntrend is impossible and the dashboard correctly shows no delta at all.\n\nRuns daily at 06:00 \u2192 reads active branches \u2192 calls the deployed\n`meta-insights` function per brand \u2192 writes one row per brand/platform/day to\n`brand_daily_metrics`.\n\n### Setup after import\nConfirm the `Sproutify Trellis` Supabase credential on the three HTTP nodes,\nthen **activate**. Nothing else.\n\n### What you get\nFollower and reach deltas on the Branch Board become real after ~2 days, and a\nproper trend after a week. Until then the dashboard keeps rendering no delta\nrather than inventing one.\n\nA brand with no Meta connection returns `connected: false` and is skipped \u2014\ndeliberately writing NO row, because a row of zeros would later read as\n\"followers dropped to zero\".",
+        "height": 520,
+        "width": 460
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        -260
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Branches": {
+      "main": [
+        [
+          {
+            "node": "Normalize Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Branches": {
+      "main": [
+        [
+          {
+            "node": "Any Branches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Branches?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Meta Insights",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Meta Insights": {
+      "main": [
+        [
+          {
+            "node": "Build Metric Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Metric Rows": {
+      "main": [
+        [
+          {
+            "node": "Upsert Daily Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
