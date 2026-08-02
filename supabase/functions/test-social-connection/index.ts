@@ -45,8 +45,17 @@ async function probe(platform: string, token: string, meta: any): Promise<{ ok: 
 
     if (platform === "facebook") {
       const pageId = meta?.page_id;
-      const path = pageId ? `${pageId}?fields=name` : `me?fields=name`;
-      const res = await fetch(`${GRAPH}/${path}&access_token=${encodeURIComponent(token)}`);
+      // A Facebook credential with no Page cannot publish. Falling back to /me
+      // here made the test query the USER and report "live" off a valid personal
+      // token even though no Page is connected -- a false pass. Report the real
+      // state instead: not usable until a Page is granted.
+      if (!pageId) {
+        return {
+          ok: false,
+          error: "No Facebook Page is connected — reconnect and select the Page. Publishing targets a Page, not your personal account.",
+        };
+      }
+      const res = await fetch(`${GRAPH}/${pageId}?fields=name&access_token=${encodeURIComponent(token)}`);
       const data = await res.json();
       if (data?.error) return { ok: false, error: data.error.message };
       return { ok: true, username: data?.name ?? undefined };
