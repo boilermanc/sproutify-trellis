@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#dfe3e8; font-family:'Inter',sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#1E698F; text-decoration:none; }
+  a:hover { color:#0B4A6B; text-decoration:underline; }
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:28px;padding:64px 64px 24px">
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:900px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#3A5B6D">Turn 2 · recommended</span>
+    <h1 style="margin:0;font-size:34px;font-weight:800;letter-spacing:-0.02em;color:#0B4A6B">One page, three tabs</h1>
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#4b5563;text-wrap:pretty">Control Room lands first, in the light theme. Branch Board and Morning Standup are one click away and share the same header, branch scope and time window. The tabs are live — click them.</p>
+  </div>
+
+  <div id="2a" style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:24px;border-radius:6px;background:#0B4A6B;color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600">2a</span>
+      <span style="font-size:17px;font-weight:700;color:#0B4A6B">Tabbed dashboard</span>
+      <span style="font-size:13px;color:#6b7280">Control Room default · light · Sage removed</span>
+    </div>
+
+    <div style="width:1440px;overflow:hidden;border-radius:14px;box-shadow:0 24px 60px rgba(11,74,107,0.18);background:#f6f7f9;display:flex;height:{{ frameH }}">
+        <aside style="width:256px;flex-shrink:0;background:#0B4A6B;display:flex;flex-direction:column">
+          <div style="padding:24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(58,91,109,0.3)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"></path>
+  <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"></path>
+  <path d="M5 21h14"></path></svg>
+            <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.02em">Trellis</span>
+          </div>
+          <nav style="flex:1;margin-top:20px;padding:0 12px;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;background:rgba(56,189,248,0.2);color:#7dd3fc;font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect width="7" height="9" x="3" y="3" rx="1"></rect>
+  <rect width="7" height="5" x="14" y="3" rx="1"></rect>
+  <rect width="7" height="9" x="14" y="12" rx="1"></rect>
+  <rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Overview</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Reports</div>
+            <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Audience</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+  <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+  <circle cx="9" cy="7" r="4"></circle></svg>Profiles</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path>
+  <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"></path>
+  <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>Segments</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Intelligence</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>Branches</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Campaigns</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"></path>
+  <path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"></path>
+  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"></path></svg>Campaign Builder</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path>
+  <path d="m21.854 2.147-10.94 10.939"></path></svg>Campaigns</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path>
+  <rect x="2" y="4" width="20" height="16" rx="2"></rect></svg>Email Previews</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path>
+  <path d="m14 7 3 3"></path>
+  <path d="M5 6v4"></path>
+  <path d="M19 14v4"></path>
+  <path d="M10 2v2"></path>
+  <path d="M7 8H3"></path>
+  <path d="M21 16h-4"></path>
+  <path d="M11 3H9"></path></svg>Marketing AI</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344"></path>
+  <path d="m9 11 3 3L22 4"></path></svg>Campaign Tasks</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Content Studio</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Brand</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Setup & Admin</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+          </nav>
+          <div style="padding:16px;border-top:1px solid rgba(58,91,109,0.3);display:flex;align-items:center;gap:12px">
+            <div style="width:38px;height:38px;border-radius:50%;background:rgba(75,123,148,0.25);color:#1E698F;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">C</div>
+            <div style="display:flex;flex-direction:column">
+              <span style="font-size:12px;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:-0.02em">Clint</span>
+              <span style="font-size:10px;color:#7dd3fc">Edit Profile</span>
+            </div>
+          </div>
+        </aside>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <header style="background:#fff;border-bottom:1px solid #e5e7eb;padding:14px 32px;display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:baseline;gap:14px">
+            <h2 style="margin:0;font-size:19px;font-weight:600;color:#111827">Overview</h2>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#9ca3af">SUN 02 AUG · 07:14</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-weight:600;color:#374151"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>All Branches (5)<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m6 9 6 6 6-6"></path></svg></div>
+            <div style="display:flex;gap:5px">
+              <div style="padding:7px 12px;border-radius:7px;background:#111827;color:#fff;font-size:12px;font-weight:600">7d</div>
+              <div style="padding:7px 12px;border-radius:7px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;font-size:12px;font-weight:600">30d</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:7px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">
+              <span style="width:6px;height:6px;border-radius:50%;background:#ef4444"></span>
+              <span style="font-size:12px;font-weight:700;color:#b91c1c">2 systems degraded</span>
+            </div>
+          </div>
+        </header>
+
+        <div style="background:#fff;border-bottom:1px solid #e5e7eb;padding:0 32px;display:flex;gap:28px">
+          <div onClick="{{ goControl }}" style="padding:14px 2px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;color:{{ controlFg }};border-bottom:2px solid {{ controlBd }}">Control Room<span style="padding:2px 7px;border-radius:99px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:800">9</span></div>
+          <div onClick="{{ goStandup }}" style="padding:14px 2px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;color:{{ standupFg }};border-bottom:2px solid {{ standupBd }}">Morning Standup<span style="padding:2px 7px;border-radius:99px;background:#fef3c7;color:#b45309;font-size:10px;font-weight:800">6</span></div>
+          <div onClick="{{ goBoard }}" style="padding:14px 2px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;color:{{ boardFg }};border-bottom:2px solid {{ boardBd }}">Branch Board<span style="padding:2px 7px;border-radius:99px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:800">5</span></div>
+        </div>
+
+        <sc-if value="{{ isControl }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;padding:22px 28px;display:grid;grid-template-columns:1fr 330px;gap:20px;overflow:hidden">
+              <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+                <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+                  <sc-for list="{{ branches }}" as="b" hint-placeholder-count="5">
+                    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:9px">
+                      <div style="display:flex;align-items:center;gap:7px">
+                        <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:{{ b.color }}"></span>
+                        <span style="font-size:12px;font-weight:700;color:#111827;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ b.short }}</span>
+                        <span style="width:7px;height:7px;border-radius:50%;margin-left:auto;flex-shrink:0;background:{{ b.dot }}"></span>
+                      </div>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:600;color:#111827;letter-spacing:-0.03em">{{ b.rev }}</span>
+                      <div style="display:flex;align-items:center;gap:7px">
+                        <span style="font-size:11px;color:#6b7280">{{ b.profiles }} profiles</span>
+                        <span style="font-size:11px;font-weight:600;color:#059669">{{ b.profileDelta }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+
+                <div style="flex:1;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:22px;display:flex;flex-direction:column;gap:16px;min-height:0">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div style="display:flex;align-items:baseline;gap:12px">
+                      <span style="font-size:15px;font-weight:700;color:#111827">Today across the ecosystem</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9ca3af">9 EVENTS · 4 SCHEDULED · 2 FAILED</span>
+                    </div>
+                    <span style="font-size:12px;font-weight:600;color:#1E698F">Full activity log →</span>
+                  </div>
+                  <div style="flex:1;display:flex;flex-direction:column">
+                    <sc-for list="{{ timeline }}" as="t" hint-placeholder-count="9">
+                      <div style="display:flex;gap:14px;align-items:stretch">
+                        <div style="width:52px;flex-shrink:0;padding-top:12px;text-align:right">
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9ca3af">{{ t.time }}</span>
+                        </div>
+                        <div style="width:15px;flex-shrink:0;display:flex;flex-direction:column;align-items:center">
+                          <div style="width:1px;height:12px;background:#e5e7eb"></div>
+                          <div style="width:9px;height:9px;border-radius:50%;flex-shrink:0;border:2px solid #fff;background:{{ t.dot }}"></div>
+                          <div style="width:1px;flex:1;background:#e5e7eb"></div>
+                        </div>
+                        <div style="flex:1;min-width:0;padding:9px 0;display:flex;align-items:center;gap:12px">
+                          <span style="width:7px;height:7px;border-radius:2px;flex-shrink:0;background:{{ t.color }}"></span>
+                          <span style="font-size:11px;font-weight:600;color:#6b7280;width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.branch }}</span>
+                          <span style="flex:1;min-width:0;font-size:13px;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.text }}</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;flex-shrink:0;padding:3px 8px;border-radius:5px;color:{{ t.fgLight }};background:{{ t.bgLight }}">{{ t.state }}</span>
+                          <span style="font-size:11px;font-weight:700;color:#1E698F;flex-shrink:0;width:78px;text-align:right">{{ t.action }}</span>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:14px;min-height:0">
+                <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path>
+  <path d="M12 8v4"></path>
+  <path d="M12 16h.01"></path></svg>
+                    <span style="font-size:13px;font-weight:700;color:#991b1b">System health</span>
+                    <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:#b91c1c">2 DOWN · 1 STALE</span>
+                  </div>
+                  <sc-for list="{{ systems }}" as="s" hint-placeholder-count="4">
+                    <div style="display:flex;flex-direction:column;gap:3px;padding-bottom:10px;border-bottom:1px solid rgba(220,38,38,0.12)">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:{{ s.dot }}"></span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#1f2937;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:{{ s.dot }}">{{ s.code }}</span>
+                      </div>
+                      <span style="font-size:11px;color:#6b7280;padding-left:14px;line-height:1.45">{{ s.detail }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:13px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;font-weight:700;color:#111827">Queue · needs a person</span>
+                    <span style="margin-left:auto;font-size:11px;font-weight:700;color:#1E698F">See all 6</span>
+                  </div>
+                  <sc-for list="{{ queueTop }}" as="q" hint-placeholder-count="4">
+                    <div style="display:flex;gap:10px;align-items:flex-start">
+                      <span style="width:4px;align-self:stretch;border-radius:99px;flex-shrink:0;background:{{ q.accent }}"></span>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                        <span style="font-size:12px;font-weight:700;color:#1f2937;line-height:1.35">{{ q.title }}</span>
+                        <span style="font-size:11px;color:#9ca3af">{{ q.branch }} · {{ q.age }}</span>
+                      </div>
+                      <span style="font-size:11px;font-weight:700;color:#1E698F;flex-shrink:0">{{ q.action }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+                  <span style="font-size:13px;font-weight:700;color:#111827">7-day totals</span>
+                  <sc-for list="{{ weekStats }}" as="s" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:baseline;gap:10px">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:#111827;width:74px;flex-shrink:0;letter-spacing:-0.02em">{{ s.value }}</span>
+                      <span style="flex:1;font-size:11px;color:#6b7280">{{ s.label }}</span>
+                      <span style="font-size:11px;font-weight:600;color:{{ s.tone }}">{{ s.delta }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isBoard }}">
+          <div style="flex:1;padding:22px 28px;display:grid;grid-template-columns:1fr;gap:20px;overflow:hidden;align-content:start">
+              <div style="grid-column:1 / -1;display:flex;flex-direction:column;gap:18px">
+                <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px">
+                  <span style="width:8px;height:8px;border-radius:50%;background:#ea580c"></span>
+                  <span style="font-size:14px;font-weight:700;color:#7c2d12">4 items need a person today</span>
+                  <span style="font-size:13px;color:#9a3412">3 posts overdue · TikTok publishing is failing · ATL sync is 3 days stale</span>
+                  <span style="margin-left:auto;padding:8px 14px;background:#ea580c;color:#fff;border-radius:7px;font-size:12px;font-weight:700">Work the list</span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+                  <sc-for list="{{ branches }}" as="b" hint-placeholder-count="5">
+                    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+                      <div style="height:3px;background:{{ b.color }}"></div>
+                      <div style="padding:18px;display:flex;flex-direction:column;gap:14px">
+                        <div style="display:flex;align-items:flex-start;gap:11px">
+                          <div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex-shrink:0;background:{{ b.color }}">{{ b.initial }}</div>
+                          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                            <span style="font-size:15px;font-weight:700;color:#111827;letter-spacing:-0.01em">{{ b.name }}</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9ca3af">{{ b.host }}</span>
+                          </div>
+                          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                            <span style="width:7px;height:7px;border-radius:50%;background:{{ b.dot }}"></span>
+                            <span style="font-size:11px;font-weight:600;color:{{ b.dot }}">{{ b.status }}</span>
+                          </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 10px">
+                          <div style="display:flex;flex-direction:column;gap:1px">
+                            <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.profiles }}</span>
+                            <span style="font-size:11px;color:#6b7280">profiles <span style="color:#059669;font-weight:600">{{ b.profileDelta }}</span></span>
+                          </div>
+                          <div style="display:flex;flex-direction:column;gap:1px">
+                            <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.rev }}</span>
+                            <span style="font-size:11px;color:#6b7280">revenue · 7d</span>
+                          </div>
+                          <div style="display:flex;flex-direction:column;gap:1px">
+                            <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.followers }}</span>
+                            <span style="font-size:11px;color:#6b7280">followers <span style="color:#059669;font-weight:600">{{ b.followerDelta }}</span></span>
+                          </div>
+                          <div style="display:flex;flex-direction:column;gap:1px">
+                            <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.posts }}</span>
+                            <span style="font-size:11px;color:#6b7280">posts · 7d</span>
+                          </div>
+                        </div>
+                        <div style="display:flex;align-items:flex-end;gap:3px;height:34px">
+                          <sc-for list="{{ b.spark }}" as="h" hint-placeholder-count="12">
+                            <div style="flex:1;border-radius:2px 2px 0 0;background:{{ b.color }};opacity:0.35;height:{{ h }}"></div>
+                          </sc-for>
+                        </div>
+                        <div style="border-top:1px solid #f3f4f6;padding-top:12px;display:flex;align-items:center;gap:10px">
+                          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                            <span style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9ca3af">Next action</span>
+                            <span style="font-size:12px;font-weight:600;color:{{ b.noteTone }}">{{ b.note }}</span>
+                          </div>
+                          <div style="padding:7px 12px;border-radius:7px;background:#111827;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">{{ b.cta }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </sc-for>
+                  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px">
+                    <span style="font-size:15px;font-weight:700;color:#111827">All branches</span>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                      <sc-for list="{{ weekStats }}" as="s" hint-placeholder-count="4">
+                        <div style="display:flex;flex-direction:column;gap:1px">
+                          <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ s.value }}</span>
+                          <span style="font-size:11px;color:#6b7280">{{ s.label }}</span>
+                          <span style="font-size:11px;font-weight:600;color:{{ s.tone }}">{{ s.delta }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="margin-top:auto;border-top:1px solid #f3f4f6;padding-top:12px;display:flex;flex-direction:column;gap:7px">
+                      <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="4">
+                        <div style="display:flex;align-items:center;gap:9px">
+                          <span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:{{ j.dot }}"></span>
+                          <span style="flex:1;font-size:12px;color:#374151">{{ j.name }}</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ j.dot }}">{{ j.state }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </div>
+              </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isStandup }}">
+          <div style="flex:1;padding:22px 28px;display:grid;grid-template-columns:1fr 340px;gap:20px;overflow:hidden;align-content:start">
+              <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-size:12px;font-weight:900;letter-spacing:0.16em;text-transform:uppercase;color:#334155">Needs you today</span>
+                  <span style="font-size:11px;font-weight:600;color:#94a3b8">Ranked by cost of ignoring</span>
+                </div>
+                <sc-for list="{{ queue }}" as="q" hint-placeholder-count="6">
+                  <div style="display:flex;align-items:center;gap:16px;padding:16px 18px;background:#fff;border:1px solid #e5e9ee;border-radius:12px">
+                    <div style="width:4px;align-self:stretch;border-radius:99px;background:{{ q.accent }}"></div>
+                    <div style="width:74px;flex-shrink:0;display:flex;flex-direction:column;gap:3px">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:{{ q.accent }}">{{ q.sev }}</span>
+                      <span style="font-size:10px;font-weight:600;color:#94a3b8">{{ q.age }}</span>
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="width:8px;height:8px;border-radius:2px;background:{{ q.color }}"></span>
+                        <span style="font-size:11px;font-weight:700;color:#64748b">{{ q.branch }}</span>
+                      </div>
+                      <span style="font-size:14px;font-weight:700;color:#0f172a;letter-spacing:-0.01em">{{ q.title }}</span>
+                      <span style="font-size:12px;color:#64748b;line-height:1.45">{{ q.detail }}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                      <div style="padding:9px 15px;border-radius:8px;background:#0f172a;color:#fff;font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase">{{ q.action }}</div>
+                      <div style="padding:9px 12px;border-radius:8px;border:1px solid #e2e8f0;color:#94a3b8;font-size:11px;font-weight:700">Snooze</div>
+                    </div>
+                  </div>
+                </sc-for>
+                <div style="margin-top:6px;background:#fff;border:1px solid #e5e9ee;border-radius:12px;padding:20px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                    <span style="font-size:13px;font-weight:800;color:#0B4A6B">What worked · last 7 days</span>
+                    <span style="font-size:11px;font-weight:700;color:#1E698F">Post Performance →</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                    <div style="border:1px solid #d1fae5;background:#f0fdf4;border-radius:10px;padding:14px;display:flex;gap:12px">
+                      <div style="width:52px;height:52px;border-radius:8px;background:repeating-linear-gradient(135deg,#d1fae5,#d1fae5 5px,#ecfdf5 5px,#ecfdf5 10px);flex-shrink:0"></div>
+                      <div style="min-width:0;display:flex;flex-direction:column;gap:3px">
+                        <span style="font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:#059669">Top performer</span>
+                        <span style="font-size:13px;font-weight:700;color:#0f172a">“Seedling trays, day 9”</span>
+                        <span style="font-size:11px;color:#475569">ATL · Instagram · 6.2% eng · 11.4k reach</span>
+                      </div>
+                    </div>
+                    <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:14px;display:flex;gap:12px">
+                      <div style="width:52px;height:52px;border-radius:8px;background:repeating-linear-gradient(135deg,#fde68a,#fde68a 5px,#fffbeb 5px,#fffbeb 10px);flex-shrink:0"></div>
+                      <div style="min-width:0;display:flex;flex-direction:column;gap:3px">
+                        <span style="font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:#b45309">Underperformed</span>
+                        <span style="font-size:13px;font-weight:700;color:#0f172a">“Fall enrollment is open”</span>
+                        <span style="font-size:11px;color:#475569">School · Facebook · 0.4% eng · 810 reach</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div style="background:#fff;border:1px solid #e5e9ee;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-size:13px;font-weight:800;color:#0B4A6B">This week</span>
+                    <span style="font-size:11px;font-weight:700;color:#94a3b8">vs prior week</span>
+                  </div>
+                  <sc-for list="{{ weekStats }}" as="s" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:baseline;gap:10px">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:#0B4A6B;width:76px;flex-shrink:0;letter-spacing:-0.02em">{{ s.value }}</span>
+                      <span style="flex:1;font-size:11px;color:#6b7280">{{ s.label }}</span>
+                      <span style="font-size:11px;font-weight:600;color:{{ s.tone }}">{{ s.delta }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="background:#fff;border:1px solid #e5e9ee;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+                  <span style="font-size:13px;font-weight:800;color:#0B4A6B">Branches at a glance</span>
+                  <sc-for list="{{ branches }}" as="b" hint-placeholder-count="5">
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <div style="width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:800;flex-shrink:0;background:{{ b.color }}">{{ b.initial }}</div>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+                        <span style="font-size:12px;font-weight:700;color:#111827">{{ b.name }}</span>
+                        <span style="font-size:11px;color:{{ b.noteTone }}">{{ b.note }}</span>
+                      </div>
+                      <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:{{ b.dot }}"></span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="background:#fff;border:1px solid #e5e9ee;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:11px">
+                  <span style="font-size:13px;font-weight:800;color:#0B4A6B">Pipelines running</span>
+                  <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:{{ j.dot }}"></span>
+                      <span style="flex:1;font-size:12px;font-weight:600;color:#334155">{{ j.name }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:{{ j.dot }}">{{ j.state }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="display:flex;flex-direction:column;gap:28px;padding:64px 64px 24px">
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:900px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#3A5B6D">Turn 1 · three directions (superseded)</span>
+    <h1 style="margin:0;font-size:34px;font-weight:800;letter-spacing:-0.02em;color:#0B4A6B">Dashboard, reimagined</h1>
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#4b5563;text-wrap:pretty">The three source directions, kept for reference. <a href="#2a">2a</a> above folds them into one tabbed page.</p>
+  </div>
+
+  <div style="display:flex;flex-direction:row;gap:56px;align-items:flex-start;flex-wrap:wrap">
+
+    <div id="1a" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:24px;border-radius:6px;background:#0B4A6B;color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600">1a</span>
+        <span style="font-size:17px;font-weight:700;color:#0B4A6B">Morning Standup</span>
+        <span style="font-size:13px;color:#6b7280">Action queue leads · branch strip follows · current visual language</span>
+      </div>
+
+      <div style="width:1440px;height:1240px;overflow:hidden;border-radius:14px;box-shadow:0 24px 60px rgba(11,74,107,0.18);background:#f8fafc;display:flex">
+        <aside style="width:256px;flex-shrink:0;background:#0B4A6B;display:flex;flex-direction:column">
+          <div style="padding:24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(58,91,109,0.3);color:#7dd3fc">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"></path>
+  <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"></path>
+  <path d="M5 21h14"></path></svg>
+            <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.02em">Trellis</span>
+          </div>
+          <nav style="flex:1;margin-top:20px;padding:0 12px;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;background:rgba(56,189,248,0.2);color:#7dd3fc;font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect width="7" height="9" x="3" y="3" rx="1"></rect>
+  <rect width="7" height="5" x="14" y="3" rx="1"></rect>
+  <rect width="7" height="9" x="14" y="12" rx="1"></rect>
+  <rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Overview</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Reports</div>
+            <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Audience</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+  <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+  <circle cx="9" cy="7" r="4"></circle></svg>Profiles</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path>
+  <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"></path>
+  <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>Segments</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Intelligence</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>Branches</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Campaigns</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"></path>
+  <path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"></path>
+  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"></path></svg>Campaign Builder</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path>
+  <path d="m21.854 2.147-10.94 10.939"></path></svg>Campaigns</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path>
+  <rect x="2" y="4" width="20" height="16" rx="2"></rect></svg>Email Previews</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path>
+  <path d="m14 7 3 3"></path>
+  <path d="M5 6v4"></path>
+  <path d="M19 14v4"></path>
+  <path d="M10 2v2"></path>
+  <path d="M7 8H3"></path>
+  <path d="M21 16h-4"></path>
+  <path d="M11 3H9"></path></svg>Marketing AI</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344"></path>
+  <path d="m9 11 3 3L22 4"></path></svg>Campaign Tasks</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Content Studio</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Brand</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Setup & Admin</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+          </nav>
+          <div style="padding:16px;border-top:1px solid rgba(58,91,109,0.3);display:flex;align-items:center;gap:12px">
+            <div style="width:38px;height:38px;border-radius:50%;background:rgba(75,123,148,0.25);color:#1E698F;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">C</div>
+            <div style="display:flex;flex-direction:column">
+              <span style="font-size:12px;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:-0.02em">Clint</span>
+              <span style="font-size:10px;color:#7dd3fc">Edit Profile</span>
+            </div>
+          </div>
+        </aside>
+
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+          <header style="background:rgba(255,255,255,0.9);border-bottom:1px solid #e2e8f0;padding:16px 32px;display:flex;justify-content:space-between;align-items:center">
+            <h2 style="margin:0;font-size:20px;font-weight:600;color:#1e293b">Overview</h2>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0.12em;color:#334155"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>All Branches (5)<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m6 9 6 6 6-6"></path></svg></div>
+              <span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;background:#d1fae5;color:#047857;padding:5px 12px;border-radius:999px;border:1px solid #a7f3d0">Sproutify Orchestrator v1.2</span>
+            </div>
+          </header>
+
+          <div style="flex:1;padding:28px 32px;display:flex;flex-direction:column;gap:22px;overflow:hidden">
+
+            <div style="display:flex;justify-content:space-between;align-items:flex-end">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:11px;font-weight:900;letter-spacing:0.16em;text-transform:uppercase;color:#94a3b8">Sunday, August 2</span>
+                <h3 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-0.02em;color:#0B4A6B">Good morning, Clint — 6 things need a person today</h3>
+              </div>
+              <div style="display:flex;gap:8px">
+                <div style="padding:9px 16px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;font-size:12px;font-weight:700;color:#475569">Last 7 days</div>
+                <div style="padding:9px 16px;border-radius:10px;background:#0B4A6B;color:#fff;font-size:12px;font-weight:700">Refresh all</div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 400px;gap:22px;align-items:start">
+
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-size:12px;font-weight:900;letter-spacing:0.16em;text-transform:uppercase;color:#334155">Needs you today</span>
+                  <span style="font-size:11px;font-weight:600;color:#94a3b8">Ranked by cost of ignoring</span>
+                </div>
+
+                <sc-for list="{{ queue }}" as="q" hint-placeholder-count="6">
+                  <div style="display:flex;align-items:center;gap:16px;padding:16px 18px;background:#fff;border:1px solid #e5e9ee;border-radius:14px">
+                    <div style="width:4px;align-self:stretch;border-radius:99px;background:{{ q.accent }}"></div>
+                    <div style="width:74px;flex-shrink:0;display:flex;flex-direction:column;gap:3px">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:{{ q.accent }}">{{ q.sev }}</span>
+                      <span style="font-size:10px;font-weight:600;color:#94a3b8">{{ q.age }}</span>
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="width:8px;height:8px;border-radius:2px;background:{{ q.color }}"></span>
+                        <span style="font-size:11px;font-weight:700;color:#64748b">{{ q.branch }}</span>
+                      </div>
+                      <span style="font-size:14px;font-weight:700;color:#0f172a;letter-spacing:-0.01em">{{ q.title }}</span>
+                      <span style="font-size:12px;color:#64748b;line-height:1.45">{{ q.detail }}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                      <div style="padding:9px 15px;border-radius:9px;background:#0f172a;color:#fff;font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase">{{ q.action }}</div>
+                      <div style="padding:9px 12px;border-radius:9px;border:1px solid #e2e8f0;color:#94a3b8;font-size:11px;font-weight:700">Snooze</div>
+                    </div>
+                  </div>
+                </sc-for>
+
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:10px">
+                  <span style="font-size:12px;font-weight:900;letter-spacing:0.16em;text-transform:uppercase;color:#334155">This week, across all branches</span>
+                  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+                    <sc-for list="{{ weekStats }}" as="s" hint-placeholder-count="4">
+                      <div style="background:#fff;border:1px solid #e5e9ee;border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:5px">
+                        <span style="font-size:10px;font-weight:900;letter-spacing:0.14em;text-transform:uppercase;color:#94a3b8">{{ s.label }}</span>
+                        <span style="font-size:26px;font-weight:800;letter-spacing:-0.03em;color:#0B4A6B">{{ s.value }}</span>
+                        <span style="font-size:11px;font-weight:600;color:{{ s.tone }}">{{ s.delta }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+
+                <div style="margin-top:8px;background:#fff;border:1px solid #e5e9ee;border-radius:16px;padding:20px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                    <span style="font-size:13px;font-weight:800;color:#0B4A6B">What worked · last 7 days</span>
+                    <span style="font-size:11px;font-weight:700;color:#1E698F">Post Performance →</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                    <div style="border:1px solid #d1fae5;background:#f0fdf4;border-radius:12px;padding:14px;display:flex;gap:12px">
+                      <div style="width:52px;height:52px;border-radius:9px;background:repeating-linear-gradient(135deg,#d1fae5,#d1fae5 5px,#ecfdf5 5px,#ecfdf5 10px);flex-shrink:0"></div>
+                      <div style="min-width:0;display:flex;flex-direction:column;gap:3px">
+                        <span style="font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:#059669">Top performer</span>
+                        <span style="font-size:13px;font-weight:700;color:#0f172a">“Seedling trays, day 9”</span>
+                        <span style="font-size:11px;color:#475569">ATL · Instagram · 6.2% eng · 11.4k reach</span>
+                      </div>
+                    </div>
+                    <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:12px;padding:14px;display:flex;gap:12px">
+                      <div style="width:52px;height:52px;border-radius:9px;background:repeating-linear-gradient(135deg,#fde68a,#fde68a 5px,#fffbeb 5px,#fffbeb 10px);flex-shrink:0"></div>
+                      <div style="min-width:0;display:flex;flex-direction:column;gap:3px">
+                        <span style="font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:#b45309">Underperformed</span>
+                        <span style="font-size:13px;font-weight:700;color:#0f172a">“Fall enrollment is open”</span>
+                        <span style="font-size:11px;color:#475569">School · Facebook · 0.4% eng · 810 reach</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div style="background:#fff;border:1px solid #e5e9ee;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-size:13px;font-weight:800;color:#0B4A6B">Branches</span>
+                    <span style="font-size:11px;font-weight:700;color:#94a3b8">5 · 3 healthy · 2 need attention</span>
+                  </div>
+                  <sc-for list="{{ branches }}" as="b" hint-placeholder-count="5">
+                    <div style="display:flex;flex-direction:column;gap:9px;padding:14px;border:1px solid #eef1f4;border-radius:12px">
+                      <div style="display:flex;align-items:center;gap:10px">
+                        <div style="width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800;background:{{ b.color }}">{{ b.initial }}</div>
+                        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+                          <span style="font-size:13px;font-weight:700;color:#0f172a">{{ b.name }}</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8">{{ b.host }}</span>
+                        </div>
+                        <span style="width:8px;height:8px;border-radius:50%;background:{{ b.dot }}"></span>
+                      </div>
+                      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                        <div style="display:flex;flex-direction:column">
+                          <span style="font-size:15px;font-weight:800;color:#0f172a;letter-spacing:-0.02em">{{ b.profiles }}</span>
+                          <span style="font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8">profiles</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column">
+                          <span style="font-size:15px;font-weight:800;color:#0f172a;letter-spacing:-0.02em">{{ b.rev }}</span>
+                          <span style="font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8">rev · 7d</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column">
+                          <span style="font-size:15px;font-weight:800;color:#0f172a;letter-spacing:-0.02em">{{ b.posts }}</span>
+                          <span style="font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#94a3b8">posts · 7d</span>
+                        </div>
+                      </div>
+                      <div style="font-size:11px;font-weight:600;color:{{ b.noteTone }}">{{ b.note }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+
+                <div style="background:#fff;border:1px solid #e5e9ee;border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-size:13px;font-weight:800;color:#0B4A6B">Pipelines running</span>
+                    <span style="font-size:11px;font-weight:700;color:#94a3b8">live</span>
+                  </div>
+                  <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:center;gap:12px">
+                      <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:{{ j.dot }}"></span>
+                      <span style="flex:1;font-size:12px;font-weight:600;color:#334155">{{ j.name }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:{{ j.dot }}">{{ j.state }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="1b" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:24px;border-radius:6px;background:#0B4A6B;color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600">1b</span>
+        <span style="font-size:17px;font-weight:700;color:#0B4A6B">Branch Board</span>
+        <span style="font-size:13px;color:#6b7280">Each branch is a card you own · tighter radii, less shouting</span>
+      </div>
+
+      <div style="width:1440px;height:1180px;overflow:hidden;border-radius:14px;box-shadow:0 24px 60px rgba(11,74,107,0.18);background:#f6f7f9;display:flex">
+        <aside style="width:256px;flex-shrink:0;background:#0B4A6B;display:flex;flex-direction:column">
+          <div style="padding:24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(58,91,109,0.3)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"></path>
+  <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"></path>
+  <path d="M5 21h14"></path></svg>
+            <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.02em">Trellis</span>
+          </div>
+          <nav style="flex:1;margin-top:20px;padding:0 12px;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;background:rgba(56,189,248,0.2);color:#7dd3fc;font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect width="7" height="9" x="3" y="3" rx="1"></rect>
+  <rect width="7" height="5" x="14" y="3" rx="1"></rect>
+  <rect width="7" height="9" x="14" y="12" rx="1"></rect>
+  <rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Overview</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Reports</div>
+            <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Audience</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+  <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+  <circle cx="9" cy="7" r="4"></circle></svg>Profiles</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path>
+  <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"></path>
+  <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>Segments</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Intelligence</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>Branches</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Campaigns</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"></path>
+  <path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"></path>
+  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"></path></svg>Campaign Builder</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path>
+  <path d="m21.854 2.147-10.94 10.939"></path></svg>Campaigns</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path>
+  <rect x="2" y="4" width="20" height="16" rx="2"></rect></svg>Email Previews</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path>
+  <path d="m14 7 3 3"></path>
+  <path d="M5 6v4"></path>
+  <path d="M19 14v4"></path>
+  <path d="M10 2v2"></path>
+  <path d="M7 8H3"></path>
+  <path d="M21 16h-4"></path>
+  <path d="M11 3H9"></path></svg>Marketing AI</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.75);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344"></path>
+  <path d="m9 11 3 3L22 4"></path></svg>Campaign Tasks</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Content Studio</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Brand</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.4)"><span>Setup & Admin</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+          </nav>
+          <div style="padding:16px;border-top:1px solid rgba(58,91,109,0.3);display:flex;align-items:center;gap:12px">
+            <div style="width:38px;height:38px;border-radius:50%;background:rgba(75,123,148,0.25);color:#1E698F;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">C</div>
+            <div style="display:flex;flex-direction:column">
+              <span style="font-size:12px;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:-0.02em">Clint</span>
+              <span style="font-size:10px;color:#7dd3fc">Edit Profile</span>
+            </div>
+          </div>
+        </aside>
+
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+          <header style="background:#fff;border-bottom:1px solid #e5e7eb;padding:14px 32px;display:flex;justify-content:space-between;align-items:center">
+            <h2 style="margin:0;font-size:19px;font-weight:600;color:#111827">Overview</h2>
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 14px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-weight:600;color:#374151"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>All Branches (5)<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m6 9 6 6 6-6"></path></svg></div>
+              <span style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;background:#ecfdf5;color:#047857;padding:5px 11px;border-radius:6px;border:1px solid #a7f3d0">Orchestrator v1.2</span>
+            </div>
+          </header>
+
+          <div style="flex:1;padding:26px 32px;display:flex;flex-direction:column;gap:20px;overflow:hidden">
+
+            <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#ea580c"></span>
+              <span style="font-size:14px;font-weight:700;color:#7c2d12">4 items need a person today</span>
+              <span style="font-size:13px;color:#9a3412">3 posts overdue · TikTok publishing is failing · ATL sync is 3 days stale</span>
+              <span style="margin-left:auto;padding:8px 14px;background:#ea580c;color:#fff;border-radius:7px;font-size:12px;font-weight:700">Work the list</span>
+            </div>
+
+            <div style="display:flex;align-items:baseline;justify-content:space-between">
+              <div style="display:flex;align-items:baseline;gap:16px">
+                <h3 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#111827">Your five branches</h3>
+                <span style="font-size:13px;color:#6b7280">Click a branch to scope the whole app to it</span>
+              </div>
+              <div style="display:flex;gap:6px">
+                <div style="padding:7px 13px;border-radius:7px;background:#111827;color:#fff;font-size:12px;font-weight:600">7 days</div>
+                <div style="padding:7px 13px;border-radius:7px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;font-size:12px;font-weight:600">30 days</div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+              <sc-for list="{{ branches }}" as="b" hint-placeholder-count="5">
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+                  <div style="height:3px;background:{{ b.color }}"></div>
+                  <div style="padding:18px;display:flex;flex-direction:column;gap:14px">
+                    <div style="display:flex;align-items:flex-start;gap:11px">
+                      <div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;flex-shrink:0;background:{{ b.color }}">{{ b.initial }}</div>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                        <span style="font-size:15px;font-weight:700;color:#111827;letter-spacing:-0.01em">{{ b.name }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9ca3af">{{ b.host }}</span>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                        <span style="width:7px;height:7px;border-radius:50%;background:{{ b.dot }}"></span>
+                        <span style="font-size:11px;font-weight:600;color:{{ b.dot }}">{{ b.status }}</span>
+                      </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 10px">
+                      <div style="display:flex;flex-direction:column;gap:1px">
+                        <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.profiles }}</span>
+                        <span style="font-size:11px;color:#6b7280">profiles <span style="color:#059669;font-weight:600">{{ b.profileDelta }}</span></span>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:1px">
+                        <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.rev }}</span>
+                        <span style="font-size:11px;color:#6b7280">revenue · 7d</span>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:1px">
+                        <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.followers }}</span>
+                        <span style="font-size:11px;color:#6b7280">followers <span style="color:#059669;font-weight:600">{{ b.followerDelta }}</span></span>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:1px">
+                        <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ b.posts }}</span>
+                        <span style="font-size:11px;color:#6b7280">posts · 7d</span>
+                      </div>
+                    </div>
+
+                    <div style="display:flex;align-items:flex-end;gap:3px;height:34px">
+                      <sc-for list="{{ b.spark }}" as="h" hint-placeholder-count="12">
+                        <div style="flex:1;border-radius:2px 2px 0 0;background:{{ b.color }};opacity:0.35;height:{{ h }}"></div>
+                      </sc-for>
+                    </div>
+
+                    <div style="border-top:1px solid #f3f4f6;padding-top:12px;display:flex;align-items:center;gap:10px">
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                        <span style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9ca3af">Next action</span>
+                        <span style="font-size:12px;font-weight:600;color:{{ b.noteTone }}">{{ b.note }}</span>
+                      </div>
+                      <div style="padding:7px 12px;border-radius:7px;background:#111827;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">{{ b.cta }}</div>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+
+              <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px">
+                <span style="font-size:15px;font-weight:700;color:#111827">All branches</span>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                  <sc-for list="{{ weekStats }}" as="s" hint-placeholder-count="4">
+                    <div style="display:flex;flex-direction:column;gap:1px">
+                      <span style="font-size:19px;font-weight:700;color:#111827;letter-spacing:-0.02em">{{ s.value }}</span>
+                      <span style="font-size:11px;color:#6b7280">{{ s.label }}</span>
+                      <span style="font-size:11px;font-weight:600;color:{{ s.tone }}">{{ s.delta }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="margin-top:auto;border-top:1px solid #f3f4f6;padding-top:12px;display:flex;flex-direction:column;gap:7px">
+                  <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:center;gap:9px">
+                      <span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:{{ j.dot }}"></span>
+                      <span style="flex:1;font-size:12px;color:#374151">{{ j.name }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ j.dot }}">{{ j.state }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="1c" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:24px;border-radius:6px;background:#0B4A6B;color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600">1c</span>
+        <span style="font-size:17px;font-weight:700;color:#0B4A6B">Control Room</span>
+        <span style="font-size:13px;color:#6b7280">Dense · today as a timeline · system health is first-class</span>
+      </div>
+
+      <div style="width:1440px;height:1180px;overflow:hidden;border-radius:14px;box-shadow:0 24px 60px rgba(11,74,107,0.22);background:#0d1b24;display:flex">
+        <aside style="width:256px;flex-shrink:0;background:#07141c;display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,0.07)">
+          <div style="padding:24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(255,255,255,0.07)">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"></path>
+  <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"></path>
+  <path d="M5 21h14"></path></svg>
+            <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.02em">Trellis</span>
+          </div>
+          <nav style="flex:1;margin-top:20px;padding:0 12px;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;background:rgba(56,189,248,0.16);color:#7dd3fc;font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect width="7" height="9" x="3" y="3" rx="1"></rect>
+  <rect width="7" height="5" x="14" y="3" rx="1"></rect>
+  <rect width="7" height="9" x="14" y="12" rx="1"></rect>
+  <rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>Overview</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Reports</div>
+            <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.3)"><span>Audience</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+  <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+  <circle cx="9" cy="7" r="4"></circle></svg>Profiles</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path>
+  <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"></path>
+  <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>Segments</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+  <path d="M18 17V9"></path>
+  <path d="M13 17V5"></path>
+  <path d="M8 17v-3"></path></svg>Intelligence</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M15 6a9 9 0 0 0-9 9V3"></path>
+  <circle cx="18" cy="6" r="3"></circle>
+  <circle cx="6" cy="18" r="3"></circle></svg>Branches</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.3)"><span>Campaigns</span><span style="font-size:11px;opacity:0.8">▾</span></div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"></path>
+  <path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"></path>
+  <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"></path></svg>Campaign Builder</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path>
+  <path d="m21.854 2.147-10.94 10.939"></path></svg>Campaigns</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"></path>
+  <rect x="2" y="4" width="20" height="16" rx="2"></rect></svg>Email Previews</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"></path>
+  <path d="m14 7 3 3"></path>
+  <path d="M5 6v4"></path>
+  <path d="M19 14v4"></path>
+  <path d="M10 2v2"></path>
+  <path d="M7 8H3"></path>
+  <path d="M21 16h-4"></path>
+  <path d="M11 3H9"></path></svg>Marketing AI</div>
+                  <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:8px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:500"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.344"></path>
+  <path d="m9 11 3 3L22 4"></path></svg>Campaign Tasks</div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.3)"><span>Content Studio</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.3)"><span>Brand</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+              <div style="padding-top:12px;display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:0.16em;color:rgba(255,255,255,0.3)"><span>Setup & Admin</span><span style="font-size:11px;opacity:0.8">▸</span></div>
+              </div>
+          </nav>
+          <div style="padding:16px;border-top:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:12px">
+            <div style="width:38px;height:38px;border-radius:50%;background:rgba(125,211,252,0.14);color:#7dd3fc;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">C</div>
+            <div style="display:flex;flex-direction:column">
+              <span style="font-size:12px;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:-0.02em">Clint</span>
+              <span style="font-size:10px;color:#7dd3fc">Edit Profile</span>
+            </div>
+          </div>
+        </aside>
+
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+          <header style="background:#0d1b24;border-bottom:1px solid rgba(255,255,255,0.07);padding:14px 28px;display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:baseline;gap:14px">
+              <h2 style="margin:0;font-size:19px;font-weight:600;color:#fff">Overview</h2>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:rgba(255,255,255,0.4)">SUN 02 AUG · 07:14</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="padding:7px 13px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.8)">All Branches (5)</div>
+              <div style="display:flex;align-items:center;gap:7px;padding:7px 12px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.3);border-radius:8px">
+                <span style="width:6px;height:6px;border-radius:50%;background:#ef4444"></span>
+                <span style="font-size:12px;font-weight:700;color:#fca5a5">2 systems degraded</span>
+              </div>
+            </div>
+          </header>
+
+          <div style="flex:1;padding:22px 28px;display:grid;grid-template-columns:1fr 330px;gap:20px;overflow:hidden">
+
+            <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+
+              <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+                <sc-for list="{{ branches }}" as="b" hint-placeholder-count="5">
+                  <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:13px;display:flex;flex-direction:column;gap:8px">
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <span style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:{{ b.color }}"></span>
+                      <span style="font-size:11px;font-weight:700;color:#fff;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ b.short }}</span>
+                      <span style="width:6px;height:6px;border-radius:50%;margin-left:auto;flex-shrink:0;background:{{ b.dot }}"></span>
+                    </div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:600;color:#fff;letter-spacing:-0.03em">{{ b.rev }}</span>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:10px;color:rgba(255,255,255,0.45)">{{ b.profiles }} profiles</span>
+                      <span style="font-size:10px;font-weight:600;color:#4ade80">{{ b.profileDelta }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px;min-height:0">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div style="display:flex;align-items:baseline;gap:12px">
+                    <span style="font-size:14px;font-weight:700;color:#fff">Today across the ecosystem</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,0.35)">9 EVENTS · 4 SCHEDULED · 2 FAILED</span>
+                  </div>
+                  <span style="font-size:11px;font-weight:600;color:#7dd3fc">Full activity log →</span>
+                </div>
+
+                <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:0">
+                  <sc-for list="{{ timeline }}" as="t" hint-placeholder-count="9">
+                    <div style="display:flex;gap:14px;align-items:stretch">
+                      <div style="width:52px;flex-shrink:0;padding-top:11px;text-align:right">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,0.35)">{{ t.time }}</span>
+                      </div>
+                      <div style="width:15px;flex-shrink:0;display:flex;flex-direction:column;align-items:center">
+                        <div style="width:1px;height:11px;background:rgba(255,255,255,0.1)"></div>
+                        <div style="width:9px;height:9px;border-radius:50%;flex-shrink:0;border:2px solid #0d1b24;background:{{ t.dot }}"></div>
+                        <div style="width:1px;flex:1;background:rgba(255,255,255,0.1)"></div>
+                      </div>
+                      <div style="flex:1;min-width:0;padding:8px 0 8px 0;display:flex;align-items:center;gap:12px">
+                        <span style="width:7px;height:7px;border-radius:2px;flex-shrink:0;background:{{ t.color }}"></span>
+                        <span style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.5);width:96px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.branch }}</span>
+                        <span style="flex:1;min-width:0;font-size:13px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.text }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;flex-shrink:0;padding:3px 8px;border-radius:5px;color:{{ t.dot }};background:{{ t.chipBg }}">{{ t.state }}</span>
+                        <span style="font-size:11px;font-weight:700;color:#7dd3fc;flex-shrink:0;width:78px;text-align:right">{{ t.action }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:14px;min-height:0">
+
+              <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.25);border-radius:12px;padding:17px;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;gap:9px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#ef4444"></span>
+                  <span style="font-size:13px;font-weight:700;color:#fecaca">System health</span>
+                  <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,0.35)">2 DOWN · 1 STALE</span>
+                </div>
+                <sc-for list="{{ systems }}" as="s" hint-placeholder-count="4">
+                  <div style="display:flex;flex-direction:column;gap:3px;padding-bottom:9px;border-bottom:1px solid rgba(255,255,255,0.06)">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:{{ s.dot }}"></span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#e2e8f0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.name }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:{{ s.dot }}">{{ s.code }}</span>
+                    </div>
+                    <span style="font-size:11px;color:rgba(255,255,255,0.45);padding-left:14px;line-height:1.4">{{ s.detail }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:17px;display:flex;flex-direction:column;gap:12px">
+                <span style="font-size:13px;font-weight:700;color:#fff">Queue · needs a person</span>
+                <sc-for list="{{ queue }}" as="q" hint-placeholder-count="6">
+                  <div style="display:flex;gap:10px;align-items:flex-start">
+                    <span style="width:5px;align-self:stretch;border-radius:99px;flex-shrink:0;background:{{ q.accent }}"></span>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                      <span style="font-size:12px;font-weight:700;color:#e2e8f0;line-height:1.35">{{ q.title }}</span>
+                      <span style="font-size:11px;color:rgba(255,255,255,0.4)">{{ q.branch }} · {{ q.age }}</span>
+                    </div>
+                    <span style="font-size:11px;font-weight:700;color:#7dd3fc;flex-shrink:0">{{ q.action }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:17px;display:flex;flex-direction:column;gap:11px">
+                <span style="font-size:13px;font-weight:700;color:#fff">7-day totals</span>
+                <sc-for list="{{ weekStats }}" as="s" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:baseline;gap:10px">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;color:#fff;width:74px;flex-shrink:0;letter-spacing:-0.02em">{{ s.value }}</span>
+                    <span style="flex:1;font-size:11px;color:rgba(255,255,255,0.5)">{{ s.label }}</span>
+                    <span style="font-size:11px;font-weight:600;color:{{ s.toneDark }}">{{ s.delta }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script data-dc-script type="text/babel" data-props='{"$preview":{"width":1600,"height":1200}}'>
+class Component extends DCLogic {
+  state = { tab: 'control' };
+
+  renderVals() {
+    const tab = this.state.tab;
+    const on = '#0B4A6B', off = '#6b7280';
+    const ic = n => 'icons/' + n + '.svg';
+    const mk = pairs => pairs.map(p => ({ label: p[0], url: ic(p[1]) }));
+
+    const branches = [
+      { name: 'ATL Urban Farms', short: 'ATL Farms', slug: 'atl', host: 'atlurbanfarms.com', initial: 'A', color: '#2F7A4F',
+        profiles: '4,820', profileDelta: '+64', rev: '$48.2k', followers: '8,140', followerDelta: '+124', posts: '5',
+        status: 'Stale', dot: '#f59e0b', sync: '3d ago', share: '39%',
+        note: 'Spoke last synced 3 days ago', noteTone: '#b45309', cta: 'Re-test',
+        spark: ['38%','52%','44%','61%','70%','58%','82%','74%','66%','88%','79%','94%'] },
+      { name: 'Sproutify Farm', short: 'Farm', slug: 'farm', host: 'farm.sproutify.app', initial: 'F', color: '#1E698F',
+        profiles: '3,410', profileDelta: '+118', rev: '$21.4k', followers: '5,290', followerDelta: '+310', posts: '7',
+        status: 'Healthy', dot: '#10b981', sync: '12m ago', share: '27%',
+        note: 'Best week in a month — keep it going', noteTone: '#047857', cta: 'Schedule',
+        spark: ['44%','40%','56%','62%','58%','71%','66%','80%','86%','78%','92%','98%'] },
+      { name: 'Sproutify School', short: 'School', slug: 'school', host: 'school.sproutify.app', initial: 'S', color: '#7C5CBF',
+        profiles: '2,190', profileDelta: '+31', rev: '$6.1k', followers: '2,470', followerDelta: '+12', posts: '2',
+        status: 'Healthy', dot: '#10b981', sync: '18m ago', share: '18%',
+        note: '2 posts overdue since Thursday', noteTone: '#b45309', cta: 'Review',
+        spark: ['62%','58%','54%','49%','52%','44%','40%','46%','38%','35%','41%','33%'] },
+      { name: 'Micro Gardening', short: 'Micro', slug: 'micro', host: 'micro.sproutify.app', initial: 'M', color: '#C4703A',
+        profiles: '1,240', profileDelta: '+9', rev: '$3.8k', followers: '1,110', followerDelta: '+4', posts: '1',
+        status: 'Down', dot: '#ef4444', sync: 'Never synced', share: '10%',
+        note: 'Connection erroring — credentials expired', noteTone: '#b91c1c', cta: 'Fix',
+        spark: ['30%','34%','28%','31%','26%','22%','25%','19%','24%','18%','20%','16%'] },
+      { name: 'Rejoice', short: 'Rejoice', slug: 'rejoice', host: 'letsrejoice.app', initial: 'R', color: '#B0426A',
+        profiles: '826', profileDelta: '+42', rev: '$1.2k', followers: '940', followerDelta: '+61', posts: '0',
+        status: 'Healthy', dot: '#10b981', sync: '31m ago', share: '6%',
+        note: 'Nothing posted in 9 days', noteTone: '#b45309', cta: 'Draft',
+        spark: ['20%','26%','22%','35%','31%','44%','40%','52%','48%','60%','56%','68%'] },
+    ];
+
+    const queue = [
+      { sev: 'Blocking', accent: '#dc2626', age: '4h', branch: 'Micro Gardening', color: '#C4703A',
+        title: 'Micro spoke connection is erroring', detail: 'Profiles, orders and revenue for this branch have been excluded from every number on this page.', action: 'Re-test' },
+      { sev: 'Blocking', accent: '#dc2626', age: '2d', branch: 'All branches', color: '#64748b',
+        title: 'TikTok publishing has failed 6 times', detail: 'trellis-tiktok-publish returns 404. Posts are being marked sent without reaching TikTok.', action: 'Open flows' },
+      { sev: 'Overdue', accent: '#ea580c', age: '3d', branch: 'Sproutify School', color: '#7C5CBF',
+        title: '3 posts are past their scheduled date', detail: 'Two for School, one for Micro. Reschedule or mark posted.', action: 'Review' },
+      { sev: 'Stale', accent: '#d97706', age: '3d', branch: 'ATL Urban Farms', color: '#2F7A4F',
+        title: 'ATL spoke last synced 3 days ago', detail: 'Your largest branch. Revenue and order counts below may be out of date.', action: 'Sync' },
+      { sev: 'Waiting', accent: '#1E698F', age: '1d', branch: 'ATL Urban Farms', color: '#2F7A4F',
+        title: '6 clips finished rendering', detail: 'Awaiting your approval in Clip Studio before they enter the posting queue.', action: 'Approve' },
+      { sev: 'Idle', accent: '#64748b', age: '9d', branch: 'Rejoice', color: '#B0426A',
+        title: 'Rejoice has not posted in 9 days', detail: 'Longest gap of any branch. Audience grew 6.9% anyway — worth feeding.', action: 'Draft' },
+    ];
+
+    const weekStats = [
+      { label: 'Revenue · 7d', value: '$80.7k', delta: '+11.4%', tone: '#059669', toneDark: '#4ade80' },
+      { label: 'Posts published', value: '15', delta: '−4', tone: '#dc2626', toneDark: '#f87171' },
+      { label: 'New profiles', value: '264', delta: '+38', tone: '#059669', toneDark: '#4ade80' },
+      { label: 'Email opens', value: '38.2%', delta: '+2.1 pts', tone: '#059669', toneDark: '#4ade80' },
+    ];
+
+    const jobs = [
+      { name: 'Scheduled publisher (S1)', state: 'OK', dot: '#10b981' },
+      { name: 'Clip render worker', state: '2 RUNNING', dot: '#1E698F' },
+      { name: 'Meta insights sync', state: 'OK', dot: '#10b981' },
+      { name: 'TikTok publisher (B5)', state: '404', dot: '#ef4444' },
+    ];
+
+    const systems = [
+      { name: 'trellis-tiktok-publish', code: '404', dot: '#ef4444', detail: 'Blueprint B5 exists but is not imported. 6 posts affected.' },
+      { name: 'trellis-clip-publish', code: '404', dot: '#ef4444', detail: 'Blueprint E8 exists but is not active.' },
+      { name: 'ATL spoke connection', code: 'STALE', dot: '#f59e0b', detail: 'Last successful query 3 days ago.' },
+      { name: 'Resend dispatch', code: 'OK', dot: '#10b981', detail: '2,140 sent this week · 12 bounced · 0 complaints.' },
+    ];
+
+    const timeline = [
+      { time: '06:40', branch: 'Sproutify Farm', color: '#1E698F', text: 'Instagram post published — “Trays are in”', state: 'Posted', dot: '#10b981', chipBg: 'rgba(16,185,129,0.14)', bgLight: '#ecfdf5', fgLight: '#047857', action: '' },
+      { time: '07:00', branch: 'ATL Urban Farms', color: '#2F7A4F', text: 'Meta insights synced — followers +18 overnight', state: 'Synced', dot: '#10b981', chipBg: 'rgba(16,185,129,0.14)', bgLight: '#ecfdf5', fgLight: '#047857', action: '' },
+      { time: '07:10', branch: 'Micro Gardening', color: '#C4703A', text: 'Spoke query failed — invalid API key', state: 'Error', dot: '#ef4444', chipBg: 'rgba(239,68,68,0.14)', bgLight: '#fef2f2', fgLight: '#b91c1c', action: 'Fix' },
+      { time: '09:00', branch: 'ATL Urban Farms', color: '#2F7A4F', text: 'Facebook post scheduled — “Seedling restock”', state: 'Queued', dot: '#0ea5e9', chipBg: 'rgba(125,211,252,0.14)', bgLight: '#f0f9ff', fgLight: '#0369a1', action: 'Preview' },
+      { time: '10:30', branch: 'Sproutify School', color: '#7C5CBF', text: 'Campaign “August enrollment” dispatch to 1,840', state: 'Queued', dot: '#0ea5e9', chipBg: 'rgba(125,211,252,0.14)', bgLight: '#f0f9ff', fgLight: '#0369a1', action: 'Preview' },
+      { time: '11:15', branch: 'All branches', color: '#64748b', text: 'Clip render worker — 6 clips finished, awaiting approval', state: 'Waiting', dot: '#f59e0b', chipBg: 'rgba(251,191,36,0.14)', bgLight: '#fffbeb', fgLight: '#b45309', action: 'Approve' },
+      { time: '13:00', branch: 'Sproutify Farm', color: '#1E698F', text: 'TikTok post scheduled — will fail, publisher is down', state: 'At risk', dot: '#ef4444', chipBg: 'rgba(239,68,68,0.14)', bgLight: '#fef2f2', fgLight: '#b91c1c', action: 'Reroute' },
+      { time: '16:00', branch: 'Rejoice', color: '#B0426A', text: 'Nothing scheduled — 9-day gap continues', state: 'Empty', dot: '#94a3b8', chipBg: 'rgba(100,116,139,0.16)', bgLight: '#f8fafc', fgLight: '#64748b', action: 'Draft' },
+      { time: '18:30', branch: 'ATL Urban Farms', color: '#2F7A4F', text: 'Instagram Reel scheduled — “Day 9 timelapse”', state: 'Queued', dot: '#0ea5e9', chipBg: 'rgba(125,211,252,0.14)', bgLight: '#f0f9ff', fgLight: '#0369a1', action: 'Preview' },
+    ];
+
+    const navGroups = [
+      { label: 'Audience', open: true, items: mk([['Profiles','users'],['Segments','layers'],['Intelligence','chart-column'],['Branches','git-branch']]) },
+      { label: 'Campaigns', open: true, items: mk([['Campaign Builder','rocket'],['Campaigns','send'],['Email Previews','mail'],['Marketing AI','wand-sparkles'],['Campaign Tasks','square-check-big']]) },
+      { label: 'Content Studio', open: false, items: mk([['Social Hub','share-2'],['Reddit Growth','message-circle'],['Creative Studio','sparkles'],['Post Scheduler','calendar-clock'],['Card Studio','layout-template'],['Ad Performance','trending-up'],['Post Performance','award'],['Clip Studio','film'],['Trellis Sessions','music'],['Studio Albums','music'],['Trellis Episodes','clapperboard']]) },
+      { label: 'Brand', open: false, items: mk([['Brand DNA','dna'],['Brand Profiles','palette']]) },
+      { label: 'Setup & Admin', open: false, items: mk([['Platform Setup','plug'],['n8n Flows','workflow'],['Dev Resources','code-xml'],['Team','user-cog'],['Knowledge Base','book-open']]) },
+    ].map(g => ({ ...g, chev: g.open ? '\u25BE' : '\u25B8', shown: g.open ? g.items : [] }));
+
+    return {
+      branches, queue, queueTop: queue.slice(0, 4), weekStats, jobs, systems, timeline, navGroups,
+      isControl: tab === 'control', isBoard: tab === 'board', isStandup: tab === 'standup',
+      goControl: () => this.setState({ tab: 'control' }),
+      goBoard: () => this.setState({ tab: 'board' }),
+      goStandup: () => this.setState({ tab: 'standup' }),
+      controlFg: tab === 'control' ? on : off, controlBd: tab === 'control' ? on : 'transparent',
+      frameH: tab === 'board' ? '900px' : tab === 'standup' ? '960px' : '1300px',
+      boardFg: tab === 'board' ? on : off, boardBd: tab === 'board' ? on : 'transparent',
+      standupFg: tab === 'standup' ? on : off, standupBd: tab === 'standup' ? on : 'transparent',
+    };
+  }
+}
+</script>
+</body>
+</html>
