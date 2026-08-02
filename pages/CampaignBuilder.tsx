@@ -723,14 +723,18 @@ Return ONLY the post content, no explanations or labels.`,
       let out = html;
       // Replace each discovered token with the value typed in Compose. Empty
       // tokens collapse to '' so a raw {{token}} never leaks into the sent email.
+      // A FUNCTION replacer is used (not a string) so `$` sequences in the copy
+      // — "Save $$$", "$5 off", "$&" — are inserted literally rather than being
+      // interpreted as replacement patterns and silently corrupting the email.
       templateTokens.forEach(token => {
         const re = new RegExp(`\\{\\{\\s*${token}\\s*\\}\\}`, 'gi');
-        out = out.replace(re, customTemplateFields[token] || '');
+        const value = customTemplateFields[token] || '';
+        out = out.replace(re, () => value);
       });
       // Per-recipient personalization is applied downstream at send time.
       return out
-        .replace(/\{\{\s*first_name\s*\}\}/gi, profile.first_name || '{{first_name}}')
-        .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, '{{unsubscribe_url}}');
+        .replace(/\{\{\s*first_name\s*\}\}/gi, () => profile.first_name || '{{first_name}}')
+        .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, () => '{{unsubscribe_url}}');
     };
 
     if (isCustomTemplate) {
@@ -984,6 +988,7 @@ Return ONLY the post content, no explanations or labels.`,
           setEnabledChannels(new Set(['email']));
           setChannelContents({ email: '', instagram: '', x: '', linkedin: '', sms: '' });
           setEmailTemplate('UnifiedSproutifyUpdate');
+          setCustomTemplateFields({});
           setTimingRules([]);
           setChannelDeployResults([]);
           setConsentConfirmed(false);
