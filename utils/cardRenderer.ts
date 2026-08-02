@@ -17,7 +17,7 @@
 // canvas keeps us in the `document.fonts` world where `ensureFontLoaded`
 // actually works.
 
-import type { CardBullet, CardConcept, CardPalette, CardTemplate } from '../types';
+import type { CardBullet, CardConcept, CardPalette, CardTemplate, BrandFontPairing } from '../types';
 import { ensureFontLoaded, FONT_OPTIONS } from './imageComposite';
 
 // ─── Constants ───────────────────────────────────────────────────────────
@@ -30,10 +30,32 @@ export const CARD_SIZE = { width: 1080, height: 1350 } as const; // 4:5, IG port
 const SERIF_OPTION = FONT_OPTIONS.find((f) => f.value === 'Playfair Display');
 const SANS_OPTION = FONT_OPTIONS.find((f) => f.value === 'Inter');
 
+const DEFAULT_DISPLAY = SERIF_OPTION?.value ?? 'Playfair Display';
+const DEFAULT_LABEL = SANS_OPTION?.value ?? 'Inter';
+
+// CARD_FONTS carries two ROLES, not two fixed families: `serif` is the display
+// voice (headlines, statement, wordmark, verse body, the big stat figure) and
+// `sans` is the label/UI face (eyebrow, tracked footer caps, bullet text,
+// references, grid labels, stat unit). Every renderer and helper already reaches
+// for one of these two roles. To render a brand's own pairing, `drawCard`
+// re-points these to the brand's {display, label} for the duration of ONE
+// synchronous draw and resets them after — so all ~30 references adopt the brand
+// faces with no threading, and the display/label mapping can't drift because it
+// is the exact same references. Mutable on purpose; only this module reads it,
+// and a draw is synchronous so no external caller can observe the swap.
 export const CARD_FONTS = {
-  serif: SERIF_OPTION?.value ?? 'Playfair Display',
-  sans: SANS_OPTION?.value ?? 'Inter',
+  serif: DEFAULT_DISPLAY,
+  sans: DEFAULT_LABEL,
 };
+
+// The brand pairing to draw with, resolved from the concept. Absent → defaults.
+function resolveFonts(concept?: CardConcept): BrandFontPairing {
+  const f = concept?.fonts;
+  return {
+    display: (f?.display || '').trim() || DEFAULT_DISPLAY,
+    label: (f?.label || '').trim() || DEFAULT_LABEL,
+  };
+}
 
 // ─── Small drawing helpers ───────────────────────────────────────────────
 
@@ -1617,6 +1639,14 @@ export function drawCard(
       ? concept.template
       : 'verse';
 
+  // Point the two font roles at this concept's brand pairing for the duration
+  // of the draw, then restore. Synchronous, so no other caller can observe it.
+  const fonts = resolveFonts(concept);
+  const prevSerif = CARD_FONTS.serif;
+  const prevSans = CARD_FONTS.sans;
+  CARD_FONTS.serif = fonts.display;
+  CARD_FONTS.sans = fonts.label;
+
   try {
     switch (template) {
       case 'statement':
@@ -1655,10 +1685,14 @@ export function drawCard(
     } catch {
       // Nothing more we can safely do.
     }
+  } finally {
+    // Always restore the default roles, even if a renderer threw above.
+    CARD_FONTS.serif = prevSerif;
+    CARD_FONTS.sans = prevSans;
   }
 }
 
-async function loadFontsForConcept(): Promise<void> {
+async function loadFontsForConcept(concept?: CardConcept): Promise<void> {
   // Fonts must be awaited BEFORE any ctx.measureText/fillText call, because
   // ctx.font accepts an unloaded family without error — the browser just
   // renders (and measures) with its fallback font until the real one
@@ -1672,15 +1706,21 @@ async function loadFontsForConcept(): Promise<void> {
   // template shares one font-loading path — the cost of a couple extra
   // weight fetches is trivial next to the risk of a template-specific loader
   // drifting out of sync.
+  // Load the CONCEPT's actual faces, not the hardcoded default pair — otherwise
+  // a brand introducing a new family (Rekkrd's JetBrains Mono labels) never gets
+  // fetched and canvas silently falls back to a system font, the exact failure
+  // this file's header warns about. ensureFontLoaded injects a Google Fonts link
+  // for any family and dedupes per family, so a brand's mono loads on first use.
+  const { display, label } = resolveFonts(concept);
   await Promise.all([
-    ensureFontLoaded(CARD_FONTS.serif, 300),
-    ensureFontLoaded(CARD_FONTS.serif, 400),
-    ensureFontLoaded(CARD_FONTS.serif, 600),
-    ensureFontLoaded(CARD_FONTS.serif, 700),
-    ensureFontLoaded(CARD_FONTS.sans, 400),
-    ensureFontLoaded(CARD_FONTS.sans, 500),
-    ensureFontLoaded(CARD_FONTS.sans, 600),
-    ensureFontLoaded(CARD_FONTS.sans, 700),
+    ensureFontLoaded(display, 300),
+    ensureFontLoaded(display, 400),
+    ensureFontLoaded(display, 600),
+    ensureFontLoaded(display, 700),
+    ensureFontLoaded(label, 400),
+    ensureFontLoaded(label, 500),
+    ensureFontLoaded(label, 600),
+    ensureFontLoaded(label, 700),
   ]);
 }
 
@@ -1708,7 +1748,7 @@ export async function renderCardConcept(concept: CardConcept, opts: { scale?: nu
   // BEFORE drawCard runs, since drawCard itself is synchronous — load them
   // in parallel since neither depends on the other.
   const [, backgroundImage] = await Promise.all([
-    loadFontsForConcept(),
+    loadFontsForConcept(concept),
     concept?.template === 'editorial' ? loadCardBackgroundImage(concept.backgroundUrl) : Promise.resolve(null),
   ]);
 
@@ -1745,7 +1785,7 @@ const PREVIEW_SCALE = 0.5;
  */
 export async function renderCardPreviewDataUrl(concept: CardConcept): Promise<string> {
   const [, backgroundImage] = await Promise.all([
-    loadFontsForConcept(),
+    loadFontsForConcept(concept),
     concept?.template === 'editorial' ? loadCardBackgroundImage(concept.backgroundUrl) : Promise.resolve(null),
   ]);
 

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ApiKeyConfig, BranchContext, BranchInfo } from '../types';
 import { generateCardConcepts, type ScripturePolicy, CARD_BRIEF_PRESETS, CardConceptWithRef } from '../services/creativeDirectorService';
+import { getBrandCardStyle } from '../services/brandCardStyles';
 import { fetchPassage } from '../services/bibleService';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
 import { uploadPostImage, createScheduledPosts } from '../services/scheduledPostService';
@@ -495,6 +496,9 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           secondary: selectedBranch.secondary_color,
           accent: selectedBranch.accent_color,
         },
+        // Per-brand style: fonts, palette-lock, template restriction. Undefined
+        // for brands not yet styled, which leaves generation exactly as before.
+        cardStyle: getBrandCardStyle(selectedBranch.slug),
       });
 
       console.log('[CardStudio] Gemini returned', concepts.length, 'usable concept(s):',
@@ -557,6 +561,9 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           secondary: selectedBranch.secondary_color,
           accent: selectedBranch.accent_color,
         },
+        // Per-brand style: fonts, palette-lock, template restriction. Undefined
+        // for brands not yet styled, which leaves generation exactly as before.
+        cardStyle: getBrandCardStyle(selectedBranch.slug),
       });
 
       if (replacement.length === 0) {

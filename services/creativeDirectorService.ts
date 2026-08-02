@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { CardBullet, CardConcept, CardMessage, CardPalette, CardTemplate } from '../types';
+import { BrandCardStyle, CardBullet, CardConcept, CardMessage, CardPalette, CardTemplate } from '../types';
 import { sanitizePII } from './aiService';
 import { USFM_BOOKS, VerseReference } from './bibleService';
 
@@ -228,20 +228,50 @@ function buildDirectorPrompt(opts: {
   count: number;
   palette?: { primary?: string; secondary?: string; accent?: string };
   scripturePolicy?: ScripturePolicy;
+  cardStyle?: BrandCardStyle;
 }): string {
   const bookVocab = USFM_BOOKS.map((b) => `${b.id} (${b.name})`).join(', ');
+
+  const ALL_TEMPLATES: CardTemplate[] = ['verse', 'statement', 'grid', 'editorial', 'list', 'conversation', 'stat', 'quote'];
+  const templatePolicy = opts.cardStyle?.templatePolicy;
+  const allowedTemplates = templatePolicy?.mode === 'restricted' ? templatePolicy.allowed : null;
+  const usableTemplates = allowedTemplates ?? ALL_TEMPLATES;
+  const nonVerseUsable = usableTemplates.filter((t) => t !== 'verse');
 
   const policy = opts.scripturePolicy || 'mix';
   const scriptureRule =
     policy === 'avoid'
-      ? 'SCRIPTURE POLICY: do NOT use the "verse" template at all for this batch. You have 7 other templates to choose from — "statement", "grid", "editorial", "list", "conversation", "stat" and "quote" — and you should use that range, not default to the same 2-3 out of habit. Do not quote or reference scripture anywhere, including in captions.'
+      ? `SCRIPTURE POLICY: do NOT use the "verse" template at all for this batch. You have ${nonVerseUsable.length} other template${nonVerseUsable.length === 1 ? '' : 's'} to choose from — ${nonVerseUsable.map((t) => `"${t}"`).join(', ')} — and you should use that range, not default to the same 2-3 out of habit. Do not quote or reference scripture anywhere, including in captions.`
       : policy === 'require'
       ? 'SCRIPTURE POLICY: every concept should use the "verse" template, unless you genuinely cannot name a fitting passage — in that case pick whichever non-verse template best fits that one rather than forcing a bad fit.'
-      : 'SCRIPTURE POLICY: mix the templates. Not every post needs scripture — a batch of all verse cards is monotonous. Aim for a spread across all 8 templates ("verse", "statement", "grid", "editorial", "list", "conversation", "stat", "quote"), not just the first few.';
+      : `SCRIPTURE POLICY: mix the templates. Not every post needs scripture — a batch of all verse cards is monotonous. Aim for a spread across ${allowedTemplates ? 'this brand\'s allowed templates' : 'all 8 templates'} (${usableTemplates.map((t) => `"${t}"`).join(', ')}), not just the first few.`;
 
-  const paletteHint = opts.palette && (opts.palette.primary || opts.palette.secondary || opts.palette.accent)
+  // Palette policy governs BOTH the "brand colors for inspiration" hint below
+  // and the per-concept palette field description further down — a locked
+  // brand needs neither, since normalizeConcept discards whatever palette the
+  // model writes and applies the locked one verbatim instead.
+  const palettePolicy = opts.cardStyle?.palettePolicy;
+  const isLockedPalette = palettePolicy?.mode === 'locked';
+
+  const paletteHint = isLockedPalette
+    ? ''
+    : opts.palette && (opts.palette.primary || opts.palette.secondary || opts.palette.accent)
     ? `Brand colors for INSPIRATION ONLY (not mandatory — concepts do not need to be on-brand): primary ${opts.palette.primary || 'n/a'}, secondary ${opts.palette.secondary || 'n/a'}, accent ${opts.palette.accent || 'n/a'}.`
     : '';
+
+  const paletteFieldRule = isLockedPalette
+    ? 'PALETTE: this brand\'s colors are applied automatically — do not choose or describe a palette; put your variation into template choice and copy instead.'
+    : `palette: {bg1, bg2 (optional gradient end), text, muted, accent} — real CSS hex colors (e.g. "#1c2b23"). text and bg1 MUST have strong, obviously readable contrast. Each concept's palette is its OWN choice and does not need to match the brand's colors or any other concept's palette — but it must be internally consistent (muted and accent should make sense against bg1, not clash or disappear). For "editorial" concepts the palette still matters (it colors the wordmark, headline and footer band over the photo scrim), even though the background itself is a photo, not this palette.${
+        palettePolicy?.mode === 'expressive' && palettePolicy.guidance ? ` Stay within: ${palettePolicy.guidance}` : ''
+      }`;
+
+  const templatesIntro = allowedTemplates
+    ? `TEMPLATES — this brand is RESTRICTED to a subset. You may ONLY use these templates: ${allowedTemplates.map((t) => `"${t}"`).join(', ')}. Distribute your concepts across that set and do not use any template outside it, even if another one seems like a good fit — adapt the idea to one of the allowed templates instead. (Every template is still fully described below for reference, including some you may not use here — pick only from the allowed list.)`
+    : 'TEMPLATES (pick per concept, whichever best fits that concept\'s angle):';
+
+  const varietyLine = allowedTemplates
+    ? `VARIETY IS THE WHOLE POINT of offering ${usableTemplates.length} template${usableTemplates.length === 1 ? '' : 's'} for this brand — across this batch, actively DIVERSIFY across ${usableTemplates.map((t) => `"${t}"`).join(', ')}. Do not let every batch settle into the same one or two out of habit.`
+    : 'VARIETY IS THE WHOLE POINT of having eight templates — across this batch, actively DIVERSIFY. Do not let every batch settle into "statement", "grid" and "editorial" out of habit; "list", "conversation", "stat" and "quote" exist specifically because that original set of four was producing visually repetitive concepts. When scripture is disallowed you still have 7 non-verse templates available — use the range instead of picking the same 2-3 every time.';
 
   return `You are a senior art director AND copywriter producing designed Instagram post CONCEPTS for ${opts.brandName} — structured data that a renderer will draw, not an image you generate yourself. Image models can't reliably render text or lay out a grid, so your job is to write the concept precisely.
 
@@ -254,7 +284,7 @@ BRIEF FROM THE MARKETER:
 
 Produce EXACTLY ${opts.count} concepts. They must be DELIBERATELY DIFFERENT from each other: vary the template, vary the palette, vary the angle or emotion. Do not produce near-duplicates — a reviewer should look at the set and see real options, not the same idea three times.
 
-TEMPLATES (pick per concept, whichever best fits that concept's angle):
+${templatesIntro}
 1. "verse" — a Bible passage on a gradient. Needs ONLY verse_ref: {book_id, chapter, verse_start, verse_end?}. Do NOT write the verse's words or a "reference" string yourself — the app looks up the exact wording server-side afterward, from a licensed Bible database, using only the reference you pick. book_id MUST be one of these USFM ids (write the id, not the full name): ${bookVocab}. Keep the span short: verse_end is optional for a single verse, and when given, verse_end minus verse_start must be at most ${MAX_VERSE_SPAN - 1} (i.e. at most ${MAX_VERSE_SPAN} verses). Only pick a passage that genuinely, specifically fits the emotion or angle of this concept — never force a loose or generic fit.
 2. "statement" — a bold typographic statement, no scripture. Needs: statement (a short, punchy line), and may optionally include statementEmphasis (1-3 emphasized words) and subline (a short supporting line).
 3. "grid" — a small grid of short items (a checklist, a list of feelings, steps, or ideas). Needs: heading, items (3 to 6 SHORT strings, a few words each), and may optionally include highlightIndex (the index of the one item to visually emphasize) and footnote.
@@ -272,14 +302,14 @@ TEMPLATES (pick per concept, whichever best fits that concept's angle):
 7. "stat" — one oversized number or short figure as the whole point of the card. Needs: statValue (the big figure itself, kept SHORT — e.g. "5", "3am", "92%" — this is the one thing the eye lands on) and subline (a short line of context explaining what the figure means). May optionally include statUnit (a short tracked label under the figure, e.g. "MINUTES", "DAYS A WEEK"). Only use a figure that's real (from the brief or brand context) or plainly illustrative/rhetorical (e.g. "1" for "one small habit, one big difference") — never present a made-up statistic as if it were researched fact.
 8. "quote" — a framed pull-quote, visually distinct from "statement" (a bold headline) — "quote" is set and framed like an actual quotation. Needs: statement (the quotation text) and attribution (who or what it's from, e.g. "— REJOICE" or a short non-identifying descriptor like "— A FIRST-TIME GROWER"). May optionally include statementEmphasis (1-3 emphasized words, must be a verbatim substring of statement). Do not attribute the quote to a specific named real person unless that exact quote and person are given to you in the brief or brand context — when in doubt, attribute it to the brand itself or a generic, non-identifying descriptor.
 
-VARIETY IS THE WHOLE POINT of having eight templates — across this batch, actively DIVERSIFY. Do not let every batch settle into "statement", "grid" and "editorial" out of habit; "list", "conversation", "stat" and "quote" exist specifically because that original set of four was producing visually repetitive concepts. When scripture is disallowed you still have 7 non-verse templates available — use the range instead of picking the same 2-3 every time.
+${varietyLine}
 
 EVERY concept, regardless of template, also needs:
 - eyebrow: a short tracked label above the main content, e.g. "FOR WHEN YOU FEEL ANXIOUS"
 - logoText: the brand mark line — usually just "${opts.brandName}"
 - caption: a publish-ready Instagram caption with a natural, non-spammy call to action
 - rationale: ONE sentence explaining the idea/angle, written for the human deciding whether to approve it
-- palette: {bg1, bg2 (optional gradient end), text, muted, accent} — real CSS hex colors (e.g. "#1c2b23"). text and bg1 MUST have strong, obviously readable contrast. Each concept's palette is its OWN choice and does not need to match the brand's colors or any other concept's palette — but it must be internally consistent (muted and accent should make sense against bg1, not clash or disappear). For "editorial" concepts the palette still matters (it colors the wordmark, headline and footer band over the photo scrim), even though the background itself is a photo, not this palette.
+- ${paletteFieldRule}
 
 HARD RULE — NEVER INVENT URLS, DOMAINS OR HANDLES:
 Only reference a website if one is explicitly given in BRAND CONTEXT above, and copy it exactly. If none is given, do not mention any domain or URL anywhere — not in the footer, not in the caption. A made-up domain on a published card sends real people to a site that doesn't exist.
@@ -437,7 +467,11 @@ function normalizeScrimStrength(raw: any): number {
 // Validates one raw concept from the model and repairs what it can. Returns
 // null (never throws) for anything that isn't renderable even after repair —
 // callers filter nulls out so one bad concept never sinks the whole batch.
-function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
+// Internal — does the template-shape validation/repair. `normalizeConcept`
+// below wraps this with the brand card-style stamp (fonts/palette) and the
+// final template-restriction check, which needs to see the FINAL template
+// after any demotion this function does.
+function resolveConceptFromRaw(raw: any, model: string, cardStyle?: BrandCardStyle): CardConceptWithRef | null {
   if (!raw || typeof raw !== 'object') return null;
 
   const caption = typeof raw.caption === 'string' ? raw.caption.trim() : '';
@@ -475,7 +509,27 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
   const eyebrow = typeof raw.eyebrow === 'string' ? raw.eyebrow.trim() : '';
   const logoText = typeof raw.logoText === 'string' ? raw.logoText.trim() : '';
   const rationale = typeof raw.rationale === 'string' ? raw.rationale.trim() : '';
-  const palette = normalizePalette(raw.palette);
+
+  // Palette: a locked brand's palette is pre-vetted and applied VERBATIM,
+  // bypassing normalizePalette entirely — it never even sees raw.palette for
+  // a locked brand. normalizePalette's contrast repair exists to fix a
+  // model's bad guess; a locked palette isn't a guess, it's the exact pairing
+  // that was eyeballed and approved. Running it through repair "just in case"
+  // would let a future seed with a lower-contrast pair get silently
+  // overridden at generation time — a hole in the lock. DO NOT re-add
+  // normalizePalette to this branch. Expressive/unstyled brands are
+  // completely unaffected: they still get the model's raw palette guess,
+  // repaired for contrast, exactly as before.
+  const lockedPalette = cardStyle?.palettePolicy?.mode === 'locked' ? cardStyle.palettePolicy : null;
+  const palette: CardPalette = lockedPalette
+    ? {
+        bg1: lockedPalette.bg1,
+        text: lockedPalette.text,
+        muted: lockedPalette.muted,
+        accent: lockedPalette.accent,
+        ...(lockedPalette.bg2 ? { bg2: lockedPalette.bg2 } : {}),
+      }
+    : normalizePalette(raw.palette);
 
   const base: CardConceptWithRef = {
     id: crypto.randomUUID(),
@@ -487,6 +541,13 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
     rationale,
     model,
   };
+
+  // Fonts: stamp every concept with the brand's pairing (if any) so the
+  // renderer draws in the brand's voice regardless of which template this
+  // concept ends up as.
+  if (cardStyle?.fontPairing) {
+    base.fonts = { display: cardStyle.fontPairing.display, label: cardStyle.fontPairing.label };
+  }
 
   if (template === 'verse') {
     // The model never writes verse text — only a reference. Validate it
@@ -656,6 +717,78 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
   return base;
 }
 
+// Belt-and-braces enforcement of a brand's template restriction. The prompt
+// already tells the model which templates it may use, but the model can
+// slip — and resolveConceptFromRaw's own repair logic can ALSO land a
+// concept on a non-restricted template via a demotion (e.g. an invalid verse
+// falls back to "statement", which is fine for an open brand but might not be
+// in a restricted brand's allowed set). So this runs last, against the
+// FINAL resolved template, same discipline as the scripture-avoid demotion in
+// generateCardConcepts below: prefer keeping the concept over dropping it.
+function enforceTemplateRestriction(concept: CardConceptWithRef, cardStyle?: BrandCardStyle): CardConceptWithRef {
+  const policy = cardStyle?.templatePolicy;
+  if (!policy || policy.mode !== 'restricted') return concept;
+  if (policy.allowed.includes(concept.template)) return concept;
+
+  // Prefer "statement" — it's the universal fallback every other demotion
+  // path in resolveConceptFromRaw already uses — otherwise fall back to
+  // whatever else the brand does allow.
+  const preferStatement = policy.allowed.includes('statement');
+  const target: CardTemplate | undefined = preferStatement ? 'statement' : policy.allowed[0];
+  if (!target) return concept; // brand allows nothing at all — nothing sane to demote to, ship as-is
+
+  const originalTemplate = concept.template;
+  const salvagedStatement =
+    concept.statement || concept.wordmark || concept.heading ||
+    (concept.items && concept.items[0]) || concept.eyebrow || concept.caption;
+
+  const demoted: CardConceptWithRef = {
+    ...concept,
+    template: target,
+    rationale: concept.rationale
+      ? `${concept.rationale} (Template swapped to "${target}" — "${originalTemplate}" isn't in this brand's allowed set.)`
+      : `Template swapped to "${target}" — "${originalTemplate}" isn't in this brand's allowed set.`,
+  };
+
+  if (target === 'statement') {
+    // "statement" only draws from `statement` — clear the fields from
+    // whatever template this used to be so a leftover verse_ref/bullets/
+    // items/messages doesn't confuse the renderer.
+    demoted.statement = salvagedStatement || concept.caption;
+    delete demoted.verse_ref;
+    delete demoted.items;
+    delete demoted.bullets;
+    delete demoted.messages;
+    delete demoted.wordmark;
+    delete demoted.wordmarkSubtitle;
+    delete demoted.footer;
+    delete demoted.scrimStrength;
+    delete demoted.statValue;
+    delete demoted.statUnit;
+    delete demoted.attribution;
+    delete demoted.highlightIndex;
+  } else {
+    // Demoting to some other allowed template: salvage whatever fields
+    // already fit rather than dropping the concept — every field the
+    // original template set stays on the object, only `template` changes, so
+    // the renderer draws whatever of it applies to the new template's shape.
+    // Also carry a `statement` fallback since several templates read it.
+    if (!demoted.statement && salvagedStatement) demoted.statement = salvagedStatement;
+  }
+
+  return demoted;
+}
+
+// Validates one raw concept from the model, repairs the template shape, then
+// stamps and enforces the brand's card style (fonts, locked palette, template
+// restriction). This is the function callers use — resolveConceptFromRaw and
+// enforceTemplateRestriction are internal steps of it.
+function normalizeConcept(raw: any, model: string, cardStyle?: BrandCardStyle): CardConceptWithRef | null {
+  const concept = resolveConceptFromRaw(raw, model, cardStyle);
+  if (!concept) return null;
+  return enforceTemplateRestriction(concept, cardStyle);
+}
+
 // ─── Public API ──────────────────────────────────────────────────────
 
 /**
@@ -674,6 +807,7 @@ export async function generateCardConcepts(opts: {
   count: number;
   palette?: { primary?: string; secondary?: string; accent?: string };
   scripturePolicy?: ScripturePolicy;
+  cardStyle?: BrandCardStyle;
 }): Promise<CardConceptWithRef[]> {
   if (!opts.apiKey) {
     throw new Error('Gemini API key is not configured. Add it in Settings before generating cards.');
@@ -782,7 +916,7 @@ export async function generateCardConcepts(opts: {
 
         const concepts: CardConceptWithRef[] = [];
         for (const raw of rawConcepts) {
-          const concept = normalizeConcept(raw, model);
+          const concept = normalizeConcept(raw, model, opts.cardStyle);
           if (!concept) continue;
           // Belt and braces: a prompt rule is a request, not a guarantee. With no
           // Bible source a verse card can never render, so demote rather than ship

@@ -1071,6 +1071,47 @@ export interface CardMessage {
   text: string;
 }
 
+// ─── Per-brand card style ────────────────────────────────────────────
+// Three ORTHOGONAL policies. A brand sets all three independently — do NOT
+// collapse them into a single locked/expressive flag: a brand can be
+// locked-palette + open-templates, or ranged-palette + restricted, etc. The
+// axes don't bundle.
+
+// The renderer spends two font roles, not one: `display` is the voice face
+// (headlines, statement, wordmark, verse body, the big stat figure); `label`
+// is the UI face (eyebrow, tracked footer caps, bullet text, references, grid
+// labels, stat unit). Rekkrd = serif display + mono label; that mono on the
+// labels is half of what makes it read as Rekkrd.
+export interface BrandFontPairing {
+  display: string;
+  label: string;
+}
+
+// Palette adherence. A `locked` palette is applied VERBATIM by normalizeConcept
+// (the scripture pattern: the model may still emit a palette, it's just thrown
+// away) — and it is NOT run through contrast repair, because a locked palette
+// is by definition already vetted. `surface` is an optional one-step-up tile
+// color the current renderer does not yet consume (grid cells derive their fill
+// from text-alpha) — carried here so the seed can hold the real value ahead of
+// the accent/surface renderer work.
+export type BrandPalettePolicy =
+  | { mode: 'locked'; bg1: string; bg2?: string; text: string; muted: string; accent: string; surface?: string }
+  | { mode: 'expressive'; guidance?: string };
+
+// Layout adherence. `restricted` narrows which templates a brand may use —
+// independent of palette policy. Rekkrd is restricted (its accent-heavy
+// templates would spend orange everywhere); Rejoice is open (its range is the
+// point). Enforced in the prompt AND in normalizeConcept as belt-and-braces.
+export type BrandTemplatePolicy =
+  | { mode: 'open' }
+  | { mode: 'restricted'; allowed: CardTemplate[] };
+
+export interface BrandCardStyle {
+  fontPairing?: BrandFontPairing;
+  palettePolicy?: BrandPalettePolicy;
+  templatePolicy?: BrandTemplatePolicy;
+}
+
 export interface CardPalette {
   bg1: string;        // background / gradient start
   bg2?: string;       // gradient end; flat fill when omitted
@@ -1125,6 +1166,11 @@ export interface CardConcept {
   statUnit?: string;        // small tracked label under it, e.g. "MINUTES"
   // quote — reuses `statement` (+ statementEmphasis) for the quotation.
   attribution?: string;     // "— REJOICE" or a speaker
+
+  // Per-concept resolved font pairing, stamped from the brand's card style at
+  // generate time. The renderer points its display/label roles at these for
+  // the duration of the draw; absent → the default serif/sans.
+  fonts?: BrandFontPairing;
 
   // provenance
   rationale?: string;       // why this concept, for the human reviewing it
