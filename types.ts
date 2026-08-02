@@ -526,6 +526,10 @@ export interface SocialConnectionStatus {
   is_connected: boolean;
   platform_username?: string;
   connected_at?: string;
+  // Whether the App Secret is stored (the boolean only, never the secret). A
+  // Reconnect launched without it dead-ends at the OAuth callback, so the UI
+  // uses this to route into the credential step instead.
+  has_app_secret?: boolean;
 }
 
 /** Per-platform result after a publish attempt */

@@ -41,6 +41,7 @@ interface PlatformSetupWizardProps {
   initialBranchId?: string;
   onComplete?: (platform: Platform, branchId: string) => void;
   onClose?: () => void;
+  addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 // ——— Clipboard Helper ——————————————————————————————————————
@@ -827,6 +828,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
   initialBranchId,
   onComplete,
   onClose,
+  addToast,
 }) => {
   const activeBranches = branches.filter(b => b.is_active);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
@@ -976,7 +978,16 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
   };
 
   // Re-run OAuth for an existing connection, then refresh the dashboard.
+  // If the App Secret was never stored, OAuth would dead-end at the callback
+  // ("Incomplete Credentials" — token exchange needs the secret), so route into
+  // the credential step to collect it first instead of launching a doomed popup.
   const reconnect = (branchId: string, platform: SocialPlatform) => {
+    const conn = allConnections[branchId]?.find(c => c.platform === platform);
+    if (conn && conn.has_app_secret === false) {
+      addToast?.('Enter this brand’s App Secret before connecting.', 'info');
+      editConnection(branchId, platform as Platform);
+      return;
+    }
     openSocialOAuthPopup(branchId, platform, supabaseUrl, loadAllConnections);
   };
 

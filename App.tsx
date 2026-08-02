@@ -441,6 +441,7 @@ const AppContent: React.FC = () => {
             addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully.`);
           }}
           onClose={() => setActiveView('social-hub')}
+          addToast={addToast}
         />
       );
       case 'settings': return (

@@ -151,6 +151,7 @@ export async function checkConnections(branchId: string): Promise<{
     is_connected: row.status === 'active',
     platform_username: row.platform_username || row.platform_metadata?.username || undefined,
     connected_at: row.created_at || undefined,
+    has_app_secret: row.has_app_secret === true,
   }));
 
   return { success: true, connections };
