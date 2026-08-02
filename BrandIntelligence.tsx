@@ -1743,6 +1743,49 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                         // as a block so the Visual tab renders it instead of a blank canvas.
                         // html_body is rendered HTML and is NOT a valid design — never parse it.
                         loadIntoVisualEditor(selectedTemplate?.design_json, templateHtml);
+
+                        // Unlayer runs without a projectId here, so its own hosted storage
+                        // is unavailable and image upload is disabled outright ("Offline
+                        // mode is enabled..."). Registering an `image` callback replaces
+                        // that with our own storage: uploads land in the same
+                        // email-assets/{branch}/gallery path as the Brand Gallery, so a
+                        // picture dropped on the canvas is afterwards reusable from the
+                        // gallery too.
+                        emailEditorRef.current?.editor?.registerCallback(
+                          'image',
+                          async (file: any, done: (result: { progress: number; url?: string }) => void) => {
+                            const upload: File | undefined = file?.attachments?.[0];
+                            if (!upload) {
+                              addToast?.('No image file was received.', 'error');
+                              done({ progress: 100 });
+                              return;
+                            }
+                            if (!templateBranchFilter) {
+                              addToast?.('Pick a branch before uploading an image.', 'error');
+                              done({ progress: 100 });
+                              return;
+                            }
+                            try {
+                              const safeName = upload.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                              const path = `${templateBranchFilter}/gallery/${Date.now()}_${safeName}`;
+                              const { error } = await supabase.storage
+                                .from('email-assets')
+                                .upload(path, upload, { upsert: true, contentType: upload.type || undefined });
+                              if (error) throw error;
+                              const { data } = supabase.storage.from('email-assets').getPublicUrl(path);
+                              if (!data?.publicUrl) throw new Error('Upload succeeded but no public URL came back');
+                              done({ progress: 100, url: data.publicUrl });
+                              loadGallery();
+                            } catch (err) {
+                              const message = err instanceof Error ? err.message : 'Upload failed';
+                              console.error('[email template] image upload failed:', err);
+                              // Report it rather than leaving the editor spinning on a
+                              // silent failure.
+                              addToast?.(`Image upload failed: ${message}`, 'error');
+                              done({ progress: 100 });
+                            }
+                          },
+                        );
                       }}
                       options={{
                         mergeTags: {
