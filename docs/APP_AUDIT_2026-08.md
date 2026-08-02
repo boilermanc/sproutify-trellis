@@ -68,12 +68,29 @@ Same bug — RLS disabled despite policies existing, plus an explicit `"Anon Ful
 - [ ] Enable RLS, drop the anon policy, restrict to `service_role`.
 - [ ] Finish the `spoke-query` proxy migration (phases 2–5) so the browser never needs this table. Good news: `get_spoke_connection_key` was **already** correctly locked down — that newer work is right, it just hasn't replaced the old path yet.
 
-### 1.3 `profiles` allows anyone to make themselves an admin 🔍 CRITICAL
+### 1.3 `profiles` allows anyone to make themselves an admin 🔍 CRITICAL — **CLOSED**
+
+> **Closed 2026-08-02.** Anonymous access revoked; read/insert/update scoped to
+> `authenticated`. The escalation itself is blocked at the **column** level, not
+> in the policy — an RLS policy can't compare the old row's `role` to the new
+> one, so table-level UPDATE was revoked and re-granted per column with `role`
+> omitted. Verified: `has_column_privilege('authenticated','profiles','role','UPDATE')`
+> is now false while name/status edits, reads and inserts still work, and
+> `service_role` (the invite-user function) can still set roles.
+> Remaining: reads are still all-or-nothing for staff rather than branch-scoped.
+
 RLS is on, but the policies are `USING (true)` for everyone — full read and write. Two consequences: all customer PII is publicly readable, and since `invite-user` trusts `profiles.role` for authorization, **any authenticated user can `update profiles set role='admin'` on their own row** and then invite more admins.
 
 - [ ] Scope policies to `id = auth.uid()`, and make `role` writable only through an admin-gated function. The correct pattern already exists in this codebase — copy `trellis_users` / `is_trellis_admin()`.
 
-### 1.4 Anyone can publish to your social accounts 🔍 HIGH
+### 1.4 Anyone can publish to your social accounts 🔍 HIGH — **CLOSED**
+
+> **Closed 2026-08-02.** `scheduled_social_posts` and `video_ad_jobs` are now
+> `authenticated`-only, anon revoked on both (`video_ad_jobs` had four separate
+> anon policies including DELETE). Verified by probe: an anonymous INSERT into
+> the publish queue and an anonymous DELETE of creative jobs both return 401.
+> The S1 worker is unaffected — it uses `service_role`.
+
 `scheduled_social_posts` is fully writable by `anon`. The S1 cron worker publishes whatever is in that table to real brand accounts every 10 minutes. A stranger can insert a row and have arbitrary content posted to your Instagram. `video_ad_jobs` similarly allows anonymous `DELETE`.
 
 - [ ] Require `authenticated` + branch membership on both.
