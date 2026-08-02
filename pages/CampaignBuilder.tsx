@@ -731,10 +731,17 @@ Return ONLY the post content, no explanations or labels.`,
         const value = customTemplateFields[token] || '';
         out = out.replace(re, () => value);
       });
-      // Per-recipient personalization is applied downstream at send time.
+      // Per-recipient personalization. The real campaign launch keeps these tokens
+      // INTACT (empty profile) so n8n fills them per recipient at batch-send. A test
+      // send passes a real profile, so we resolve them here — otherwise the test
+      // email's unsubscribe link would be a literal {{unsubscribe_url}} (the
+      // send_resend_email RPC is a passthrough and substitutes nothing).
+      const unsubUrl = profile.email
+        ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&source=global`
+        : '{{unsubscribe_url}}';
       return out
         .replace(/\{\{\s*first_name\s*\}\}/gi, () => profile.first_name || '{{first_name}}')
-        .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, () => '{{unsubscribe_url}}');
+        .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, () => unsubUrl);
     };
 
     if (isCustomTemplate) {
