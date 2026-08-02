@@ -870,7 +870,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   </div>
                   <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Engagement Pulse</p>
-                     <p className="text-2xl font-black text-emerald-600">{selectedProfile.engagement_score || 85}%</p>
+                     {/* `|| 85` used to render here, so every customer showed a
+                         fabricated 85% — including genuinely disengaged ones,
+                         because 0 is falsy. No signal now reads as no signal. */}
+                     {selectedProfile.engagement_score == null ? (
+                       <p className="text-2xl font-black text-slate-300" title="No email engagement recorded for this address yet">—</p>
+                     ) : (
+                       <p className="text-2xl font-black text-emerald-600">{selectedProfile.engagement_score}%</p>
+                     )}
                   </div>
                </div>
                {/* Per-Branch Consent Panel */}

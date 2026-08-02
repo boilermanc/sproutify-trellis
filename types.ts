@@ -330,10 +330,14 @@ export interface Profile {
   branch_consent?: BranchConsentMap; // Per-branch subscription state
   status: 'active' | 'archived' | 'banned' | 'deleted';
   ltv: number;
-  churn_risk: 'minimal' | 'moderate' | 'high' | 'critical';
+  // 'unknown' means we have no engagement signal for this address yet (never
+  // emailed), which is deliberately distinct from 'critical'. Scoring an
+  // un-contacted customer as high churn risk would be as misleading as the
+  // hardcoded 'minimal' this replaced.
+  churn_risk: 'minimal' | 'moderate' | 'high' | 'critical' | 'unknown';
   last_active?: string;
   last_event_timestamp?: string; // For Version-Based Upserts
-  engagement_score?: number;
+  engagement_score?: number | null; // null = not computable yet, render as '—' not 0
   metadata?: Record<string, any>;
   role?: Role; // For team members: admin, marketer, developer, viewer
 }

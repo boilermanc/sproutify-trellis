@@ -45,6 +45,7 @@ import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { fetchSpokeConnections, migrateLocalStorageToSupabase } from './services/spokeConnectionsService';
 import { fetchSocialSignals } from './services/socialService';
+import { fetchEngagementIndex, computeEngagementScore, type EngagementSummary } from './services/emailReportingService';
 import { mapFederatedConsent } from './utils/profileMapper';
 import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch, BranchInfo, BranchContext, BranchSocialAccountsMap, SocialActivity, DraftPost, DeployedCampaign } from './types';
 import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
@@ -204,6 +205,19 @@ const AppContent: React.FC = () => {
     isAllSelected: activeBranchSlugs.length === allBranches.length,
   };
 
+  // Real email engagement, loaded once and joined onto profiles below. Before
+  // this, engagement_score was never set and churn_risk was hardcoded
+  // 'minimal' for every profile — which made the "Churn Risk" campaign preset
+  // match zero people, permanently.
+  const [engagementIndex, setEngagementIndex] = useState<{
+    summaries: Map<string, EngagementSummary>;
+    contacted: Set<string>;
+  }>({ summaries: new Map(), contacted: new Set() });
+
+  useEffect(() => {
+    fetchEngagementIndex().then(setEngagementIndex).catch(() => {});
+  }, []);
+
   // Derive Profile[] for backwards compatibility with pages that still use it
   // Build connectionId → branch slug lookup so profiles carry slugs, not display names
   const profiles: Profile[] = useMemo(() => {
@@ -218,6 +232,15 @@ const AppContent: React.FC = () => {
     return branchStats.enrichedProfiles.map(p => {
       const consent = mapFederatedConsent(p);
       const branchSlug = slugByConnectionId.get(p._spoke_id) || p._spoke_name;
+
+      // Only score addresses we have actually emailed. Everyone else is
+      // 'unknown' rather than being scored 0 / critical off the back of no data.
+      const emailKey = (p.email || '').toLowerCase();
+      const everContacted = engagementIndex.contacted.has(emailKey);
+      const engagement = everContacted
+        ? computeEngagementScore(engagementIndex.summaries.get(emailKey))
+        : null;
+
       return {
         id: p.id || p.email,
         email: p.email,
@@ -238,7 +261,8 @@ const AppContent: React.FC = () => {
         },
         status: 'active' as const,
         ltv: p.order_stats?.ltv || 0,
-        churn_risk: 'minimal' as const,
+        churn_risk: engagement ? engagement.churn_risk : ('unknown' as const),
+        engagement_score: engagement ? engagement.engagement_score : null,
         last_active: p.order_stats?.last_purchase_at || p.created_at,
         metadata: {
           consent_source: consent.consent_source,
@@ -250,7 +274,7 @@ const AppContent: React.FC = () => {
         },
       };
     });
-  }, [branchStats.enrichedProfiles, branches]);
+  }, [branchStats.enrichedProfiles, branches, engagementIndex]);
   const isLoadingProfiles = branchStats.isLoading;
 
   // Fetch user's profile from Supabase to get first_name

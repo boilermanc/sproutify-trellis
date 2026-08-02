@@ -138,6 +138,59 @@ export async function fetchEngagementByEmail(): Promise<Map<string, EngagementSu
   }
 }
 
+// Engagement summaries PLUS the set of addresses we have ever actually emailed.
+//
+// The distinction matters and is the whole reason this exists alongside
+// fetchEngagementByEmail: an address with zero opens scores 0, but that means
+// two completely different things. "We emailed them five times and they never
+// opened" is genuine disengagement. "We have never emailed them" is no data at
+// all, and scoring it as critical churn risk would invent alarm exactly the way
+// the old hardcoded 85% invented health. Callers use `contacted` to tell them
+// apart and render the second case as unknown.
+//
+// One query over every event type, grouped client-side, so this stays a single
+// round trip rather than one per profile.
+export async function fetchEngagementIndex(): Promise<{
+  summaries: Map<string, EngagementSummary>;
+  contacted: Set<string>;
+}> {
+  const summaries = new Map<string, EngagementSummary>();
+  const contacted = new Set<string>();
+  try {
+    const { data, error } = await supabase
+      .from('email_events')
+      .select('email,event_type,occurred_at')
+      .order('occurred_at', { ascending: true })
+      .range(0, 49999);
+    if (error) throw error;
+
+    for (const row of (data || []) as { email: string; event_type: string; occurred_at: string }[]) {
+      const key = (row.email || '').toLowerCase();
+      if (!key) continue;
+      contacted.add(key);
+
+      if (row.event_type !== 'opened' && row.event_type !== 'clicked') continue;
+      let summary = summaries.get(key);
+      if (!summary) {
+        summary = { email: key, opened: 0, clicked: 0, last_opened_at: null, last_clicked_at: null };
+        summaries.set(key, summary);
+      }
+      // Ascending order means the last write per event_type holds the latest timestamp.
+      if (row.event_type === 'opened') {
+        summary.opened++;
+        summary.last_opened_at = row.occurred_at;
+      } else {
+        summary.clicked++;
+        summary.last_clicked_at = row.occurred_at;
+      }
+    }
+    return { summaries, contacted };
+  } catch (e) {
+    console.error('fetchEngagementIndex failed:', e);
+    return { summaries, contacted };
+  }
+}
+
 // Derives profiles.engagement_score (0-100) and profiles.churn_risk from a bulk
 // EngagementSummary. Simple, deterministic scoring — not a written-back value, just
 // available for a future job/UI to use:
