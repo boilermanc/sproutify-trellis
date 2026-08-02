@@ -450,15 +450,29 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !templateBranchFilter) return;
+    if (!file) return;
+    if (!templateBranchFilter) {
+      addToast?.('Pick a branch before uploading an image.', 'error');
+      e.target.value = '';
+      return;
+    }
     setGalleryUploading(true);
     try {
-      const path = `${templateBranchFilter}/gallery/${Date.now()}_${file.name}`;
-      const { error } = await supabase.storage.from('email-assets').upload(path, file, { upsert: true });
+      // Same path the visual editor's upload callback writes to, so both routes
+      // populate one gallery per branch.
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${templateBranchFilter}/gallery/${Date.now()}_${safeName}`;
+      const { error } = await supabase.storage
+        .from('email-assets')
+        .upload(path, file, { upsert: true, contentType: file.type || undefined });
       if (error) throw error;
       await loadGallery();
+      addToast?.(`"${file.name}" added to the gallery.`, 'success');
     } catch (err) {
+      // This used to fail silently — the image simply never appeared.
+      const message = err instanceof Error ? err.message : 'Upload failed';
       console.error('Gallery upload failed:', err);
+      addToast?.(`Couldn't upload "${file.name}": ${message}`, 'error');
     } finally {
       setGalleryUploading(false);
       e.target.value = '';
@@ -467,8 +481,20 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
   const handleGalleryDeleteImage = async (name: string) => {
     if (!templateBranchFilter) return;
-    await supabase.storage.from('email-assets').remove([`${templateBranchFilter}/gallery/${name}`]);
-    await loadGallery();
+    try {
+      // remove() reports failure in the payload rather than throwing, so
+      // checking only for an exception would report success on a failed delete.
+      const { error } = await supabase.storage
+        .from('email-assets')
+        .remove([`${templateBranchFilter}/gallery/${name}`]);
+      if (error) throw error;
+      await loadGallery();
+      addToast?.(`"${name}" removed from the gallery.`, 'success');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delete failed';
+      console.error('Gallery delete failed:', err);
+      addToast?.(`Couldn't remove "${name}": ${message}`, 'error');
+    }
   };
 
   const insertGalleryImage = (url: string) => {
@@ -1775,6 +1801,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                               const { data } = supabase.storage.from('email-assets').getPublicUrl(path);
                               if (!data?.publicUrl) throw new Error('Upload succeeded but no public URL came back');
                               done({ progress: 100, url: data.publicUrl });
+                              addToast?.(`Image uploaded — also saved to the ${templateBranchFilter} Brand Gallery.`, 'success');
                               loadGallery();
                             } catch (err) {
                               const message = err instanceof Error ? err.message : 'Upload failed';
