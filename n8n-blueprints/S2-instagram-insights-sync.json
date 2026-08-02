@@ -215,13 +215,13 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "=https://graph.facebook.com/v21.0/{{ $json.post_id }}/insights",
+        "url": "=https://graph.facebook.com/v22.0/{{ $json.post_id }}/insights",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             {
               "name": "metric",
-              "value": "impressions,reach,likes,comments,saved,shares"
+              "value": "reach,likes,comments,saved,shares,views"
             },
             {
               "name": "access_token",
@@ -239,13 +239,13 @@
         0
       ],
       "onError": "continueErrorOutput",
-      "notes": "GET /{ig_media_id}/insights. Response shape is { data: [ { name, values: [{ value }] }, ... ] } -- 'Parse Insights' next reads it defensively since not every metric is guaranteed present for every media type/age.",
+      "notes": "v22.0: Meta removed the 'impressions' metric for media -- and because the Graph API fails the WHOLE request if any one metric in the list is invalid, requesting it zeroed out every metric. 'views' is the v22 replacement and is mapped into the impressions column downstream. If a future metric here starts atomic-failing the batch, the error names it -- trim it from this list.",
       "notesInFlow": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Instagram's Graph API metric names don't line up 1:1 with our column names\n// (it's \"saved\", not \"saves\"), and \"shares\" in particular may be entirely\n// absent depending on API version and whether the media is an image, carousel,\n// or Reel. Look each metric up by name in data[] and default to 0 rather than\n// fail the whole row over one missing field -- a mostly-zero row because\n// Instagram simply didn't return that metric is expected, not an error.\nconst response = $input.item.json || {};\nconst source = $('Merge Credential With Post').item.json || {};\nconst metricsData = Array.isArray(response.data) ? response.data : [];\n\nfunction metricValue(name) {\n  const entry = metricsData.find(m => m && m.name === name);\n  const raw = entry && Array.isArray(entry.values) && entry.values.length ? entry.values[0].value : undefined;\n  const num = Number(raw);\n  return Number.isFinite(num) ? num : 0;\n}\n\nreturn { json: {\n  scheduled_post_id: source.id || null,\n  ig_media_id: source.post_id || null,\n  branch_slug: source.branch_slug || null,\n  impressions: metricValue('impressions'),\n  reach: metricValue('reach'),\n  likes: metricValue('likes'),\n  comments: metricValue('comments'),\n  saves: metricValue('saved'),\n  shares: metricValue('shares'),\n  raw: response,\n  fetched_at: new Date().toISOString(),\n} };"
+        "jsCode": "// Instagram's Graph API metric names don't line up 1:1 with our column names\n// (it's \"saved\", not \"saves\"), and \"shares\" in particular may be entirely\n// absent depending on API version and whether the media is an image, carousel,\n// or Reel. Look each metric up by name in data[] and default to 0 rather than\n// fail the whole row over one missing field -- a mostly-zero row because\n// Instagram simply didn't return that metric is expected, not an error.\nconst response = $input.item.json || {};\nconst source = $('Merge Credential With Post').item.json || {};\nconst metricsData = Array.isArray(response.data) ? response.data : [];\n\nfunction metricValue(name) {\n  const entry = metricsData.find(m => m && m.name === name);\n  const raw = entry && Array.isArray(entry.values) && entry.values.length ? entry.values[0].value : undefined;\n  const num = Number(raw);\n  return Number.isFinite(num) ? num : 0;\n}\n\nreturn { json: {\n  scheduled_post_id: source.id || null,\n  ig_media_id: source.post_id || null,\n  branch_slug: source.branch_slug || null,\n  impressions: metricValue('views') || metricValue('impressions'),\n  reach: metricValue('reach'),\n  likes: metricValue('likes'),\n  comments: metricValue('comments'),\n  saves: metricValue('saved'),\n  shares: metricValue('shares'),\n  raw: response,\n  fetched_at: new Date().toISOString(),\n} };"
       },
       "name": "Parse Insights",
       "type": "n8n-nodes-base.code",
