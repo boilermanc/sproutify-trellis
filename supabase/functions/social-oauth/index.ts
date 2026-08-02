@@ -600,7 +600,12 @@ Deno.serve(async (req: Request) => {
           p_platform_metadata: platformMetadata,
           p_granted_scopes: config.defaultScopes,
           p_status: "active",
-          p_encryption_key: ENCRYPTION_KEY,
+          // NOTE: do NOT pass p_encryption_key. The deployed function has no
+          // such parameter — it derives the key internally via
+          // get_encryption_key() — and PostgREST rejects an unknown named
+          // argument outright (PGRST202). Sending it meant every OAuth callback
+          // failed at the final step: the user completed the consent screen and
+          // the token was silently never stored.
         }
       );
 
