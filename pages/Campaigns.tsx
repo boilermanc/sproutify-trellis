@@ -3,7 +3,7 @@ import {
   Rocket, RefreshCw, Loader2, X, Calendar, Users, Mail, MailCheck, Eye,
   MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch,
 } from 'lucide-react';
-import { fetchCampaigns, Campaign } from '../supabaseService';
+import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
 import { BranchContext } from '../types';
 
@@ -26,6 +26,19 @@ const STATUS_STYLE: Record<string, string> = {
   active: 'bg-emerald-100 text-emerald-700',
   completed: 'bg-violet-100 text-violet-700',
   paused: 'bg-amber-100 text-amber-700',
+};
+
+// The real delivery state, driven by the campaign-sender worker (distinct from
+// the lifecycle `status` above).
+const SEND_STATUS_STYLE: Record<string, string> = {
+  queued: 'bg-amber-100 text-amber-700',
+  sending: 'bg-blue-100 text-blue-700',
+  sent: 'bg-emerald-100 text-emerald-700',
+  partial: 'bg-orange-100 text-orange-700',
+  failed: 'bg-red-100 text-red-700',
+};
+const SEND_STATUS_LABEL: Record<string, string> = {
+  queued: 'Queued', sending: 'Sending', sent: 'Sent', partial: 'Partial send', failed: 'Failed',
 };
 
 // Stats are aggregated by subject on the Hub, so we match a campaign to its stats by subject line.
@@ -148,6 +161,11 @@ const Campaigns: React.FC<CampaignsProps> = ({ addToast }) => {
                       <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${STATUS_STYLE[c.status] || 'bg-slate-100 text-slate-600'}`}>
                         {c.status}
                       </span>
+                      {c.send_status && (
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${SEND_STATUS_STYLE[c.send_status] || 'bg-slate-100 text-slate-600'}`}>
+                          {SEND_STATUS_LABEL[c.send_status] || c.send_status}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-400 truncate mt-0.5">{c.subject || 'No subject'}</p>
                     <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400 font-medium">
@@ -177,14 +195,46 @@ const Campaigns: React.FC<CampaignsProps> = ({ addToast }) => {
       </div>
 
       {selected && (
-        <CampaignDetailDrawer campaign={selected} stat={statFor(selected)} onClose={() => setSelected(null)} />
+        <CampaignDetailDrawer
+          campaign={selected}
+          stat={statFor(selected)}
+          onClose={() => setSelected(null)}
+          addToast={addToast}
+          onChanged={load}
+        />
       )}
     </div>
   );
 };
 
 // ── Detail drawer ────────────────────────────────────────────────────────────
-const CampaignDetailDrawer: React.FC<{ campaign: Campaign; stat: CampaignEmailStat; onClose: () => void }> = ({ campaign: c, stat: s, onClose }) => {
+const CampaignDetailDrawer: React.FC<{
+  campaign: Campaign;
+  stat: CampaignEmailStat;
+  onClose: () => void;
+  addToast?: (m: string, t?: 'success' | 'error' | 'info') => void;
+  onChanged: () => void;
+}> = ({ campaign: c, stat: s, onClose, addToast, onChanged }) => {
+  const [rstats, setRstats] = useState<CampaignRecipientStats | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    if (c.send_status) {
+      fetchCampaignRecipientStats(c.id).then((r) => { if (alive) setRstats(r); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [c.id, c.send_status]);
+
+  const canRetry = c.send_status === 'failed' || c.send_status === 'partial' || (!!rstats && rstats.failed > 0);
+  const handleRetry = async () => {
+    setRetrying(true);
+    const res = await retryCampaign(c.id);
+    setRetrying(false);
+    if (res.ok) { addToast?.('Re-queued the failed recipients — sending now.', 'success'); onChanged(); onClose(); }
+    else { addToast?.(`Retry failed: ${res.error}`, 'error'); }
+  };
+
   const metrics = [
     { label: 'Sent', value: s.sent, icon: Send, color: 'text-slate-600', bg: 'bg-slate-100' },
     { label: 'Delivered', value: s.delivered, sub: `${pct(s.delivered, s.sent)}%`, icon: MailCheck, color: 'text-emerald-600', bg: 'bg-emerald-100' },
@@ -216,6 +266,45 @@ const CampaignDetailDrawer: React.FC<{ campaign: Campaign; stat: CampaignEmailSt
             <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" />{c.trigger_type}</span>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-500 flex items-center gap-1"><Calendar className="w-3 h-3" />{fmtDate(c.launched_at || c.created_at)}</span>
           </div>
+
+          {/* Delivery / send status (durable outbox) */}
+          {c.send_status && (
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Delivery</h3>
+                <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded ${SEND_STATUS_STYLE[c.send_status] || 'bg-slate-100 text-slate-600'}`}>
+                  {SEND_STATUS_LABEL[c.send_status] || c.send_status}
+                </span>
+              </div>
+              {c.send_error && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{c.send_error}</p>
+              )}
+              {rstats && (
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Sent', value: rstats.sent, color: 'text-emerald-600' },
+                    { label: 'Pending', value: rstats.pending, color: 'text-amber-600' },
+                    { label: 'Failed', value: rstats.failed, color: 'text-red-600' },
+                  ].map((m) => (
+                    <div key={m.label} className="bg-white rounded-xl border border-slate-100 p-3 text-center">
+                      <div className={`text-xl font-black ${m.color}`}>{m.value.toLocaleString()}</div>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{m.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {canRetry && (
+                <button
+                  onClick={handleRetry}
+                  disabled={retrying}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-600 transition disabled:opacity-50"
+                >
+                  {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Retry failed recipients
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Metrics grid */}
           <div>

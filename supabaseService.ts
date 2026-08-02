@@ -21,6 +21,28 @@ export interface Campaign {
   created_at: string;
   updated_at: string;
   launched_at: string | null;
+  // Durable outbox fields (send state machine driven by the campaign-sender worker)
+  dispatch?: CampaignDispatch | null;
+  send_status?: 'queued' | 'sending' | 'sent' | 'partial' | 'failed' | null;
+  send_error?: string | null;
+  retry_count?: number;
+  last_attempt_at?: string | null;
+}
+
+// The fully-rendered email saved at launch time so a send can be (re)tried later
+// without re-deriving anything. The worker reads this off the campaign row.
+export interface CampaignDispatch {
+  subject: string;
+  from?: string;
+  html_template: string;              // content tokens filled; {{first_name}}/{{unsubscribe_url}} intact
+  unsubscribe_url_template?: string;  // brand template with {{token}}, filled per recipient by the worker
+}
+
+export interface CampaignRecipientStats {
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
 }
 
 /**
@@ -97,6 +119,11 @@ export async function fetchCampaigns(): Promise<Campaign[]> {
     created_at: row.created_at,
     updated_at: row.updated_at,
     launched_at: row.launched_at,
+    dispatch: row.dispatch ?? null,
+    send_status: row.send_status ?? null,
+    send_error: row.send_error ?? null,
+    retry_count: row.retry_count ?? 0,
+    last_attempt_at: row.last_attempt_at ?? null,
   }));
 }
 
@@ -119,6 +146,86 @@ export async function createCampaign(
   }
 
   return data;
+}
+
+/**
+ * Snapshot recipients into the durable outbox (campaign_recipients).
+ * Called at launch time so the exact audience is saved BEFORE any send —
+ * a bombed send can then be retried from what's stored, nothing re-derived.
+ * Inserted in chunks to keep each request small for large lists.
+ */
+export async function enqueueCampaignRecipients(
+  campaignId: string,
+  recipients: Array<{ email: string; first_name?: string; unsubscribe_token?: string }>,
+): Promise<{ inserted: number; error: string | null }> {
+  const CHUNK = 1000;
+  let inserted = 0;
+  for (let i = 0; i < recipients.length; i += CHUNK) {
+    const rows = recipients.slice(i, i + CHUNK).map((r) => ({
+      campaign_id: campaignId,
+      email: r.email,
+      first_name: r.first_name || null,
+      unsubscribe_token: r.unsubscribe_token || null,
+      status: 'pending',
+    }));
+    const { error } = await supabase.from('campaign_recipients').insert(rows);
+    if (error) {
+      console.error('Error enqueuing recipients:', error);
+      return { inserted, error: error.message };
+    }
+    inserted += rows.length;
+  }
+  return { inserted, error: null };
+}
+
+/**
+ * Ping the campaign-sender worker to process the queue right now (immediate sends).
+ * Scheduled campaigns don't need this — pg_cron picks them up at their time.
+ * Fire-and-forget: failure here just means it waits for the next 2-min cron tick.
+ */
+export async function pingCampaignSender(): Promise<void> {
+  try {
+    await supabase.functions.invoke('campaign-sender', { body: {} });
+  } catch (err) {
+    console.warn('campaign-sender ping failed (cron will still pick it up):', err);
+  }
+}
+
+/**
+ * Retry a failed/partial campaign: reset its failed recipients back to pending,
+ * re-queue the campaign, and ping the worker. Already-'sent' recipients are left
+ * alone, so nobody gets emailed twice.
+ */
+export async function retryCampaign(campaignId: string): Promise<{ ok: boolean; error: string | null }> {
+  const { error: rErr } = await supabase
+    .from('campaign_recipients')
+    .update({ status: 'pending', error: null })
+    .eq('campaign_id', campaignId)
+    .eq('status', 'failed');
+  if (rErr) return { ok: false, error: rErr.message };
+
+  const { error: cErr } = await supabase
+    .from('campaigns')
+    .update({ send_status: 'queued', send_error: null, updated_at: new Date().toISOString() })
+    .eq('id', campaignId);
+  if (cErr) return { ok: false, error: cErr.message };
+
+  await pingCampaignSender();
+  return { ok: true, error: null };
+}
+
+/**
+ * Per-status recipient counts for a campaign (for the send-status UI/drawer).
+ */
+export async function fetchCampaignRecipientStats(campaignId: string): Promise<CampaignRecipientStats> {
+  const count = async (status?: string) => {
+    let q = supabase.from('campaign_recipients').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId);
+    if (status) q = q.eq('status', status);
+    const { count: c } = await q;
+    return c || 0;
+  };
+  const [total, pending, sent, failed] = await Promise.all([count(), count('pending'), count('sent'), count('failed')]);
+  return { total, pending, sent, failed };
 }
 
 /**

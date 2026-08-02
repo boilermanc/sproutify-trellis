@@ -5,18 +5,17 @@ import { Segment, PRESET_SEGMENTS } from '../segmentTypes';
 import { evaluateSegment } from '../segmentEngine';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
-import { createCampaign, fetchCampaigns, Campaign } from '../supabaseService';
+import { createCampaign, fetchCampaigns, Campaign, enqueueCampaignRecipients, pingCampaignSender } from '../supabaseService';
 import { loadNameCache } from '../demographicsService';
 import { timeAgo, formatBranchName } from '../utils';
 import { isSubscribedForAnyBranch } from '../consentUtils';
 import { sendEmail, renderCampaignHtml, SendEmailResult } from '../src/services/resendService';
 import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
-import { triggerEmailCampaign } from '../services/n8nService';
 import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
 import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
-import { WEBHOOK_SPECS, BUILTIN_EMAIL_TEMPLATES } from '../constants';
+import { BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
   ChevronLeft, CheckCircle2, Target,
@@ -841,6 +840,18 @@ Return ONLY the post content, no explanations or labels.`,
     }));
     setChannelDeployResults(pendingResults);
 
+    // Render the email ONCE and save it on the campaign, so a send can be retried
+    // later from exactly what was stored (nothing re-derived). {{first_name}} and
+    // {{unsubscribe_url}} stay intact here — the worker fills them per recipient.
+    const emailEnabled = enabledChannels.has('email');
+    const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
+    const dispatch = {
+      subject: emailSubject,
+      from: activeBranch?.resend_from_address || undefined,
+      html_template: buildDispatchHtml({ email: '', first_name: '' } as Profile),
+      unsubscribe_url_template: brandUnsubscribeUrl || undefined,
+    };
+
     const newCampaign = await createCampaign({
       name: campaignName,
       status: triggerType === 'scheduled' ? 'scheduled' : 'active',
@@ -852,6 +863,11 @@ Return ONLY the post content, no explanations or labels.`,
       tags: selectedTags,
       branches: selectedBranches,
       audience_size: audienceSize,
+      // Durable outbox: the rendered email is saved, and email campaigns start
+      // 'queued' so the campaign-sender worker (immediate ping or pg_cron) drains
+      // them. Non-email campaigns leave send_status null (not part of the queue).
+      dispatch: emailEnabled ? dispatch : null,
+      send_status: emailEnabled ? 'queued' : null,
       metadata: {
         query: {
           branches: selectedBranches,
@@ -872,8 +888,8 @@ Return ONLY the post content, no explanations or labels.`,
     });
 
     if (!newCampaign) {
-      // Persisting the campaign is also the gate for the n8n send — if it fails,
-      // nothing goes out. Abort loudly instead of playing a fake success animation.
+      // Persisting the campaign is the gate for sending — if it fails, nothing
+      // goes out. Abort loudly instead of playing a fake success animation.
       addToast?.('Campaign could not be saved, so nothing was sent. Please try again.', 'error');
       setIsLaunching(false);
       setChannelDeployResults([]);
@@ -881,48 +897,30 @@ Return ONLY the post content, no explanations or labels.`,
     }
     setSavedCampaigns(prev => [newCampaign, ...prev]);
 
-    // Fire n8n campaign dispatch webhook for immediate campaigns.
-    // We send the EXACT audience the builder computed (segmentProfiles): already
+    // Snapshot the EXACT audience into the durable outbox BEFORE any send, so a
+    // bombed send is fully retryable from what's saved. segmentProfiles is already
     // deduped by email, consent-filtered, and narrowed to the selected segments/
-    // branches. The html is sent as a template with {{first_name}} / {{unsubscribe_url}}
-    // tokens intact so n8n personalizes per recipient and batch-sends via Resend's
-    // /emails/batch endpoint (up to 100 messages per call).
-    if (newCampaign && triggerType === 'immediate') {
-      const htmlTemplate = buildDispatchHtml({ email: '', first_name: '' } as Profile);
-      const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
+    // branches. The worker sends in Resend batches and records per-recipient status.
+    if (emailEnabled) {
       const recipients = [
         ...segmentProfiles.map(p => ({
           email: p.email,
           first_name: p.first_name || '',
-          // Native per-subscriber unsubscribe token (spoke newsletter_subscribers).
-          // n8n builds the unsubscribe link from the brand template + this token.
           unsubscribe_token: p.unsubscribe_token || '',
         })),
         // Test-list addresses: emailed directly, bypassing branch scope + consent.
         ...extraTestEmails.map(email => ({ email, first_name: '', unsubscribe_token: '' })),
       ];
 
-      const webhookResult = await triggerEmailCampaign(
-        WEBHOOK_SPECS.campaign_dispatch,
-        {
-          campaign_id: newCampaign.id,
-          subject: emailSubject,
-          html_template: htmlTemplate,
-          from: activeBranch?.resend_from_address || undefined,
-          recipients,
-          recipient_count: recipients.length,
-          // Brand's unsubscribe URL template (with a {{token}} placeholder). n8n
-          // fills {{unsubscribe_url}} per recipient from this + their token; if
-          // absent it falls back to the email-based Hub unsubscribe.
-          unsubscribe_url_template: brandUnsubscribeUrl || undefined,
-          // legacy fields retained for backward-compat with older dispatch workflows
-          tags: null,
-          html_body: htmlTemplate,
-        }
-      );
-
-      if (!webhookResult.success) {
-        addToast?.(`Campaign dispatch failed: ${webhookResult.error}`, 'error');
+      const { inserted, error: enqErr } = await enqueueCampaignRecipients(newCampaign.id, recipients);
+      if (enqErr) {
+        addToast?.(`Saved the campaign, but only queued ${inserted}/${recipients.length} recipients (${enqErr}). Fix and retry from the Campaigns page.`, 'error');
+      } else if (triggerType === 'immediate') {
+        // Kick the worker now; scheduled campaigns wait for their time via pg_cron.
+        pingCampaignSender();
+        addToast?.(`Queued ${inserted} recipient(s) — sending now. Track live status on the Campaigns page.`, 'success');
+      } else {
+        addToast?.(`Scheduled ${inserted} recipient(s) for ${scheduledAt ? new Date(scheduledAt).toLocaleString() : 'the chosen time'}.`, 'success');
       }
     }
 
