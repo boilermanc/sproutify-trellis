@@ -36,7 +36,22 @@ Everything below is still open.
 
 ## 1. Security — do these first
 
-### 1.1 `tenant_secrets` is readable by anyone ✅ CRITICAL
+> **UPDATE 2026-08-02:** 1.1 and 1.2 are now CLOSED. Secrets moved behind the
+> `tenant-secrets` Edge Function (commit `3536b8a`), then RLS enabled on both
+> tables. Anonymous reads of `tenant_secrets` and `spoke_connections` now return
+> 401, verified by probe. Keys are being rotated. Two caveats remain:
+> `spoke_connections` is `authenticated`-only rather than `service_role`-only
+> because the browser still reads it in 4 places (finishing the spoke-query
+> proxy is what removes that), and the Gemini/OpenAI/Anthropic keys still reach
+> the authenticated browser because the app calls those APIs client-side —
+> proxying AI calls server-side is a separate, larger piece of work.
+>
+> **Gotcha for the rest of this section:** `verify_jwt=true` does NOT block an
+> anonymous caller. The anon key is itself a valid project JWT, so the gateway
+> accepts it. An Edge Function holding secrets needs an explicit
+> `auth.getUser()` check as well.
+
+### 1.1 `tenant_secrets` is readable by anyone ✅ CRITICAL — **CLOSED**
 RLS is **disabled** on the table holding `gemini_api_key`, `resend_token`, `twilio_sid`, `twilio_token`, `woo_consumer_*`, `meta_app_secret`, `openai_api_key`, `anthropic_api_key` — in plaintext, not encrypted. Policies exist on the table but Postgres skips them entirely when RLS is off.
 
 Anyone can read every third-party key you own with a single HTTP request and the public anon key.
@@ -47,7 +62,7 @@ Anyone can read every third-party key you own with a single HTTP request and the
 
 > **Why I didn't just fix this tonight:** the browser legitimately reads this table today (`secretsService.ts` runs `select *` with the anon key on load). Enabling RLS without moving that call first would have broken the app while you slept — every AI feature would lose its API key. The code has to move first. This is the one place where the fix order genuinely matters.
 
-### 1.2 `spoke_connections` is readable by anyone ✅ CRITICAL
+### 1.2 `spoke_connections` is readable by anyone ✅ CRITICAL — **CLOSED**
 Same bug — RLS disabled despite policies existing, plus an explicit `"Anon Full Access"` policy. Exposes every spoke's Supabase URL and key. Combined with 1.1 and the (now-closed) encryption-key hole, this was a direct path into all your customers' data across every spoke.
 
 - [ ] Enable RLS, drop the anon policy, restrict to `service_role`.
