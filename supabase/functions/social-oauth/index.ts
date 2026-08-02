@@ -727,10 +727,23 @@ async function fetchPlatformMetadata(
       const pagesData = await pagesRes.json();
       const first = pagesData.data?.[0];
 
+      // If this login granted no Page, return WITHOUT page_id/page_access_token.
+      // The DB merges metadata (old || new), so returning page_id:null here would
+      // OVERWRITE a previously-captured page id with null — which is exactly what
+      // wiped Rejoice's page_id on a reconnect and left the publisher with
+      // nowhere to post. Omitting the keys preserves whatever was already stored.
+      if (!first?.id) {
+        return {
+          page_count: 0,
+          connected_at: new Date().toISOString(),
+          note: "No Facebook Page was granted in this login — existing page_id (if any) was preserved.",
+        };
+      }
+
       return {
-        page_id: first?.id || null,
-        page_name: first?.name || null,
-        page_access_token: first?.access_token || null,
+        page_id: first.id,
+        page_name: first.name || null,
+        page_access_token: first.access_token || null,
         pages: (pagesData.data || []).map((p: any) => ({
           id: p.id,
           name: p.name,
