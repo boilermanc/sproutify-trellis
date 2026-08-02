@@ -101,12 +101,18 @@ const PLATFORM_CONFIGS: Record<string, PlatformOAuthConfig> = {
   facebook: {
     authorizeUrl: "https://www.facebook.com/v21.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
+    // Minimal set for publishing to a Page:
+    //   pages_show_list       — enumerate the Pages and get a Page token
+    //   pages_read_engagement — read the Page
+    //   pages_manage_posts    — publish to the Page (the one that matters)
+    // Dropped pages_read_user_content and read_insights: neither is needed to
+    // publish, and both were coming back "Invalid Scopes" because the app was
+    // never configured to grant them. read_insights belongs with a future FB
+    // insights sync — add it back then, once the app exposes it.
     defaultScopes: [
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
-      "pages_read_user_content",
-      "read_insights",
     ],
     buildAuthUrl(appId, state, scopes) {
       const params = new URLSearchParams({
