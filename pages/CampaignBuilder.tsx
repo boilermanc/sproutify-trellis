@@ -278,21 +278,25 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         setBrandUnsubscribeUrl('');
         return;
       }
-      // Templates are keyed by the stable branch UUID. Resolve the selected
-      // branch to it, normalizing slug/domain/hyphen variants (atl-urban-farms,
-      // atlurbanfarms.com, atlurbanfarms all match the same branch).
+      // Resolve the selected branch, normalizing slug/domain/hyphen variants
+      // (atl-urban-farms, atlurbanfarms.com, atlurbanfarms all match).
+      // NOTE the two tables are keyed differently: email_templates.branch_id is
+      // the stable branch UUID, but brand_identities.branch_id is the SLUG. Use
+      // the right key for each or the lookup silently returns nothing.
       const norm = (s: string) => (s || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
       const target = norm(selectedBranches[0]);
-      const branchId = branchContext?.allBranches.find(b => norm(b.slug) === target)?.id || selectedBranches[0];
+      const matched = branchContext?.allBranches.find(b => norm(b.slug) === target);
+      const branchUuid = matched?.id || selectedBranches[0];
+      const branchSlug = matched?.slug || selectedBranches[0];
       try {
-        const branchTemplates = await fetchTemplatesForBranch(branchId);
+        const branchTemplates = await fetchTemplatesForBranch(branchUuid);
         setCustomTemplates(branchTemplates);
       } catch (err) {
         console.error('Failed to load custom templates:', err);
         setCustomTemplates([]);
       }
       try {
-        const brand = await fetchBrandByBranch(branchId);
+        const brand = await fetchBrandByBranch(branchSlug);
         setBrandUnsubscribeUrl(brand?.unsubscribe_url || '');
       } catch (err) {
         console.error('Failed to load brand unsubscribe URL:', err);
