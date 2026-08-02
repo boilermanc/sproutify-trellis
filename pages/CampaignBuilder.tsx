@@ -174,20 +174,38 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
 
   // Custom email templates from DB
   const [customTemplates, setCustomTemplates] = useState<EmailTemplate[]>([]);
-  const [customTemplateFields, setCustomTemplateFields] = useState({
-    headline: '',
-    body_copy: '',
-    cta_text: '',
-    cta_url: '',
-  });
+  // Fill-in values keyed by token name (e.g. { headline: '', body_copy: '' }).
+  // Keys are discovered from the selected template — NOT hardcoded — so the
+  // Compose form always matches whatever tokens the template author placed.
+  const [customTemplateFields, setCustomTemplateFields] = useState<Record<string, string>>({});
   const isCustomTemplate = emailTemplate.startsWith('custom:');
   // The HTML of the currently-selected template (custom row or built-in).
   const selectedTemplateHtml = isCustomTemplate
     ? (customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''))?.html_body || '')
     : (BUILTIN_EMAIL_TEMPLATES[emailTemplate] || '');
-  // Only templates with {{headline}}/{{body_copy}}/{{cta}} tokens expose the
-  // content editor; fully-designed templates (baked content) ship as-is.
-  const templateHasTokens = /\{\{\s*(headline|body_copy|cta_text|cta_url)\s*\}\}/.test(selectedTemplateHtml);
+  // The fill-in tokens actually present in the selected template, in order of
+  // first appearance. {{first_name}}/{{unsubscribe_url}} are applied per-recipient
+  // at send time, so they never become editor fields. Duplicate token names
+  // collapse to one field (all occurrences get the same value) — use distinct
+  // names ({{body_1}}, {{body_2}}) in the template for independently editable slots.
+  const templateTokens = useMemo(() => {
+    const AUTO = new Set(['first_name', 'unsubscribe_url']);
+    const seen: string[] = [];
+    const re = /\{\{\s*([a-z0-9_]+)\s*\}\}/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(selectedTemplateHtml)) !== null) {
+      const t = m[1].toLowerCase();
+      if (!AUTO.has(t) && !seen.includes(t)) seen.push(t);
+    }
+    return seen;
+  }, [selectedTemplateHtml]);
+  const templateHasTokens = templateTokens.length > 0;
+  // Pretty label for a token: body_copy -> "Body Copy", cta_url -> "CTA URL".
+  const humanizeToken = (t: string) => t
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\bCta\b/g, 'CTA')
+    .replace(/\bUrl\b/g, 'URL');
 
   // Timing rules (staggered sequence)
   const [timingRules, setTimingRules] = useState<CampaignTimingRule[]>([]);
@@ -701,13 +719,19 @@ Return ONLY the post content, no explanations or labels.`,
 
   // Build HTML for the selected template (custom OR built-in — both editable)
   const buildDispatchHtml = (profile: Profile): string => {
-    const fill = (html: string) => html
-      .replace(/\{\{headline\}\}/g, customTemplateFields.headline || '')
-      .replace(/\{\{body_copy\}\}/g, customTemplateFields.body_copy || '')
-      .replace(/\{\{cta_text\}\}/g, customTemplateFields.cta_text || 'Learn more')
-      .replace(/\{\{cta_url\}\}/g, customTemplateFields.cta_url || '#')
-      .replace(/\{\{first_name\}\}/g, profile.first_name || '{{first_name}}')
-      .replace(/\{\{unsubscribe_url\}\}/g, '{{unsubscribe_url}}');
+    const fill = (html: string) => {
+      let out = html;
+      // Replace each discovered token with the value typed in Compose. Empty
+      // tokens collapse to '' so a raw {{token}} never leaks into the sent email.
+      templateTokens.forEach(token => {
+        const re = new RegExp(`\\{\\{\\s*${token}\\s*\\}\\}`, 'gi');
+        out = out.replace(re, customTemplateFields[token] || '');
+      });
+      // Per-recipient personalization is applied downstream at send time.
+      return out
+        .replace(/\{\{\s*first_name\s*\}\}/gi, profile.first_name || '{{first_name}}')
+        .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, '{{unsubscribe_url}}');
+    };
 
     if (isCustomTemplate) {
       const ct = customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''));
@@ -1675,79 +1699,87 @@ Return ONLY the post content, no explanations or labels.`,
                   </div>
                 </div>
 
-                {/* Template Content Fields — only for token-based templates */}
-                {templateHasTokens && (
-                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
-                    <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">
-                      <Mail size={16} className="mr-3 text-violet-500" />
-                      Template Content
-                    </h4>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Headline</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Big news from your garden!"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                        value={customTemplateFields.headline}
-                        onChange={e => setCustomTemplateFields(prev => ({ ...prev, headline: e.target.value }))}
-                      />
+                {/* Compose fields + live preview, side by side */}
+                {!!emailTemplate && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                    {/* LEFT — fill-in fields (token templates) or as-is note */}
+                    <div className="space-y-4">
+                      {templateHasTokens ? (
+                        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+                          <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">
+                            <Mail size={16} className="mr-3 text-violet-500" />
+                            Template Content
+                          </h4>
+                          <p className="text-[11px] text-slate-400 -mt-1 mb-2 leading-relaxed">
+                            One box per fill-in slot in your template. Type this week's copy — the preview updates live.
+                          </p>
+                          {templateTokens.map(token => {
+                            const isUrl = /url|link|href/i.test(token);
+                            const isLong = !isUrl && /(body|copy|text|paragraph|message|content|intro|blurb|section)/i.test(token);
+                            return (
+                              <div key={token}>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{humanizeToken(token)}</label>
+                                {isLong ? (
+                                  <textarea
+                                    rows={4}
+                                    placeholder={`Content for ${humanizeToken(token)}...`}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:bg-white focus:border-emerald-500 outline-none transition-all resize-none"
+                                    value={customTemplateFields[token] || ''}
+                                    onChange={e => setCustomTemplateFields(prev => ({ ...prev, [token]: e.target.value }))}
+                                  />
+                                ) : (
+                                  <input
+                                    type={isUrl ? 'url' : 'text'}
+                                    placeholder={isUrl ? 'https://...' : `${humanizeToken(token)}...`}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
+                                    value={customTemplateFields[token] || ''}
+                                    onChange={e => setCustomTemplateFields(prev => ({ ...prev, [token]: e.target.value }))}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2 rounded-2xl bg-emerald-50 border border-emerald-200 p-4">
+                          <CheckCircle2 size={16} className="mt-0.5 text-emerald-600 shrink-0" />
+                          <p className="text-xs text-emerald-800 leading-relaxed">
+                            This template is <b>ready to send as-is</b> — its content is baked in, so there's nothing to fill here. Check the live preview on the right. (Only recipient personalization like <span className="font-mono">{'{{first_name}}'}</span> is applied at send time.)
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Body Copy</label>
-                      <textarea
-                        placeholder="Main email body content..."
-                        rows={4}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:bg-white focus:border-emerald-500 outline-none transition-all resize-none"
-                        value={customTemplateFields.body_copy}
-                        onChange={e => setCustomTemplateFields(prev => ({ ...prev, body_copy: e.target.value }))}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">CTA Button Text</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Shop Now"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                          value={customTemplateFields.cta_text}
-                          onChange={e => setCustomTemplateFields(prev => ({ ...prev, cta_text: e.target.value }))}
+
+                    {/* RIGHT — live preview, updates as you type */}
+                    <div className="xl:sticky xl:top-6">
+                      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 bg-slate-50">
+                          <div className="flex items-center gap-2">
+                            <Eye size={16} className="text-emerald-600" />
+                            <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs">Live Preview</h4>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowEmailPreview(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-emerald-600 transition"
+                          >
+                            <Eye size={12} /> Expand
+                          </button>
+                        </div>
+                        <div className="px-6 py-2.5 border-b border-slate-100 bg-white">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
+                          <p className="text-xs font-bold text-slate-800 mt-0.5 break-words">{emailSubject || '(no subject yet)'}</p>
+                        </div>
+                        <iframe
+                          title="Live email preview"
+                          srcDoc={buildDispatchHtml(previewProfile)}
+                          className="w-full h-[540px] bg-white"
                         />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">CTA Button URL</label>
-                        <input
-                          type="text"
-                          placeholder="https://..."
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                          value={customTemplateFields.cta_url}
-                          onChange={e => setCustomTemplateFields(prev => ({ ...prev, cta_url: e.target.value }))}
-                        />
-                      </div>
+                      <p className="text-[10px] text-slate-400 text-center mt-2 font-medium">Updates live as you type · this is the real branded email</p>
                     </div>
                   </div>
                 )}
-
-                {/* Fully-designed template (no tokens) — ships as-is */}
-                {!templateHasTokens && !!emailTemplate && (
-                  <div className="flex items-start gap-2 rounded-2xl bg-emerald-50 border border-emerald-200 p-4">
-                    <CheckCircle2 size={16} className="mt-0.5 text-emerald-600 shrink-0" />
-                    <p className="text-xs text-emerald-800 leading-relaxed">
-                      This template is <b>ready to send as-is</b> — its content is baked in, so there's nothing to fill here. Hit <b>Preview</b> to check it. (Only recipient personalization like <span className="font-mono">{'{{first_name}}'}</span> is applied at send time.)
-                    </p>
-                  </div>
-                )}
-
-                {/* Preview */}
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setShowEmailPreview(true)}
-                    className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition shadow-lg"
-                  >
-                    <Eye size={16} />
-                    Preview Email
-                  </button>
-                </div>
                 {showEmailPreview && (
                   <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4" onClick={() => setShowEmailPreview(false)}>
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -2275,7 +2307,10 @@ Return ONLY the post content, no explanations or labels.`,
   // before leaving Compose. Built-in layouts can't hold custom copy, so a
   // real send requires a template created in Brand Intelligence.
   // Token templates need body copy written; fully-designed templates ship as-is.
-  const emailComposeIncomplete = enabledChannels.has('email') && templateHasTokens && !customTemplateFields.body_copy?.trim();
+  // Block send only when the template has fill-in slots and none of them were
+  // filled — a totally empty compose. Partial fills are allowed (unused slots
+  // simply collapse to blank), so a 4-section newsletter can run with 2 sections.
+  const emailComposeIncomplete = enabledChannels.has('email') && templateHasTokens && templateTokens.every(t => !customTemplateFields[t]?.trim());
 
   // Synthetic recipient used to render the in-page email preview modal.
   const previewProfile: Profile = {
