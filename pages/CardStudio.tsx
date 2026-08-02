@@ -104,6 +104,10 @@ const TEMPLATE_LABEL: Record<CardConceptWithRef['template'], string> = {
   statement: 'Statement',
   grid: 'Grid',
   editorial: 'Editorial',
+  list: 'List',
+  conversation: 'Conversation',
+  stat: 'Stat',
+  quote: 'Quote',
 };
 
 const NO_BIBLE_SOURCE_MESSAGE = 'Scripture unavailable for this brand — verse cards need a connected Bible source.';

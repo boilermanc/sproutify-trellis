@@ -47,6 +47,10 @@ const TEMPLATE_LABEL: Record<TemplateBucket, string> = {
   statement: 'Statement',
   grid: 'Grid',
   editorial: 'Editorial',
+  list: 'List',
+  conversation: 'Conversation',
+  stat: 'Stat',
+  quote: 'Quote',
   uploaded: 'Uploaded (no template)',
 };
 

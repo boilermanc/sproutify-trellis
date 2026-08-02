@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { CardBullet, CardConcept, CardPalette, CardTemplate } from '../types';
+import { CardBullet, CardConcept, CardMessage, CardPalette, CardTemplate } from '../types';
 import { sanitizePII } from './aiService';
 import { USFM_BOOKS, VerseReference } from './bibleService';
 
@@ -234,10 +234,10 @@ function buildDirectorPrompt(opts: {
   const policy = opts.scripturePolicy || 'mix';
   const scriptureRule =
     policy === 'avoid'
-      ? 'SCRIPTURE POLICY: do NOT use the "verse" template at all for this batch. Use only "statement", "grid" and "editorial". Do not quote or reference scripture anywhere, including in captions.'
+      ? 'SCRIPTURE POLICY: do NOT use the "verse" template at all for this batch. You have 7 other templates to choose from — "statement", "grid", "editorial", "list", "conversation", "stat" and "quote" — and you should use that range, not default to the same 2-3 out of habit. Do not quote or reference scripture anywhere, including in captions.'
       : policy === 'require'
-      ? 'SCRIPTURE POLICY: every concept should use the "verse" template, unless you genuinely cannot name a fitting passage — in that case use "statement" for that one rather than forcing a bad fit.'
-      : 'SCRIPTURE POLICY: mix the templates. Not every post needs scripture — a batch of all verse cards is monotonous. Aim for a spread across "verse", "statement", "grid" and "editorial".';
+      ? 'SCRIPTURE POLICY: every concept should use the "verse" template, unless you genuinely cannot name a fitting passage — in that case pick whichever non-verse template best fits that one rather than forcing a bad fit.'
+      : 'SCRIPTURE POLICY: mix the templates. Not every post needs scripture — a batch of all verse cards is monotonous. Aim for a spread across all 8 templates ("verse", "statement", "grid", "editorial", "list", "conversation", "stat", "quote"), not just the first few.';
 
   const paletteHint = opts.palette && (opts.palette.primary || opts.palette.secondary || opts.palette.accent)
     ? `Brand colors for INSPIRATION ONLY (not mandatory — concepts do not need to be on-brand): primary ${opts.palette.primary || 'n/a'}, secondary ${opts.palette.secondary || 'n/a'}, accent ${opts.palette.accent || 'n/a'}.`
@@ -267,6 +267,12 @@ TEMPLATES (pick per concept, whichever best fits that concept's angle):
    - scrimStrength: a number 0 to 1 for how strongly to wash the photo for text legibility (0.6-0.8 is typically right; higher for busier photos)
    - photo_brief: 1-2 sentences describing the ideal PHOTOGRAPH behind this layout — a warm, real scene with actual objects and light (e.g. an open book, a mug, flowers, morning light; people optional and usually unnecessary). Compose it so the LEFT side of the frame stays calm and uncluttered, because that's where the text column sits. Describe ONLY what the camera sees — no text, graphics or logos in the scene.
    Do NOT invent or include a backgroundUrl — the app supplies the actual photograph separately. Do not use "editorial" for a verse concept; if scripture is the point of the card, use "verse" instead.
+5. "list" — a numbered listicle (1, 2, 3...). Good for tips, reasons, or steps framed as a countdown. Needs: heading (the title) and bullets (2 to 4 short lines). Bullets use the SAME shape as editorial's: {text, emphasis, icon} — "emphasis" MUST be a VERBATIM SUBSTRING of that bullet's own "text" (exact characters), and "icon" MUST be exactly one of: heart, book, leaf, sparkle, check, sun. May optionally include footnote. Unlike "grid" (short standalone words/phrases arranged in a grid), a "list" reads as full sentences stacked and numbered — use it when each point deserves a real sentence, not a two-word label.
+6. "conversation" — a text-message thread rendered as chat bubbles. Needs: messages (2 to 6 turns), each {side, text} where side is "left" (the other party — a friend, a worried voice, a question) or "right" (the brand's reply or answer). May optionally include heading. GUARDRAIL: every message must be ORIGINAL short copy written in the brand's voice for this concept — never a quote attributed to a real person, never a fabricated testimonial or review, never phrased to imply an actual customer said this. It's a device to dramatize a felt need and the brand's answer, not evidence of something that happened.
+7. "stat" — one oversized number or short figure as the whole point of the card. Needs: statValue (the big figure itself, kept SHORT — e.g. "5", "3am", "92%" — this is the one thing the eye lands on) and subline (a short line of context explaining what the figure means). May optionally include statUnit (a short tracked label under the figure, e.g. "MINUTES", "DAYS A WEEK"). Only use a figure that's real (from the brief or brand context) or plainly illustrative/rhetorical (e.g. "1" for "one small habit, one big difference") — never present a made-up statistic as if it were researched fact.
+8. "quote" — a framed pull-quote, visually distinct from "statement" (a bold headline) — "quote" is set and framed like an actual quotation. Needs: statement (the quotation text) and attribution (who or what it's from, e.g. "— REJOICE" or a short non-identifying descriptor like "— A FIRST-TIME GROWER"). May optionally include statementEmphasis (1-3 emphasized words, must be a verbatim substring of statement). Do not attribute the quote to a specific named real person unless that exact quote and person are given to you in the brief or brand context — when in doubt, attribute it to the brand itself or a generic, non-identifying descriptor.
+
+VARIETY IS THE WHOLE POINT of having eight templates — across this batch, actively DIVERSIFY. Do not let every batch settle into "statement", "grid" and "editorial" out of habit; "list", "conversation", "stat" and "quote" exist specifically because that original set of four was producing visually repetitive concepts. When scripture is disallowed you still have 7 non-verse templates available — use the range instead of picking the same 2-3 every time.
 
 EVERY concept, regardless of template, also needs:
 - eyebrow: a short tracked label above the main content, e.g. "FOR WHEN YOU FEEL ANXIOUS"
@@ -395,6 +401,30 @@ function normalizeBullets(raw: any): CardBullet[] {
   return out;
 }
 
+// Repairs a raw `messages` array into a guaranteed-renderable CardMessage[]:
+// entries without usable text are dropped, `side` is coerced to 'left'
+// whenever it isn't exactly 'right' (the renderer only understands those two
+// values), and the list is capped — a long thread reads like a chat
+// screenshot dump, not a designed card.
+const MAX_MESSAGES = 6;
+function normalizeMessages(raw: any): CardMessage[] {
+  if (!Array.isArray(raw)) return [];
+
+  const out: CardMessage[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const text = typeof item.text === 'string' ? item.text.trim() : '';
+    if (!text) continue;
+
+    out.push({
+      side: item.side === 'right' ? 'right' : 'left',
+      text,
+    });
+    if (out.length >= MAX_MESSAGES) break;
+  }
+  return out;
+}
+
 // Clamps a raw scrimStrength to the renderer's expected 0-1 range, falling
 // back to a sane default photo-legibility wash when the model omits it or
 // hands back something unusable.
@@ -414,7 +444,8 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
   if (!caption) return null; // publish-ready caption is non-negotiable
 
   let template: CardTemplate | null =
-    raw.template === 'verse' || raw.template === 'statement' || raw.template === 'grid' || raw.template === 'editorial'
+    raw.template === 'verse' || raw.template === 'statement' || raw.template === 'grid' || raw.template === 'editorial' ||
+    raw.template === 'list' || raw.template === 'conversation' || raw.template === 'stat' || raw.template === 'quote'
       ? raw.template
       : null;
 
@@ -424,10 +455,16 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
   if (!template) {
     if (raw.verse_ref && typeof raw.verse_ref === 'object') {
       template = 'verse';
+    } else if (Array.isArray(raw.messages) && raw.messages.filter((m: any) => m && typeof m.text === 'string' && m.text.trim()).length >= 2) {
+      template = 'conversation';
+    } else if (typeof raw.statValue === 'string' && raw.statValue.trim()) {
+      template = 'stat';
     } else if (Array.isArray(raw.items) && raw.items.filter((i: any) => typeof i === 'string' && i.trim()).length >= 2) {
       template = 'grid';
     } else if (Array.isArray(raw.bullets) && raw.bullets.length > 0) {
       template = 'editorial';
+    } else if (typeof raw.statement === 'string' && raw.statement.trim() && typeof raw.attribution === 'string' && raw.attribution.trim()) {
+      template = 'quote';
     } else if (typeof raw.statement === 'string' && raw.statement.trim()) {
       template = 'statement';
     } else {
@@ -531,6 +568,80 @@ function normalizeConcept(raw: any, model: string): CardConceptWithRef | null {
     if (typeof raw.photo_brief === 'string' && raw.photo_brief.trim()) base.photo_brief = raw.photo_brief.trim();
     base.scrimStrength = scrimStrength;
     return base;
+  }
+
+  if (template === 'list') {
+    // A numbered listicle — reuses the same CardBullet shape as editorial's
+    // feature rows (drawn with numbers instead of icons). Needs at least two
+    // bullets to read as a list rather than a single stray line.
+    const bullets = normalizeBullets(raw.bullets);
+    if (bullets.length >= 2) {
+      base.heading = typeof raw.heading === 'string' ? raw.heading.trim() : '';
+      base.bullets = bullets;
+      if (typeof raw.footnote === 'string' && raw.footnote.trim()) base.footnote = raw.footnote.trim();
+      return base;
+    }
+    // Fewer than two usable bullets isn't renderable as a list — demote to
+    // statement rather than drop, the same way verse/editorial demote when
+    // their required data is missing but there's still usable text.
+    const fallbackStatement = (typeof raw.heading === 'string' && raw.heading.trim()) || caption;
+    if (!fallbackStatement) return null;
+    base.template = 'statement';
+    base.statement = fallbackStatement;
+    return base;
+  }
+
+  if (template === 'conversation') {
+    // A text-message thread — needs at least two turns to read as a
+    // conversation rather than one caption fragment.
+    const messages = normalizeMessages(raw.messages);
+    if (messages.length >= 2) {
+      base.messages = messages;
+      if (typeof raw.heading === 'string' && raw.heading.trim()) base.heading = raw.heading.trim();
+      return base;
+    }
+    // Not enough messages to render the thread — demote to statement rather
+    // than drop, using whatever heading or caption text is available.
+    const fallbackStatement = (typeof raw.heading === 'string' && raw.heading.trim()) || caption;
+    if (!fallbackStatement) return null;
+    base.template = 'statement';
+    base.statement = fallbackStatement;
+    return base;
+  }
+
+  if (template === 'stat') {
+    // One oversized figure — the whole card is built around statValue, so
+    // without it there's nothing left to draw.
+    const statValue = typeof raw.statValue === 'string' ? raw.statValue.trim().slice(0, 12) : '';
+    if (statValue) {
+      base.statValue = statValue;
+      if (typeof raw.statUnit === 'string' && raw.statUnit.trim()) base.statUnit = raw.statUnit.trim().slice(0, 24);
+      if (typeof raw.subline === 'string' && raw.subline.trim()) base.subline = raw.subline.trim();
+      return base;
+    }
+    // No figure to build the card around — demote to statement rather than
+    // drop, using whatever context line or caption exists.
+    const fallbackStatement = (typeof raw.subline === 'string' && raw.subline.trim()) || caption;
+    if (!fallbackStatement) return null;
+    base.template = 'statement';
+    base.statement = fallbackStatement;
+    return base;
+  }
+
+  if (template === 'quote') {
+    // A framed pull-quote — reuses `statement` for the quotation itself.
+    const statement = typeof raw.statement === 'string' ? raw.statement.trim() : '';
+    if (statement) {
+      base.statement = statement;
+      if (typeof raw.statementEmphasis === 'string' && raw.statementEmphasis.trim()) base.statementEmphasis = raw.statementEmphasis.trim();
+      if (typeof raw.attribution === 'string' && raw.attribution.trim()) base.attribution = raw.attribution.trim();
+      return base;
+    }
+    // A quote's only required field IS the statement text, so there's
+    // nothing usable left to demote to (unlike list/conversation/stat, which
+    // can fall back to a heading or caption) — drop it rather than ship an
+    // empty frame.
+    return null;
   }
 
   // grid

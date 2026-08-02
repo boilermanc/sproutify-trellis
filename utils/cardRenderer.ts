@@ -1177,6 +1177,407 @@ function drawEditorial(
   // footer band.
 }
 
+// ─── list ────────────────────────────────────────────────────────────────
+// A numbered listicle: heading up top, then bullets rendered as vertical
+// numbered rows (big accent numeral + text) rather than the grid's boxes or
+// the editorial's icon badges — deliberately reuses the bold-emphasis
+// machinery (`tagBulletWords`/`wrapBulletWords`/`drawBulletLineRuns`) built
+// for editorial's bullet rows, just without the icon.
+
+function drawList(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number, H: number): void {
+  const palette = concept.palette;
+  paintBackground(ctx, palette, W, H, false);
+
+  const padX = W * 0.1;
+  const maxWidth = W - padX * 2;
+
+  let cursorY = H * 0.1;
+  cursorY = drawEyebrow(ctx, concept.eyebrow, palette, W, cursorY);
+
+  const heading = safeText(concept.heading).trim();
+  if (heading) {
+    const fit = fitTextBlock(ctx, heading, maxWidth, H * 0.14, W * 0.05, W * 0.032, W * 0.004, 1.15, (sizePx) => {
+      ctx.font = fontString(600, sizePx, CARD_FONTS.serif);
+    });
+    ctx.fillStyle = palette?.text || '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    let lineTop = cursorY;
+    for (const line of fit.lines) {
+      ctx.fillText(line, W / 2, lineTop + fit.fontSizePx * 0.85);
+      lineTop += fit.lineHeightPx;
+    }
+    cursorY = lineTop + fit.fontSizePx * 0.4;
+  }
+
+  const bullets = Array.isArray(concept.bullets) ? concept.bullets.filter((b) => b && typeof b.text === 'string' && b.text.trim()) : [];
+  const footnote = safeText(concept.footnote).trim();
+
+  // Reserve room below the list for the footnote + logo, same pattern as
+  // `drawGrid`'s `reservedBottom`.
+  const reservedBottom = (footnote ? H * 0.06 : 0) + H * 0.14;
+  const listTop = cursorY + H * 0.02;
+  const listBottom = H - reservedBottom;
+  const listHeight = Math.max(H * 0.1, listBottom - listTop);
+
+  if (bullets.length > 0) {
+    // Items are spaced evenly: one fixed-height slot per bullet, rather than
+    // packing tightly, so the list reads as calm rows regardless of count.
+    const rowH = listHeight / bullets.length;
+    const numberColW = W * 0.14;
+    const textX = padX + numberColW;
+    const textMaxWidth = Math.max(W * 0.2, maxWidth - numberColW);
+    const rowPad = rowH * 0.12;
+    const minFontSizePx = W * 0.016;
+
+    bullets.forEach((bullet, i) => {
+      const rowTop = listTop + i * rowH;
+      const rowCenterY = rowTop + rowH / 2;
+
+      // Large accent numeral, right-aligned against the text column's start
+      // so digit count (1 vs 10) never shifts where the item text begins.
+      const numberSizePx = Math.min(rowH * 0.55, W * 0.075);
+      ctx.save();
+      ctx.font = fontString(600, numberSizePx, CARD_FONTS.serif);
+      ctx.fillStyle = palette?.accent || '#c9622a';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(String(i + 1), textX - W * 0.025, rowCenterY + numberSizePx * 0.32);
+      ctx.restore();
+
+      // Item text, honoring the bullet's inline emphasis fragment, shrunk to
+      // fit its row slot (long items get smaller rather than overflowing
+      // into the next row).
+      const words = tagBulletWords(safeText(bullet.text), safeText(bullet.emphasis));
+      const availableTextH = rowH - rowPad * 2;
+      let textFontSizePx = Math.min(W * 0.03, rowH * 0.36);
+      let lines = wrapBulletWords(ctx, words, textMaxWidth, textFontSizePx, CARD_FONTS.sans);
+      let lineHeightPx = textFontSizePx * 1.28;
+      while (lines.length * lineHeightPx > availableTextH && textFontSizePx > minFontSizePx) {
+        textFontSizePx = Math.max(minFontSizePx, textFontSizePx - W * 0.002);
+        lines = wrapBulletWords(ctx, words, textMaxWidth, textFontSizePx, CARD_FONTS.sans);
+        lineHeightPx = textFontSizePx * 1.28;
+      }
+
+      const blockHeight = lines.length * lineHeightPx;
+      let lineTop = rowCenterY - blockHeight / 2;
+      for (const line of lines) {
+        drawBulletLineRuns(ctx, line, textX, lineTop + textFontSizePx * 0.85, textFontSizePx, CARD_FONTS.sans, palette?.text || '#ffffff');
+        lineTop += lineHeightPx;
+      }
+    });
+
+    cursorY = listTop + listHeight;
+  } else {
+    cursorY = listTop;
+  }
+
+  if (footnote) {
+    const sizePx = W * 0.02;
+    ctx.save();
+    ctx.font = fontString(400, sizePx, CARD_FONTS.sans);
+    ctx.fillStyle = palette?.muted || '#999999';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const wrapped = wrapText(ctx, footnote, maxWidth);
+    let y = Math.max(cursorY + sizePx * 1.4, listBottom - (wrapped.length - 1) * sizePx * 1.4);
+    for (const line of wrapped) {
+      ctx.fillText(line, W / 2, y);
+      y += sizePx * 1.4;
+    }
+    ctx.restore();
+  }
+
+  drawLogoText(ctx, concept.logoText, palette, W, H);
+}
+
+// ─── conversation ────────────────────────────────────────────────────────
+// Text-message bubbles: 'left' messages hug the left edge in a muted/neutral
+// tint (mirrors the grid's non-highlighted cell treatment), 'right' messages
+// hug the right edge filled with the accent color.
+
+/**
+ * Picks a readable text color to sit on top of `hex` — `light` (typically
+ * white) for a dark/saturated background, `dark` (typically `palette.bg1`)
+ * for a light/pale one. Only used for the accent-filled bubble in
+ * `drawConversation`, where the accent color is author-controlled and could
+ * land anywhere from a pale mint to a deep navy. Falls back to `light` on an
+ * unparseable color rather than guessing.
+ */
+function contrastTextColor(hex: string, light: string, dark: string): string {
+  const match = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec((hex || '').trim());
+  if (!match) return light;
+  const digits = match[1];
+  const full = digits.length === 3 ? digits.split('').map((c) => c + c).join('') : digits;
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 0.6 ? dark : light;
+}
+
+function drawConversation(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number, H: number): void {
+  const palette = concept.palette;
+  paintBackground(ctx, palette, W, H, false);
+
+  const padX = W * 0.08;
+  const maxWidth = W - padX * 2;
+
+  let cursorY = H * 0.1;
+  cursorY = drawEyebrow(ctx, concept.eyebrow, palette, W, cursorY);
+
+  const heading = safeText(concept.heading).trim();
+  if (heading) {
+    const fit = fitTextBlock(ctx, heading, maxWidth, H * 0.1, W * 0.045, W * 0.03, W * 0.003, 1.15, (sizePx) => {
+      ctx.font = fontString(600, sizePx, CARD_FONTS.serif);
+    });
+    ctx.fillStyle = palette?.text || '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    let lineTop = cursorY;
+    for (const line of fit.lines) {
+      ctx.fillText(line, W / 2, lineTop + fit.fontSizePx * 0.85);
+      lineTop += fit.lineHeightPx;
+    }
+    cursorY = lineTop + fit.fontSizePx * 0.5;
+  }
+
+  const messages = Array.isArray(concept.messages)
+    ? concept.messages.filter((m) => m && typeof m.text === 'string' && m.text.trim() && (m.side === 'left' || m.side === 'right'))
+    : [];
+
+  const reservedBottom = H * 0.14;
+  const areaTop = cursorY + H * 0.02;
+  const areaBottom = H - reservedBottom;
+  const areaHeight = Math.max(H * 0.1, areaBottom - areaTop);
+
+  if (messages.length > 0) {
+    const bubbleMaxWidth = maxWidth * 0.68;
+    const bubbleFontSizePx = W * 0.028;
+    const bubblePadX = W * 0.032;
+    const bubblePadY = H * 0.02;
+    const lineHeightPx = bubbleFontSizePx * 1.3;
+    const gap = H * 0.02;
+
+    ctx.font = fontString(400, bubbleFontSizePx, CARD_FONTS.sans);
+    const textInnerWidth = bubbleMaxWidth - bubblePadX * 2;
+
+    // Pre-measure every bubble's wrapped lines/height so the whole stack can
+    // be vertically centered in the available area — the same "center the
+    // block" treatment the other templates give their main content.
+    const laidOut = messages.map((m) => {
+      const lines = wrapText(ctx, safeText(m.text).trim(), textInnerWidth);
+      const bubbleH = lines.length * lineHeightPx + bubblePadY * 2;
+      return { side: m.side, lines, bubbleH };
+    });
+    const totalHeight = laidOut.reduce((sum, m) => sum + m.bubbleH, 0) + gap * Math.max(0, laidOut.length - 1);
+
+    // If the stack is taller than the area (many/long messages), clamp to
+    // the top of the area instead of a negative offset — later bubbles may
+    // then run close to the logo, the same floor-size trade-off the other
+    // auto-fit blocks make rather than throwing or truncating messages.
+    const y0 = Math.max(areaTop, areaTop + (areaHeight - totalHeight) / 2);
+    let y = y0;
+
+    for (const bubble of laidOut) {
+      const isRight = bubble.side === 'right';
+      let bubbleTextWidth = 0;
+      for (const line of bubble.lines) {
+        bubbleTextWidth = Math.max(bubbleTextWidth, ctx.measureText(line).width);
+      }
+      const bubbleW = Math.min(bubbleMaxWidth, bubbleTextWidth + bubblePadX * 2);
+      const x = isRight ? W - padX - bubbleW : padX;
+
+      ctx.save();
+      roundedRectPath(ctx, x, y, bubbleW, bubble.bubbleH, Math.min(bubbleW, bubble.bubbleH) * 0.22);
+      if (isRight) {
+        ctx.fillStyle = palette?.accent || '#c9622a';
+        ctx.fill();
+      } else {
+        ctx.fillStyle = hexToRgba(palette?.text || '#ffffff', 0.06);
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = hexToRgba(palette?.text || '#ffffff', 0.35);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.font = fontString(400, bubbleFontSizePx, CARD_FONTS.sans);
+      ctx.fillStyle = isRight
+        ? contrastTextColor(palette?.accent || '#c9622a', '#ffffff', palette?.bg1 || '#111111')
+        : palette?.text || '#ffffff';
+      ctx.textAlign = isRight ? 'right' : 'left';
+      ctx.textBaseline = 'alphabetic';
+      const textX = isRight ? x + bubbleW - bubblePadX : x + bubblePadX;
+      let lineY = y + bubblePadY + bubbleFontSizePx * 0.85;
+      for (const line of bubble.lines) {
+        ctx.fillText(line, textX, lineY);
+        lineY += lineHeightPx;
+      }
+      ctx.restore();
+
+      y += bubble.bubbleH + gap;
+    }
+  }
+
+  drawLogoText(ctx, concept.logoText, palette, W, H);
+}
+
+// ─── stat ────────────────────────────────────────────────────────────────
+// One oversized figure: a huge serif value dominates the card, a small
+// tracked unit label sits directly under it, and a muted context line closes
+// it out — scroll-stopping by construction rather than by decoration.
+
+function drawStat(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number, H: number): void {
+  const palette = concept.palette;
+  paintBackground(ctx, palette, W, H, false);
+  paintAccentGlow(ctx, palette?.accent, W, H);
+
+  const padX = W * 0.1;
+  const maxWidth = W - padX * 2;
+
+  let topY = H * 0.12;
+  topY = drawEyebrow(ctx, concept.eyebrow, palette, W, topY);
+
+  const statValue = safeText(concept.statValue).trim();
+  const statUnit = safeText(concept.statUnit).trim();
+  const subline = safeText(concept.subline).trim();
+
+  const reservedBelow = (statUnit ? H * 0.05 : 0) + (subline ? H * 0.08 : 0) + H * 0.16;
+  const maxBlockHeight = Math.max(H * 0.18, H - topY - reservedBelow);
+
+  let cursorY = topY;
+
+  if (statValue) {
+    const fit = fitTextBlock(ctx, statValue, maxWidth, maxBlockHeight, W * 0.34, W * 0.12, W * 0.008, 1.05, (sizePx) => {
+      ctx.font = fontString(600, sizePx, CARD_FONTS.serif);
+    });
+
+    ctx.fillStyle = palette?.text || '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    const blockHeight = fit.lines.length * fit.lineHeightPx;
+    let lineTop = cursorY + Math.max(0, (maxBlockHeight - blockHeight) / 2);
+    for (const line of fit.lines) {
+      ctx.fillText(line, W / 2, lineTop + fit.fontSizePx * 0.85);
+      lineTop += fit.lineHeightPx;
+    }
+    cursorY = lineTop + fit.fontSizePx * 0.1;
+  } else {
+    cursorY += maxBlockHeight * 0.5;
+  }
+
+  if (statUnit) {
+    const sizePx = W * 0.03;
+    ctx.save();
+    ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
+    ctx.fillStyle = palette?.accent || '#c9622a';
+    ctx.textBaseline = 'alphabetic';
+    cursorY += sizePx * 0.6;
+    drawTracked(ctx, statUnit.toUpperCase(), W / 2, cursorY, sizePx * 0.2, 'center');
+    ctx.restore();
+    cursorY += sizePx * 1.2;
+  }
+
+  if (subline) {
+    const sizePx = W * 0.024;
+    ctx.save();
+    ctx.font = fontString(400, sizePx, CARD_FONTS.sans);
+    ctx.fillStyle = palette?.muted || '#999999';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const wrapped = wrapText(ctx, subline, maxWidth * 0.85);
+    let y = cursorY + sizePx * 1.6;
+    for (const line of wrapped) {
+      ctx.fillText(line, W / 2, y);
+      y += sizePx * 1.4;
+    }
+    ctx.restore();
+  }
+
+  drawLogoText(ctx, concept.logoText, palette, W, H);
+}
+
+// ─── quote ───────────────────────────────────────────────────────────────
+// A framed pull-quote: a large low-opacity opening quotation mark anchors
+// the top-left of the block, the quotation itself reuses `statement` (with
+// inline emphasis honored via the same word-run machinery editorial's
+// bullets use), and a small tracked attribution line closes it — distinct
+// from `drawStatement`'s centered, mark-free treatment.
+
+function drawQuote(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number, H: number): void {
+  const palette = concept.palette;
+  paintBackground(ctx, palette, W, H, false);
+
+  const padX = W * 0.1;
+  const maxWidth = W - padX * 2;
+
+  let topY = H * 0.1;
+  topY = drawEyebrow(ctx, concept.eyebrow, palette, W, topY);
+
+  const statement = safeText(concept.statement).trim();
+  const emphasis = safeText(concept.statementEmphasis).trim();
+  const attribution = safeText(concept.attribution).trim();
+
+  let quoteTop = topY;
+  if (statement) {
+    // Decorative opening mark — only drawn when there's actually a
+    // quotation to frame, so an empty concept doesn't leave a lonely glyph.
+    const markSizePx = W * 0.26;
+    ctx.save();
+    ctx.font = fontString(700, markSizePx, CARD_FONTS.serif);
+    ctx.fillStyle = hexToRgba(palette?.accent || '#c9622a', 0.32);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('“', padX - markSizePx * 0.06, topY + markSizePx * 0.72);
+    ctx.restore();
+    quoteTop = topY + markSizePx * 0.58;
+  }
+
+  const reservedBelow = (attribution ? H * 0.07 : 0) + H * 0.16;
+  const maxBlockHeight = Math.max(H * 0.18, H - quoteTop - reservedBelow);
+
+  let cursorY = quoteTop;
+
+  if (statement) {
+    const words = tagBulletWords(statement, emphasis);
+    const minFontSizePx = W * 0.036;
+    const lineHeightMultiplier = 1.18;
+    let fontSizePx = W * 0.062;
+    let lines = wrapBulletWords(ctx, words, maxWidth, fontSizePx, CARD_FONTS.serif);
+    let lineHeightPx = fontSizePx * lineHeightMultiplier;
+    while (lines.length * lineHeightPx > maxBlockHeight && fontSizePx > minFontSizePx) {
+      fontSizePx = Math.max(minFontSizePx, fontSizePx - W * 0.003);
+      lines = wrapBulletWords(ctx, words, maxWidth, fontSizePx, CARD_FONTS.serif);
+      lineHeightPx = fontSizePx * lineHeightMultiplier;
+    }
+
+    const blockHeight = lines.length * lineHeightPx;
+    let lineTop = cursorY + Math.max(0, (maxBlockHeight - blockHeight) / 2);
+    for (const line of lines) {
+      drawBulletLineRuns(ctx, line, padX, lineTop + fontSizePx * 0.85, fontSizePx, CARD_FONTS.serif, palette?.text || '#ffffff');
+      lineTop += lineHeightPx;
+    }
+    cursorY = lineTop + fontSizePx * 0.2;
+  } else {
+    cursorY += maxBlockHeight * 0.5;
+  }
+
+  if (attribution) {
+    const sizePx = W * 0.024;
+    ctx.save();
+    ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
+    ctx.fillStyle = palette?.muted || '#999999';
+    ctx.textBaseline = 'alphabetic';
+    drawTracked(ctx, attribution.toUpperCase(), padX, cursorY + sizePx * 1.6, sizePx * 0.16, 'left');
+    ctx.restore();
+  }
+
+  drawLogoText(ctx, concept.logoText, palette, W, H);
+}
+
 // ─── Entry points ────────────────────────────────────────────────────────
 
 /**
@@ -1206,7 +1607,15 @@ export function drawCard(
   preloadedBackground?: HTMLImageElement | null
 ): void {
   const template: CardTemplate =
-    concept?.template === 'statement' || concept?.template === 'grid' || concept?.template === 'editorial' ? concept.template : 'verse';
+    concept?.template === 'statement' ||
+    concept?.template === 'grid' ||
+    concept?.template === 'editorial' ||
+    concept?.template === 'list' ||
+    concept?.template === 'conversation' ||
+    concept?.template === 'stat' ||
+    concept?.template === 'quote'
+      ? concept.template
+      : 'verse';
 
   try {
     switch (template) {
@@ -1218,6 +1627,18 @@ export function drawCard(
         break;
       case 'editorial':
         drawEditorial(ctx, concept, W, H, preloadedBackground ?? null);
+        break;
+      case 'list':
+        drawList(ctx, concept, W, H);
+        break;
+      case 'conversation':
+        drawConversation(ctx, concept, W, H);
+        break;
+      case 'stat':
+        drawStat(ctx, concept, W, H);
+        break;
+      case 'quote':
+        drawQuote(ctx, concept, W, H);
         break;
       case 'verse':
       default:
@@ -1244,14 +1665,18 @@ async function loadFontsForConcept(): Promise<void> {
   // finishes loading. If we measured/wrapped text before the swap, the
   // wrap decisions and auto-shrink sizing would be computed against the
   // wrong metrics and could visibly reflow once the real font pops in.
-  // Sans weight 700 is only used by the editorial template's bold emphasis
-  // runs (see `drawBulletLineRuns`), but it's loaded here alongside the rest
-  // rather than conditionally per-template so every template shares one
-  // font-loading path — the cost of one extra weight fetch is trivial next
-  // to the risk of a template-specific loader drifting out of sync.
+  // Sans weight 700 is used by editorial's and list's bold emphasis runs
+  // (see `drawBulletLineRuns`); serif 400/700 are the same run machinery
+  // reused by `drawQuote` for its inline-emphasised quotation. All loaded
+  // here alongside the rest rather than conditionally per-template so every
+  // template shares one font-loading path — the cost of a couple extra
+  // weight fetches is trivial next to the risk of a template-specific loader
+  // drifting out of sync.
   await Promise.all([
     ensureFontLoaded(CARD_FONTS.serif, 300),
+    ensureFontLoaded(CARD_FONTS.serif, 400),
     ensureFontLoaded(CARD_FONTS.serif, 600),
+    ensureFontLoaded(CARD_FONTS.serif, 700),
     ensureFontLoaded(CARD_FONTS.sans, 400),
     ensureFontLoaded(CARD_FONTS.sans, 500),
     ensureFontLoaded(CARD_FONTS.sans, 600),

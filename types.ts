@@ -1054,7 +1054,22 @@ export interface TextOverlayConfig {
 // typographic statement, a grid. Image models can't render text or lay out
 // a grid reliably, so these are DRAWN from data instead of generated: an AI
 // "creative director" writes the concept, a renderer builds the PNG.
-export type CardTemplate = 'verse' | 'statement' | 'grid' | 'editorial';
+export type CardTemplate =
+  | 'verse' | 'statement' | 'grid' | 'editorial'
+  // Added to break the sameness of the original four (all no-scripture
+  // generations were landing on statement/grid/editorial). These are
+  // structurally different layouts, not restyled statements:
+  | 'list'          // numbered 1/2/3 listicle — reuses heading + bullets
+  | 'conversation'  // text-message bubbles — uses messages[]
+  | 'stat'          // one giant number/word + context — uses statValue/statUnit
+  | 'quote';        // framed pull-quote — reuses statement + attribution
+
+// One line of a conversation card. `side` is which edge the bubble hugs:
+// 'left' reads as the other party, 'right' as the brand/answer.
+export interface CardMessage {
+  side: 'left' | 'right';
+  text: string;
+}
 
 export interface CardPalette {
   bg1: string;        // background / gradient start
@@ -1100,6 +1115,16 @@ export interface CardConcept {
   bullets?: CardBullet[];   // icon + text feature rows
   footer?: string;          // tracked caps line in a footer band
   scrimStrength?: number;   // 0-1, how strongly to wash the photo for legibility
+
+  // list — a numbered listicle. Reuses `heading` for the title and `bullets`
+  // for the items (drawn with numbers instead of icons); `footnote` optional.
+  // conversation
+  messages?: CardMessage[];
+  // stat — one oversized figure with a unit and a line of context below.
+  statValue?: string;       // the big figure, e.g. "5" or "3am"
+  statUnit?: string;        // small tracked label under it, e.g. "MINUTES"
+  // quote — reuses `statement` (+ statementEmphasis) for the quotation.
+  attribution?: string;     // "— REJOICE" or a speaker
 
   // provenance
   rationale?: string;       // why this concept, for the human reviewing it
