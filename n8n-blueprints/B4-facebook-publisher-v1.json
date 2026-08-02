@@ -484,7 +484,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Normalize Post Result').first().json.post_id, message: 'Published successfully to Facebook' }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.post_id || null, message: 'Published successfully to Facebook' }) }}",
         "options": {
           "responseCode": 200
         }
@@ -496,7 +496,7 @@
         1500,
         300
       ],
-      "notes": "Reads post_id from Normalize Post Result BY NAME, not $json. This node sits downstream of Log Marketing Event, whose HTTP response replaces $json - the exact bug that made the Instagram publisher return success with a null post_id (fixed 2026-08-01). Normalize Post Result is a single-output code node, so a by-name lookup is deterministic here."
+      "notes": "Responds BEFORE logging so it reads its direct input via $json. Referencing Normalize Post Result by name would be a multi-output lookup (it has an error output) -- exactly what returned an empty 200 from the Instagram publisher."
     },
     {
       "parameters": {
@@ -796,7 +796,7 @@
       "main": [
         [
           {
-            "node": "Log Marketing Event",
+            "node": "Success Response",
             "type": "main",
             "index": 0
           }
@@ -810,22 +810,22 @@
         ]
       ]
     },
-    "Log Marketing Event": {
+    "Prepare Error": {
       "main": [
         [
           {
-            "node": "Success Response",
+            "node": "Error Response",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Error": {
+    "Success Response": {
       "main": [
         [
           {
-            "node": "Error Response",
+            "node": "Log Marketing Event",
             "type": "main",
             "index": 0
           }

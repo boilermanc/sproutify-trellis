@@ -490,7 +490,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Publish to Instagram').first().json.id || null, message: 'Published successfully to Instagram' }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id || null, message: 'Published successfully to Instagram' }) }}",
         "options": {
           "responseCode": 200
         }
@@ -502,7 +502,7 @@
         1460,
         120
       ],
-      "notes": "Reads $json.id - the DIRECT input from Publish to Instagram's own success output - instead of a $('Publish to Instagram') cross-node lookup. That node gained a second (error) output when onError was added, and a name-based lookup against a multi-output node is the suspected cause of a prior empty-body failure (expression threw after the response had already started). Never revert to a $('...') lookup here."
+      "notes": "Responds BEFORE the marketing-event log, so this reads its DIRECT input from Publish to Instagram via $json. An earlier version referenced $('Publish to Instagram') across nodes; because that node has an error output, the lookup failed and n8n returned an EMPTY 200 -- the publish succeeded but the caller could not tell, and S1 filed it as needs_review (2026-08-02). Never reference a multi-output node by name from a responder."
     },
     {
       "parameters": {
@@ -907,7 +907,7 @@
       "main": [
         [
           {
-            "node": "Log Marketing Event",
+            "node": "Success Response",
             "type": "main",
             "index": 0
           }
@@ -932,11 +932,11 @@
         ]
       ]
     },
-    "Log Marketing Event": {
+    "Success Response": {
       "main": [
         [
           {
-            "node": "Success Response",
+            "node": "Log Marketing Event",
             "type": "main",
             "index": 0
           }

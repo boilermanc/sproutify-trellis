@@ -502,7 +502,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, post_id: $('Interpret Status').first().json.post_id, privacy_level: $('Interpret Status').first().json.privacy_level, message: $('Interpret Status').first().json.privacy_level === 'SELF_ONLY' ? 'Published to TikTok as PRIVATE (SELF_ONLY) - the app has not passed TikTok content-posting audit' : 'Published successfully to TikTok' }) }}",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.post_id || null, privacy_level: $json.privacy_level, message: $json.privacy_level === 'SELF_ONLY' ? 'Published to TikTok as PRIVATE (SELF_ONLY) - the app has not passed TikTok content-posting audit' : 'Published successfully to TikTok' }) }}",
         "options": {
           "responseCode": 200
         }
@@ -514,7 +514,7 @@
         1700,
         160
       ],
-      "notes": "Reads from Interpret Status BY NAME, not $json: Log Marketing Event sits in between and its HTTP response would otherwise replace $json (the bug that returned null post ids from the Instagram publisher on 2026-08-01)."
+      "notes": "Responds BEFORE logging so it reads its direct input via $json, never a cross-node lookup against a node that has an error output."
     },
     {
       "parameters": {
@@ -838,7 +838,7 @@
       "main": [
         [
           {
-            "node": "Log Marketing Event",
+            "node": "Success Response",
             "type": "main",
             "index": 0
           }
@@ -866,17 +866,6 @@
         ]
       ]
     },
-    "Log Marketing Event": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Prepare Timeout": {
       "main": [
         [
@@ -893,6 +882,17 @@
         [
           {
             "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Response": {
+      "main": [
+        [
+          {
+            "node": "Log Marketing Event",
             "type": "main",
             "index": 0
           }
