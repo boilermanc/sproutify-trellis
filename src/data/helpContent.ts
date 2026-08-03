@@ -355,14 +355,16 @@ Expected payload:
 - content — string
 - comment_id or dm_id — string
 
-### Resend Compliance
-URL: https://n8n.sproutify.app/webhook/resend-compliance
-Purpose: Receives Resend delivery events (delivered, bounced, complained, unsubscribed) and updates the corresponding profile's is_subscribed and status fields.
-Trigger: Resend webhook callback, configured in the Resend dashboard.
+### Resend Webhook (delivery events + suppression)
+URL: https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/resend-webhook
+Purpose: Receives Resend delivery events and records them for reporting. This is a Supabase Edge Function on the Hub — NOT an n8n webhook, and it does NOT write to spoke profiles (Trellis is federated and reads consent from spokes live).
+Trigger: Resend webhook callback, configured in the Resend dashboard. Verifies the Svix signature when RESEND_WEBHOOK_SECRET is set.
 
-Expected payload: standard Resend event object including type, email, and created_at.
-On unsubscribe or complaint: sets is_subscribed = false on the matching profile.
-On hard bounce: sets status = archived.
+Expected payload: standard Resend event object (type, data.to, data.email_id, created_at).
+On every event: inserts a row into email_events (sent | delivered | opened | clicked | bounced | complained | failed) for the Reports tab, attributed to a campaign via the campaign_sends map.
+On hard bounce or complaint: also upserts a GLOBAL row into email_suppressions (scope = 'global') so the address is skipped on every future send across all brands.
+
+Unsubscribe clicks are handled by a SEPARATE function — see the "unsubscribe" Edge Function and the Unsubscribe & Suppression runbook (docs/UNSUBSCRIBE_AND_SUPPRESSION.md).
 
 ### Twilio Voice Sync
 URL: https://n8n.sproutify.app/webhook/twilio-whisper-sync
@@ -410,7 +412,7 @@ Settings field: anthropic_api_key
 Purpose: All transactional and marketing email dispatch. Replaces MailerLite as the primary email channel.
 Auth: Bearer token.
 Settings field: resend_token
-Key behaviors: Trellis listens for Resend delivery events via the resend-compliance n8n webhook. Bounces archive the profile. Unsubscribes and complaints set is_subscribed = false.
+Key behaviors: Trellis listens for Resend delivery events via the resend-webhook Edge Function, which records them in email_events (for Reports) and adds hard bounces + complaints to the Hub email_suppressions list (scope = 'global'). Unsubscribe clicks are handled by the separate unsubscribe Edge Function, which adds a per-branch (or global) row to email_suppressions. Every send filters against email_suppressions. See docs/UNSUBSCRIBE_AND_SUPPRESSION.md.
 Docs: resend.com/docs
 
 ## Video Ad Pipeline
@@ -717,7 +719,7 @@ Dispatches the campaign to all matching profiles immediately via the Resend API.
 Use the automation Logic Gate to delay sending based on a condition — for example: "Wait 24 hours after a purchase on farm.sproutify.app before sending this campaign." Set this in the Automations tab and link it to this campaign ID.
 
 ### Post-Send
-After dispatch, the campaign status updates to Sent. Delivery events from Resend (delivered, opened, clicked, bounced, unsubscribed) flow back through the resend-compliance n8n webhook and update the corresponding profiles automatically. View results in the Reports tab.
+After dispatch, the campaign status updates to Sent. Delivery events from Resend (delivered, opened, clicked, bounced, complained) flow back through the resend-webhook Edge Function into the email_events table and surface in the Reports tab. Hard bounces and complaints are added to the Hub email_suppressions list automatically so they're skipped next time. Unsubscribe clicks (via {{unsubscribe_url}}) are handled by the unsubscribe Edge Function and add a per-branch suppression row — see docs/UNSUBSCRIBE_AND_SUPPRESSION.md.
     `
   },
   {
@@ -745,11 +747,11 @@ For each sent campaign, Reports shows:
 - Delivered count and rate
 - Opens and open rate
 - Clicks and click rate
-- Bounces (which auto-archive the profile)
-- Unsubscribes (which set is_subscribed = false)
-- Complaints (which set is_subscribed = false and flag for review)
+- Bounces (hard bounces add a global row to email_suppressions)
+- Unsubscribes (add a per-branch — or global — row to email_suppressions)
+- Complaints (add a global row to email_suppressions and flag for review)
 
-These metrics update in near real-time as Resend fires delivery event webhooks back to the resend-compliance n8n workflow.
+These metrics update in near real-time as Resend fires delivery event webhooks back to the resend-webhook Edge Function, which writes email_events (source of these numbers) and updates the email_suppressions do-not-email list.
 
 ## The Sage Daily Briefing
 At the top of the Dashboard, the Sage briefing runs once daily (or on demand via the refresh button). It uses Gemini to correlate cross-spoke patterns and surface insights — for example: "School students who purchased a course in the last 30 days are 3x more likely to buy organic soil on the Farm spoke." Use these insights to inform your next campaign segment.
@@ -804,16 +806,18 @@ If two profiles exist for the same customer (typically from a data quality issue
 Trellis uses three independent fields to manage whether a customer receives marketing. They serve different purposes and should not be conflated.
 
 ## is_subscribed
-The global marketing consent flag. When false, no marketing emails are dispatched to this profile via Resend, and no AI social responses are generated targeting this identity.
+The consent flag Trellis reads when BUILDING an audience. It comes from the spoke (federated) or the profile's mapped consent. When false, the profile is excluded from the campaign audience up front.
 
-Set to false automatically when:
-- Resend fires an unsubscribe event (customer clicks unsubscribe link)
-- Resend fires a complaint event (customer marks as spam)
-- A DELETE webhook arrives and source_sites becomes empty (Zombie Protection)
+Important: is_subscribed is the audience-build signal, NOT the final send-time gate. The authoritative do-not-email enforcement is the Hub email_suppressions list — every send filters against it regardless of is_subscribed. That is what actually stops a suppressed address from being emailed.
 
-Set to false manually by editing the profile in the Profiles view.
+An address lands in email_suppressions (and is therefore skipped) when:
+- The customer clicks the unsubscribe link — the unsubscribe Edge Function adds a row scoped to that brand (single-branch campaign) or 'global' (multi-branch)
+- Resend fires a complaint (spam) event — the resend-webhook adds a 'global' row
+- Resend fires a hard bounce — the resend-webhook adds a 'global' row
 
-Never set to true manually without explicit customer consent — this is a compliance requirement.
+Zombie Protection still applies to profiles: a DELETE webhook that empties source_sites should set marketing_pause = true (not delete) while the identity persists.
+
+Full detail on scopes, the ATL spoke exception, and adding a spoke unsubscribe for another brand: docs/UNSUBSCRIBE_AND_SUPPRESSION.md.
 
 ## marketing_pause
 A temporary hold flag. When true, marketing is suppressed even if is_subscribed is true. Unlike is_subscribed, this is designed for temporary states — post-purchase cooldown, seasonal suppression, or manual holds during a support escalation.
@@ -872,7 +876,7 @@ A dedicated block for promoting the Sproutify app or a specific feature. Include
 A testimonial or review block. Enter a customer quote, their first name, and their location. Use real testimonials sourced from your spoke customer data for highest impact.
 
 ### Footer
-Required for compliance. Includes the brand name, physical address, and an unsubscribe link. The unsubscribe link is automatically wired to the Resend compliance webhook — clicking it sets is_subscribed = false on the profile within seconds. Configure footer style (minimal, corporate, social, marketing) in the Campaign Builder footer settings.
+Required for compliance. Must include the brand name, a physical mailing address (CAN-SPAM), and an unsubscribe link. Put the {{unsubscribe_url}} token in the link's href — at send time campaign-sender replaces it with the real unsubscribe URL for that recipient and brand. Clicking it adds a per-branch (or global) row to the Hub email_suppressions list, and that address is skipped on all future matching sends. Do NOT hardcode an unsubscribe URL or use {{unsubscribe_token}} — only {{unsubscribe_url}} is filled in. See docs/UNSUBSCRIBE_AND_SUPPRESSION.md.
 
 ## Token Injection Reference
 Available tokens across all blocks:
