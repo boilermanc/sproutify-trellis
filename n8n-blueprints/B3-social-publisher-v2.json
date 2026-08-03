@@ -62,7 +62,7 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
+        "respondWith": "text",
         "responseBody": "={{ JSON.stringify({ success: false, error: 'Missing required fields: branch_id and caption are required' }) }}",
         "options": {
           "responseCode": 400
@@ -489,8 +489,8 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id || null, message: 'Published successfully to Instagram' }) }}",
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ success: true, post_id: $json.id ?? null, message: 'Published successfully to Instagram' }) }}",
         "options": {
           "responseCode": 200
         }
@@ -502,7 +502,7 @@
         1460,
         120
       ],
-      "notes": "Responds BEFORE the marketing-event log, so this reads its DIRECT input from Publish to Instagram via $json. An earlier version referenced $('Publish to Instagram') across nodes; because that node has an error output, the lookup failed and n8n returned an EMPTY 200 -- the publish succeeded but the caller could not tell, and S1 filed it as needs_review (2026-08-02). Never reference a multi-output node by name from a responder."
+      "notes": "Responds BEFORE the marketing-event log, so this reads its DIRECT input from Publish to Instagram via $json. An earlier version referenced $('Publish to Instagram') across nodes; because that node has an error output, the lookup failed and n8n returned an EMPTY 200 -- the publish succeeded but the caller could not tell, and S1 filed it as needs_review (2026-08-02). Never reference a multi-output node by name from a responder. respondWith is 'text' (NOT 'json') plus JSON.stringify so the exact JSON string reaches the caller verbatim -- with 'json' mode the already-stringified body was re-serialized into an empty reply that S1 read as unparseable and re-flagged a live post as needs_review (2026-08-03, e.g. Rejoice post 18078459056504112). S1 reads the reply as text and JSON.parses it, so text is the correct contract."
     },
     {
       "parameters": {
@@ -522,8 +522,8 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error, code: $json.code || null }) }}",
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error, code: $json.code ?? null }) }}",
         "options": {
           "responseCode": 200
         }
