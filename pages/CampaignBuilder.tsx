@@ -383,10 +383,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     if (selectedBranches.length !== 1) return null;
     const selected = selectedBranches[0];
     const branch = branches.find(b => b.slug === selected);
-    const connection = spokeConnections.find(c =>
-      c.id === branch?.spoke_connection_id ||
-      (c.supabase_url || '').includes(ATL_SPOKE_PROJECT_REF)
-    );
+    if (!branch?.spoke_connection_id) return null;
+    // Only the SELECTED branch's own connection counts — never fall back to "any ATL
+    // connection", or a non-ATL branch (e.g. letsrejoice.app) would inherit ATL's
+    // newsletter audience and blow the count up to the whole ATL list.
+    const connection = spokeConnections.find(c => c.id === branch.spoke_connection_id);
     return connection?.supabase_url?.includes(ATL_SPOKE_PROJECT_REF) ? connection.id : null;
   }, [branches, selectedBranches, spokeConnections]);
 
@@ -455,7 +456,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const authoritativeNewsletterProfiles = useMemo<Profile[]>(() => {
     if (!authoritativeNewsletterAudience || selectedBranches.length !== 1) return [];
     const branch = selectedBranches[0];
-    const profilesByEmail = new Map(profiles.map(p => [p.email.toLowerCase(), p]));
+    const profilesByEmail = new Map<string, Profile>(profiles.map(p => [p.email.toLowerCase(), p] as const));
     return authoritativeNewsletterAudience.map(row => {
       const existing = profilesByEmail.get(row.email);
       if (existing) return { ...existing, is_subscribed: true, marketing_pause: false };
