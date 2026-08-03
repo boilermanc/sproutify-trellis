@@ -676,44 +676,45 @@ async function fetchPlatformMetadata(
 ): Promise<Record<string, any>> {
   switch (platform) {
     case "instagram": {
-      // Get the Facebook Pages connected to this user
+      // List every Page this login granted, with each Page's linked Instagram
+      // Business Account in the SAME call. Checking only data[0] (the old
+      // behavior) silently missed the IG account whenever the IG-linked Page
+      // wasn't first in the list -- which is how a correctly set-up branch (e.g.
+      // one with several Pages) could still land "No Instagram Business Account
+      // found" and leave the publisher with no instagram_business_account_id.
       const pagesRes = await fetch(
-        `https://graph.facebook.com/v21.0/me/accounts?access_token=${accessToken}`
+        `https://graph.facebook.com/v21.0/me/accounts?fields=name,access_token,instagram_business_account&access_token=${accessToken}`
       );
       const pagesData = await pagesRes.json();
 
-      if (pagesData.data?.[0]) {
-        const page = pagesData.data[0];
-        const pageToken = page.access_token;
+      const pageWithIg = (pagesData.data || []).find(
+        (p: any) => p.instagram_business_account?.id
+      );
 
-        // Get the Instagram Business Account linked to the first page
-        const igRes = await fetch(
-          `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account&access_token=${pageToken}`
+      if (pageWithIg) {
+        const igId = pageWithIg.instagram_business_account.id;
+        const pageToken = pageWithIg.access_token;
+
+        // Get IG profile details
+        const igProfileRes = await fetch(
+          `https://graph.facebook.com/v21.0/${igId}?fields=username,name,profile_picture_url,followers_count&access_token=${pageToken}`
         );
-        const igData = await igRes.json();
+        const igProfile = await igProfileRes.json();
 
-        if (igData.instagram_business_account?.id) {
-          // Get IG profile details
-          const igProfileRes = await fetch(
-            `https://graph.facebook.com/v21.0/${igData.instagram_business_account.id}?fields=username,name,profile_picture_url,followers_count&access_token=${pageToken}`
-          );
-          const igProfile = await igProfileRes.json();
-
-          return {
-            // Keep both keys: test-social-connection + meta-insights read
-            // instagram_business_account_id; older code read ig_user_id.
-            instagram_business_account_id: igData.instagram_business_account.id,
-            ig_user_id: igData.instagram_business_account.id,
-            page_id: page.id,
-            page_name: page.name,
-            page_access_token: pageToken,
-            username: igProfile.username || null,
-            display_name: igProfile.name || null,
-            profile_picture_url: igProfile.profile_picture_url || null,
-            followers_count: igProfile.followers_count || 0,
-            connected_at: new Date().toISOString(),
-          };
-        }
+        return {
+          // Keep both keys: test-social-connection + meta-insights read
+          // instagram_business_account_id; older code read ig_user_id.
+          instagram_business_account_id: igId,
+          ig_user_id: igId,
+          page_id: pageWithIg.id,
+          page_name: pageWithIg.name,
+          page_access_token: pageToken,
+          username: igProfile.username || null,
+          display_name: igProfile.name || null,
+          profile_picture_url: igProfile.profile_picture_url || null,
+          followers_count: igProfile.followers_count || 0,
+          connected_at: new Date().toISOString(),
+        };
       }
 
       return { connected_at: new Date().toISOString(), note: "No Instagram Business Account found on connected pages" };
