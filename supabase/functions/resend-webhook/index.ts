@@ -94,15 +94,18 @@ Deno.serve(async (req: Request) => {
     const bounceType = String(data?.bounce?.type || data?.type || "").toLowerCase();
     const isHard = type === "complained" || bounceType.includes("hard") || bounceType.includes("permanent") || bounceType === "";
     if (isHard) {
+      // Bounces and complaints are address-level (ISP/deliverability), so they
+      // always suppress globally — never scope these to a single branch.
       await supabase.from("email_suppressions").upsert(
         {
           email,
+          scope: "global",
           reason: type === "complained" ? "complaint" : "bounce",
           source: "resend",
           campaign_subject: data.subject || null,
           detail: data,
         },
-        { onConflict: "email" },
+        { onConflict: "email,scope" },
       );
     }
   }

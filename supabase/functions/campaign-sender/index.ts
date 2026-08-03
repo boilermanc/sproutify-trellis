@@ -26,10 +26,10 @@ const MAX_CHUNKS = 120;       // ~12k recipients/invocation; rest resumes via cr
 
 type Rec = { id: string; email: string; first_name: string | null; unsubscribe_token: string | null };
 
-function personalize(template: string, unsubTemplate: string, r: Rec): string {
+function personalize(template: string, unsubTemplate: string, scope: string, r: Rec): string {
   const unsub = (unsubTemplate && r.unsubscribe_token)
     ? unsubTemplate.replace(/\{\{\s*token\s*\}\}/g, r.unsubscribe_token)
-    : `${SUPABASE_URL}/functions/v1/unsubscribe?email=${encodeURIComponent(r.email)}&source=global`;
+    : `${SUPABASE_URL}/functions/v1/unsubscribe?email=${encodeURIComponent(r.email)}&scope=${encodeURIComponent(scope)}`;
   return template
     .replace(/\{\{\s*first_name\s*\}\}/g, r.first_name || "Friend")
     .replace(/\{\{\s*email\s*\}\}/g, r.email)
@@ -61,6 +61,13 @@ Deno.serve(async () => {
     const template: string = d.html_template || "";
     const unsubTemplate: string = d.unsubscribe_url_template || "";
 
+    // Per-branch unsubscribe scope. A single-branch campaign scopes the unsubscribe
+    // link (and the suppression check) to that branch slug; a multi-branch campaign
+    // falls back to 'global' so a recipient blasted across brands can't be left in a
+    // half-unsubscribed state. 'global' also always matches bounces/complaints.
+    const branchesArr: string[] = Array.isArray(campaign.branches) ? campaign.branches : [];
+    const scope = branchesArr.length === 1 ? String(branchesArr[0]) : "global";
+
     const fail = async (msg: string) => {
       await admin.from("campaigns").update({
         send_status: "failed", send_error: msg, updated_at: new Date().toISOString(),
@@ -80,9 +87,12 @@ Deno.serve(async () => {
       if (pErr) break;
       if (!pending || pending.length === 0) break;
 
-      // Skip anyone who unsubscribed/bounced/complained since the snapshot.
+      // Skip anyone who unsubscribed/bounced/complained since the snapshot. A row
+      // scoped 'global' suppresses everywhere (bounces/complaints); a row scoped to
+      // this campaign's branch suppresses just this brand's sends.
       const emails = pending.map((r: Rec) => r.email.toLowerCase());
-      const { data: supp } = await admin.from("email_suppressions").select("email").in("email", emails);
+      const { data: supp } = await admin.from("email_suppressions")
+        .select("email").in("email", emails).in("scope", ["global", scope]);
       const suppressed = new Set((supp || []).map((s: { email: string }) => (s.email || "").toLowerCase()));
       const send = pending.filter((r: Rec) => !suppressed.has(r.email.toLowerCase()));
       const skip = pending.filter((r: Rec) => suppressed.has(r.email.toLowerCase()));
@@ -94,7 +104,7 @@ Deno.serve(async () => {
       }
       if (send.length === 0) continue;
 
-      const batch = send.map((r: Rec) => ({ from, to: [r.email], subject, html: personalize(template, unsubTemplate, r) }));
+      const batch = send.map((r: Rec) => ({ from, to: [r.email], subject, html: personalize(template, unsubTemplate, scope, r) }));
       try {
         const resp = await fetch(RESEND_BATCH_URL, {
           method: "POST",

@@ -17,7 +17,11 @@ const html = (body: string, status: number) =>
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   let email = url.searchParams.get("email") || "";
-  let source = url.searchParams.get("source") || "global";
+  // `scope` decides how far the unsubscribe reaches:
+  //   'global'        -> removed from ALL Sproutify marketing (every branch)
+  //   '<branch slug>' -> removed from that one brand only (per-branch unsubscribe)
+  // Fall back to the legacy `source` param so links already in inboxes keep working.
+  let scope = url.searchParams.get("scope") || url.searchParams.get("source") || "global";
 
   // RFC 8058 one-click unsubscribe (List-Unsubscribe-Post) arrives as POST
   if (req.method === "POST") {
@@ -25,24 +29,33 @@ Deno.serve(async (req: Request) => {
       const ct = req.headers.get("content-type") || "";
       if (ct.includes("application/json")) {
         const b = await req.json();
-        email = b.email || email; source = b.source || source;
+        email = b.email || email; scope = b.scope || b.source || scope;
       } else {
         const f = await req.formData();
         email = (f.get("email") as string) || email;
-        source = (f.get("source") as string) || source;
+        scope = (f.get("scope") as string) || (f.get("source") as string) || scope;
       }
     } catch { /* ignore body parse errors */ }
   }
 
   email = email.trim().toLowerCase();
+  scope = (scope || "global").trim().toLowerCase();
   if (!email || !email.includes("@")) {
     return html(page("Invalid link", "This unsubscribe link is missing a valid email address. Please contact support if you keep receiving mail."), 400);
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+
+  // Resolve a friendly brand name for the confirmation page (branch scopes only).
+  let brandName = "Sproutify";
+  if (scope !== "global") {
+    const { data: b } = await supabase.from("branches").select("name").eq("slug", scope).maybeSingle();
+    if (b?.name) brandName = b.name;
+  }
+
   const { error } = await supabase.from("email_suppressions").upsert(
-    { email, reason: "unsubscribe", source, created_at: new Date().toISOString() },
-    { onConflict: "email" },
+    { email, scope, reason: "unsubscribe", source: scope === "global" ? "unsubscribe-global" : "unsubscribe-branch", created_at: new Date().toISOString() },
+    { onConflict: "email,scope" },
   );
 
   if (error) {
@@ -50,5 +63,9 @@ Deno.serve(async (req: Request) => {
     return html(page("Something went wrong", "We couldn't process your request right now. Please try again in a moment."), 500);
   }
 
-  return html(page("You're unsubscribed", `<b>${email}</b> has been removed from Sproutify marketing emails. You won't receive further campaigns. Changed your mind? Just reply to any past email and we'll help you re-subscribe.`), 200);
+  const scopeMsg = scope === "global"
+    ? `<b>${email}</b> has been removed from Sproutify marketing emails. You won't receive further campaigns from any of our brands.`
+    : `<b>${email}</b> has been removed from <b>${brandName}</b> marketing emails. You'll still receive emails from other Sproutify brands you signed up for.`;
+
+  return html(page("You're unsubscribed", `${scopeMsg} Changed your mind? Just reply to any past email and we'll help you re-subscribe.`), 200);
 });

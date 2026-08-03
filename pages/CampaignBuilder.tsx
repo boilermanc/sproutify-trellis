@@ -635,11 +635,14 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     );
   };
 
-  // Load the Hub suppression list (unsubscribes + hard bounces + complaints) once,
-  // so suppressed addresses are excluded from every audience count and send.
+  // Load the Hub suppression list (unsubscribes + hard bounces + complaints) so
+  // suppressed addresses are excluded from every audience count and send. Mirror
+  // the sender's scope logic: a single-branch campaign also honors that branch's
+  // per-branch unsubscribes; a multi-branch campaign only honors global rows.
   useEffect(() => {
-    fetchSuppressedEmails().then(setSuppressedEmails);
-  }, []);
+    const scopes = selectedBranches.length === 1 ? selectedBranches : [];
+    fetchSuppressedEmails(scopes).then(setSuppressedEmails);
+  }, [selectedBranches]);
 
   // One-time handoff from the Segments page "Send Campaign" button: pre-select the
   // handed-off segment and scope to all branches so it's immediately addressable.
