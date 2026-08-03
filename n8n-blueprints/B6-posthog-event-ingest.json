@@ -1,0 +1,57 @@
+{
+  "name": "Trellis: PostHog Milestone Ingest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "posthog-event-ingest/:connection_id",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "PostHog Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_HUB_PROJECT.supabase.co/functions/v1/posthog-ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "YOUR_SUPABASE_ANON_KEY" },
+            { "name": "Authorization", "value": "={{ $json.headers.authorization }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ...$json.body, connection_id: $json.params.connection_id }) }}",
+        "options": {
+          "response": { "response": { "neverError": false, "responseFormat": "json" } }
+        }
+      },
+      "name": "Authenticate Filter and Ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "content": "## PostHog milestone feed\n\nPostHog webhook URL:\n`https://n8n.sproutify.app/webhook/posthog-event-ingest/<CONNECTION_ID>`\n\nAdd header:\n`Authorization: Bearer <ONE_TIME_WEBHOOK_SECRET>`\n\nConfigure the PostHog destination filter to match the connection's allowlisted event names. Use this payload template:\n\n```json\n{\n  \"event_id\": \"{event.uuid}\",\n  \"event\": \"{event.event}\",\n  \"distinct_id\": \"{event.distinct_id}\",\n  \"timestamp\": \"{event.timestamp}\",\n  \"email\": \"{person.properties.email}\",\n  \"properties\": {event.properties}\n}\n```\n\nThe Supabase Edge Function verifies the bearer secret against its stored SHA-256 hash, rejects non-allowlisted events, rebuilds properties from the allowlist, and performs the idempotent database transaction. Deploy `posthog-ingest` with `--no-verify-jwt`; it performs its own bearer authentication. Never log the inbound body in n8n.",
+        "width": 620,
+        "height": 600
+      },
+      "name": "Setup and Security Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [80, -300]
+    }
+  ],
+  "connections": {
+    "PostHog Webhook": {
+      "main": [[{ "node": "Authenticate Filter and Ingest", "type": "main", "index": 0 }]]
+    }
+  }
+}

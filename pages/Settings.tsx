@@ -14,6 +14,7 @@ import {
 import { MOCK_INTEGRATIONS } from '../constants';
 import ConnectionsManager from '../ConnectionsManager';
 import TeamPanel from './TeamPanel';
+import PostHogConnectionsPanel from '../components/PostHogConnectionsPanel';
 
 interface SettingsProps {
   apiKeys: ApiKeyConfig;
@@ -159,6 +160,14 @@ const Settings: React.FC<SettingsProps> = ({
                   <Plus size={16} />
                   <span>Add Integration</span>
                 </button>
+              </div>
+
+              <PostHogConnectionsPanel branches={branches} />
+
+              <div className="flex items-center gap-3 pt-2">
+                <div className="h-px flex-1 bg-slate-100" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-300">Other integrations</span>
+                <div className="h-px flex-1 bg-slate-100" />
               </div>
 
               <div className="space-y-4">

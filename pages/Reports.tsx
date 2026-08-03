@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport, ApiKeyConfig } from '../types';
+import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport, ApiKeyConfig, PostHogAnalyticsResult } from '../types';
 import { Article } from '../src/data/helpContent';
 import { generateText } from '../services/aiService';
 import EmailPerformancePanel from '../components/EmailPerformancePanel';
 import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
+import PostHogAnalyticsPanel from '../components/PostHogAnalyticsPanel';
 import {
   BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
   Activity, ShieldCheck, AlertTriangle, Crown,
@@ -25,6 +26,7 @@ const REPORT_BLUEPRINTS: TrellisReport[] = [
   { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'] },
   { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Open Rate', 'Click Rate', 'Bounce Rate', 'Audience Reach'], spokes: ['All Spokes'] },
   { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
+  { id: 'rep_5', name: 'Product Adoption & Retention', type: 'system', metrics: ['DAU / WAU / MAU', 'Lifecycle Funnel', '7-Day Retention', '30-Day Retention', 'Feature Milestones'], spokes: ['PostHog-Connected Branches'] },
 ];
 
 const DEFAULT_KEYS: ApiKeyConfig = {
@@ -75,6 +77,7 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
   const [auditingReport, setAuditingReport] = useState<string | null>(null);
   const [emailStats, setEmailStats] = useState<CampaignEmailStat[]>([]);
   const [emailStatsLoading, setEmailStatsLoading] = useState(true);
+  const [posthogResults, setPosthogResults] = useState<PostHogAnalyticsResult[]>([]);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -328,8 +331,19 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
             bounce_rate_pct: Number(emailEngagementData.bounceRate.toFixed(1)),
             recent_campaigns: emailEngagementData.recentCampaigns,
           },
+      product_analytics: posthogResults.length === 0
+        ? { status: 'not_connected_or_out_of_scope', branches: [] }
+        : {
+            status: posthogResults.some(result => result.stale) ? 'stale_cache' : 'live_or_hourly_cache',
+            branches: posthogResults.map(result => ({
+              branch: result.branch_name || result.branch_id,
+              fetched_at: result.fetched_at,
+              stale: result.stale,
+              ...result.data,
+            })),
+          },
     };
-  }, [profiles, subscriptionData, ltvData, productData, audienceData, emailEngagementData, emailStatsLoading]);
+  }, [profiles, subscriptionData, ltvData, productData, audienceData, emailEngagementData, emailStatsLoading, posthogResults]);
 
   // Guardrail carried by every AI call on this page. The Cross-Channel audit
   // used to ask the model for "simulated but realistic" metrics, which produced
@@ -347,6 +361,8 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
     '(sent/delivered/opened/clicked/bounced counts plus computed open and click rates), sourced live from Resend delivery events via the Email Performance panel. ' +
     'If email_engagement.status is "no_campaigns_sent_yet", no campaigns have been sent — say that plainly rather than inventing a rate. ' +
     'If email_engagement.status is "loading", email data has not finished loading yet — say so rather than treating it as zero. ' +
+    'DATA may include branch-scoped PostHog product_analytics: active users, sessions, lifecycle funnel, period retention, and approved milestone adoption. ' +
+    'If product_analytics.status is "stale_cache", state that the figures are cached and include the fetched_at time. ' +
     'DATA does NOT include social impressions, ad spend, or revenue attribution — there is no linkage between orders and campaigns yet, ' +
     'so conversion rate, channel ROI, and cross-channel attribution cannot be computed. For any requested metric that falls in that gap, ' +
     'respond with "not yet tracked" and name what would need to be connected (e.g. order-to-campaign linkage, social API integration) rather than estimating it.';
@@ -465,6 +481,15 @@ Write a concise brief: what the available data actually shows, then up to 2 spec
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* PRODUCT ANALYTICS (PostHog aggregate query + hourly cache)       */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      <PostHogAnalyticsPanel
+        branches={branchContext?.allBranches || []}
+        branchContext={branchContext}
+        onDataChange={setPosthogResults}
+      />
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* LIVE EMAIL PERFORMANCE (Resend delivery events + suppression)    */}

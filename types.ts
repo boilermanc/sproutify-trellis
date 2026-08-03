@@ -154,6 +154,59 @@ export interface SpokeConnection {
   created_at: string;
 }
 
+export interface PostHogConnection {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  branch_name?: string | null;
+  branch_slug?: string | null;
+  host_url: string;
+  project_id: string;
+  api_key_preview: string;
+  allowed_events: string[];
+  allowed_properties: string[];
+  status: 'active' | 'error' | 'disconnected';
+  last_successful_query_at?: string | null;
+  last_event_at?: string | null;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PostHogAnalyticsSummary {
+  window_days: 7 | 30 | 90;
+  active_users: { daily: number; weekly: number; monthly: number };
+  sessions: number;
+  users: { total_in_window: number; new: number; returning: number };
+  lifecycle_funnel: {
+    signed_up: number;
+    onboarded: number;
+    activated: number;
+    signup_to_onboarding_pct: number;
+    onboarding_to_activation_pct: number;
+  };
+  retention: {
+    day_7_pct: number;
+    day_30_pct: number;
+    cohort_7: number;
+    retained_7: number;
+    cohort_30: number;
+    retained_30: number;
+  };
+  feature_adoption: Array<{ event: string; users: number; events: number }>;
+}
+
+export interface PostHogAnalyticsResult {
+  connection_id: string;
+  branch_id: string;
+  branch_name?: string | null;
+  data: PostHogAnalyticsSummary;
+  fetched_at: string;
+  cached: boolean;
+  stale: boolean;
+  warning?: string;
+}
+
 export interface ProfileAddress {
   address?: string;
   city?: string;

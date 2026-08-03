@@ -1,0 +1,61 @@
+{
+  "name": "Trellis: Hourly PostHog Snapshot Refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 * * * *"
+            }
+          ]
+        }
+      },
+      "name": "Hourly at :05",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_HUB_PROJECT.supabase.co/functions/v1/posthog-refresh",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "options": {
+          "response": { "response": { "neverError": false, "responseFormat": "json" } }
+        }
+      },
+      "name": "Refresh All PostHog Snapshots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Required credential\n\nOn the HTTP node, create an **HTTP Header Auth** credential:\n\n- Name: `x-trellis-refresh-secret`\n- Value: the same random value deployed as the Supabase `POSTHOG_REFRESH_SECRET` secret\n\nUpdate `YOUR_HUB_PROJECT` before activation. Deploy `posthog-refresh` with `--no-verify-jwt`; it authenticates the request with this secret, then calls the JWT-protected analytics function internally with the Hub service role. The workflow refreshes 7-, 30-, and 90-day snapshots for every connected project at five minutes past each hour.",
+        "width": 620,
+        "height": 360
+      },
+      "name": "Setup and Security Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [80, -180]
+    }
+  ],
+  "connections": {
+    "Hourly at :05": {
+      "main": [[{ "node": "Refresh All PostHog Snapshots", "type": "main", "index": 0 }]]
+    }
+  }
+}
