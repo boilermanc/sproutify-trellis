@@ -580,6 +580,48 @@
         }
       },
       "notes": "Writes the event Dashboard and Social Hub > Reports read (event_type='social_publish'). onError=continueRegularOutput: a logging failure must never block the actual publish response reaching the caller - Success Response still fires either way."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/marketing_events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_type: 'social_publish_failed', source: 'instagram', payload: { branch_id: $('Webhook').first().json.body.branch_id || null, caption: $('Webhook').first().json.body.caption || null, platform: 'instagram', media_type: $('Webhook').first().json.body.media_type || null, error: $json.error || 'Unknown publish error', code: $json.code || null, failed_node: $json.failed_node || null, failed_at: new Date().toISOString() } }) }}",
+        "options": {}
+      },
+      "name": "Log Failure Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1680,
+        1180
+      ],
+      "notesInFlow": true,
+      "id": "b3logfailureevent00000000000000",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Records a social_publish_failed event so a genuine non-post (e.g. Rekkrd with no instagram_business_account_id) is visible where successes are, instead of only inferable by the absence of a social_publish row. DISTINCT event_type keeps it out of the success/insight metrics that key on 'social_publish'. Runs AFTER Error Response so a logging failure can never block the caller's reply (onError=continueRegularOutput). branch_id/caption/media_type come from the Webhook payload because a failure can occur before Extract & Normalize runs; error/code/failed_node come from Prepare Error via $json."
     }
   ],
   "connections": {
@@ -937,6 +979,17 @@
         [
           {
             "node": "Log Marketing Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Response": {
+      "main": [
+        [
+          {
+            "node": "Log Failure Event",
             "type": "main",
             "index": 0
           }
