@@ -58,8 +58,8 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  // Resolve campaign attribution via the send-time mapping recorded by
-  // B2-campaign-dispatch.json's "Save Send Ids" node. Older/transactional
+  // Resolve campaign attribution via the send-time mapping recorded by the
+  // campaign-sender worker when it writes campaign_sends. Older/transactional
   // sends have no row here — that's expected, campaign_id just stays null.
   let campaignId: string | null = null;
   let mappedSubject: string | null = null;

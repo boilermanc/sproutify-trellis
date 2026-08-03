@@ -768,21 +768,23 @@ Return ONLY the post content, no explanations or labels.`,
         out = out.replace(re, () => value);
       });
       // Per-recipient personalization. The real campaign launch keeps these tokens
-      // INTACT (empty profile) so n8n fills them per recipient at batch-send. A test
-      // send passes a real profile, so we resolve them here — otherwise the test
-      // email's unsubscribe link would be a literal {{unsubscribe_url}} (the
-      // send_resend_email RPC is a passthrough and substitutes nothing).
+      // INTACT (empty profile) so the campaign-sender worker (durable outbox, NOT
+      // n8n) fills them per recipient at batch-send. A test send passes a real
+      // profile, so we resolve them here — otherwise the test email's unsubscribe
+      // link would be a literal {{unsubscribe_url}} (the send_resend_email RPC is a
+      // passthrough and substitutes nothing).
       // Unsubscribe link resolution, in order of preference:
       //  1. Brand-native token URL (Brand DNA) when we have this recipient's token
-      //     — the authoritative spoke unsubscribe. Real launches hit this via n8n.
+      //     — the authoritative spoke unsubscribe. campaign-sender uses this same
+      //     path on real launches when the brand has a template + a recipient token.
       //  2. Hub email-based unsubscribe — a working fallback for test sends to
       //     addresses that aren't subscribers (no token).
       //  3. Keep the {{unsubscribe_url}} token intact for the launch path (empty
-      //     profile) so n8n fills it per recipient from the brand template.
+      //     profile) so campaign-sender fills it per recipient with the per-branch scope.
       const unsubUrl = (brandUnsubscribeUrl && profile.unsubscribe_token)
         ? brandUnsubscribeUrl.replace(/\{\{\s*token\s*\}\}/gi, () => profile.unsubscribe_token!)
         : profile.email
-          ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&source=global`
+          ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&scope=global`
           : '{{unsubscribe_url}}';
       return out
         .replace(/\{\{\s*first_name\s*\}\}/gi, () => profile.first_name || '{{first_name}}')
