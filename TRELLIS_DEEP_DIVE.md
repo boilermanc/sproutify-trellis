@@ -109,7 +109,7 @@ Federated profile browser with consent tracking.
 2. **Identify** — resolve actual audience by branch, preview count with subscription status breakdown
 3. **Compose** — template selection + Unlayer WYSIWYG email editor with theme color customization
 4. **Schedule** — timezone-aware picker, send window (ASAP, 24h delay, 7-day drip)
-5. **Deploy** — review audience, confirmation, triggers n8n `campaign_dispatch` webhook
+5. **Deploy** — review audience, confirmation, enqueues recipients to the `campaign-sender` durable outbox (Edge Function + pg_cron) which sends via Resend `/emails/batch`
 
 **7 Campaign Presets:** High LTV, At-Risk, New Users, Repeat Buyers, VIP, Dormant, All Subscribers
 
@@ -496,11 +496,10 @@ Generic webhook trigger for all async operations.
 
 ## 7. n8n Automation Blueprints
 
-### Webhook Endpoints (10)
+### Webhook Endpoints (9)
 | Endpoint | Purpose |
 |----------|---------|
 | `trellis-ingest-gateway` | Profile/event ingestion from spokes |
-| `trellis-campaign-dispatch` | Email campaign batch dispatch |
 | `trellis-social-publish` | Social media posting |
 | `social-signal-ingest` | Social listening signal intake |
 | `ig-intent-loop` | Instagram intent classification |
@@ -510,11 +509,10 @@ Generic webhook trigger for all async operations.
 | `reddit-review-stage` | Reddit comment staging |
 | `reddit-post-comment` | Reddit approved post submission |
 
-### Blueprint Files (8 importable JSONs in `n8n-blueprints/`)
+### Blueprint Files (7 importable JSONs in `n8n-blueprints/`)
 | File | Trigger | Purpose |
 |------|---------|---------|
 | `B1-ingest-gateway.json` | Webhook | Profile ingestion from spokes |
-| `B2-campaign-dispatch.json` | Webhook | Audience resolve → batch Resend |
 | `B3-social-publisher.json` | Webhook | Credential fetch → platform API post |
 | `C1-instagram-listener.json` | Schedule 5m | Graph API → Gemini classify → signal ingest |
 | `C2-x-listener.json` | Schedule 5m | X API v2 → Gemini classify → signal ingest |

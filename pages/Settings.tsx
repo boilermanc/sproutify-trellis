@@ -25,6 +25,12 @@ interface SettingsProps {
   branchContext?: BranchContext;
   onOpenArticle?: (article: Article) => void;
   initialTab?: 'integrations' | 'spokes' | 'api' | 'social' | 'team';
+  /** Bumped to auto-open the connection wizard on the spokes tab. */
+  autoStartConnectionNonce?: number;
+  /** Display name to pre-fill when auto-opening the connection wizard. */
+  connectionPrefillName?: string;
+  /** Called once the auto-start signal has been consumed. */
+  onConnectionAutoStartConsumed?: () => void;
 }
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
@@ -48,6 +54,9 @@ const Settings: React.FC<SettingsProps> = ({
   branches,
   onOpenArticle,
   initialTab,
+  autoStartConnectionNonce,
+  connectionPrefillName,
+  onConnectionAutoStartConsumed,
 }) => {
   const [activeTab, setActiveTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team'>(initialTab ?? 'integrations');
 
@@ -339,6 +348,9 @@ const Settings: React.FC<SettingsProps> = ({
               <ConnectionsManager
                 connections={spokeConnections}
                 onConnectionsChange={onSpokeConnectionsChange}
+                autoStartNonce={autoStartConnectionNonce}
+                prefillName={connectionPrefillName}
+                onAutoStartConsumed={onConnectionAutoStartConsumed}
               />
             </div>
           )}

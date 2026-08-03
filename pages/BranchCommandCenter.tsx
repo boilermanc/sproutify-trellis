@@ -26,7 +26,7 @@ interface BranchCommandCenterProps {
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branchSocialAccounts?: BranchSocialAccountsMap;
   onBranchSocialAccountsChange?: (accounts: BranchSocialAccountsMap) => void;
-  onAddConnection?: () => void;
+  onAddConnection?: (prefillName?: string) => void;
 }
 
 export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange, branchSocialAccounts, onBranchSocialAccountsChange, onAddConnection }: BranchCommandCenterProps) {
@@ -733,7 +733,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                       <span className="text-[10px] font-bold text-slate-500">No data connection</span>
                       {onAddConnection && (
                         <button
-                          onClick={onAddConnection}
+                          onClick={() => onAddConnection(mb.name)}
                           className="mt-0.5 flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 hover:underline"
                         >
                           Add a new connection
@@ -878,7 +878,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                           )}
                           {onAddConnection && (
                             <div className="border-t border-slate-100 mt-1 pt-1">
-                              <button onClick={() => { setLinkingCardId(null); onAddConnection(); }}
+                              <button onClick={() => { setLinkingCardId(null); onAddConnection(mb.name); }}
                                 className="w-full text-left px-3 py-2 text-sm font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-2">
                                 <Plus className="w-3.5 h-3.5" />
                                 Add New Connection

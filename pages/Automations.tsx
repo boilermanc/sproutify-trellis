@@ -4,12 +4,12 @@ import { GoogleGenAI } from "@google/genai";
 import {
   Workflow, Play, Clock, CheckCircle2, GitBranch, ArrowRight,
   Mail, Instagram, Sparkles, MessageSquare, Share2, Slack,
-  Terminal, Zap, Copy, Check, Layout, Database, ShieldCheck,
+  Zap, Copy, Check, Layout, Database, ShieldCheck,
   Plus, Trash2, Settings, ChevronRight, MousePointer2,
-  Search, Rocket, AlertTriangle, Layers, Split, Timer,
+  Search, AlertTriangle, Layers, Split, Timer,
   PlusCircle, Save, X, RefreshCw, FileCode
 } from 'lucide-react';
-import { N8N_BLUEPRINTS, CAMPAIGN_WEBHOOK } from '../constants';
+import { N8N_BLUEPRINTS } from '../constants';
 import { ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
@@ -37,7 +37,6 @@ const NODE_TEMPLATES: Record<string, Partial<FlowNode>> = {
 const BLUEPRINT_META: Record<string, { title: string; desc: string; icon: any; color: string }> = {
   welcome_series: { title: 'Welcome Series', desc: '3-email drip for new signups', icon: Mail, color: 'text-indigo-600' },
   abandoned_cart: { title: 'Abandoned Cart', desc: 'Recovery flow with timed reminders', icon: Clock, color: 'text-amber-600' },
-  campaign_dispatch: { title: 'Campaign Dispatch', desc: 'Full audience resolve → batch → send pipeline', icon: Rocket, color: 'text-emerald-600' },
 };
 
 interface AutomationsProps {
@@ -432,34 +431,6 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
                 </div>
               );
             })}
-          </div>
-
-          {/* Webhook Endpoints Reference */}
-          <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-6 opacity-10">
-              <Terminal size={100} className="text-emerald-400" />
-            </div>
-            <div className="relative z-10">
-              <h3 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-4 flex items-center">
-                <Terminal size={14} className="mr-2" />
-                Webhook Endpoints
-              </h3>
-              <p className="text-xs text-slate-400 font-medium mb-6">These endpoints are pre-configured in each blueprint. Update them in your n8n instance after import.</p>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-                  <div>
-                    <p className="text-[10px] font-black text-white uppercase tracking-widest">Campaign Dispatch</p>
-                    <p className="text-[10px] font-mono text-emerald-400 mt-0.5">{CAMPAIGN_WEBHOOK}</p>
-                  </div>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(CAMPAIGN_WEBHOOK); }}
-                    className="p-2 text-slate-400 hover:text-emerald-400 transition"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       )}

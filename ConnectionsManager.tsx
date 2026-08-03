@@ -36,6 +36,12 @@ import {
 interface ConnectionsManagerProps {
   connections: SpokeConnection[];
   onConnectionsChange: (connections: SpokeConnection[]) => void;
+  /** Bumped each time the wizard should auto-open (e.g. from a branch's "Add a new connection"). */
+  autoStartNonce?: number;
+  /** Pre-fill the new connection's Display Name (typically the branch name) when auto-opening. */
+  prefillName?: string;
+  /** Called after an auto-start signal has been consumed so it doesn't re-fire on revisit. */
+  onAutoStartConsumed?: () => void;
 }
 
 type WizardStep = 'idle' | 'connect' | 'discover' | 'customers' | 'data-types' | 'orders' | 'order-items' | 'subscriptions' | 'branch' | 'review';
@@ -55,6 +61,9 @@ const isOrderTable = (tableName: string): boolean => {
 const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   connections,
   onConnectionsChange,
+  autoStartNonce,
+  prefillName,
+  onAutoStartConsumed,
 }) => {
   // Wizard state
   const [wizardStep, setWizardStep] = useState<WizardStep>('idle');
@@ -114,6 +123,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         .finally(() => setIsLoadingBranches(false));
     }
   }, [wizardStep]);
+
+  // Auto-open the wizard straight into the "Connect" step when triggered from
+  // elsewhere (e.g. a branch card's "Add a new connection"). Pre-fills the
+  // display name with the branch name so the final step re-links automatically.
+  useEffect(() => {
+    if (!autoStartNonce) return;
+    setNewConnection({ name: prefillName || '', supabase_url: '', supabase_key: '' });
+    setTestResult(null);
+    setWizardStep('connect');
+    onAutoStartConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStartNonce]);
 
   const resetWizard = () => {
     setWizardStep('idle');

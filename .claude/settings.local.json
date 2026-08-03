@@ -26,7 +26,26 @@
       "Bash(npm ls:*)",
       "Bash(git check-ignore:*)",
       "Bash(xxd:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "mcp__fc1c2a9a-b3d2-4ada-8125-2c62864ae18f__list_projects",
+      "mcp__fc1c2a9a-b3d2-4ada-8125-2c62864ae18f__list_tables",
+      "mcp__fc1c2a9a-b3d2-4ada-8125-2c62864ae18f__list_edge_functions",
+      "WebSearch",
+      "mcp__fc1c2a9a-b3d2-4ada-8125-2c62864ae18f__execute_sql",
+      "mcp__fc1c2a9a-b3d2-4ada-8125-2c62864ae18f__get_logs",
+      "mcp__fc1c2a9a-b3d2-4ada-8125-2c62864ae18f__deploy_edge_function",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh run *)",
+      "Bash(python -c \"import yaml,sys; yaml.safe_load\\(open\\('.github/workflows/deploy.yml'\\)\\); print\\('YAML OK'\\)\")",
+      "Bash(node -e \"const yaml=require\\('js-yaml'\\);yaml.load\\(require\\('fs'\\).readFileSync\\('.github/workflows/deploy.yml','utf8'\\)\\);console.log\\('YAML OK \\(node\\)'\\)\")",
+      "Bash(node -e \"try{const y=require\\('yaml'\\);y.parse\\(require\\('fs'\\).readFileSync\\('.github/workflows/deploy.yml','utf8'\\)\\);console.log\\('YAML OK \\(yaml pkg\\)'\\)}catch\\(e\\){console.log\\('FALLBACK:'+e.message\\)}\")",
+      "Bash(npx --yes js-yaml .github/workflows/deploy.yml)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git commit -q -m ' *)"
     ]
   }
 }

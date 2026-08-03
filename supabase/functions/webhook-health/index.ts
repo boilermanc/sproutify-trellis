@@ -8,7 +8,7 @@
 // cached table instead of probing directly.
 //
 // WHY CACHED: the audit found six webhooks the app calls that nothing answers
-// (§4.1). Surfacing that on the dashboard is high value, but re-probing 11
+// (§4.1). Surfacing that on the dashboard is high value, but re-probing 10
 // endpoints on every render would hammer n8n for no benefit — status changes
 // only when someone imports or activates a workflow.
 //
@@ -38,7 +38,6 @@ const WEBHOOKS: { path: string; label: string; critical: boolean }[] = [
   { path: "trellis-social-publish", label: "Instagram publisher", critical: true },
   { path: "trellis-facebook-publish", label: "Facebook publisher", critical: true },
   { path: "trellis-tiktok-publish", label: "TikTok publisher", critical: true },
-  { path: "trellis-campaign-dispatch", label: "Campaign dispatch", critical: true },
   { path: "trellis-static-ad-generate", label: "Static ad generator", critical: true },
   { path: "trellis-carousel-generate", label: "Carousel generator", critical: true },
   { path: "trellis-video-ad-generate", label: "Video ad generator", critical: true },

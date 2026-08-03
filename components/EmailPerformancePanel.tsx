@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Mail, RefreshCw, Loader2, MailX, TrendingUp, MousePointerClick, AlertTriangle, ShieldOff } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Mail,
+  MailX,
+  MousePointerClick,
+  RefreshCw,
+  Search,
+  ShieldOff,
+  TrendingUp,
+} from 'lucide-react';
 import {
   fetchCampaignEmailStats,
   fetchSuppressionSummary,
@@ -8,6 +20,7 @@ import {
 } from '../services/emailReportingService';
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
+const CAMPAIGNS_PER_PAGE = 10;
 const fmtDate = (iso: string | null) => {
   if (!iso) return '—';
   try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
@@ -20,6 +33,8 @@ export const EmailPerformancePanel: React.FC = () => {
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [suppression, setSuppression] = useState<SuppressionSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
 
   const load = async () => {
     setLoading(true);
@@ -43,6 +58,23 @@ export const EmailPerformancePanel: React.FC = () => {
   }, [stats]);
 
   const hasData = stats.length > 0;
+  const filteredStats = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (!query) return stats;
+    return stats.filter((row) => row.campaign_subject.toLocaleLowerCase().includes(query));
+  }, [searchQuery, stats]);
+  const pageCount = Math.max(1, Math.ceil(filteredStats.length / CAMPAIGNS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedStats = useMemo(() => {
+    const start = (currentPage - 1) * CAMPAIGNS_PER_PAGE;
+    return filteredStats.slice(start, start + CAMPAIGNS_PER_PAGE);
+  }, [currentPage, filteredStats]);
+
+  useEffect(() => { setPage(1); }, [searchQuery]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   return (
     <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8">
@@ -121,6 +153,24 @@ export const EmailPerformancePanel: React.FC = () => {
             </div>
           </div>
 
+          {/* Per-campaign search */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <label className="relative block sm:max-w-sm sm:flex-1">
+              <span className="sr-only">Search email campaigns by subject</span>
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search campaign subjects..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              />
+            </label>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              {filteredStats.length} {filteredStats.length === 1 ? 'campaign' : 'campaigns'}
+            </p>
+          </div>
+
           {/* Per-campaign table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -136,7 +186,7 @@ export const EmailPerformancePanel: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {stats.map((r) => (
+                {paginatedStats.map((r) => (
                   <tr key={r.campaign_subject} className="border-b border-slate-50 hover:bg-slate-50/50">
                     <td className="py-3 pr-3 text-xs font-bold text-slate-700 max-w-[240px] truncate" title={r.campaign_subject}>{r.campaign_subject}</td>
                     <td className="py-3 px-2 text-right text-xs text-slate-500">{r.sent}</td>
@@ -150,6 +200,42 @@ export const EmailPerformancePanel: React.FC = () => {
               </tbody>
             </table>
           </div>
+          {filteredStats.length === 0 ? (
+            <div className="py-10 text-center">
+              <Search size={24} className="mx-auto mb-2 text-slate-300" />
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400">No matching campaigns</p>
+              <p className="mt-1 text-xs text-slate-400">Try a different subject search.</p>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Showing {(currentPage - 1) * CAMPAIGNS_PER_PAGE + 1}–{Math.min(currentPage * CAMPAIGNS_PER_PAGE, filteredStats.length)} of {filteredStats.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  disabled={currentPage === 1}
+                  aria-label="Previous campaign page"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <span className="min-w-20 text-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  Page {currentPage} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((value) => Math.min(pageCount, value + 1))}
+                  disabled={currentPage === pageCount}
+                  aria-label="Next campaign page"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+          )}
           <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">
             Campaigns are matched by subject line. Batch sends can't tag individual messages, so if two campaigns share a subject their
             events combine here. Open/click counts are unique recipients.

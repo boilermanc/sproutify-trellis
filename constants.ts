@@ -345,10 +345,10 @@ GROUP BY campaign_subject;
 GRANT SELECT ON campaign_email_stats TO anon, authenticated, service_role;
 
 -- Send-time attribution map: Resend /emails/batch returns message ids in request
--- order (no per-message tags/metadata support), so B2-campaign-dispatch.json's
--- "Record Send Ids" node zips those ids with the recipients it just sent and
--- upserts the mapping here. resend-webhook/index.ts then joins incoming events
--- on resend_email_id to resolve campaign_id, instead of matching on subject text.
+-- order (no per-message tags/metadata support), so the campaign-sender worker
+-- zips those ids with the recipients it just sent and upserts the mapping here.
+-- resend-webhook/index.ts then joins incoming events on resend_email_id to
+-- resolve campaign_id, instead of matching on subject text.
 CREATE TABLE IF NOT EXISTS campaign_sends (
   resend_email_id TEXT PRIMARY KEY,
   campaign_id UUID,
@@ -1502,12 +1502,9 @@ CREATE INDEX IF NOT EXISTS video_ad_jobs_status_idx ON public.video_ad_jobs (sta
 CREATE INDEX IF NOT EXISTS video_ad_jobs_media_urls_idx ON public.video_ad_jobs USING GIN (media_urls jsonb_path_ops);
 `;
 
-export const CAMPAIGN_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch";
-
 export const WEBHOOK_SPECS = {
   ingest: "https://n8n.sproutify.app/webhook/trellis-ingest-gateway",
   posthog_ingest: "https://n8n.sproutify.app/webhook/posthog-event-ingest",
-  campaign_dispatch: "https://n8n.sproutify.app/webhook/trellis-campaign-dispatch",
   social_intent: "https://n8n.sproutify.app/webhook/ig-intent-loop",
   compliance: "https://n8n.sproutify.app/webhook/resend-compliance",
   voice: "https://n8n.sproutify.app/webhook/twilio-whisper-sync",
@@ -1623,63 +1620,6 @@ export const N8N_BLUEPRINTS = {
       "name": "Mark Completed",
       "type": "n8n-nodes-base.httpRequest",
       "position": [1100, 300]
-    }
-  ]
-}`,
-  // Trellis posts the EXACT segment audience (deduped + consent-filtered) plus a
-  // personalizable html_template. This workflow personalizes per recipient and sends
-  // via Resend's /emails/batch endpoint (<=100 messages per call). Canonical importable
-  // file: n8n-blueprints/B2-campaign-dispatch.json.
-  campaign_dispatch: `{
-  "name": "Trellis: Campaign Dispatch Gateway (Resend Batch)",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "trellis-campaign-dispatch",
-        "responseMode": "lastNode",
-        "options": {}
-      },
-      "name": "Campaign Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [250, 300]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const body=($input.first().json.body)||$input.first().json; const recipients=(body.recipients||[]).filter(r=>r&&r.email); const subject=body.subject||''; const template=body.html_template||body.html_body||''; const from=body.from||'ATL Urban Farms <sheree@atlurbanfarms.com>'; const CHUNK=100; const fill=r=>{const tpl=body.unsubscribe_url_template||'';const unsub=(tpl&&r.unsubscribe_token)?tpl.split('{{token}}').join(r.unsubscribe_token):'https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email='+encodeURIComponent(r.email)+'&source=global';return template.split('{{first_name}}').join(r.first_name||'Friend').split('{{unsubscribe_url}}').join(unsub);}; const out=[]; for(let i=0;i<recipients.length;i+=CHUNK){const chunk=recipients.slice(i,i+CHUNK); out.push({json:{batch:chunk.map(r=>({from,to:[r.email],subject,html:fill(r)})),campaign_id:body.campaign_id}});} return out;"
-      },
-      "name": "Build Resend Batches",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [500, 300]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.resend.com/emails/batch",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "Bearer YOUR_RESEND_API_KEY" }, { "name": "Content-Type", "value": "application/json" } ] },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.batch) }}"
-      },
-      "name": "Resend Batch Dispatch",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [780, 300]
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "table": "campaigns",
-        "id": "={{ $json.campaign_id }}",
-        "columns": { "status": "completed", "updated_at": "={{ $now }}" }
-      },
-      "name": "Mark Complete",
-      "type": "n8n-nodes-base.supabase",
-      "position": [1040, 300]
     }
   ]
 }`,
