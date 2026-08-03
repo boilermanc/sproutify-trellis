@@ -100,14 +100,21 @@ Deno.serve(async (req: Request) => {
     `;
     const retentionQuery = `
       SELECT
-        (SELECT uniq(distinct_id) FROM events WHERE timestamp >= now() - INTERVAL 14 DAY AND timestamp < now() - INTERVAL 7 DAY) AS cohort_7,
-        (SELECT uniq(distinct_id) FROM events WHERE timestamp >= now() - INTERVAL 7 DAY AND distinct_id IN (
-          SELECT distinct_id FROM events WHERE timestamp >= now() - INTERVAL 14 DAY AND timestamp < now() - INTERVAL 7 DAY
-        )) AS retained_7,
-        (SELECT uniq(distinct_id) FROM events WHERE timestamp >= now() - INTERVAL 60 DAY AND timestamp < now() - INTERVAL 30 DAY) AS cohort_30,
-        (SELECT uniq(distinct_id) FROM events WHERE timestamp >= now() - INTERVAL 30 DAY AND distinct_id IN (
-          SELECT distinct_id FROM events WHERE timestamp >= now() - INTERVAL 60 DAY AND timestamp < now() - INTERVAL 30 DAY
-        )) AS retained_30
+        countIf(active_previous_7 > 0) AS cohort_7,
+        countIf(active_previous_7 > 0 AND active_current_7 > 0) AS retained_7,
+        countIf(active_previous_30 > 0) AS cohort_30,
+        countIf(active_previous_30 > 0 AND active_current_30 > 0) AS retained_30
+      FROM (
+        SELECT
+          distinct_id,
+          countIf(timestamp >= now() - INTERVAL 7 DAY) AS active_current_7,
+          countIf(timestamp >= now() - INTERVAL 14 DAY AND timestamp < now() - INTERVAL 7 DAY) AS active_previous_7,
+          countIf(timestamp >= now() - INTERVAL 30 DAY) AS active_current_30,
+          countIf(timestamp >= now() - INTERVAL 60 DAY AND timestamp < now() - INTERVAL 30 DAY) AS active_previous_30
+        FROM events
+        WHERE timestamp >= now() - INTERVAL 60 DAY
+        GROUP BY distinct_id
+      )
     `;
 
     const [activityResult, funnelResult, retentionResult] = await Promise.all([

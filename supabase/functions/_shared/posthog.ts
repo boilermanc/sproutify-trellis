@@ -166,7 +166,7 @@ export async function runPosthogQuery(
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = payload?.detail || payload?.error || `PostHog returned HTTP ${response.status}`;
-    throw new Error(String(message).slice(0, 300));
+    throw new Error(`${name}: ${String(message)}`.slice(0, 300));
   }
   return {
     columns: Array.isArray(payload?.columns) ? payload.columns.map(String) : [],
