@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   MarketingEvent, ViewState, Brand, Branch, SpokeConnection,
   BranchStatsResult, BranchContext, ScheduledPost, VideoAdJob,
@@ -98,7 +98,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     localStorage.setItem(WINDOW_KEY, next);
   }, []);
 
-  const loadAll = useCallback(async (force = false) => {
+  const loadAll = useCallback(async () => {
     // 60 days of email events so a 30d window still has a prior 30d to compare.
     const since = new Date(Date.now() - 60 * 86400000).toISOString();
 
@@ -106,7 +106,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       p.catch(err => { console.error(`[dashboard] ${label} failed:`, err); return fallback; });
 
     const [
-      ordersRes, postsRes, emailRes, schedRes, jobsRes, hookRes, workedRes, snoozeRes, eventsRes,
+      ordersRes, postsRes, emailRes, schedRes, jobsRes, workedRes, snoozeRes, eventsRes,
     ] = await Promise.all([
       // fetchAllSpokesOrders returns { orders, errors } — a per-spoke failure is
       // reported rather than thrown, so unwrap and log instead of silently
@@ -134,7 +134,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       ),
       settle(fetchScheduledPosts(), 'scheduled posts', [] as ScheduledPost[]),
       settle(getVideoAdJobs(undefined, 100), 'creative jobs', [] as VideoAdJob[]),
-      settle(fetchWebhookHealth(force), 'webhook health', [] as WebhookHealth[]),
       settle(getWhatWorked(timeWindow), 'post performance', null as WhatWorked | null),
       settle(fetchSnoozes(), 'snoozes', {} as Record<string, string>),
       settle(fetchRecentEvents(50), 'recent events', [] as MarketingEvent[]),
@@ -145,7 +144,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     setEmailEvents(emailRes);
     setDbScheduled(schedRes);
     setVideoAdJobs(jobsRes);
-    setWebhooks(hookRes);
     setWhatWorked(workedRes);
     setSnoozed(snoozeRes);
     setRecentEvents(eventsRes);
@@ -170,14 +168,37 @@ const Dashboard: React.FC<DashboardProps> = ({
     return () => { cancelled = true; };
   }, [loadAll]);
 
+  // Webhook health is probed SERVER-SIDE against n8n (webhook-health edge fn
+  // POSTs an empty body to every webhook). Keep it OUT of loadAll: loadAll's
+  // deps (spokeConnections, branches, timeWindow) stream in on mount and each
+  // change re-ran the whole loader, so several overlapping runs would all miss
+  // the 5-min health cache at once and stampede n8n with redundant probes.
+  // Here it runs exactly once on mount, and again only on an explicit refresh,
+  // with an in-flight guard so rapid refreshes coalesce into one probe.
+  const healthInFlight = useRef<Promise<void> | null>(null);
+  const loadWebhookHealth = useCallback((force = false): Promise<void> => {
+    if (healthInFlight.current) return healthInFlight.current;
+    const p = (async () => {
+      try {
+        setWebhooks(await fetchWebhookHealth(force));
+      } catch (err) {
+        console.error('[dashboard] webhook health failed:', err);
+      }
+    })().finally(() => { healthInFlight.current = null; });
+    healthInFlight.current = p;
+    return p;
+  }, []);
+
+  useEffect(() => { loadWebhookHealth(false); }, [loadWebhookHealth]);
+
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([loadAll(true), branchStats.refresh?.()]);
+      await Promise.all([loadAll(), loadWebhookHealth(true), branchStats.refresh?.()]);
     } finally {
       setIsRefreshing(false);
     }
-  }, [loadAll, branchStats]);
+  }, [loadAll, loadWebhookHealth, branchStats]);
 
   const handleSnooze = useCallback(async (key: string) => {
     // Optimistic: hide it now, roll back if the write fails.
