@@ -20,7 +20,6 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "YOUR_SUPABASE_ANON_KEY" },
             { "name": "Authorization", "value": "={{ $json.headers.authorization }}" },
             { "name": "Content-Type", "value": "application/json" }
           ]
@@ -39,7 +38,7 @@
     },
     {
       "parameters": {
-        "content": "## PostHog milestone feed\n\nPostHog webhook URL:\n`https://n8n.sproutify.app/webhook/posthog-event-ingest/<CONNECTION_ID>`\n\nAdd header:\n`Authorization: Bearer <ONE_TIME_WEBHOOK_SECRET>`\n\nConfigure the PostHog destination filter to match the connection's allowlisted event names. Use this payload template:\n\n```json\n{\n  \"event_id\": \"{event.uuid}\",\n  \"event\": \"{event.event}\",\n  \"distinct_id\": \"{event.distinct_id}\",\n  \"timestamp\": \"{event.timestamp}\",\n  \"email\": \"{person.properties.email}\",\n  \"properties\": {event.properties}\n}\n```\n\nThe Supabase Edge Function verifies the bearer secret against its stored SHA-256 hash, rejects non-allowlisted events, rebuilds properties from the allowlist, and performs the idempotent database transaction. Deploy `posthog-ingest` with `--no-verify-jwt`; it performs its own bearer authentication. Never log the inbound body in n8n.",
+        "content": "## PostHog milestone feed\n\nPostHog webhook URL:\n`https://n8n.sproutify.app/webhook/posthog-event-ingest/<CONNECTION_ID>`\n\nAdd header:\n`Authorization: Bearer <ONE_TIME_WEBHOOK_SECRET>`\n\nConfigure the PostHog destination filter to match the connection's allowlisted event names. Use this payload template:\n\n```json\n{\n  \"event_id\": \"{event.uuid}\",\n  \"event\": \"{event.event}\",\n  \"distinct_id\": \"{event.distinct_id}\",\n  \"timestamp\": \"{event.timestamp}\",\n  \"email\": \"{person.properties.email}\",\n  \"properties\": {event.properties}\n}\n```\n\nNo Supabase API key is stored in this workflow. The Authorization header is forwarded from PostHog, and the Supabase Edge Function verifies that bearer secret against its stored SHA-256 hash. The function rejects non-allowlisted events, rebuilds properties from the allowlist, and performs the idempotent database transaction. Deploy `posthog-ingest` with `--no-verify-jwt`; it performs its own bearer authentication. Never log the inbound body in n8n.",
         "width": 620,
         "height": 600
       },

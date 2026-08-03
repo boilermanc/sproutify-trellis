@@ -34,7 +34,7 @@ Store the generated encryption key in the deployment secret manager before endin
 ## Import the n8n gateway
 
 1. Import `n8n-blueprints/B6-posthog-event-ingest.json` and `n8n-blueprints/B7-posthog-hourly-refresh.json` into n8n.
-2. Replace `YOUR_HUB_PROJECT` and `YOUR_SUPABASE_ANON_KEY` in the HTTP Request node.
+2. Replace `YOUR_HUB_PROJECT` in each HTTP Request node. B6 does not need a Supabase API key because `posthog-ingest` verifies the forwarded PostHog bearer secret itself.
 3. Keep response mode set to the final HTTP node so PostHog receives non-2xx errors and performs its retries.
 4. Do not add request-body logging. The Edge Function rebuilds a safe envelope, but the n8n ingress initially receives the source request.
 5. Activate the workflow at:
