@@ -146,6 +146,25 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     }
   }, [activeTab, templateBranchFilter, loadTemplates, branchContext]);
 
+  // Clear the loaded template out of the editor. Called when the branch filter
+  // changes so a template from the previous branch can't linger in the preview
+  // (e.g. ATL's template still showing after switching to a branch that has none).
+  const clearTemplateEditor = () => {
+    setSelectedTemplate(null);
+    setTemplateName('');
+    setTemplateDescription('');
+    setTemplateHtml('');
+    setPreviewHtml('');
+    setTemplateDirty(false);
+    setCodeMode(false);
+  };
+
+  const handleTemplateBranchChange = (nextBranch: string) => {
+    if (nextBranch === templateBranchFilter) return;
+    clearTemplateEditor();
+    setTemplateBranchFilter(nextBranch);
+  };
+
   // Debounce HTML preview
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1612,7 +1631,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <div className="relative">
                   <select
                     value={templateBranchFilter}
-                    onChange={(e) => setTemplateBranchFilter(e.target.value)}
+                    onChange={(e) => handleTemplateBranchChange(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold appearance-none cursor-pointer focus:border-violet-400 outline-none"
                   >
                     {branchSlugs.map(slug => (
