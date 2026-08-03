@@ -622,30 +622,40 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     }
   }, [addToast]);
 
+  // ── Branch-scoped jobs ──
+  // The generation wizard keeps its own branch picker; this only scopes the
+  // jobs history (and its count badges) to the global Branch Scope picker in
+  // the top bar. `j.branch` is a slug.
+  const scopedJobs = useMemo(() => {
+    if (!branchContext || branchContext.isAllSelected) return jobs;
+    const activeSlugs = new Set(branchContext.activeBranchSlugs);
+    return jobs.filter(j => j.branch && activeSlugs.has(j.branch));
+  }, [jobs, branchContext]);
+
   // ── Filtered jobs ──
   const filteredJobs = useMemo(() => {
-    let list = jobs;
+    let list = scopedJobs;
     if (statusFilter === 'active') list = list.filter(j => !TERMINAL_STATUSES.includes(j.status));
     else if (statusFilter === 'completed') list = list.filter(j => j.status === 'completed');
     else if (statusFilter === 'failed') list = list.filter(j => j.status === 'failed' || j.status === 'cancelled');
     if (formatFilter !== 'all') list = list.filter(j => (j.format || 'video') === formatFilter);
     return list;
-  }, [jobs, statusFilter, formatFilter]);
+  }, [scopedJobs, statusFilter, formatFilter]);
 
-  // ── Filter counts ──
+  // ── Filter counts (respect the active branch scope) ──
   const filterCounts = useMemo(() => ({
-    all: jobs.length,
-    active: jobs.filter(j => !TERMINAL_STATUSES.includes(j.status)).length,
-    completed: jobs.filter(j => j.status === 'completed').length,
-    failed: jobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length,
-  }), [jobs]);
+    all: scopedJobs.length,
+    active: scopedJobs.filter(j => !TERMINAL_STATUSES.includes(j.status)).length,
+    completed: scopedJobs.filter(j => j.status === 'completed').length,
+    failed: scopedJobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length,
+  }), [scopedJobs]);
 
   const formatCounts = useMemo(() => ({
-    all: jobs.length,
-    video: jobs.filter(j => (j.format || 'video') === 'video').length,
-    static: jobs.filter(j => j.format === 'static').length,
-    carousel: jobs.filter(j => j.format === 'carousel').length,
-  }), [jobs]);
+    all: scopedJobs.length,
+    video: scopedJobs.filter(j => (j.format || 'video') === 'video').length,
+    static: scopedJobs.filter(j => j.format === 'static').length,
+    carousel: scopedJobs.filter(j => j.format === 'carousel').length,
+  }), [scopedJobs]);
 
   // A job requested by Card Studio purely as an editorial card's backdrop.
   // Card Studio consumes its frame_url directly the moment it exists — there
@@ -2906,7 +2916,10 @@ STRICT RULES:
                   {activeCount} processing
                 </span>
               )}
-              <span className="text-xs text-slate-400">{jobs.length} total</span>
+              <span className="text-xs text-slate-400">
+                {scopedJobs.length} total
+                {branchContext && !branchContext.isAllSelected ? ' in scope' : ''}
+              </span>
             </div>
             <button
               onClick={handleRefresh}

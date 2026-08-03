@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { BranchStatsResult } from './types';
 import { SpokeConnection } from './types';
+import { BranchContext } from './types';
 import {
   Segment,
   SegmentRule,
@@ -26,6 +27,7 @@ import { SegmentProfilesModal } from './SegmentProfilesModal';
 interface SegmentsProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
+  branchContext?: BranchContext;
   onSendCampaign?: (segment: Segment) => void;
 }
 
@@ -71,8 +73,21 @@ const colorMap: Record<string, string> = {
   'green': 'bg-green-100 text-green-700 border-green-200',
 };
 
-export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStats, onSendCampaign }) => {
-  const profiles = branchStats.enrichedProfiles;
+export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStats, branchContext, onSendCampaign }) => {
+  // Honor the global Branch Scope picker in the top bar. Same filtering the
+  // Dashboard/Reports/CustomerIntelligence pages use — match a profile's
+  // source spoke name to the active branches. When "All Branches" is selected
+  // (or no context is passed) every profile flows through unchanged.
+  const profiles = useMemo(() => {
+    const all = branchStats.enrichedProfiles;
+    if (!branchContext || branchContext.isAllSelected) return all;
+    const activeNames = new Set(
+      branchContext.allBranches
+        .filter(b => branchContext.activeBranchSlugs.includes(b.slug))
+        .map(b => b.name)
+    );
+    return all.filter(p => activeNames.has(p._spoke_name));
+  }, [branchStats.enrichedProfiles, branchContext]);
   const isLoading = branchStats.isLoading;
 
   // State
@@ -400,8 +415,15 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
             </button>
           </div>
           <p className="text-sm text-gray-500">
-            {profiles.length.toLocaleString()} total profiles loaded
+            {profiles.length.toLocaleString()} profiles
+            {branchContext && !branchContext.isAllSelected ? ' in scope' : ' loaded'}
           </p>
+          {branchContext && !branchContext.isAllSelected && (
+            <p className="mt-1 text-xs text-emerald-600 flex items-center gap-1">
+              <Filter className="w-3 h-3" />
+              Scoped to {branchContext.activeBranchSlugs.length} of {branchContext.allBranches.length} branches — change in the top bar
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">

@@ -47,17 +47,32 @@ const emptyStat = (subject: string): CampaignEmailStat => ({
   bounced: 0, complained: 0, first_event_at: null, last_event_at: null,
 });
 
-const Campaigns: React.FC<CampaignsProps> = ({ addToast }) => {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast }) => {
+  const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Campaign | null>(null);
+
+  // Honor the global Branch Scope picker (top bar). A campaign's `branches` are
+  // stored as slugs, but older ones may hold display names — match either. A
+  // campaign targeting no branch is treated as global and always shown.
+  const campaigns = useMemo(() => {
+    if (!branchContext || branchContext.isAllSelected) return allCampaigns;
+    const activeBranches = branchContext.allBranches.filter(b =>
+      branchContext.activeBranchSlugs.includes(b.slug)
+    );
+    const activeKeys = new Set<string>();
+    for (const b of activeBranches) { activeKeys.add(b.slug); activeKeys.add(b.name); }
+    return allCampaigns.filter(c =>
+      !c.branches?.length || c.branches.some(b => activeKeys.has(b))
+    );
+  }, [allCampaigns, branchContext]);
 
   const load = async () => {
     setLoading(true);
     try {
       const [c, s] = await Promise.all([fetchCampaigns(), fetchCampaignEmailStats()]);
-      setCampaigns(c);
+      setAllCampaigns(c);
       setStats(s);
     } catch (e) {
       console.error('Failed to load campaigns:', e);
@@ -98,7 +113,9 @@ const Campaigns: React.FC<CampaignsProps> = ({ addToast }) => {
           <div>
             <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Campaigns</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              Everything you've sent · engagement from Resend
+              {branchContext && !branchContext.isAllSelected
+                ? `Scoped to ${branchContext.activeBranchSlugs.length} of ${branchContext.allBranches.length} branches · change in the top bar`
+                : "Everything you've sent · engagement from Resend"}
             </p>
           </div>
         </div>

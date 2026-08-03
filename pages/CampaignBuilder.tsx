@@ -660,6 +660,24 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     }
   }, [savedSegments, availableBranches]);
 
+  // Seed the branch scope from the global Branch Scope picker (top bar) so
+  // narrowing the global scope pre-selects those branches here. Runs once, is
+  // skipped while a Segments "Send Campaign" handoff is pending (that flow
+  // scopes to all branches), and never overwrites manual changes afterward.
+  const scopeSeededRef = useRef(false);
+  useEffect(() => {
+    if (scopeSeededRef.current) return;
+    if (!branchContext || branchContext.isAllSelected) return;
+    if (availableBranches.length === 0) return;
+    let pending: string | null = null;
+    try { pending = localStorage.getItem('trellis_pending_campaign_segment'); } catch { /* ignore */ }
+    if (pending) return; // let the handoff effect win
+    scopeSeededRef.current = true;
+    const active = new Set(branchContext.activeBranchSlugs);
+    const seeded = availableBranches.filter(b => active.has(b));
+    if (seeded.length) setSelectedBranches(seeded);
+  }, [branchContext, availableBranches]);
+
   const toggleChannel = (channel: CampaignChannel) => {
     setEnabledChannels(prev => {
       const next = new Set(prev);

@@ -171,6 +171,28 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     setSelectedSpokeIds(new Set());
   };
 
+  // Let the global Branch Scope picker (top bar) drive which data sources load
+  // here. When the user narrows the global scope, auto-select the matching
+  // active spokes so Profiles reflects it; manual chip toggles below still work
+  // afterward. "All Branches" (the default) leaves the intentional
+  // pick-a-branch gate intact — see the empty-selection gate below.
+  const scopeKey = branchContext && !branchContext.isAllSelected
+    ? branchContext.activeBranchSlugs.slice().sort().join(',')
+    : '__all__';
+  useEffect(() => {
+    if (!branchContext || branchContext.isAllSelected) return;
+    const activeNames = new Set(
+      branchContext.allBranches
+        .filter(b => branchContext.activeBranchSlugs.includes(b.slug))
+        .map(b => b.name)
+    );
+    const matchingIds = spokeConnections
+      .filter(c => c.status === 'active' && activeNames.has(c.name))
+      .map(c => c.id);
+    setSelectedSpokeIds(new Set(matchingIds));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey, spokeConnections]);
+
   const activeConnectionCount = spokeConnections.filter(c => c.status === 'active').length;
 
   // Build branchMap for fast lookup by slug
