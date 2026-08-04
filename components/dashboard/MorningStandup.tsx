@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
 import {
   QueueItem,
+  QueueOutcome,
   WindowTotals,
   TimeWindow,
   BranchCardData,
@@ -26,7 +27,10 @@ interface MorningStandupProps {
   isLoading: boolean;
   onViewChange?: (view: ViewState) => void;
   onSnooze: (key: string) => void;
-  onInlineSync: () => void;
+  onInlineSync: (item: QueueItem) => void;
+  syncingConnIds?: string[];
+  outcomes?: Record<string, QueueOutcome>;
+  onDismissOutcome?: (key: string) => void;
 }
 
 // ── design tokens ────────────────────────────────────────────────
@@ -148,6 +152,123 @@ const PerformerCard: React.FC<{ post: PerformerPost; tone: 'top' | 'bottom' }> =
   );
 };
 
+// ── Queue card ───────────────────────────────────────────────────
+// Renders one "needs you" row in three states: actionable (default),
+// completed (green, after a real success), or errored (red, retryable).
+// The completed/errored states come from a QueueOutcome — never optimistic —
+// and stay put with a Dismiss control so the user, not a timer, clears them.
+const QueueCard: React.FC<{
+  item: QueueItem;
+  outcome?: QueueOutcome;
+  isSyncing: boolean;
+  onPrimary: (item: QueueItem) => void;
+  onSnooze: (key: string) => void;
+  onDismissOutcome?: (key: string) => void;
+}> = ({ item, outcome, isSyncing, onPrimary, onSnooze, onDismissOutcome }) => {
+  const [dismissing, setDismissing] = useState(false);
+  const color = SEVERITY_COLORS[item.severity];
+  const age = ageShort(item.occurredAt);
+
+  // Play the exit animation, then remove the card once it has run.
+  const handleDismiss = () => {
+    setDismissing(true);
+    window.setTimeout(() => onDismissOutcome?.(item.key), 250);
+  };
+
+  if (outcome?.status === 'success') {
+    return (
+      <div
+        className={`flex items-center gap-4 rounded-xl border border-[#A7F3D0] px-[18px] py-4 queue-complete-flash ${dismissing ? 'queue-dismissing' : ''}`}
+      >
+        <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full bg-[#10B981]" />
+        <CheckCircle2 size={22} className="queue-check-pop flex-shrink-0 text-[#059669]" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
+          <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#065F46]">{item.title}</p>
+          <p className="text-[12px] font-semibold text-[#059669]">{outcome.message}</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="flex-shrink-0 rounded-lg border border-[#A7F3D0] bg-white px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#059669] transition-colors duration-150 hover:bg-[#ECFDF5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:ring-offset-2"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (outcome?.status === 'error') {
+    return (
+      <div
+        className={`flex items-center gap-4 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-[18px] py-4 ${dismissing ? 'queue-dismissing' : ''}`}
+      >
+        <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full bg-[#DC2626]" />
+        <AlertCircle size={22} className="flex-shrink-0 text-[#DC2626]" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
+          <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#991B1B]">{item.title}</p>
+          <p className="text-[12px] leading-[1.45] text-[#B91C1C]">{outcome.message}</p>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onPrimary(item)}
+            disabled={isSyncing}
+            className="rounded-lg bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#0F172A]"
+          >
+            {isSyncing ? 'Retrying…' : 'Retry'}
+          </button>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-4 rounded-xl border border-[#E5E9EE] bg-white px-[18px] py-4 transition-colors duration-150 hover:bg-[#F9FAFB]">
+      <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full" style={{ backgroundColor: color }} />
+      <div className="flex w-[74px] flex-shrink-0 flex-col gap-1">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color }}>
+          {item.severity}
+        </span>
+        {age && <span className="font-mono text-[10px] font-semibold text-[#94A3B8]">{age}</span>}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 flex-shrink-0 rounded-[2px]" style={{ backgroundColor: item.branchColor }} />
+          <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
+        </div>
+        <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#0F172A]">{item.title}</p>
+        <p className="text-[12px] leading-[1.45] text-[#64748B]">{item.detail}</p>
+      </div>
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onPrimary(item)}
+          disabled={isSyncing}
+          className="rounded-lg bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#0F172A]"
+        >
+          {isSyncing ? 'Syncing…' : item.actionLabel}
+        </button>
+        <button
+          type="button"
+          onClick={() => onSnooze(item.key)}
+          className="rounded-lg border border-[#E2E8F0] px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+        >
+          Snooze
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const MorningStandup: React.FC<MorningStandupProps> = ({
   queue,
   totals,
@@ -159,6 +280,9 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
   onViewChange,
   onSnooze,
   onInlineSync,
+  syncingConnIds,
+  outcomes,
+  onDismissOutcome,
 }) => {
   const sortedQueue = useMemo(() => {
     return [...queue].sort((a, b) => {
@@ -169,6 +293,22 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
       return at - bt;
     });
   }, [queue]);
+
+  // Merge the live queue with any completed/errored outcomes. A successful
+  // action resolves the item out of the derived queue, so the outcome snapshot
+  // is what keeps its "done" card on screen until the user dismisses it.
+  // Resolved-success cards sink to the bottom; everything else keeps severity order.
+  const cards = useMemo(() => {
+    const byKey = new Map<string, { item: QueueItem; outcome?: QueueOutcome }>();
+    for (const i of sortedQueue) byKey.set(i.key, { item: i });
+    if (outcomes) for (const o of Object.values<QueueOutcome>(outcomes)) byKey.set(o.item.key, { item: o.item, outcome: o });
+    return [...byKey.values()].sort((a, b) => {
+      const aDone = a.outcome?.status === 'success' ? 1 : 0;
+      const bDone = b.outcome?.status === 'success' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return SEVERITY_RANK[a.item.severity] - SEVERITY_RANK[b.item.severity];
+    });
+  }, [sortedQueue, outcomes]);
 
   const weekRows = useMemo(
     () => [
@@ -202,7 +342,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
 
   const handlePrimary = (item: QueueItem) => {
     if (item.inlineAction === 'sync') {
-      onInlineSync();
+      onInlineSync(item);
       return;
     }
     if (item.actionView) {
@@ -243,7 +383,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
           <span className="text-[11px] font-semibold text-[#94A3B8]">Ranked by cost of ignoring</span>
         </div>
 
-        {sortedQueue.length === 0 ? (
+        {cards.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
             <CheckCircle2 size={40} className="text-[#10B981]" />
             <p className="text-[16px] font-bold text-[#0F172A]">Nothing needs you right now</p>
@@ -251,52 +391,21 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {sortedQueue.map((item) => {
-              const color = SEVERITY_COLORS[item.severity];
-              const age = ageShort(item.occurredAt);
+            {cards.map(({ item, outcome }) => {
+              const isSyncing =
+                item.inlineAction === 'sync' &&
+                !!item.connectionId &&
+                (syncingConnIds?.includes(item.connectionId) ?? false);
               return (
-                <div
+                <QueueCard
                   key={item.key}
-                  className="flex items-center gap-4 rounded-xl border border-[#E5E9EE] bg-white px-[18px] py-4 transition-colors duration-150 hover:bg-[#F9FAFB]"
-                >
-                  <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full" style={{ backgroundColor: color }} />
-                  <div className="flex w-[74px] flex-shrink-0 flex-col gap-1">
-                    <span
-                      className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em]"
-                      style={{ color }}
-                    >
-                      {item.severity}
-                    </span>
-                    {age && <span className="font-mono text-[10px] font-semibold text-[#94A3B8]">{age}</span>}
-                  </div>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2 w-2 flex-shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: item.branchColor }}
-                      />
-                      <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
-                    </div>
-                    <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#0F172A]">{item.title}</p>
-                    <p className="text-[12px] leading-[1.45] text-[#64748B]">{item.detail}</p>
-                  </div>
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handlePrimary(item)}
-                      className="rounded-lg bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
-                    >
-                      {item.actionLabel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onSnooze(item.key)}
-                      className="rounded-lg border border-[#E2E8F0] px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
-                    >
-                      Snooze
-                    </button>
-                  </div>
-                </div>
+                  item={item}
+                  outcome={outcome}
+                  isSyncing={isSyncing}
+                  onPrimary={handlePrimary}
+                  onSnooze={onSnooze}
+                  onDismissOutcome={onDismissOutcome}
+                />
               );
             })}
           </div>

@@ -39,3 +39,22 @@
     transform: translateY(0);
   }
 }
+
+/* Queue card completion feedback (Morning Standup "Needs you today").
+   Driven by a real action result — never fired optimistically. */
+@keyframes queueComplete {
+  0% { background-color: rgba(16, 185, 129, 0.18); }
+  100% { background-color: rgba(16, 185, 129, 0.06); }
+}
+@keyframes queueCheckPop {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes queueDismiss {
+  from { opacity: 1; transform: translateX(0); max-height: 200px; margin-bottom: 0; }
+  to { opacity: 0; transform: translateX(20px); max-height: 0; margin-bottom: -12px; }
+}
+.queue-complete-flash { animation: queueComplete 640ms ease-out; }
+.queue-check-pop { animation: queueCheckPop 360ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.queue-dismissing { animation: queueDismiss 260ms ease-in forwards; overflow: hidden; pointer-events: none; }

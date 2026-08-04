@@ -6,7 +6,8 @@ import {
 import { Article } from '../src/data/helpContent';
 import { supabase } from '../lib/supabase';
 import { getPublishedPosts, PublishedPost, fetchRecentEvents } from '../lib/supabaseService';
-import { fetchAllSpokesOrders, NormalizedOrder } from '../spokeConnector';
+import { fetchAllSpokesOrders, NormalizedOrder, testSpokeConnectionById } from '../spokeConnector';
+import { upsertSpokeConnection } from '../services/spokeConnectionsService';
 import { fetchScheduledPosts } from '../services/scheduledPostService';
 import { getVideoAdJobs } from '../services/videoAdService';
 import { fetchBrandInsights, MetaInsights } from '../services/metaInsightsService';
@@ -16,7 +17,7 @@ import {
   buildQueue, buildBranchCards, getWhatWorked, fetchSnoozes, snoozeItem,
 } from '../services/dashboardService';
 import {
-  DashboardTab, TimeWindow, WebhookHealth, WhatWorked,
+  DashboardTab, TimeWindow, WebhookHealth, WhatWorked, QueueItem, QueueOutcome,
 } from '../components/dashboard/types';
 import ControlRoom from '../components/dashboard/ControlRoom';
 import MorningStandup from '../components/dashboard/MorningStandup';
@@ -33,6 +34,9 @@ interface DashboardProps {
   events: MarketingEvent[];
   brand: Brand;
   spokeConnections: SpokeConnection[];
+  // Lets the inline "Sync" action in the standup/control queue write the
+  // re-tested connection back into App state so the stale item actually clears.
+  onSpokeConnectionsChange?: (conns: SpokeConnection[]) => void;
   branchStats: BranchStatsResult;
   branches?: Branch[];
   branchContext?: BranchContext;
@@ -64,8 +68,10 @@ function initialWindow(): TimeWindow {
   return localStorage.getItem(WINDOW_KEY) === '30d' ? '30d' : '7d';
 }
 
+const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
+
 const Dashboard: React.FC<DashboardProps> = ({
-  onViewChange, spokeConnections, branchStats, branches = [], branchContext,
+  onViewChange, spokeConnections, onSpokeConnectionsChange, branchStats, branches = [], branchContext,
 }) => {
   const [tab, setTab] = useState<DashboardTab>(initialTab);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>(initialWindow);
@@ -123,7 +129,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         (async () => {
           const { data, error } = await supabase
             .from('email_events')
-            .select('id,email,event_type,campaign_subject,resend_email_id,occurred_at,metadata')
+            .select('id,email,event_type,campaign_subject,campaign_id,resend_email_id,occurred_at,metadata')
             .gte('occurred_at', since)
             .order('occurred_at', { ascending: false })
             .range(0, 9999);
@@ -210,6 +216,59 @@ const Dashboard: React.FC<DashboardProps> = ({
       console.error('[dashboard] snooze failed for', key);
     }
   }, []);
+
+  // The inline "Sync" on a stale-spoke queue item. Mirrors BranchCommandCenter's
+  // retest: re-test the specific connection server-side, stamp last_tested_at,
+  // push it into App state (so the stale item clears) AND persist it, then pull
+  // fresh federated data. Without the App-state write + DB persist the item just
+  // reappears — which is exactly why the old handler (a bare data reload) looked
+  // like a dead button.
+  const [syncingConnIds, setSyncingConnIds] = useState<string[]>([]);
+  // Completed-action cards, keyed by queue item key. Set only from a real result.
+  const [outcomes, setOutcomes] = useState<Record<string, QueueOutcome>>({});
+  const dismissOutcome = useCallback((key: string) => {
+    setOutcomes(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const handleInlineSync = useCallback(async (item: QueueItem) => {
+    const connectionId = item.connectionId ?? '';
+    // No id (shouldn't happen for a spoke item) → fall back to a plain refresh.
+    if (!connectionId) { await handleRefresh(); return; }
+    setSyncingConnIds(prev => prev.includes(connectionId) ? prev : [...prev, connectionId]);
+    // A retry starts from a clean slate — drop any prior outcome on this card.
+    dismissOutcome(item.key);
+    try {
+      const result = await testSpokeConnectionById(connectionId);
+      const nowIso = new Date().toISOString();
+      const updated = spokeConnections.map(c =>
+        c.id === connectionId
+          ? result.success
+            ? { ...c, status: 'active' as const, last_error: undefined, last_tested_at: nowIso }
+            : { ...c, status: 'error' as const, last_error: result.error, last_tested_at: nowIso }
+          : c,
+      );
+      onSpokeConnectionsChange?.(updated);
+      const persist = updated.find(c => c.id === connectionId);
+      if (persist) await upsertSpokeConnection(SPROUTIFY_ORG_ID, persist);
+      if (result.success) {
+        // Re-tested clean → pull fresh federated data, then mark the card done.
+        await Promise.all([loadAll(), branchStats.refresh?.()]);
+        setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'success', message: 'Synced just now', at: nowIso } }));
+      } else {
+        setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'error', message: result.error || 'Sync failed — check the connection.', at: nowIso } }));
+      }
+    } catch (err) {
+      console.error('[dashboard] inline sync failed for', connectionId, err);
+      setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'error', message: err instanceof Error ? err.message : 'Sync failed.', at: new Date().toISOString() } }));
+    } finally {
+      setSyncingConnIds(prev => prev.filter(id => id !== connectionId));
+    }
+  }, [spokeConnections, onSpokeConnectionsChange, loadAll, branchStats, handleRefresh, dismissOutcome]);
 
   const selectBranch = useCallback((slug: string) => {
     branchContext?.setActiveBranchSlugs([slug]);
@@ -377,6 +436,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             onSelectBranch={selectBranch}
             onSeeAllQueue={goToStandup}
             onConnectSpoke={goToBranches}
+            onInlineSync={handleInlineSync}
+            syncingConnIds={syncingConnIds}
+            outcomes={outcomes}
+            onDismissOutcome={dismissOutcome}
           />
         )}
 
@@ -405,7 +468,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             isLoading={isLoading}
             onViewChange={onViewChange}
             onSnooze={handleSnooze}
-            onInlineSync={handleRefresh}
+            onInlineSync={handleInlineSync}
+            syncingConnIds={syncingConnIds}
+            outcomes={outcomes}
+            onDismissOutcome={dismissOutcome}
           />
         )}
 

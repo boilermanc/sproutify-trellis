@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Database, CalendarDays, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { ViewState } from '../../types';
 import {
@@ -12,6 +12,7 @@ import {
   TimelineItem,
   TimelineState,
   WindowTotals,
+  QueueOutcome,
 } from './types';
 
 // ── Props ──────────────────────────────────────────────────────────
@@ -28,6 +29,10 @@ interface ControlRoomProps {
   onSelectBranch: (slug: string) => void;
   onSeeAllQueue: () => void; // switches to the Morning Standup tab
   onConnectSpoke: () => void; // empty-state CTA
+  onInlineSync?: (item: QueueItem) => void; // re-tests a stale spoke in place
+  syncingConnIds?: string[];
+  outcomes?: Record<string, QueueOutcome>;
+  onDismissOutcome?: (key: string) => void;
 }
 
 // ── Design tokens (per docs/design_handoff_dashboard_redesign) ──────
@@ -253,6 +258,22 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
         <span className="text-[11px] font-semibold text-[#6B7280] w-[100px] flex-shrink-0 truncate">
           {item.branchName}
         </span>
+        {item.sourceTag && (
+          <span
+            className={`font-mono text-[9px] font-bold tracking-[0.06em] uppercase px-1.5 py-[2px] rounded-[4px] flex-shrink-0 ${
+              item.sourceTag === 'trellis'
+                ? 'bg-[#ECFDF5] text-[#047857]'
+                : 'bg-[#F1F5F9] text-[#64748B]'
+            }`}
+            title={
+              item.sourceTag === 'trellis'
+                ? 'Dispatched by Trellis'
+                : 'Transactional email from a spoke (shares the Resend account)'
+            }
+          >
+            {item.sourceTag === 'trellis' ? 'Trellis' : 'Resend'}
+          </span>
+        )}
         <span className="text-[13px] text-[#1F2937] flex-1 min-w-0 truncate">{item.text}</span>
       </div>
       <div className="flex items-center gap-2">
@@ -278,26 +299,66 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
   );
 };
 
+const SOURCE_FILTERS: { id: 'all' | 'trellis' | 'transactional'; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'trellis', label: 'Trellis' },
+  { id: 'transactional', label: 'Resend' },
+];
+
 const TodayTimeline: React.FC<{
   timeline: TimelineItem[];
   isLoading: boolean;
   onViewChange?: (view: ViewState) => void;
 }> = ({ timeline, isLoading, onViewChange }) => {
+  const [source, setSource] = useState<'all' | 'trellis' | 'transactional'>('all');
+  const [branchSlug, setBranchSlug] = useState<string>('all');
+
+  // Branch options are derived from the UNFILTERED timeline so the dropdown
+  // doesn't shrink as filters are applied. Email rows are branchless
+  // ('All branches') and contribute no option.
+  const branchOptions = useMemo(() => {
+    const bySlug = new Map<string, string>();
+    for (const i of timeline) if (i.branchSlug) bySlug.set(i.branchSlug, i.branchName);
+    return [...bySlug.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [timeline]);
+
+  // The source filter is only meaningful once there are tagged email rows.
+  const hasSourceTags = useMemo(() => timeline.some((i) => i.sourceTag), [timeline]);
+
+  const filtered = useMemo(
+    () =>
+      timeline.filter((i) => {
+        if (source !== 'all' && i.sourceTag !== source) return false;
+        // An 'All branches' row (branchSlug === null — every email row) applies
+        // to every branch, so it survives a specific-branch filter rather than
+        // vanishing and taking real campaign activity with it.
+        if (branchSlug !== 'all' && i.branchSlug !== null && i.branchSlug !== branchSlug) return false;
+        return true;
+      }),
+    [timeline, source, branchSlug],
+  );
+
   if (isLoading) return <TimelineSkeleton />;
 
-  const eventsCount = timeline.length;
   const now = Date.now();
-  const scheduledCount = timeline.filter((i) => new Date(i.at).getTime() > now).length;
-  const failedCount = timeline.filter((i) => i.state === 'error' || i.state === 'at_risk').length;
+  const eventsCount = filtered.length;
+  const scheduledCount = filtered.filter((i) => new Date(i.at).getTime() > now).length;
+  const failedCount = filtered.filter((i) => i.state === 'error' || i.state === 'at_risk').length;
+  const filtersActive = source !== 'all' || branchSlug !== 'all';
+  const clearFilters = () => {
+    setSource('all');
+    setBranchSlug('all');
+  };
 
   return (
     <div className="flex-1 bg-white border border-[#E5E7EB] rounded-xl p-[22px] flex flex-col gap-4 min-w-0">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h3 className="text-[15px] font-bold text-[#111827]">Today across the ecosystem</h3>
-          {eventsCount > 0 && (
+          {timeline.length > 0 && (
             <span className="font-mono text-[11px] text-[#9CA3AF]">
-              {eventsCount} EVENTS · {scheduledCount} SCHEDULED · {failedCount} FAILED
+              {eventsCount}
+              {filtersActive ? ` / ${timeline.length}` : ''} EVENTS · {scheduledCount} SCHEDULED · {failedCount} FAILED
             </span>
           )}
         </div>
@@ -309,16 +370,74 @@ const TodayTimeline: React.FC<{
           Full activity log →
         </button>
       </div>
-      {eventsCount === 0 ? (
+
+      {/* Quick filters — only rendered once there's something to slice by. */}
+      {timeline.length > 0 && (hasSourceTags || branchOptions.length > 1) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {hasSourceTags && (
+            <div className="inline-flex items-center rounded-[7px] bg-[#F1F5F9] p-[2px]">
+              {SOURCE_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setSource(f.id)}
+                  className={`text-[11px] font-semibold px-2.5 py-[3px] rounded-[5px] transition-colors ${FOCUS_RING} ${
+                    source === f.id ? 'bg-white text-[#0B4A6B] shadow-sm' : 'text-[#64748B] hover:text-[#334155]'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {branchOptions.length > 1 && (
+            <select
+              value={branchSlug}
+              onChange={(e) => setBranchSlug(e.target.value)}
+              aria-label="Filter timeline by branch"
+              className={`text-[11px] font-semibold text-[#334155] bg-[#F1F5F9] rounded-[7px] px-2 py-[4px] ${FOCUS_RING}`}
+            >
+              <option value="all">All branches</option>
+              {branchOptions.map(([slug, name]) => (
+                <option key={slug} value={slug}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          )}
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={`text-[11px] font-semibold text-[#1E698F] rounded ${FOCUS_RING}`}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
+      {timeline.length === 0 ? (
         <TimelineEmptyState onViewChange={onViewChange} />
+      ) : filtered.length === 0 ? (
+        <div className="py-8 text-center text-[13px] text-[#94A3B8]">
+          No activity matches these filters.{' '}
+          <button
+            type="button"
+            onClick={clearFilters}
+            className={`text-[#1E698F] font-semibold rounded ${FOCUS_RING}`}
+          >
+            Clear filters
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col">
-          {timeline.map((item, idx) => (
+          {filtered.map((item, idx) => (
             <TimelineRow
               key={item.id}
               item={item}
               isFirst={idx === 0}
-              isLast={idx === timeline.length - 1}
+              isLast={idx === filtered.length - 1}
               onViewChange={onViewChange}
             />
           ))}
@@ -419,10 +538,22 @@ const QueuePanel: React.FC<{
   isLoading: boolean;
   onSeeAllQueue: () => void;
   onViewChange?: (view: ViewState) => void;
-}> = ({ queue, isLoading, onSeeAllQueue, onViewChange }) => {
+  onInlineSync?: (item: QueueItem) => void;
+  syncingConnIds?: string[];
+  outcomes?: Record<string, QueueOutcome>;
+  onDismissOutcome?: (key: string) => void;
+}> = ({ queue, isLoading, onSeeAllQueue, onViewChange, onInlineSync, syncingConnIds, outcomes, onDismissOutcome }) => {
   if (isLoading) return <QueueSkeleton />;
 
-  const top4 = queue.slice(0, 4);
+  // Mirrors Morning Standup: a resolved item keeps showing here (with its
+  // real outcome) until dismissed, rather than just vanishing when it clears
+  // out of the derived queue. Completed cards sort to the bottom of the top 4.
+  const byKey = new Map<string, { item: QueueItem; outcome?: QueueOutcome }>();
+  for (const i of queue) byKey.set(i.key, { item: i });
+  if (outcomes) for (const o of Object.values<QueueOutcome>(outcomes)) byKey.set(o.item.key, { item: o.item, outcome: o });
+  const cards = [...byKey.values()]
+    .sort((a, b) => (a.outcome?.status === 'success' ? 1 : 0) - (b.outcome?.status === 'success' ? 1 : 0))
+    .slice(0, 4);
 
   return (
     <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-[13px]">
@@ -436,28 +567,62 @@ const QueuePanel: React.FC<{
           See all {queue.length}
         </button>
       </div>
-      {top4.length === 0 ? (
+      {cards.length === 0 ? (
         <p className="text-[12px] text-[#94A3B8]">Nothing needs a person right now.</p>
       ) : (
-        top4.map((item) => (
-          <div key={item.key} className="flex items-stretch gap-3">
-            <span className="w-1 rounded-[99px] flex-shrink-0" style={{ background: SEVERITY_COLOR[item.severity] }} />
-            <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
-              <span className="text-[12px] font-bold text-[#1F2937] leading-[1.35]">{item.title}</span>
-              <span className="text-[11px] text-[#9CA3AF] truncate">
-                {item.branchName}
-                {item.occurredAt ? ` · ${timeAgoShort(item.occurredAt)}` : ''}
-              </span>
+        cards.map(({ item, outcome }) => {
+          if (outcome?.status === 'success') {
+            return (
+              <div key={item.key} className="flex items-stretch gap-3 queue-complete-flash rounded-lg -mx-1 px-1">
+                <span className="w-1 rounded-[99px] flex-shrink-0 bg-[#10B981]" />
+                <CheckCircle2 size={14} className="queue-check-pop flex-shrink-0 text-[#059669] mt-[1px]" />
+                <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
+                  <span className="text-[12px] font-bold text-[#065F46] leading-[1.35] truncate">{item.title}</span>
+                  <span className="text-[11px] text-[#059669] truncate">{outcome.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDismissOutcome?.(item.key)}
+                  className={`text-[11px] font-bold text-[#059669] flex-shrink-0 self-start rounded ${FOCUS_RING}`}
+                >
+                  Dismiss
+                </button>
+              </div>
+            );
+          }
+          const isSync = item.inlineAction === 'sync';
+          const isSyncing = isSync && !!item.connectionId && (syncingConnIds?.includes(item.connectionId) ?? false);
+          const handle = () => {
+            if (isSync) onInlineSync?.(item);
+            else if (item.actionView) onViewChange?.(item.actionView);
+          };
+          return (
+            <div key={item.key} className="flex items-stretch gap-3">
+              <span className="w-1 rounded-[99px] flex-shrink-0" style={{ background: SEVERITY_COLOR[item.severity] }} />
+              <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
+                <span className="text-[12px] font-bold text-[#1F2937] leading-[1.35]">{item.title}</span>
+                <span className="text-[11px] text-[#9CA3AF] truncate">
+                  {outcome?.status === 'error' ? outcome.message : (
+                    <>
+                      {item.branchName}
+                      {item.occurredAt ? ` · ${timeAgoShort(item.occurredAt)}` : ''}
+                    </>
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handle}
+                disabled={isSyncing}
+                className={`text-[11px] font-bold flex-shrink-0 self-start rounded disabled:opacity-60 disabled:cursor-not-allowed ${
+                  outcome?.status === 'error' ? 'text-[#DC2626]' : 'text-[#1E698F]'
+                } ${FOCUS_RING}`}
+              >
+                {isSyncing ? 'Syncing…' : outcome?.status === 'error' ? 'Retry' : item.actionLabel}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => item.actionView && onViewChange?.(item.actionView)}
-              className={`text-[11px] font-bold text-[#1E698F] flex-shrink-0 self-start rounded ${FOCUS_RING}`}
-            >
-              {item.actionLabel}
-            </button>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
@@ -557,6 +722,10 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
   onSelectBranch,
   onSeeAllQueue,
   onConnectSpoke,
+  onInlineSync,
+  syncingConnIds,
+  outcomes,
+  onDismissOutcome,
 }) => {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[1fr_330px] gap-5 items-start">
@@ -571,7 +740,16 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
       </div>
       <div className="flex flex-col gap-[14px]">
         <SystemHealth systems={systems} isLoading={isLoading} />
-        <QueuePanel queue={queue} isLoading={isLoading} onSeeAllQueue={onSeeAllQueue} onViewChange={onViewChange} />
+        <QueuePanel
+          queue={queue}
+          isLoading={isLoading}
+          onSeeAllQueue={onSeeAllQueue}
+          onViewChange={onViewChange}
+          onInlineSync={onInlineSync}
+          syncingConnIds={syncingConnIds}
+          outcomes={outcomes}
+          onDismissOutcome={onDismissOutcome}
+        />
         <TotalsPanel totals={totals} window={timeWindow} isLoading={isLoading} />
       </div>
     </div>

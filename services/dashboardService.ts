@@ -452,6 +452,13 @@ export function buildTimeline(
     // worth surfacing as an error, not just a footnote on an otherwise-ok send.
     const isBounceSpike = delivered > 0 && bounced / delivered > 0.1;
     const earliestTs = Math.min(...events.map(e => tsOf(e.occurred_at) as number));
+    // A mapped campaign_id means the Resend webhook tied this back to a real
+    // Trellis send. No campaign_id => a transactional email that only lands in
+    // email_events because a spoke shares the Resend account (order/signup/reset
+    // confirmations). Label them honestly instead of calling everything a
+    // "Campaign".
+    const isTrellisCampaign = events.some(e => e.campaign_id);
+    const noun = isTrellisCampaign ? 'Campaign' : 'Transactional email';
     items.push({
       id: `email:${subject}`,
       at: new Date(earliestTs).toISOString(),
@@ -461,8 +468,9 @@ export function buildTimeline(
       branchName: 'All branches',
       branchColor: '#64748B',
       branchSlug: null,
-      text: `Campaign "${truncate(subject, 60)}"${clauses.length ? ` — ${clauses.join(' · ')}` : ''}`,
+      text: `${noun} "${truncate(subject, 60)}"${clauses.length ? ` — ${clauses.join(' · ')}` : ''}`,
       state: isBounceSpike ? 'error' : 'posted',
+      sourceTag: isTrellisCampaign ? 'trellis' : 'transactional',
     });
   }
 
@@ -571,7 +579,8 @@ export function buildQueue(
       branchSlug: branch?.slug ?? null,
       occurredAt: conn.last_tested_at ?? null,
       actionLabel: 'Re-test',
-      actionView: 'branches',
+      inlineAction: 'sync',
+      connectionId: conn.id,
     });
   }
 
@@ -660,6 +669,7 @@ export function buildQueue(
       occurredAt: conn.last_tested_at ?? null,
       actionLabel: 'Sync',
       inlineAction: 'sync',
+      connectionId: conn.id,
     });
   }
 

@@ -62,6 +62,10 @@ export interface EmailEventRow {
   email: string;
   event_type: string;
   campaign_subject: string | null;
+  // Set only when the Resend webhook matched this event back to a Trellis send
+  // (via campaign_sends). null = a transactional/spoke email that merely shares
+  // the Resend account — not a campaign Trellis dispatched.
+  campaign_id: string | null;
   resend_email_id: string | null;
   occurred_at: string;
   metadata: Record<string, any> | null;

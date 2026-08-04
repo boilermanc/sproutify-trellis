@@ -60,6 +60,10 @@ export interface TimelineItem {
   branchSlug: string | null;
   text: string;
   state: TimelineState;
+  // Distinguishes a genuine Trellis-dispatched campaign from a transactional
+  // email that only shows up because it shares the Resend account (spoke order
+  // confirmations, password resets, etc.). Undefined for non-email rows.
+  sourceTag?: 'trellis' | 'transactional';
   actionLabel?: string;    // 'Preview' | 'Approve' | 'Fix' | 'Reroute' | 'Draft'
   actionView?: ViewState;
 }
@@ -85,6 +89,18 @@ export interface QueueItem {
   actionLabel: string;
   actionView?: ViewState;
   inlineAction?: 'sync';       // handled in place rather than by navigating
+  connectionId?: string;       // spoke_connections.id — which spoke an inline 'sync' re-tests
+}
+
+// Real-feedback-driven result of an inline queue action. Held in Dashboard
+// state so a completed card can linger (with a "done" animation) until the
+// user dismisses it — even after the underlying issue has resolved out of the
+// derived queue. Never set optimistically.
+export interface QueueOutcome {
+  item: QueueItem;
+  status: 'success' | 'error';
+  message: string;
+  at: string;
 }
 
 // ── Branch Board ──────────────────────────────────────────────────
