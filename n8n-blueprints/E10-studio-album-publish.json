@@ -42,7 +42,7 @@
     },
     {
       "parameters": {
-        "resource": "video", "operation": "upload", "title": "={{ $('Validate Studio Payload').item.json.title }}", "categoryId": "10", "binaryProperty": "data",
+        "resource": "video", "operation": "upload", "title": "={{ $('Validate Studio Payload').item.json.title }}", "regionCode": "US", "categoryId": "={{ '10' }}", "binaryProperty": "data",
         "options": { "description": "={{ $('Validate Studio Payload').item.json.description }}", "privacyStatus": "={{ $('Validate Studio Payload').item.json.visibility }}", "tags": "={{ $('Validate Studio Payload').item.json.tags }}", "selfDeclaredMadeForKids": "={{ $('Validate Studio Payload').item.json.made_for_kids === true }}" }
       },
       "name": "Upload Studio Album to YouTube",

@@ -81,6 +81,9 @@ test('Studio publishing requires review and has a durable failure path', async (
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Publication'));
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Album Publishing'));
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Publish Job'));
+  const youtubeUpload = workflow.nodes.find(node => node.name === 'Upload Studio Album to YouTube');
+  assert.equal(youtubeUpload?.parameters.regionCode, 'US');
+  assert.equal(youtubeUpload?.parameters.categoryId, "={{ '10' }}");
 });
 
 test('unsupported publishing promises remain visibly disabled', async () => {
