@@ -222,32 +222,46 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             still = str(motion).lower() in ("none", "static", "off", "still")
             _heartbeat(asset_id, "probing-audio", 8, "Reading master duration", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
             dur = _duration(audio) or 180.0
+            # Album covers are normally square. Never crop the approved artwork to
+            # fill YouTube's 16:9 canvas: that can remove titles, borders, and faces.
+            # Instead, use a blurred full-frame copy as the background and preserve
+            # the complete cover as a centered foreground with a small safe margin.
+            foreground_h = max(2, VIDEO_HEIGHT - max(24, VIDEO_HEIGHT // 18))
+            foreground_filter = (
+                f"scale={VIDEO_WIDTH}:{foreground_h}:force_original_aspect_ratio=decrease:"
+                "force_divisible_by=2,setsar=1"
+            )
             if still:
-                # Plain static image — no camera motion.
+                # Plain static composition — complete cover, no camera motion.
                 vf = (
-                    f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,"
-                    f"pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
+                    "[0:v]split=2[bgsrc][fgsrc];"
+                    f"[bgsrc]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
+                    f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},gblur=sigma=24,eq=brightness=-0.08,setsar=1[bg];"
+                    f"[fgsrc]{foreground_filter}[fg];"
+                    "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=yuv420p[v]"
                 )
             else:
-                # Ken Burns: a slow continuous zoom across the WHOLE track so the still
-                # cover feels alive (real scene motion needs a video model like Veo).
-                # zoompan with d=1 + a duration-derived rate keyed off the output frame
-                # counter (on) gives a smooth zoom regardless of track length.
+                # Animate only the blurred background. The foreground cover remains
+                # complete and stable, keeping all typography inside YouTube's frame.
                 total = max(1, int(dur * fps))
                 zmax = 1.12
                 zrate = (zmax - 1.0) / total
                 source_w = VIDEO_WIDTH * 4 // 3
                 source_h = VIDEO_HEIGHT * 4 // 3
                 vf = (
-                    f"scale={source_w}:{source_h}:force_original_aspect_ratio=increase,crop={source_w}:{source_h},"
+                    "[0:v]split=2[bgsrc][fgsrc];"
+                    f"[bgsrc]scale={source_w}:{source_h}:force_original_aspect_ratio=increase,"
+                    f"crop={source_w}:{source_h},gblur=sigma=24,eq=brightness=-0.08,"
                     f"zoompan=z='min(1+{zrate:.9f}*on,{zmax})':d=1:"
                     "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps}"
+                    f"s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps},setsar=1[bg];"
+                    f"[fgsrc]{foreground_filter}[fg];"
+                    "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=yuv420p[v]"
                 )
             _heartbeat(asset_id, "rendering", 10, "Rendering video with ffmpeg", {"duration_seconds": round(dur, 1), "motion": motion}, pipeline, job_id, project_id if pipeline == "studio" else None)
             _run_ffmpeg([
                 "ffmpeg", "-y", "-nostats", "-progress", "pipe:1", "-loop", "1", "-i", cover, "-i", audio,
-                "-filter_complex", f"[0:v]{vf}[v]",
+                "-filter_complex", vf,
                 "-map", "[v]", "-map", "1:a",
                 "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", VIDEO_CRF,
                 "-c:a", "aac", "-b:a", VIDEO_AUDIO_BITRATE,

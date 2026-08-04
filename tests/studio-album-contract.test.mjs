@@ -180,3 +180,14 @@ test('unsupported publishing promises remain visibly disabled', async () => {
   assert.match(panel, /Scheduling stays disabled/);
   assert.match(workflow, /Scheduling and custom-thumbnail upload are intentionally disabled/);
 });
+
+test('Studio video keeps the complete square cover inside the YouTube frame', async () => {
+  const worker = await read('workers/video_worker.py');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(worker, /Never crop the approved artwork/);
+  assert.match(worker, /force_original_aspect_ratio=decrease/);
+  assert.match(worker, /gblur=sigma=24/);
+  assert.match(worker, /overlay=\(W-w\)\/2:\(H-h\)\/2/);
+  assert.doesNotMatch(worker, /f"\[0:v\]\{vf\}\[v\]"/);
+  assert.match(page, /Re-render with safe fit/);
+});
