@@ -19,7 +19,6 @@ import {
   Target,
   Upload,
   UserPlus,
-  X,
 } from 'lucide-react';
 import { BranchContext, Lead, LeadEmailEligibility, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
 import LeadTimeline from '../components/leads/LeadTimeline';
@@ -32,6 +31,7 @@ import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
 import LeadBulkBar from '../components/leads/LeadBulkBar';
 import { runSequentialBulk } from '../components/leads/leadBulk';
+import CrmModal from '../components/leads/CrmModal';
 import {
   checkExistingLeads,
   createLead,
@@ -112,34 +112,6 @@ const profileTags = (lead: Lead): string[] => {
 };
 
 const dateInputValue = (value?: string | null): string => value ? value.slice(0, 10) : '';
-
-const ModalShell: React.FC<{
-  title: string;
-  subtitle: string;
-  icon: React.ElementType;
-  onClose: () => void;
-  children: React.ReactNode;
-}> = ({ title, subtitle, icon: Icon, onClose, children }) => (
-  <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#050713]/80 p-4 backdrop-blur-sm">
-    <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] border border-cyan-400/15 bg-[#10142E] shadow-2xl shadow-cyan-950/40">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[#10142E]/95 px-6 py-5 backdrop-blur">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-300">
-            <Icon size={21} />
-          </div>
-          <div>
-            <h2 className="text-lg font-black uppercase tracking-tight text-white">{title}</h2>
-            <p className="text-xs text-slate-400">{subtitle}</p>
-          </div>
-        </div>
-        <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-400 transition hover:bg-white/10 hover:text-white" aria-label="Close">
-          <X size={20} />
-        </button>
-      </div>
-      {children}
-    </div>
-  </div>
-);
 
 const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [pipelines, setPipelines] = useState<LeadPipeline[]>([]);
@@ -800,9 +772,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
               </div>
             ) : filteredLeads.length === 0 ? (
               <div className="px-6 py-24 text-center">
-                <UserPlus className="mx-auto mb-4 text-slate-600" size={38} />
-                <h3 className="text-lg font-black text-white">No leads match these filters</h3>
-                <p className="mt-2 text-sm text-slate-400">Adjust the filters, add a lead, or import rows from a spreadsheet.</p>
+                {statusFilter === 'followups' ? <Calendar className="mx-auto mb-4 text-slate-600" size={38} /> : <UserPlus className="mx-auto mb-4 text-slate-600" size={38} />}
+                <h3 className="text-lg font-black text-white">{statusFilter === 'followups' ? 'No follow-ups due' : 'No leads match these filters'}</h3>
+                <p className="mt-2 text-sm text-slate-400">{statusFilter === 'followups' ? 'There are no overdue or upcoming follow-ups in the next seven days.' : 'Adjust the filters, add a lead, or import rows from a spreadsheet.'}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -937,7 +909,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       )}
 
       {showAddModal && activeBranch && selectedPipeline && (
-        <ModalShell title="Add Lead" subtitle={`${activeBranch.name} · ${selectedPipeline.name}`} icon={UserPlus} onClose={() => !submittingLead && setShowAddModal(false)}>
+        <CrmModal title="Add Lead" subtitle={`${activeBranch.name} · ${selectedPipeline.name}`} icon={UserPlus} pending={submittingLead} maxWidth="max-w-3xl" onClose={() => setShowAddModal(false)}>
           <form onSubmit={submitLead} className="space-y-5 p-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-xs font-bold text-slate-300">First name *<input autoFocus value={leadForm.first_name} onChange={event => setLeadForm(current => ({ ...current, first_name: event.target.value }))} className="w-full rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none focus:border-cyan-400/50" /></label>
@@ -954,7 +926,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
               <button type="submit" disabled={submittingLead || !leadForm.first_name.trim() || !formEmailValid} className="flex items-center gap-2 rounded-xl bg-[#00D9FF] px-5 py-3 text-xs font-black uppercase tracking-wider text-[#07101D] disabled:cursor-not-allowed disabled:opacity-40">{submittingLead ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Create Lead</button>
             </div>
           </form>
-        </ModalShell>
+        </CrmModal>
       )}
 
       {quickActivity && (
@@ -991,7 +963,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       )}
 
       {showImportModal && activeBranch && selectedPipeline && (
-        <ModalShell title="Import Leads" subtitle={`${activeBranch.name} · ${selectedPipeline.name}`} icon={FileSpreadsheet} onClose={() => !importing && closeImport()}>
+        <CrmModal title="Import Leads" subtitle={`${activeBranch.name} · ${selectedPipeline.name}`} icon={FileSpreadsheet} pending={importing} maxWidth="max-w-3xl" onClose={closeImport}>
           <div className="p-6">
             <div className="mb-6 flex items-center gap-3">
               {['Paste', 'Preview', 'Result'].map((label, index) => {
@@ -1086,7 +1058,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
               </div>
             )}
           </div>
-        </ModalShell>
+        </CrmModal>
       )}
     </div>
   );
