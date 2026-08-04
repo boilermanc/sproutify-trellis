@@ -617,7 +617,7 @@ Deno.serve(async (req) => {
       const { data: asset } = await db.from("studio_assets").select("*").eq("id", body.asset_id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
       if (!asset) throw new Error("Cover concept not found.");
       const album = await getOwnedAlbum(db, asset.album_id, user.id);
-      if (asset.metadata_json?.selection_status === "approved" || album.artwork_status === "approved") throw new Error("An approved cover cannot be deleted.");
+      if (asset.metadata_json?.selection_status === "approved") throw new Error("The approved cover cannot be deleted. Choose an unused concept instead.");
       const { error: removeError } = await db.storage.from(asset.storage_bucket).remove([asset.storage_path]);
       if (removeError) throw new Error(`Could not remove the cover file: ${removeError.message}`);
       const { error } = await db.from("studio_assets").update({ status: "archived", metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected", deleted_at: new Date().toISOString() }, updated_at: new Date().toISOString() }).eq("id", asset.id);
