@@ -127,6 +127,8 @@ test('Studio covers are editable, removable, and titled before approval', async 
   assert.match(page, /visualProductionRef\.current\?\.scrollIntoView/);
   assert.match(page, /catch \(error\) \{ addToast\(error instanceof Error \? error\.message : 'The requested action could not be completed\.'/);
   assert.match(page, /Delete unused/);
+  assert.match(page, /Create another concept/);
+  assert.match(page, /Create an alternate without deleting the approved cover/);
   assert.match(composer, /Rekkrd After Dark/);
   assert.match(composer, /Riviera Editorial/);
   assert.match(composer, /Travel Poster/);
@@ -139,6 +141,9 @@ test('Studio covers are editable, removable, and titled before approval', async 
   assert.match(fn, /Finish and save the cover typography before approving it/);
   assert.doesNotMatch(fn, /selection_status === "approved" \|\| album\.artwork_status === "approved"/);
   assert.match(fn, /The approved cover cannot be deleted\. Choose an unused concept instead\./);
+  assert.match(fn, /source image for the approved cover and must be kept/);
+  assert.doesNotMatch(fn, /remove\(\[asset\.storage_path\]\)/);
+  assert.match(fn, /\["selected", "approved"\]\.includes/);
 });
 
 test('Studio publishing stays isolated from Episode state', async () => {

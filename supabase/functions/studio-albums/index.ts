@@ -151,9 +151,10 @@ async function coverWithUrl(db: any, asset: any) {
 }
 
 async function clearCoverSelections(db: any, albumId: string) {
-  const { data: selected, error } = await db.from("studio_assets").select("id,metadata_json").eq("album_id", albumId).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "selected" });
+  const { data: candidates, error } = await db.from("studio_assets").select("id,metadata_json").eq("album_id", albumId).eq("asset_type", "cover_art").eq("status", "active");
   if (error) throw new Error(error.message);
-  await Promise.all((selected || []).map((asset: any) => db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("id", asset.id)));
+  const selected = (candidates || []).filter((asset: any) => ["selected", "approved"].includes(asset.metadata_json?.selection_status));
+  await Promise.all(selected.map((asset: any) => db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("id", asset.id)));
 }
 
 async function generateStudioCover(db: any, album: any, input: any) {
@@ -618,8 +619,9 @@ Deno.serve(async (req) => {
       if (!asset) throw new Error("Cover concept not found.");
       const album = await getOwnedAlbum(db, asset.album_id, user.id);
       if (asset.metadata_json?.selection_status === "approved") throw new Error("The approved cover cannot be deleted. Choose an unused concept instead.");
-      const { error: removeError } = await db.storage.from(asset.storage_bucket).remove([asset.storage_path]);
-      if (removeError) throw new Error(`Could not remove the cover file: ${removeError.message}`);
+      const { data: approvedDependents, error: dependencyError } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved", source_asset_id: asset.id }).limit(1);
+      if (dependencyError) throw new Error(dependencyError.message);
+      if (approvedDependents?.length) throw new Error("This concept is the source image for the approved cover and must be kept.");
       const { error } = await db.from("studio_assets").update({ status: "archived", metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected", deleted_at: new Date().toISOString() }, updated_at: new Date().toISOString() }).eq("id", asset.id);
       if (error) throw new Error(error.message);
       return json({ deleted: true, asset_id: asset.id });
