@@ -115,6 +115,27 @@ test('Studio cover generation treats subject and Riviera direction as hard const
   assert.match(fn, /No tropical jungle, waterfall, volcano/);
 });
 
+test('Studio covers are editable, removable, and titled before approval', async () => {
+  const page = await read('pages/StudioAlbums.tsx');
+  const composer = await read('components/StudioCoverComposer.tsx');
+  const service = await read('services/studioAlbumsService.ts');
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(page, /<StudioCoverComposer/);
+  assert.match(page, /Enhance selected/);
+  assert.match(page, /requestDeleteCover/);
+  assert.match(page, /Approve titled cover/);
+  assert.match(composer, /Rekkrd After Dark/);
+  assert.match(composer, /Riviera Editorial/);
+  assert.match(composer, /Travel Poster/);
+  assert.match(composer, /After Dark/);
+  assert.match(composer, /Vintage postcard border/);
+  assert.match(service, /save_cover_composite/);
+  assert.match(service, /enhance_cover_concept/);
+  assert.match(service, /delete_cover_concept/);
+  assert.match(fn, /role: "titled_cover"/);
+  assert.match(fn, /Finish and save the cover typography before approving it/);
+});
+
 test('Studio publishing stays isolated from Episode state', async () => {
   const migration = await read('supabase/migrations/20260804121548_add_studio_album_publications.sql');
   const workflow = await read('n8n-blueprints/E10-studio-album-publish.json');

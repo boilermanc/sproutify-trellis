@@ -11,8 +11,14 @@ const MUSIC_STITCH_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-music-st
 const VIDEO_RENDER_WEBHOOK = Deno.env.get("STUDIO_VIDEO_RENDER_WEBHOOK") || Deno.env.get("STUDIO_VIDEO_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-episode-video";
 const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-studio-album-publish";
 const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
+const IMAGE_EDIT_MODEL = Deno.env.get("IMAGE_EDIT_MODEL") || "gemini-3.1-flash-image";
 
 const cleanText = (value: unknown, limit: number) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  return btoa(binary);
+};
 const chapterTime = (seconds: number) => {
   const total = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(total / 3600);
@@ -142,6 +148,12 @@ async function queueStudioTrackGeneration(db: any, album: any, userId: string, s
 async function coverWithUrl(db: any, asset: any) {
   const { data: signed } = await db.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 60 * 15);
   return { ...asset, image_url: signed?.signedUrl || null };
+}
+
+async function clearCoverSelections(db: any, albumId: string) {
+  const { data: selected, error } = await db.from("studio_assets").select("id,metadata_json").eq("album_id", albumId).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "selected" });
+  if (error) throw new Error(error.message);
+  await Promise.all((selected || []).map((asset: any) => db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("id", asset.id)));
 }
 
 async function generateStudioCover(db: any, album: any, input: any) {
@@ -542,12 +554,81 @@ Deno.serve(async (req) => {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       return json({ concept: await generateStudioCover(db, album, body) }, 201);
     }
+    if (body.action === "save_cover_composite") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before saving a titled cover.");
+      const { data: source } = await db.from("studio_assets").select("*").eq("id", body.source_asset_id).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+      if (!source) throw new Error("The source cover concept is unavailable.");
+      const match = String(body.image_base64 || "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) throw new Error("The titled cover must be a PNG image.");
+      const binary = atob(match[1]);
+      if (binary.length > 15 * 1024 * 1024) throw new Error("The titled cover is larger than 15 MB.");
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      if (bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error("The titled cover PNG is invalid.");
+      const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
+      const version = Number(previous?.version || 0) + 1;
+      const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}-titled.png`;
+      const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
+      if (uploadError) throw new Error(`Could not store the titled cover: ${uploadError.message}`);
+      const typography = {
+        title: cleanText(body.typography?.title, 200),
+        subtitle: cleanText(body.typography?.subtitle, 160),
+        series: cleanText(body.typography?.series, 120) || "Rekkrd After Dark",
+        treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial",
+        vintage_border: body.typography?.vintage_border !== false,
+      };
+      if (!typography.title) throw new Error("Add the album title before saving the cover.");
+      await clearCoverSelections(db, album.id);
+      const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "titled_cover", selection_status: "selected", source_asset_id: source.id, typography } }).select("*").single();
+      if (error || !asset) throw new Error(error?.message || "Could not register the titled cover.");
+      await db.from("studio_albums").update({ artwork_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
+      return json({ concept: await coverWithUrl(db, asset) }, 201);
+    }
+    if (body.action === "enhance_cover_concept") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before enhancing cover concepts.");
+      const { data: source } = await db.from("studio_assets").select("*").eq("id", body.source_asset_id).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+      if (!source) throw new Error("The source cover concept is unavailable.");
+      const direction = cleanText(body.direction, 700);
+      if (!direction) throw new Error("Describe what you want to enhance.");
+      const { data: sourceBlob, error: downloadError } = await db.storage.from(source.storage_bucket).download(source.storage_path);
+      if (downloadError || !sourceBlob) throw new Error(downloadError?.message || "Could not load the source cover.");
+      const sourceBytes = new Uint8Array(await sourceBlob.arrayBuffer());
+      const prompt = `Edit the supplied square album-art photograph. Preserve its core subject identity, location, camera angle, photographic medium, period styling, lighting, and overall composition. Apply only this requested improvement: ${direction}. Keep exactly one adult woman if one is present. Preserve the real French Riviera / Côte d’Azur geography when present. Return a polished square image-only art plate. Do not add title text, words, letters, numbers, signage, labels, logos, watermark, signature, extra people, tropical jungle, waterfall, volcano, fantasy island, or generic Caribbean scenery.`;
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_EDIT_MODEL}:generateContent`, { method: "POST", headers: { "x-goog-api-key": Deno.env.get("GEMINI_API_KEY") || (await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle()).data?.gemini_api_key || "", "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ inlineData: { mimeType: source.mime_type || "image/png", data: bytesToBase64(sourceBytes) } }, { text: prompt }] }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "1:1" } } }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(`Cover enhancement failed: ${JSON.stringify(payload).slice(0, 240)}`);
+      const imagePart = payload?.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data || part.inline_data?.data);
+      const encoded = imagePart?.inlineData?.data || imagePart?.inline_data?.data;
+      if (!encoded) throw new Error("The image editor returned no enhanced image.");
+      const enhancedBinary = atob(encoded);
+      const enhancedBytes = Uint8Array.from(enhancedBinary, (char) => char.charCodeAt(0));
+      const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
+      const version = Number(previous?.version || 0) + 1;
+      const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}-enhanced.png`;
+      const { error: uploadError } = await db.storage.from("studio-assets").upload(path, enhancedBytes, { contentType: "image/png", upsert: false });
+      if (uploadError) throw new Error(`Could not store the enhanced cover: ${uploadError.message}`);
+      await clearCoverSelections(db, album.id);
+      const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: enhancedBytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "cover_concept", selection_status: "selected", source_asset_id: source.id, enhancement_direction: direction, model: IMAGE_EDIT_MODEL } }).select("*").single();
+      if (error || !asset) { await db.storage.from("studio-assets").remove([path]); throw new Error(error?.message || "Could not register the enhanced cover."); }
+      return json({ concept: await coverWithUrl(db, asset) }, 201);
+    }
+    if (body.action === "delete_cover_concept") {
+      const { data: asset } = await db.from("studio_assets").select("*").eq("id", body.asset_id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+      if (!asset) throw new Error("Cover concept not found.");
+      const album = await getOwnedAlbum(db, asset.album_id, user.id);
+      if (asset.metadata_json?.selection_status === "approved" || album.artwork_status === "approved") throw new Error("An approved cover cannot be deleted.");
+      const { error: removeError } = await db.storage.from(asset.storage_bucket).remove([asset.storage_path]);
+      if (removeError) throw new Error(`Could not remove the cover file: ${removeError.message}`);
+      const { error } = await db.from("studio_assets").update({ status: "archived", metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected", deleted_at: new Date().toISOString() }, updated_at: new Date().toISOString() }).eq("id", asset.id);
+      if (error) throw new Error(error.message);
+      return json({ deleted: true, asset_id: asset.id });
+    }
     if (body.action === "select_cover_concept") {
       const { data: asset, error } = await db.from("studio_assets").select("*").eq("id", body.asset_id).eq("asset_type", "cover_art").single();
       if (error || !asset) throw new Error("Cover concept not found.");
       const album = await getOwnedAlbum(db, asset.album_id, user.id);
-      const { error: clearError } = await db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active");
-      if (clearError) throw new Error(clearError.message);
+      await clearCoverSelections(db, album.id);
       const { data, error: selectError } = await db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "selected" } }).eq("id", asset.id).select("*").single();
       if (selectError || !data) throw new Error(selectError?.message || "Could not select cover concept.");
       await db.from("studio_albums").update({ artwork_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
@@ -557,6 +638,7 @@ Deno.serve(async (req) => {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const { data: selectedCover } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "selected" }).maybeSingle();
       if (!selectedCover) throw new Error("Select a cover concept before approving it.");
+      if (selectedCover.metadata_json?.role !== "titled_cover") throw new Error("Finish and save the cover typography before approving it.");
       await db.from("studio_assets").update({ metadata_json: { ...(selectedCover.metadata_json || {}), selection_status: "approved" } }).eq("id", selectedCover.id);
       const { data, error } = await db.from("studio_albums").update({ artwork_status: "approved", status: "animation_review", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
       if (error || !data) throw new Error(error?.message || "Could not approve the cover.");
