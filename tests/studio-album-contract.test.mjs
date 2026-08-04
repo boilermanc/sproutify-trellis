@@ -99,6 +99,22 @@ test('Studio video webhook honors the documented secret name', async () => {
   assert.match(fn, /Deno\.env\.get\("STUDIO_VIDEO_RENDER_WEBHOOK"\) \|\| Deno\.env\.get\("STUDIO_VIDEO_WEBHOOK"\)/);
 });
 
+test('Studio cover generation treats subject and Riviera direction as hard constraints', async () => {
+  const constants = await read('constants.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  const service = await read('services/studioAlbumsService.ts');
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(constants, /name: 'Riviera Editorial Photo'/);
+  assert.match(constants, /real Côte d’Azur architecture and coastline/);
+  assert.match(page, /useState\('photoreal_60s'\)/);
+  assert.match(page, /custom_direction: coverDirection/);
+  assert.match(service, /interface StudioCoverDirection/);
+  assert.match(fn, /USER DIRECTION — HIGHEST PRIORITY/);
+  assert.match(fn, /Exactly one adult woman is the only human figure anywhere/);
+  assert.match(fn, /real French Riviera \/ Côte d’Azur/);
+  assert.match(fn, /No tropical jungle, waterfall, volcano/);
+});
+
 test('Studio publishing stays isolated from Episode state', async () => {
   const migration = await read('supabase/migrations/20260804121548_add_studio_album_publications.sql');
   const workflow = await read('n8n-blueprints/E10-studio-album-publish.json');

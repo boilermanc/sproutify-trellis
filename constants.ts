@@ -2080,9 +2080,9 @@ export const EPISODE_ART_STYLES: EpisodeArtStyle[] = [
     prompt: '1960s mid-century cinematic illustrated poster, bold digital painting, expressive palette-knife background strokes, high-contrast dramatic lighting, glamorous figures in vintage couture with sunglasses, classic sports car, rich saturated teal, yellow and crimson, striking editorial composition.' + NO_TEXT + BRAND_SAFE_ART,
   },
   {
-    id: 'photoreal_60s', name: 'Photoreal Film Still', desc: 'Kodachrome cinematic photo — the Como/Riva look',
-    setting: 'the glamorous 1960s Italian lakes and Riviera (Lake Como, classic Riva speedboats, lakeside villas, grand hotels)',
-    prompt: '1960s color film still, Kodachrome photography, cinematic and glamorous, natural golden light, shallow depth of field, subtle film grain, shot on a vintage lens, editorial fashion photography, richly saturated, timeless and elegant. No text, no watermark, no logo.' + BRAND_SAFE_ART,
+    id: 'photoreal_60s', name: 'Riviera Editorial Photo', desc: 'Sun-faded Kodachrome fashion photograph on the Côte d’Azur',
+    setting: 'a real 1960s–1970s French Riviera terrace above Nice or Cannes, with deep blue Mediterranean water, yachts, palms, a curved coastline, and Belle Époque hotels',
+    prompt: 'Photorealistic 1960s–1970s French Riviera luxury travel editorial, authentic Kodachrome color film photograph, one elegant summer traveler in period resort fashion, natural Mediterranean sunlight, vintage lens, subtle film grain, sun-faded postcard character, real Côte d’Azur architecture and coastline. Not an illustration, not a cartoon, not a screen-print, not a tropical fantasy.' + NO_TEXT + BRAND_SAFE_ART,
   },
   {
     id: 'exotica_poster', name: 'Exotica Poster', desc: 'Retro screen-print tiki album cover',

@@ -144,13 +144,26 @@ async function coverWithUrl(db: any, asset: any) {
   return { ...asset, image_url: signed?.signedUrl || null };
 }
 
-async function generateStudioCover(db: any, album: any, direction: string) {
+async function generateStudioCover(db: any, album: any, input: any) {
   if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before generating cover concepts.");
   const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
   const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
   if (!key) throw new Error("Image generation is not configured.");
-  const safeDirection = String(direction || "").replace(/\b(real artists?|brands?|lyrics?|logos?)\b/gi, "").trim().slice(0, 500);
-  const prompt = `Square IMAGE-ONLY album cover concept for an original music release. This is a visual artwork plate only; typography will be added later by Trellis. Do not render any title, artist name, series name, letters, numbers, symbols, signage, labels, logos, watermark, signature, or readable writing anywhere in the image. Genre: ${album.subgenre || album.genre || "instrumental"}. Mood: ${album.mood || "cinematic"}. Setting: ${album.theme || "evocative coastal night scene"}. Creative direction: ${safeDirection || "elegant cinematic scene with a strong single visual idea"}. Premium editorial album art, no text, no words, no lettering, no typography, no real artists or copyrighted characters.`;
+  const cleanDirection = (value: unknown, limit: number) => String(value || "").replace(/\b(real artists?|brands?|lyrics?|logos?)\b/gi, "").trim().slice(0, limit);
+  const styleId = cleanDirection(input.style_id, 80) || "custom";
+  const stylePrompt = cleanDirection(input.style_prompt, 1200) || "Premium editorial album artwork with a strong single visual idea.";
+  const styleSetting = cleanDirection(input.style_setting, 500);
+  const customDirection = cleanDirection(input.custom_direction, 500);
+  const singleWomanRequested = /(?:\b(?:single|one|only|exactly one)\b.{0,40}\b(?:woman|female|lady)\b)|(?:\b(?:woman|female|lady)\b.{0,40}\b(?:alone|only|single)\b)/i.test(customDirection);
+  const subjectConstraint = singleWomanRequested
+    ? "HARD SUBJECT CONSTRAINT: Exactly one adult woman is the only human figure anywhere in the image. No second person, no men, no crowd, no background people, no reflections or portraits containing other people."
+    : "SUBJECT CONSTRAINT: Use one clear focal subject. Do not add a group, entourage, or crowd unless the user explicitly requests one.";
+  const locationSource = `${album.title || ""} ${album.theme || ""} ${styleSetting} ${customDirection}`;
+  const rivieraRequested = /riviera|mediterranean|c[oô]te d['’]?azur|cannes|nice|monaco/i.test(locationSource);
+  const locationConstraint = rivieraRequested
+    ? "HARD LOCATION CONSTRAINT: This is the real French Riviera / Côte d’Azur: deep blue Mediterranean water, yachts, palms, a curved developed coastline, limestone terrace or balustrade, and recognizable Belle Époque resort architecture. No tropical jungle, waterfall, volcano, fantasy island, or generic Caribbean setting."
+    : "LOCATION CONSTRAINT: Make the stated setting geographically and architecturally specific rather than generic.";
+  const prompt = `Square IMAGE-ONLY album artwork plate for an original music release. Typography will be added later with real fonts.\nSTYLE / MEDIUM: ${stylePrompt}\nSCENE SETTING: ${styleSetting || album.theme || "an evocative, geographically specific setting"}.\nUSER DIRECTION — HIGHEST PRIORITY: ${customDirection || "Create one elegant focal subject and a restrained editorial composition"}.\n${subjectConstraint}\n${locationConstraint}\nALBUM CONTEXT: Genre ${album.subgenre || album.genre || "instrumental"}; mood ${album.mood || "cinematic"}.\nABSOLUTE EXCLUSIONS: no title, no words, no letters, no numbers, no signage, no labels, no logos, no watermark, no signature, no readable writing, no real artists, and no copyrighted characters. Do not invent extra people, vehicles, or narrative props that conflict with the user direction.`;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "1:1" } }) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Cover concept generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
@@ -162,7 +175,7 @@ async function generateStudioCover(db: any, album: any, direction: string) {
   const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}.png`;
   const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
   if (uploadError) throw new Error(`Could not store cover concept: ${uploadError.message}`);
-  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "cover_concept", selection_status: "unselected", prompt, direction: safeDirection, model: IMAGE_MODEL } }).select("*").single();
+  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "cover_concept", selection_status: "unselected", prompt, style_id: styleId, style_setting: styleSetting, custom_direction: customDirection, hard_constraints: { single_woman: singleWomanRequested, french_riviera: rivieraRequested }, model: IMAGE_MODEL } }).select("*").single();
   if (error || !asset) throw new Error(error?.message || "Could not register cover concept.");
   await db.from("studio_albums").update({ artwork_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
   return coverWithUrl(db, asset);
@@ -527,7 +540,7 @@ Deno.serve(async (req) => {
     }
     if (body.action === "generate_cover_concept") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      return json({ concept: await generateStudioCover(db, album, body.direction) }, 201);
+      return json({ concept: await generateStudioCover(db, album, body) }, 201);
     }
     if (body.action === "select_cover_concept") {
       const { data: asset, error } = await db.from("studio_assets").select("*").eq("id", body.asset_id).eq("asset_type", "cover_art").single();

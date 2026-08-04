@@ -128,7 +128,13 @@ export async function approveStudioReleaseIdentity(albumId: string): Promise<Stu
 }
 
 export async function getStudioCoverConcepts(albumId: string): Promise<StudioCoverConcept[]> { return (await callStudio('list_cover_concepts', { album_id: albumId })).concepts as StudioCoverConcept[]; }
-export async function generateStudioCoverConcept(albumId: string, direction: string): Promise<StudioCoverConcept> { return (await callStudio('generate_cover_concept', { album_id: albumId, direction })).concept as StudioCoverConcept; }
+export interface StudioCoverDirection {
+  style_id: string;
+  style_prompt: string;
+  style_setting: string;
+  custom_direction: string;
+}
+export async function generateStudioCoverConcept(albumId: string, direction: StudioCoverDirection): Promise<StudioCoverConcept> { return (await callStudio('generate_cover_concept', { album_id: albumId, ...direction })).concept as StudioCoverConcept; }
 export async function selectStudioCoverConcept(assetId: string): Promise<StudioCoverConcept> { return (await callStudio('select_cover_concept', { asset_id: assetId })).concept as StudioCoverConcept; }
 export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
 export async function prepareStudioVisualProduction(albumId: string, motion: string, direction: string): Promise<StudioAlbum> { return (await callStudio('prepare_visual_production', { album_id: albumId, motion, direction })).album as StudioAlbum; }
