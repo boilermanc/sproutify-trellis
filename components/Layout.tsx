@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle, Sparkles, TrendingUp, CalendarClock, LayoutTemplate, Award
+  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle, Sparkles, TrendingUp, CalendarClock, LayoutTemplate, Award, UserPlus
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -39,6 +39,7 @@ const NAV_GROUPS = [
   {
     id: 'audience', label: 'Audience', defaultOpen: true, items: [
       { id: 'profiles', label: 'Profiles', icon: Users },
+      { id: 'leads', label: 'Leads', icon: UserPlus },
       { id: 'segments', label: 'Segments', icon: Layers },
       { id: 'intelligence', label: 'Intelligence', icon: BarChart3 },
       { id: 'branches', label: 'Branches', icon: GitBranch },

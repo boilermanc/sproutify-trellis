@@ -412,6 +412,54 @@ export interface MarketingEvent {
   created_at: string;
 }
 
+export type LeadStage = 'new' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost';
+
+export interface LeadPipeline {
+  id: string;
+  branch_id: string;
+  name: string;
+  stages: LeadStage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadProfile {
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+export interface Lead {
+  id: string;
+  profile_id: string;
+  branch_id: string;
+  pipeline_id: string;
+  stage: string;
+  source: string;
+  inquiry_text: string | null;
+  estimated_value: number | null;
+  status: 'open' | 'won' | 'lost' | 'recycled';
+  next_action_at: string | null;
+  assigned_to: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  profile?: LeadProfile | null;
+}
+
+export interface NewLeadInput {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  source: string;
+  inquiry_text?: string;
+  estimated_value?: number;
+  notes?: string;
+  branch_id: string;
+  pipeline_id: string;
+}
+
 export type TaskType = 'copywriting' | 'design' | 'audience' | 'technical' | 'analysis' | 'social';
 
 export interface AuditLogEntry {
@@ -431,7 +479,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
 
 export interface StudioAlbum {
   id: string;
