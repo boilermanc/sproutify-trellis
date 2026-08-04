@@ -30,6 +30,8 @@ import { followUpState, getFollowUpWindow, sortFollowUps } from '../components/l
 import LeadBoard from '../components/leads/LeadBoard';
 import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
+import LeadBulkBar from '../components/leads/LeadBulkBar';
+import { runSequentialBulk } from '../components/leads/leadBulk';
 import {
   checkExistingLeads,
   createLead,
@@ -167,6 +169,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
   const [stageDates, setStageDates] = useState<Record<string, string>>({});
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+  const [bulkStage, setBulkStage] = useState('new');
+  const [bulkPending, setBulkPending] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [bulkFailures, setBulkFailures] = useState<Array<{ email: string; reason: string }>>([]);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [leadForm, setLeadForm] = useState<NewLeadInput>(emptyLeadForm);
@@ -200,6 +207,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     setLeads([]);
     setTimelines({});
     setStageFilter('all');
+    setSelectedLeadIds(new Set());
 
     if (!activeBranch) {
       setLoadingPipelines(false);
@@ -295,6 +303,44 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     link.remove();
     URL.revokeObjectURL(url);
     addToast(`Exported ${filteredLeads.length} lead${filteredLeads.length === 1 ? '' : 's'}.`, 'success');
+  };
+
+  const toggleLeadSelection = (leadId: string) => setSelectedLeadIds(current => {
+    const next = new Set(current);
+    if (next.has(leadId)) next.delete(leadId); else next.add(leadId);
+    return next;
+  });
+
+  const selectedLeads = leads.filter(lead => selectedLeadIds.has(lead.id));
+  const allVisibleSelected = filteredLeads.length > 0 && filteredLeads.every(lead => selectedLeadIds.has(lead.id));
+
+  const toggleAllVisible = () => setSelectedLeadIds(current => {
+    const next = new Set(current);
+    if (allVisibleSelected) filteredLeads.forEach(lead => next.delete(lead.id));
+    else filteredLeads.forEach(lead => next.add(lead.id));
+    return next;
+  });
+
+  const runBulkLeadUpdate = async (
+    label: string,
+    worker: (lead: Lead) => Promise<Lead>
+  ) => {
+    if (selectedLeads.length === 0) return;
+    setBulkPending(true);
+    setBulkFailures([]);
+    setBulkProgress({ completed: 0, total: selectedLeads.length });
+    addToast(`${label}: updating ${selectedLeads.length} lead${selectedLeads.length === 1 ? '' : 's'}…`, 'info');
+    const result = await runSequentialBulk(selectedLeads, worker, (completed, total) => setBulkProgress({ completed, total }));
+    for (const success of result.successes) {
+      setLeads(current => current.map(lead => lead.id === success.item.id ? { ...success.result, profile: success.item.profile } : lead));
+    }
+    const failures = result.failures.map(failure => ({ email: failure.item.profile?.email || failure.item.id, reason: failure.reason }));
+    setBulkFailures(failures);
+    setSelectedLeadIds(new Set(result.failures.map(failure => failure.item.id)));
+    setBulkPending(false);
+    setBulkProgress(null);
+    if (result.successes.length > 0) addToast(`${label}: ${result.successes.length} updated.`, 'success');
+    if (failures.length > 0) addToast(`${failures.length} lead update${failures.length === 1 ? '' : 's'} failed.`, 'error');
   };
 
   const openAddModal = () => {
@@ -743,6 +789,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
 
           <LeadMetrics filteredLeads={filteredLeads} allPipelineLeads={allPipelineLeads} stages={selectedPipeline?.stages || []} />
 
+          {viewMode === 'list' && selectedLeadIds.size > 0 && <LeadBulkBar count={selectedLeadIds.size} stages={selectedPipeline?.stages || []} targetStage={bulkStage} pending={bulkPending} progress={bulkProgress} failures={bulkFailures} onTargetStageChange={setBulkStage} onApplyStage={() => void runBulkLeadUpdate('Stage change', lead => updateLeadStage(lead.id, bulkStage))} onMarkLost={() => void runBulkLeadUpdate('Mark lost', lead => updateLeadStage(lead.id, 'lost'))} onRecycle={() => void runBulkLeadUpdate('Recycle', lead => updateLead(lead.id, { status: 'recycled' }))} onClear={() => { setSelectedLeadIds(new Set()); setBulkFailures([]); }} />}
+
           {viewMode === 'board' ? (
             <LeadBoard stages={selectedPipeline?.stages || []} leads={filteredLeads} stageDates={stageDates} pendingLeadId={stageSavingId} onMove={changeStage} />
           ) : <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#10142E] shadow-xl shadow-slate-950/20">
@@ -761,6 +809,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                 <table className="w-full min-w-[920px] text-left">
                   <thead className="border-b border-white/10 bg-white/[0.025] text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
                     <tr>
+                      <th className="px-4 py-4"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} aria-label="Select all visible leads" className="h-4 w-4 accent-cyan-400" /></th>
                       <th className="px-6 py-4">Name</th>
                       <th className="px-4 py-4">Email</th>
                       <th className="px-4 py-4">Source</th>
@@ -777,6 +826,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                       return (
                         <React.Fragment key={lead.id}>
                           <tr onClick={() => toggleLeadDetails(lead)} className="cursor-pointer transition hover:bg-cyan-400/[0.035]">
+                            <td className="px-4 py-5" onClick={event => event.stopPropagation()}><input type="checkbox" checked={selectedLeadIds.has(lead.id)} onChange={() => toggleLeadSelection(lead.id)} aria-label={`Select ${profileName(lead)}`} className="h-4 w-4 accent-cyan-400" /></td>
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-xs font-black text-cyan-300">
@@ -809,7 +859,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                           </tr>
                           {isExpanded && (
                             <tr>
-                              <td colSpan={7} className="bg-[#0A0E27]/70 px-6 py-6">
+                              <td colSpan={8} className="bg-[#0A0E27]/70 px-6 py-6">
                                 <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
                                   <div className="space-y-4">
                                     <div className="flex flex-wrap gap-2">
