@@ -76,3 +76,14 @@ test('strategy creatives are editable and unsupported claims block approval', ()
   assert.match(service, /locationTargets: strings\(item\.locationTargets, 1\)/);
   assert.match(service, /temperature: 0\.3/);
 });
+
+test('creative variants can generate, preview, and attach assets without leaving the form', () => {
+  const page = read('pages/RedditGrowth.tsx');
+
+  assert.match(page, /Inline Creative Builder/);
+  assert.match(page, /generateInlineCreative/);
+  assert.match(page, /renderCardPreviewDataUrl/);
+  assert.match(page, /Approve & Attach/);
+  assert.match(page, /uploadPostImage/);
+  assert.match(page, /It does not save or submit the campaign/);
+});

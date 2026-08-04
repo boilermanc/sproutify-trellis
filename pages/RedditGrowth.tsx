@@ -3,7 +3,7 @@ import {
   AlertTriangle, BarChart3, CalendarDays, CheckCircle2, Clock3,
   BrainCircuit, DollarSign, Download, ExternalLink, Globe2, Hash, Image as ImageIcon, Layers3,
   Link, MapPin, Megaphone, Pencil, Plus, Rocket, Save, ShieldCheck,
-  Sparkles, Target, Trash2, Video, XCircle,
+  Sparkles, Target, Trash2, Video, XCircle, Loader2, Wand2,
 } from 'lucide-react';
 import {
   ApiKeyConfig,
@@ -17,6 +17,10 @@ import {
   ViewState,
 } from '../types';
 import { generateRedditAdStrategy } from '../services/redditAdStrategyService';
+import { generateCardConcepts, type CardConceptWithRef } from '../services/creativeDirectorService';
+import { getBrandCardStyle } from '../services/brandCardStyles';
+import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
+import { uploadPostImage } from '../services/scheduledPostService';
 
 interface RedditAdsProps {
   branchContext?: BranchContext;
@@ -26,6 +30,14 @@ interface RedditAdsProps {
 }
 
 type WorkspaceTab = 'strategy' | 'campaigns' | 'create' | 'review' | 'performance';
+
+interface InlineCreativeDraft {
+  concept?: CardConceptWithRef;
+  previewUrl?: string;
+  isGenerating: boolean;
+  isApproving: boolean;
+  error?: string;
+}
 
 const STORAGE_KEY = 'trellis_reddit_ad_campaigns_v1';
 const STRATEGY_STORAGE_KEY = 'trellis_reddit_ad_strategies_v1';
@@ -201,6 +213,11 @@ function validHttpUrl(value: string): boolean {
   }
 }
 
+function buildInlineCreativeBrandContext(branch: BranchContext['allBranches'][number]): string {
+  const website = branch.website_url ? ` Website: ${branch.website_url}.` : '';
+  return `Brand: ${branch.name}.${website}`;
+}
+
 function reviewErrors(campaign: RedditAdCampaign): string[] {
   const errors: string[] = [];
   if (!campaign.name.trim()) errors.push('Add a campaign name.');
@@ -269,6 +286,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
   const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
   const [communityInput, setCommunityInput] = useState('');
   const [locationInput, setLocationInput] = useState('');
+  const [inlineCreativeDrafts, setInlineCreativeDrafts] = useState<Record<string, InlineCreativeDraft>>({});
 
   const visibleCampaigns = useMemo(() => {
     if (!branchContext || branchContext.isAllSelected) return campaigns;
@@ -514,6 +532,97 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
     }));
   };
 
+  const updateInlineCreativeDraft = (variantId: string, patch: Partial<InlineCreativeDraft>) => {
+    setInlineCreativeDrafts(previous => ({
+      ...previous,
+      [variantId]: {
+        isGenerating: false,
+        isApproving: false,
+        ...previous[variantId],
+        ...patch,
+      },
+    }));
+  };
+
+  const generateInlineCreative = async (variant: RedditAdVariant) => {
+    const branch = branchContext?.allBranches.find(item => item.slug === form.branchSlug);
+    if (!branch) {
+      addToast('Choose a brand branch before generating creative.', 'error');
+      return;
+    }
+    if (!variant.headline.trim() || !variant.body.trim()) {
+      addToast('Add the headline and body copy before generating creative.', 'error');
+      return;
+    }
+    if (!apiKeys.gemini_api_key) {
+      addToast('Gemini API key is not configured. Add it in Settings first.', 'error');
+      return;
+    }
+
+    updateInlineCreativeDraft(variant.id, {
+      isGenerating: true,
+      isApproving: false,
+      concept: undefined,
+      previewUrl: undefined,
+      error: undefined,
+    });
+
+    try {
+      const concepts = await generateCardConcepts({
+        apiKey: apiKeys.gemini_api_key,
+        brandName: branch.name,
+        brandContext: buildInlineCreativeBrandContext(branch),
+        brief: [
+          'Create one static Reddit image-ad concept for this exact campaign variant.',
+          `Headline: ${variant.headline.trim()}`,
+          `Supporting copy: ${variant.body.trim()}`,
+          `Campaign objective: ${OBJECTIVE_LABELS[form.objective]}.`,
+          `Audience: ${form.communityTargets.map(target => `r/${target}`).join(', ') || 'Reddit users'}.`,
+          'Make the message readable at feed size. Do not invent features, prices, guarantees, statistics, testimonials, or offers.',
+          'Do not use scripture. Keep the design appropriate for a paid Reddit placement and the supplied brand.',
+        ].join('\n'),
+        count: 1,
+        scripturePolicy: 'avoid',
+        palette: {
+          primary: branch.primary_color,
+          secondary: branch.secondary_color,
+          accent: branch.accent_color,
+        },
+        cardStyle: getBrandCardStyle(branch.slug),
+      });
+      const concept = concepts[0];
+      if (!concept) throw new Error('The creative director did not return a usable concept.');
+      const previewUrl = await renderCardPreviewDataUrl(concept);
+      updateInlineCreativeDraft(variant.id, { concept, previewUrl, isGenerating: false });
+      addToast(`${variant.name || 'Variant'} creative is ready for review.`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Creative generation failed.';
+      updateInlineCreativeDraft(variant.id, { isGenerating: false, error: message });
+      addToast(message, 'error');
+    }
+  };
+
+  const approveInlineCreative = async (variant: RedditAdVariant) => {
+    const draft = inlineCreativeDrafts[variant.id];
+    const branch = branchContext?.allBranches.find(item => item.slug === form.branchSlug);
+    if (!draft?.concept || !branch) return;
+
+    updateInlineCreativeDraft(variant.id, { isApproving: true, error: undefined });
+    try {
+      const blob = await renderCardConcept(draft.concept);
+      const safeName = (variant.name || 'reddit-ad').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'reddit-ad';
+      const file = new File([blob], `${safeName}.jpg`, { type: 'image/jpeg' });
+      const assetUrl = await uploadPostImage(branch.slug, file);
+      updateVariant(variant.id, { assetUrl });
+      updateInlineCreativeDraft(variant.id, { isApproving: false });
+      addToast(`${variant.name || 'Variant'} creative approved and attached.`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to attach the approved creative.';
+      updateInlineCreativeDraft(variant.id, { isApproving: false, error: message });
+      addToast(message, 'error');
+    }
+  };
+
   const addTarget = (kind: 'community' | 'location') => {
     const raw = kind === 'community' ? communityInput : locationInput;
     const target = kind === 'community' ? normalizeTarget(raw) : raw.trim();
@@ -732,6 +841,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
               <div className="space-y-6">
                 {form.variants.map((variant, index) => {
                   const FormatIcon = FORMAT_ICONS[variant.format];
+                  const creativeDraft = inlineCreativeDrafts[variant.id];
                   return <div key={variant.id} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-200">
                     <div className="flex items-center justify-between gap-3 mb-5"><div className="flex items-center gap-2"><FormatIcon size={16} className="text-orange-500" /><span className="text-xs font-black text-slate-700">{variant.name}</span></div>{form.variants.length > 1 && <button type="button" onClick={() => setForm(previous => ({ ...previous, variants: previous.variants.filter(item => item.id !== variant.id) }))} className="text-slate-300 hover:text-rose-500"><Trash2 size={15} /></button>}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -741,7 +851,48 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
                       <label className="md:col-span-2"><span className="form-label">Body Copy</span><textarea rows={4} value={variant.body} onChange={event => updateVariant(variant.id, { body: event.target.value })} placeholder="Helpful, transparent copy written for the target community" className="form-input resize-none" /></label>
                       <label><span className="form-label">Call to Action</span><select value={variant.callToAction} onChange={event => updateVariant(variant.id, { callToAction: event.target.value })} className="form-input"><option>Learn More</option><option>Shop Now</option><option>Sign Up</option><option>Download</option><option>Get Quote</option></select></label>
                       <label><span className="form-label">Landing URL</span><input value={variant.landingUrl} onChange={event => updateVariant(variant.id, { landingUrl: event.target.value })} placeholder="https://..." className="form-input" /></label>
-                      <label className="md:col-span-2"><span className="form-label">Approved Creative URL</span><input value={variant.assetUrl || ''} onChange={event => updateVariant(variant.id, { assetUrl: event.target.value })} placeholder="Paste an approved Card Studio or Creative Studio asset URL" className="form-input" /></label>
+                      <label className="md:col-span-2"><span className="form-label">Approved Creative URL</span><input value={variant.assetUrl || ''} onChange={event => updateVariant(variant.id, { assetUrl: event.target.value })} placeholder="Generate one below or paste an approved asset URL" className="form-input" /></label>
+                      <div className="md:col-span-2 rounded-2xl border border-orange-200 bg-white p-5">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Inline Creative Builder</p>
+                            <p className="text-[11px] text-slate-500 mt-1">Generate a preview here. Nothing is uploaded until you approve and attach it.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => generateInlineCreative(variant)}
+                            disabled={creativeDraft?.isGenerating || creativeDraft?.isApproving}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 border border-orange-200 text-orange-700 disabled:opacity-50 text-[10px] font-black uppercase tracking-widest"
+                          >
+                            {creativeDraft?.isGenerating ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                            {creativeDraft?.isGenerating ? 'Generating…' : creativeDraft?.previewUrl ? 'Regenerate' : 'Generate Creative'}
+                          </button>
+                        </div>
+
+                        {creativeDraft?.error && <div className="mt-4 flex items-start gap-2 rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700"><AlertTriangle size={14} className="shrink-0 mt-0.5" /><span>{creativeDraft.error}</span></div>}
+
+                        {creativeDraft?.previewUrl && creativeDraft.concept && (
+                          <div className="mt-5 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5 items-start">
+                            <img src={creativeDraft.previewUrl} alt={`${variant.name || `Variant ${index + 1}`} generated creative preview`} className="w-full max-w-[220px] aspect-square object-cover rounded-2xl border border-slate-200 shadow-sm" />
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Preview only</p>
+                              <p className="text-xs text-slate-600 leading-relaxed mt-2">{creativeDraft.concept.rationale || 'Review the layout and copy before attaching it to this ad variant.'}</p>
+                              <button
+                                type="button"
+                                onClick={() => approveInlineCreative(variant)}
+                                disabled={creativeDraft.isApproving}
+                                className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white disabled:bg-emerald-300 text-[10px] font-black uppercase tracking-widest"
+                              >
+                                {creativeDraft.isApproving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                                {creativeDraft.isApproving ? 'Attaching…' : 'Approve & Attach'}
+                              </button>
+                              <p className="text-[10px] text-slate-400 mt-2">This uploads the image and fills the URL. It does not save or submit the campaign.</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {variant.assetUrl && <div className="mt-4 flex items-center gap-2 text-xs font-bold text-emerald-700"><CheckCircle2 size={14} /> Approved creative attached to this variant.</div>}
+                      </div>
                     </div>
                   </div>;
                 })}
