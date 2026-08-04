@@ -9,6 +9,7 @@ import {
   CircleDollarSign,
   FileSpreadsheet,
   Columns3,
+  Download,
   Loader2,
   List,
   Mail,
@@ -28,6 +29,7 @@ import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal'
 import { followUpState, getFollowUpWindow, sortFollowUps } from '../components/leads/leadViewUtils';
 import LeadBoard from '../components/leads/LeadBoard';
 import LeadMetrics from '../components/leads/LeadMetrics';
+import { buildLeadCsv } from '../components/leads/leadCsv';
 import {
   checkExistingLeads,
   createLead,
@@ -280,6 +282,20 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     () => leads.filter(lead => lead.pipeline_id === selectedPipelineId),
     [leads, selectedPipelineId]
   );
+
+  const exportFilteredLeads = () => {
+    if (!activeBranch || !selectedPipeline || filteredLeads.length === 0) return;
+    const blob = new Blob([buildLeadCsv(filteredLeads)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeBranch.slug}-${selectedPipeline.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${filteredLeads.length} lead${filteredLeads.length === 1 ? '' : 's'}.`, 'success');
+  };
 
   const openAddModal = () => {
     if (!activeBranch || !selectedPipeline) return;
@@ -635,6 +651,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
 
         <div className="flex flex-wrap items-center gap-3">
           {selectedPipeline && <div className="flex rounded-xl border border-white/10 bg-[#10142E] p-1"><button type="button" onClick={() => setViewMode('list')} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider ${viewMode === 'list' ? 'bg-cyan-400 text-[#07101D]' : 'text-slate-500 hover:text-white'}`}><List size={14} />List</button><button type="button" onClick={() => setViewMode('board')} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider ${viewMode === 'board' ? 'bg-cyan-400 text-[#07101D]' : 'text-slate-500 hover:text-white'}`}><Columns3 size={14} />Board</button></div>}
+          <button type="button" onClick={exportFilteredLeads} disabled={!selectedPipeline || filteredLeads.length === 0} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-40"><Download size={16} />Export CSV</button>
           {pipelines.length > 0 && (
             <label className="relative">
               <span className="sr-only">Pipeline</span>
