@@ -94,3 +94,32 @@
 .queue-complete-flash { animation: queueComplete 640ms ease-out; }
 .queue-check-pop { animation: queueCheckPop 360ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 .queue-dismissing { animation: queueDismiss 260ms ease-in forwards; overflow: hidden; pointer-events: none; }
+
+/* Shared field treatment for the Reddit Ads campaign workspace. Tailwind is
+   loaded at runtime, so these small composed controls stay in plain CSS. */
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #64748b;
+  font-size: 0.625rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.form-input {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.75rem 1rem;
+  color: #1e293b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+.form-input:focus {
+  border-color: #fb923c;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.12);
+}

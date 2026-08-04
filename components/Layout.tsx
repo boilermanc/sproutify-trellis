@@ -57,7 +57,7 @@ const NAV_GROUPS = [
   {
     id: 'content-studio', label: 'Content Studio', defaultOpen: false, items: [
       { id: 'social-hub', label: 'Social Hub', icon: Share2 },
-      { id: 'reddit-growth', label: 'Reddit Growth', icon: MessageCircle },
+      { id: 'reddit-growth', label: 'Reddit Ads', icon: MessageCircle },
       { id: 'video-ad-lab', label: 'Creative Studio', icon: Sparkles },
       { id: 'post-scheduler', label: 'Post Scheduler', icon: CalendarClock },
       { id: 'card-studio', label: 'Card Studio', icon: LayoutTemplate },

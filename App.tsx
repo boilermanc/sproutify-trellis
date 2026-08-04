@@ -411,7 +411,7 @@ const AppContent: React.FC = () => {
       case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
       case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'post-performance': return <PostPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'reddit-growth': return <RedditGrowth setEvents={setEvents} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} />;
+      case 'reddit-growth': return <RedditGrowth branchContext={branchContext} apiKeys={apiKeys} addToast={addToast} onNavigate={setActiveView} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} addToast={addToast} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;

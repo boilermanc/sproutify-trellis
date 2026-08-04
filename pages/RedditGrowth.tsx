@@ -1,1145 +1,737 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
-import { MarketingEvent } from '../types';
-import { GoogleGenAI, Type } from "@google/genai";
+import React, { useMemo, useState } from 'react';
 import {
-  Search, MessageSquare, Sparkles, Send, CheckCircle2, Clock,
-  Edit2, Loader2, Terminal, Archive, Rocket, Target, Settings2,
-  Eye, ThumbsUp, ThumbsDown, ExternalLink, AlertTriangle, Shield,
-  Plus, Check, Ban, RotateCcw, Copy, Trash2, TrendingUp, Hash,
-  Globe, Pause, Play
+  AlertTriangle, BarChart3, CalendarDays, CheckCircle2, Clock3,
+  BrainCircuit, DollarSign, Download, ExternalLink, Globe2, Hash, Image as ImageIcon, Layers3,
+  Link, MapPin, Megaphone, Pencil, Plus, Rocket, Save, ShieldCheck,
+  Sparkles, Target, Trash2, Video, XCircle,
 } from 'lucide-react';
+import {
+  ApiKeyConfig,
+  BranchContext,
+  RedditAdCampaign,
+  RedditAdCampaignStatus,
+  RedditAdFormat,
+  RedditAdObjective,
+  RedditAdStrategy,
+  RedditAdVariant,
+  ViewState,
+} from '../types';
+import { generateRedditAdStrategy } from '../services/redditAdStrategyService';
 
-// ─── Types ───────────────────────────────────────────────────────
-interface RedditComment {
-  id: string;
-  post_id: string;
-  post_title: string;
-  subreddit: string;
-  author: string;
-  body: string;
-  url: string;
-  parent_fullname: string;
-  score: number;
-  created_utc: string;
-}
-
-interface DraftResponse {
-  id: string;
-  comment: RedditComment;
-  generated_response: string;
-  status: 'pending_review' | 'approved' | 'rejected' | 'posted';
-  relevance_score: number; // 0-100 from AI
-  created_at: string;
-  posted_at?: string;
-  edited_response?: string;
-}
-
-interface SubredditTarget {
-  name: string;
-  keywords: string[];
-  enabled: boolean;
-}
-
-interface RedditGrowthProps {
-  setEvents: React.Dispatch<React.SetStateAction<MarketingEvent[]>>;
-  geminiApiKey: string;
+interface RedditAdsProps {
+  branchContext?: BranchContext;
+  apiKeys: ApiKeyConfig;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onNavigate: (view: ViewState) => void;
 }
 
-// ─── localStorage Keys ──────────────────────────────────────────
-const LS_DRAFTS = 'trellis_reddit_drafts';
-const LS_TARGETS = 'trellis_reddit_targets';
-const LS_DISCOVERED = 'trellis_reddit_discovered';
+type WorkspaceTab = 'strategy' | 'campaigns' | 'create' | 'review' | 'performance';
 
-// ─── n8n Blueprint Templates ────────────────────────────────────
-const SCANNER_BLUEPRINT = {
-  name: "Trellis: Reddit Growth Scanner",
-  nodes: [
-    {
-      parameters: { rule: { interval: [{ field: "hours", hoursInterval: 3 }] } },
-      name: "Every 3 Hours",
-      type: "n8n-nodes-base.scheduleTrigger",
-      typeVersion: 1,
-      position: [250, 300],
-    },
-    {
-      parameters: {
-        method: "GET",
-        url: "https://oauth.reddit.com/r/{{subreddits}}/search.json",
-        sendQuery: true,
-        queryParameters: { parameters: [
-          { name: "q", value: "={{keywords}}" },
-          { name: "sort", value: "new" },
-          { name: "t", value: "day" },
-          { name: "limit", value: "25" },
-          { name: "restrict_sr", value: "true" },
-        ]},
-        sendHeaders: true,
-        headerParameters: { parameters: [
-          { name: "Authorization", value: "Bearer YOUR_REDDIT_ACCESS_TOKEN" },
-          { name: "User-Agent", value: "Trellis/1.0" },
-        ]},
-      },
-      name: "Search Reddit Posts",
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4,
-      position: [500, 300],
-    },
-    {
-      parameters: {
-        method: "GET",
-        url: "https://oauth.reddit.com/r/{{ $json.subreddit }}/comments/{{ $json.post_id }}.json",
-        sendHeaders: true,
-        headerParameters: { parameters: [
-          { name: "Authorization", value: "Bearer YOUR_REDDIT_ACCESS_TOKEN" },
-          { name: "User-Agent", value: "Trellis/1.0" },
-        ]},
-      },
-      name: "Fetch Post Comments",
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4,
-      position: [750, 300],
-    },
-    {
-      parameters: {
-        conditions: {
-          string: [{ value1: "={{ $json.author }}", operation: "notContains", value2: "bot" }],
-          boolean: [{ value1: "={{ $json.is_submitter }}", value2: false }],
-        },
-      },
-      name: "Filter Bots & Mods",
-      type: "n8n-nodes-base.if",
-      typeVersion: 1,
-      position: [1000, 300],
-    },
-    {
-      parameters: {
-        method: "POST",
-        url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-        sendQuery: true,
-        queryParameters: { parameters: [{ name: "key", value: "YOUR_GEMINI_API_KEY" }] },
-        sendHeaders: true,
-        headerParameters: { parameters: [{ name: "Content-Type", value: "application/json" }] },
-        sendBody: true,
-        specifyBody: "json",
-        jsonBody: "={{ JSON.stringify({ contents: [{ parts: [{ text: 'You are a helpful community member. Analyze and draft a helpful, non-promotional response. No links, no brand names. Return JSON: {response, relevance_score}. Comment: ' + $json.comment_body + ' Context: ' + $json.post_title }] }] }) }}",
-      },
-      name: "AI Draft Response",
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4,
-      position: [1250, 300],
-    },
-    {
-      parameters: {
-        content: "## Trellis: Reddit Growth Scanner\n\n**Workflow 1 of 2** — Monitors target subreddits, discovers engagement opportunities, generates AI drafts, and stages them for human review.\n\n**Schedule:** Every 3 hours (configurable)\n\n---\n\n### SETUP REQUIRED\n\n1. **Reddit OAuth Token:** Create a Reddit app at reddit.com/prefs/apps (\"script\" type). Replace YOUR_REDDIT_ACCESS_TOKEN in both HTTP Request nodes.\n\n2. **Gemini API Key:** Replace YOUR_GEMINI_API_KEY in the AI Draft Response node.\n\n3. **Target Subreddits:** Update the search URL with your target subreddits joined by `+`.\n\n**Rate Limits:** Reddit allows 60 req/min per OAuth client. The 3-hour interval stays well under that.",
-        width: 520,
-      },
-      name: "Setup Instructions",
-      type: "n8n-nodes-base.stickyNote",
-      typeVersion: 1,
-      position: [200, 50],
-    },
-  ],
-  connections: {
-    "Every 3 Hours": { main: [[{ node: "Search Reddit Posts", type: "main", index: 0 }]] },
-    "Search Reddit Posts": { main: [[{ node: "Fetch Post Comments", type: "main", index: 0 }]] },
-    "Fetch Post Comments": { main: [[{ node: "Filter Bots & Mods", type: "main", index: 0 }]] },
-    "Filter Bots & Mods": { main: [[{ node: "AI Draft Response", type: "main", index: 0 }]] },
-  },
+const STORAGE_KEY = 'trellis_reddit_ad_campaigns_v1';
+const STRATEGY_STORAGE_KEY = 'trellis_reddit_ad_strategies_v1';
+const DEFAULT_COMMUNITIES = ['UrbanGardening', 'gardening', 'Hydroponics'];
+const DEFAULT_LOCATIONS = ['United States'];
+
+const OBJECTIVE_LABELS: Record<RedditAdObjective, string> = {
+  awareness: 'Awareness',
+  traffic: 'Traffic',
+  conversions: 'Conversions',
+  video_views: 'Video Views',
 };
 
-const POSTER_BLUEPRINT = {
-  name: "Trellis: Reddit Comment Poster",
-  nodes: [
-    {
-      parameters: { httpMethod: "POST", path: "reddit-post-comment", responseMode: "lastNode", options: {} },
-      name: "Webhook — Post Approved",
-      type: "n8n-nodes-base.webhook",
-      typeVersion: 1,
-      position: [250, 300],
-    },
-    {
-      parameters: {
-        method: "POST",
-        url: "https://oauth.reddit.com/api/comment",
-        sendHeaders: true,
-        headerParameters: { parameters: [
-          { name: "Authorization", value: "Bearer YOUR_REDDIT_ACCESS_TOKEN" },
-          { name: "User-Agent", value: "Trellis/1.0" },
-          { name: "Content-Type", value: "application/x-www-form-urlencoded" },
-        ]},
-        sendBody: true,
-        specifyBody: "string",
-        body: "={{ 'parent=' + $json.parent_fullname + '&text=' + encodeURIComponent($json.approved_text) }}",
-      },
-      name: "Post to Reddit",
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4,
-      position: [500, 300],
-    },
-    {
-      parameters: {
-        content: "## Trellis: Reddit Comment Poster\n\n**Workflow 2 of 2** — Receives approved comment data via webhook and posts to Reddit.\n\n**Trigger:** POST webhook from Trellis UI \"Post to Reddit\" button.\n\n**Webhook URL:** `https://n8n.sproutify.app/webhook/reddit-post-comment`\n\n---\n\n### SETUP REQUIRED\n\n1. **Reddit OAuth Token:** Same token as Workflow 1.\n\n**Expected POST body:**\n```json\n{ \"parent_fullname\": \"t1_abc123\", \"approved_text\": \"Your helpful response...\" }\n```\n\n**Safety:** This workflow ONLY fires when a human clicks \"Post to Reddit\" in the Trellis UI. No auto-posting.",
-        width: 480,
-      },
-      name: "Setup Instructions",
-      type: "n8n-nodes-base.stickyNote",
-      typeVersion: 1,
-      position: [200, 50],
-    },
-  ],
-  connections: {
-    "Webhook — Post Approved": { main: [[{ node: "Post to Reddit", type: "main", index: 0 }]] },
-  },
+const OBJECTIVE_HELP: Record<RedditAdObjective, string> = {
+  awareness: 'Maximize qualified reach and brand recognition.',
+  traffic: 'Drive visits to a landing page or product page.',
+  conversions: 'Optimize toward a tracked website action.',
+  video_views: 'Maximize meaningful views of video creative.',
 };
 
-// ─── Mock Data (simulates n8n Workflow 1 output) ─────────────────
-const MOCK_SUBREDDIT_TARGETS: SubredditTarget[] = [
-  { name: 'UrbanGardening', keywords: ['container gardening', 'balcony garden', 'indoor growing'], enabled: true },
-  { name: 'gardening', keywords: ['beginner gardening', 'soil mix', 'composting'], enabled: true },
-  { name: 'Hydroponics', keywords: ['hydroponic system', 'nutrient solution', 'grow lights'], enabled: true },
-  { name: 'sustainability', keywords: ['urban farming', 'food sovereignty', 'community garden'], enabled: false },
-  { name: 'BackyardOrchard', keywords: ['fruit trees', 'raised beds', 'permaculture'], enabled: false },
-];
+const STATUS_LABELS: Record<RedditAdCampaignStatus, string> = {
+  draft: 'Draft',
+  pending_review: 'In Review',
+  approved: 'Approved',
+  rejected: 'Changes Requested',
+  exported: 'Exported',
+  deployed: 'Deployed',
+  failed: 'Failed',
+};
 
-const MOCK_DISCOVERED_COMMENTS: RedditComment[] = [
-  {
-    id: 'rc_1', post_id: 'rp_101', post_title: 'First time growing tomatoes in containers - any tips?',
-    subreddit: 'UrbanGardening', author: 'newbie_planter',
-    body: "I just moved to an apartment with a south-facing balcony and want to grow tomatoes. What size containers do I need? Is regular potting soil okay or do I need something special?",
-    url: 'https://reddit.com/r/UrbanGardening/comments/abc123/first_time_growing/c1',
-    parent_fullname: 't3_abc123', score: 12, created_utc: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: 'rc_2', post_id: 'rp_102', post_title: 'My hydroponic lettuce keeps wilting after 2 weeks',
-    subreddit: 'Hydroponics', author: 'hydro_curious',
-    body: "I set up a basic DWC system following a YouTube tutorial but my lettuce seedlings look great for about 10 days then start wilting. pH is at 6.5, using General Hydroponics Flora series. Any ideas?",
-    url: 'https://reddit.com/r/Hydroponics/comments/def456/hydroponic_lettuce/c2',
-    parent_fullname: 't1_def456a', score: 8, created_utc: new Date(Date.now() - 7200000).toISOString(),
-  },
-  {
-    id: 'rc_3', post_id: 'rp_103', post_title: 'Community garden starting in Atlanta - looking for advice',
-    subreddit: 'UrbanGardening', author: 'atl_green_thumb',
-    body: "We're launching a community garden in southeast Atlanta. About 20 plots on a vacant lot. What should we test the soil for? Any recommendations for raised bed soil mix in Georgia clay country?",
-    url: 'https://reddit.com/r/UrbanGardening/comments/ghi789/community_garden_atlanta/c3',
-    parent_fullname: 't3_ghi789', score: 34, created_utc: new Date(Date.now() - 1800000).toISOString(),
-  },
-  {
-    id: 'rc_4', post_id: 'rp_104', post_title: 'Best indoor grow lights under $100?',
-    subreddit: 'gardening', author: 'winter_grower',
-    body: "Getting into indoor herb growing for winter. Basil, cilantro, maybe some micro greens. What lights do you all recommend that won't break the bank? Is LED worth it over fluorescent?",
-    url: 'https://reddit.com/r/gardening/comments/jkl012/grow_lights/c4',
-    parent_fullname: 't3_jkl012', score: 21, created_utc: new Date(Date.now() - 5400000).toISOString(),
-  },
-  {
-    id: 'rc_5', post_id: 'rp_105', post_title: 'Composting in a small space - is it even possible?',
-    subreddit: 'sustainability', author: 'eco_warrior_99',
-    body: "I live in a 600sqft apartment. Is there any realistic way to compost kitchen scraps? I've heard of vermicomposting but worried about smell and fruit flies. What actually works?",
-    url: 'https://reddit.com/r/sustainability/comments/mno345/composting_small_space/c5',
-    parent_fullname: 't3_mno345', score: 45, created_utc: new Date(Date.now() - 9000000).toISOString(),
-  },
-];
+const STATUS_STYLES: Record<RedditAdCampaignStatus, string> = {
+  draft: 'bg-slate-100 text-slate-600',
+  pending_review: 'bg-amber-100 text-amber-700',
+  approved: 'bg-emerald-100 text-emerald-700',
+  rejected: 'bg-rose-100 text-rose-700',
+  exported: 'bg-indigo-100 text-indigo-700',
+  deployed: 'bg-blue-100 text-blue-700',
+  failed: 'bg-red-100 text-red-700',
+};
 
-const MOCK_DRAFTS: DraftResponse[] = [
-  {
-    id: 'dr_1',
-    comment: MOCK_DISCOVERED_COMMENTS[2],
-    generated_response: "That's awesome you're getting a community garden going in SE Atlanta! Georgia clay is notoriously challenging \u2014 I'd definitely recommend getting a soil test through your local UGA Extension office (Fulton County has a great one). They test for heavy metals, pH, and nutrient levels, which is critical for a vacant lot.\n\nFor raised beds on clay, a 60/40 mix of quality topsoil and compost works really well. If you can source local compost from the Atlanta area, even better. A lot of urban growers here add expanded shale to improve drainage since clay holds water like crazy. 20 plots is a solid start \u2014 good luck with the project!",
-    status: 'pending_review',
-    relevance_score: 94,
-    created_at: new Date(Date.now() - 1200000).toISOString(),
-  },
-  {
-    id: 'dr_2',
-    comment: MOCK_DISCOVERED_COMMENTS[0],
-    generated_response: "Welcome to container gardening! For tomatoes you'll want at minimum 5-gallon containers, but honestly 10-gallon fabric grow bags are the sweet spot \u2014 they air-prune roots and you get way better yields. South-facing balcony is perfect for tomatoes, they want 6-8 hours of direct sun.\n\nSkip the regular potting soil for containers. You want a potting mix (not soil) \u2014 something with perlite and peat or coco coir that drains well. Container tomatoes dry out fast, so a mix that retains some moisture without getting waterlogged is key. Cherry tomato varieties like Sun Gold are incredibly forgiving for first-timers in containers.",
-    status: 'pending_review',
-    relevance_score: 88,
-    created_at: new Date(Date.now() - 900000).toISOString(),
-  },
-  {
-    id: 'dr_3',
-    comment: MOCK_DISCOVERED_COMMENTS[1],
-    generated_response: "pH 6.5 is actually a bit high for lettuce in DWC \u2014 try bringing it down to 5.8-6.0. That could be locking out nutrients even though you're dosing correctly.\n\nAlso, check your water temperature. If it's above 72\u00B0F, dissolved oxygen drops and roots start struggling. That's the most common DWC killer in the 10-14 day window. An air stone upgrade or adding a small chiller can make a huge difference. What's your EC running at?",
-    status: 'approved',
-    relevance_score: 91,
-    created_at: new Date(Date.now() - 600000).toISOString(),
-  },
-];
+const FORMAT_ICONS: Record<RedditAdFormat, React.ComponentType<{ size?: number; className?: string }>> = {
+  image: ImageIcon,
+  video: Video,
+  carousel: Layers3,
+};
 
-// ─── Component ───────────────────────────────────────────────────
-const RedditGrowth: React.FC<RedditGrowthProps> = ({ setEvents, geminiApiKey, addToast }) => {
-  const [activeTab, setActiveTab] = useState<'monitor' | 'review' | 'posted' | 'settings'>('monitor');
+function localDateTime(daysFromNow: number, hour = 9): string {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  date.setHours(hour, 0, 0, 0);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
-  // Persistent state — initialized from localStorage, falls back to mocks
-  const [subredditTargets, setSubredditTargets] = useState<SubredditTarget[]>(() => {
-    try { const s = localStorage.getItem(LS_TARGETS); return s ? JSON.parse(s) : MOCK_SUBREDDIT_TARGETS; }
-    catch { return MOCK_SUBREDDIT_TARGETS; }
+function newVariant(index = 1): RedditAdVariant {
+  return {
+    id: `variant_${Date.now()}_${index}`,
+    name: `Variant ${String.fromCharCode(64 + Math.min(index, 26))}`,
+    format: 'image',
+    headline: '',
+    body: '',
+    callToAction: 'Learn More',
+    landingUrl: '',
+    assetUrl: '',
+  };
+}
+
+function emptyCampaign(branchSlug: string): RedditAdCampaign {
+  const now = new Date().toISOString();
+  return {
+    id: '',
+    name: '',
+    branchSlug,
+    objective: 'traffic',
+    status: 'draft',
+    dailyBudgetUsd: 25,
+    startAt: localDateTime(1),
+    endAt: localDateTime(8),
+    communityTargets: [...DEFAULT_COMMUNITIES],
+    locationTargets: [...DEFAULT_LOCATIONS],
+    conversionPixelId: '',
+    variants: [newVariant()],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function emptyStrategy(branchSlug: string, websiteUrl = ''): RedditAdStrategy {
+  const now = new Date().toISOString();
+  return {
+    id: '',
+    branchSlug,
+    status: 'draft',
+    productName: '',
+    productEvidence: '',
+    websiteUrl,
+    offerName: '',
+    rationale: '',
+    objective: 'traffic',
+    landingPageUrl: websiteUrl,
+    targetAudience: '',
+    communityTargets: [],
+    locationTargets: ['United States'],
+    recommendedDailyBudgetUsd: 25,
+    creatives: [],
+    risks: [],
+    assumptions: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function isCampaign(value: unknown): value is RedditAdCampaign {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<RedditAdCampaign>;
+  return typeof item.id === 'string'
+    && typeof item.name === 'string'
+    && typeof item.branchSlug === 'string'
+    && typeof item.objective === 'string'
+    && typeof item.status === 'string'
+    && typeof item.dailyBudgetUsd === 'number'
+    && Array.isArray(item.communityTargets)
+    && Array.isArray(item.locationTargets)
+    && Array.isArray(item.variants);
+}
+
+function loadCampaigns(): RedditAdCampaign[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(isCampaign) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCampaigns(campaigns: RedditAdCampaign[]): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(campaigns));
+}
+
+function isStrategy(value: unknown): value is RedditAdStrategy {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<RedditAdStrategy>;
+  return typeof item.id === 'string'
+    && typeof item.branchSlug === 'string'
+    && typeof item.status === 'string'
+    && typeof item.productName === 'string'
+    && Array.isArray(item.creatives);
+}
+
+function loadStrategies(): RedditAdStrategy[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STRATEGY_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter(isStrategy) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStrategies(strategies: RedditAdStrategy[]): void {
+  localStorage.setItem(STRATEGY_STORAGE_KEY, JSON.stringify(strategies));
+}
+
+function normalizeTarget(value: string): string {
+  return value.trim().replace(/^r\//i, '');
+}
+
+function validHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function reviewErrors(campaign: RedditAdCampaign): string[] {
+  const errors: string[] = [];
+  if (!campaign.name.trim()) errors.push('Add a campaign name.');
+  if (!campaign.branchSlug) errors.push('Choose a brand branch.');
+  if (!Number.isFinite(campaign.dailyBudgetUsd) || campaign.dailyBudgetUsd <= 0) errors.push('Set a daily budget above $0.');
+  if (!campaign.startAt || !campaign.endAt || new Date(campaign.endAt) <= new Date(campaign.startAt)) errors.push('End time must be after start time.');
+  if (campaign.communityTargets.length === 0) errors.push('Add at least one community target.');
+  if (campaign.locationTargets.length === 0) errors.push('Add at least one location target.');
+  if (campaign.objective === 'conversions' && !campaign.conversionPixelId?.trim()) errors.push('Conversions require a Reddit conversion pixel ID.');
+  if (campaign.variants.length === 0) errors.push('Add at least one creative variant.');
+  campaign.variants.forEach((variant, index) => {
+    const label = variant.name.trim() || `Variant ${index + 1}`;
+    if (!variant.headline.trim()) errors.push(`${label}: add a headline.`);
+    if (!variant.body.trim()) errors.push(`${label}: add body copy.`);
+    if (!validHttpUrl(variant.landingUrl)) errors.push(`${label}: add a valid landing URL.`);
+    if (!variant.assetUrl?.trim()) errors.push(`${label}: attach an approved creative URL.`);
   });
-  const [discoveredComments, setDiscoveredComments] = useState<RedditComment[]>(() => {
-    try { const s = localStorage.getItem(LS_DISCOVERED); return s ? JSON.parse(s) : MOCK_DISCOVERED_COMMENTS; }
-    catch { return MOCK_DISCOVERED_COMMENTS; }
-  });
-  const [drafts, setDrafts] = useState<DraftResponse[]>(() => {
-    try { const s = localStorage.getItem(LS_DRAFTS); return s ? JSON.parse(s) : MOCK_DRAFTS; }
-    catch { return MOCK_DRAFTS; }
-  });
+  return errors;
+}
 
-  // Persist to localStorage on change
-  useEffect(() => { localStorage.setItem(LS_TARGETS, JSON.stringify(subredditTargets)); }, [subredditTargets]);
-  useEffect(() => { localStorage.setItem(LS_DISCOVERED, JSON.stringify(discoveredComments)); }, [discoveredComments]);
-  useEffect(() => { localStorage.setItem(LS_DRAFTS, JSON.stringify(drafts)); }, [drafts]);
+function formatDate(value: string): string {
+  if (!value) return 'Not scheduled';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not scheduled';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
-  // Concurrent generation tracking — multiple drafts can generate at once
-  const [generatingIds, setGeneratingIds] = useState<string[]>([]);
-  const [isScanning, setIsScanning] = useState(false);
-  const [editingDraft, setEditingDraft] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
-  const [filterSubreddit, setFilterSubreddit] = useState<string>('all');
-  const [workflowActive, setWorkflowActive] = useState(true);
-  const [scanInterval, setScanInterval] = useState(3); // hours
-  const [newSubreddit, setNewSubreddit] = useState('');
-  const [newKeywords, setNewKeywords] = useState('');
+const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToast, onNavigate }) => {
+  const defaultBranch = branchContext?.activeBranchSlugs[0] || branchContext?.allBranches[0]?.slug || '';
+  const defaultWebsite = branchContext?.allBranches.find(branch => branch.slug === defaultBranch)?.website_url || '';
+  const [campaigns, setCampaigns] = useState<RedditAdCampaign[]>(loadCampaigns);
+  const [strategies, setStrategies] = useState<RedditAdStrategy[]>(loadStrategies);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('strategy');
+  const [form, setForm] = useState<RedditAdCampaign>(() => emptyCampaign(defaultBranch));
+  const [strategyForm, setStrategyForm] = useState<RedditAdStrategy>(() => emptyStrategy(defaultBranch, defaultWebsite));
+  const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
+  const [communityInput, setCommunityInput] = useState('');
+  const [locationInput, setLocationInput] = useState('');
 
-  const pendingDrafts = useMemo(() => drafts.filter(d => d.status === 'pending_review'), [drafts]);
-  const approvedDrafts = useMemo(() => drafts.filter(d => d.status === 'approved'), [drafts]);
-  const postedDrafts = useMemo(() => drafts.filter(d => d.status === 'posted'), [drafts]);
-  const rejectedDrafts = useMemo(() => drafts.filter(d => d.status === 'rejected'), [drafts]);
+  const visibleCampaigns = useMemo(() => {
+    if (!branchContext || branchContext.isAllSelected) return campaigns;
+    const active = new Set(branchContext.activeBranchSlugs);
+    return campaigns.filter(campaign => active.has(campaign.branchSlug));
+  }, [campaigns, branchContext]);
 
-  const activeSubreddits = useMemo(() => subredditTargets.filter(s => s.enabled), [subredditTargets]);
+  const reviewCampaigns = useMemo(
+    () => visibleCampaigns.filter(campaign => ['pending_review', 'approved', 'rejected', 'exported'].includes(campaign.status)),
+    [visibleCampaigns],
+  );
 
-  const filteredComments = useMemo(() => {
-    const draftedIds = new Set(drafts.map(d => d.comment.id));
-    let filtered = discoveredComments.filter(c => !draftedIds.has(c.id));
-    if (filterSubreddit !== 'all') {
-      filtered = filtered.filter(c => c.subreddit === filterSubreddit);
-    }
-    return filtered;
-  }, [discoveredComments, drafts, filterSubreddit]);
+  const totals = useMemo(() => ({
+    campaigns: visibleCampaigns.length,
+    review: visibleCampaigns.filter(campaign => campaign.status === 'pending_review').length,
+    approved: visibleCampaigns.filter(campaign => campaign.status === 'approved').length,
+    exported: visibleCampaigns.filter(campaign => campaign.status === 'exported').length,
+    deployed: visibleCampaigns.filter(campaign => campaign.status === 'deployed').length,
+  }), [visibleCampaigns]);
 
-  // ─── AI Draft Generation (Gemini) ─────────────────────────────
-  const handleGenerateDraft = async (comment: RedditComment) => {
-    if (!geminiApiKey) {
-      addToast('No Gemini API key configured. Add one in Settings.', 'error');
+  const commitCampaign = (next: RedditAdCampaign) => {
+    setCampaigns(previous => {
+      const exists = previous.some(campaign => campaign.id === next.id);
+      const updated = exists
+        ? previous.map(campaign => campaign.id === next.id ? next : campaign)
+        : [next, ...previous];
+      saveCampaigns(updated);
+      return updated;
+    });
+  };
+
+  const commitStrategy = (next: RedditAdStrategy) => {
+    setStrategies(previous => {
+      const exists = previous.some(strategy => strategy.id === next.id);
+      const updated = exists
+        ? previous.map(strategy => strategy.id === next.id ? next : strategy)
+        : [next, ...previous];
+      saveStrategies(updated);
+      return updated;
+    });
+    setStrategyForm(next);
+  };
+
+  const startStrategy = () => {
+    const branch = branchContext?.allBranches.find(item => item.slug === defaultBranch);
+    setStrategyForm(emptyStrategy(defaultBranch, branch?.website_url || ''));
+    setActiveTab('strategy');
+  };
+
+  const runStrategy = async () => {
+    if (!strategyForm.branchSlug) {
+      addToast('Choose a brand before generating a strategy.', 'error');
       return;
     }
-    setGeneratingIds(prev => [...prev, comment.id]);
+    if (!strategyForm.productName.trim() && !strategyForm.productEvidence.trim()) {
+      addToast('Add a product, offer, or some website evidence first.', 'error');
+      return;
+    }
+
+    setIsGeneratingStrategy(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: `You are a helpful and experienced community member in the r/${comment.subreddit} subreddit. You work in the urban farming and gardening space.
-
-A user has posted the following comment in a thread titled "${comment.post_title}":
-"${comment.body}"
-
-Analyze this comment in context. Is this a situation where someone could benefit from genuine, helpful advice about gardening, urban farming, hydroponics, or sustainability?
-
-If yes, draft a conversational, non-promotional response that:
-- Is concise (2-3 paragraphs max)
-- Uses a friendly, helpful tone
-- Provides specific, actionable information
-- Does NOT include any links, URLs, or calls to action
-- Does NOT mention any brand names or products
-- Sounds natural and human — like an experienced community member
-
-Also provide a relevance_score from 0-100 indicating how good an opportunity this is for genuine, value-adding engagement.
-
-If this is NOT a good opportunity, respond with relevance_score: 0 and response: "SKIP".
-
-Return JSON only: { "response": "...", "relevance_score": number }`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              response: { type: Type.STRING },
-              relevance_score: { type: Type.NUMBER },
-            },
-            required: ["response", "relevance_score"],
-          },
-        },
+      const branch = branchContext?.allBranches.find(item => item.slug === strategyForm.branchSlug);
+      const recommendation = await generateRedditAdStrategy(apiKeys, {
+        brandName: branch?.name || strategyForm.branchSlug,
+        branchSlug: strategyForm.branchSlug,
+        websiteUrl: strategyForm.websiteUrl,
+        productName: strategyForm.productName,
+        productEvidence: strategyForm.productEvidence,
       });
-
-      const result = JSON.parse(response.text || '{"response":"SKIP","relevance_score":0}');
-
-      if (result.relevance_score > 20 && result.response !== 'SKIP') {
-        const newDraft: DraftResponse = {
-          id: `dr_${Date.now()}_${comment.id}`,
-          comment,
-          generated_response: result.response,
-          status: 'pending_review',
-          relevance_score: result.relevance_score,
-          created_at: new Date().toISOString(),
-        };
-        setDrafts(prev => [newDraft, ...prev]);
-      }
+      const now = new Date().toISOString();
+      commitStrategy({
+        ...strategyForm,
+        ...recommendation,
+        id: strategyForm.id || `reddit_strategy_${Date.now()}`,
+        status: 'generated',
+        createdAt: strategyForm.id ? strategyForm.createdAt : now,
+        updatedAt: now,
+        generatedAt: now,
+        approvedAt: undefined,
+      });
+      addToast('Reddit strategy generated. Review every assumption before approval.', 'success');
     } catch (error) {
-      console.error('Gemini draft generation failed:', error);
-      addToast('Draft generation failed. Check console for details.', 'error');
+      addToast(error instanceof Error ? error.message : 'Unable to generate the strategy.', 'error');
     } finally {
-      setGeneratingIds(prev => prev.filter(id => id !== comment.id));
+      setIsGeneratingStrategy(false);
     }
   };
 
-  const handleScanAll = async () => {
-    if (!geminiApiKey) {
-      addToast('No Gemini API key configured. Add one in Settings.', 'error');
+  const approveStrategy = () => {
+    if (!strategyForm.offerName.trim() || !strategyForm.targetAudience.trim() || strategyForm.creatives.length === 0) {
+      addToast('Generate and review a complete recommendation before approval.', 'error');
       return;
     }
-    setIsScanning(true);
-    const toScan = filteredComments.slice(0, 5);
-    await Promise.allSettled(toScan.map(c => handleGenerateDraft(c)));
-    setIsScanning(false);
-    addToast(`Scan complete. ${toScan.length} comments analyzed.`);
+    const now = new Date().toISOString();
+    commitStrategy({ ...strategyForm, status: 'approved', approvedAt: now, updatedAt: now });
+    addToast('Strategy approved. It can now seed a paused campaign draft.', 'success');
   };
 
-  // ─── Review Actions ────────────────────────────────────────────
-  const handleApprove = (draftId: string) => {
-    setDrafts(prev => prev.map(d =>
-      d.id === draftId ? { ...d, status: 'approved' as const, generated_response: d.edited_response || d.generated_response } : d
-    ));
-    setEditingDraft(null);
-    addToast('Draft approved and ready to post.');
-  };
-
-  const handleReject = (draftId: string) => {
-    setDrafts(prev => prev.map(d =>
-      d.id === draftId ? { ...d, status: 'rejected' as const } : d
-    ));
-    addToast('Draft rejected.', 'info');
-  };
-
-  const handlePost = async (draftId: string) => {
-    const draft = drafts.find(d => d.id === draftId);
-    if (!draft) return;
-
-    // Fire n8n Workflow 2 — posts approved comment to Reddit
-    try {
-      await fetch('https://n8n.sproutify.app/webhook/reddit-post-comment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parent_fullname: draft.comment.parent_fullname,
-          approved_text: draft.edited_response || draft.generated_response,
-          subreddit: draft.comment.subreddit,
-          comment_url: draft.comment.url,
-        }),
-      });
-    } catch {
-      // n8n workflow may not be configured yet — post still marked locally
+  const createCampaignFromStrategy = () => {
+    if (strategyForm.status !== 'approved') {
+      addToast('Approve the strategy before creating a campaign draft.', 'error');
+      return;
     }
+    const next = emptyCampaign(strategyForm.branchSlug);
+    setForm({
+      ...next,
+      name: `${strategyForm.offerName} Reddit Test`,
+      objective: strategyForm.objective,
+      dailyBudgetUsd: strategyForm.recommendedDailyBudgetUsd,
+      communityTargets: strategyForm.communityTargets,
+      locationTargets: strategyForm.locationTargets,
+      variants: strategyForm.creatives.map((creative, index) => ({
+        ...newVariant(index + 1),
+        headline: creative.headline,
+        body: creative.body,
+        callToAction: creative.callToAction,
+        landingUrl: strategyForm.landingPageUrl,
+      })),
+    });
+    setActiveTab('create');
+    addToast('Approved strategy copied into a new local campaign draft.', 'success');
+  };
 
-    setDrafts(prev => prev.map(d =>
-      d.id === draftId ? { ...d, status: 'posted' as const, posted_at: new Date().toISOString() } : d
-    ));
+  const startNew = () => {
+    setForm(emptyCampaign(defaultBranch));
+    setCommunityInput('');
+    setLocationInput('');
+    setActiveTab('create');
+  };
 
-    // Broadcast to Trellis marketing event timeline
-    const event: MarketingEvent = {
-      id: `reddit_${Date.now()}`,
-      profile_id: 'SYSTEM',
-      event_type: 'social_intent',
-      source: 'reddit',
-      payload: {
-        subreddit: draft.comment.subreddit,
-        post_title: draft.comment.post_title,
-        comment_url: draft.comment.url,
-        response_preview: (draft.edited_response || draft.generated_response).substring(0, 120),
-        relevance_score: draft.relevance_score,
-      },
-      created_at: new Date().toISOString(),
+  const editCampaign = (campaign: RedditAdCampaign) => {
+    setForm({ ...campaign, variants: campaign.variants.map(variant => ({ ...variant })) });
+    setActiveTab('create');
+  };
+
+  const saveDraft = () => {
+    const now = new Date().toISOString();
+    const saved: RedditAdCampaign = {
+      ...form,
+      id: form.id || `reddit_ad_${Date.now()}`,
+      status: 'draft',
+      createdAt: form.id ? form.createdAt : now,
+      updatedAt: now,
+      submittedAt: undefined,
+      approvedAt: undefined,
+      exportedAt: undefined,
+      deployment: undefined,
+      lastError: undefined,
     };
-    setEvents(prev => [event, ...prev]);
-    addToast(`Posted to r/${draft.comment.subreddit}`);
+    commitCampaign(saved);
+    setForm(saved);
+    addToast('Reddit ad campaign saved as a local draft.', 'success');
   };
 
-  const handleStartEdit = (draft: DraftResponse) => {
-    setEditingDraft(draft.id);
-    setEditText(draft.edited_response || draft.generated_response);
+  const submitForReview = () => {
+    const errors = reviewErrors(form);
+    if (errors.length > 0) {
+      addToast(errors[0], 'error');
+      return;
+    }
+    const now = new Date().toISOString();
+    const submitted: RedditAdCampaign = {
+      ...form,
+      id: form.id || `reddit_ad_${Date.now()}`,
+      status: 'pending_review',
+      createdAt: form.id ? form.createdAt : now,
+      updatedAt: now,
+      submittedAt: now,
+      approvedAt: undefined,
+      exportedAt: undefined,
+      deployment: undefined,
+      lastError: undefined,
+    };
+    commitCampaign(submitted);
+    setForm(submitted);
+    setActiveTab('review');
+    addToast('Campaign submitted for human review.', 'success');
   };
 
-  const handleSaveEdit = (draftId: string) => {
-    setDrafts(prev => prev.map(d =>
-      d.id === draftId ? { ...d, edited_response: editText } : d
-    ));
-    setEditingDraft(null);
+  const changeStatus = (campaign: RedditAdCampaign, status: RedditAdCampaignStatus) => {
+    const now = new Date().toISOString();
+    commitCampaign({
+      ...campaign,
+      status,
+      updatedAt: now,
+      approvedAt: status === 'approved' ? now : campaign.approvedAt,
+    });
+    addToast(status === 'approved' ? 'Campaign approved and ready to export.' : 'Campaign returned for changes.', status === 'approved' ? 'success' : 'info');
   };
 
-  const handleAddSubreddit = () => {
-    if (!newSubreddit.trim()) return;
-    const keywords = newKeywords.split(',').map(k => k.trim()).filter(Boolean);
-    setSubredditTargets(prev => [...prev, {
-      name: newSubreddit.replace(/^r\//, ''),
-      keywords: keywords.length > 0 ? keywords : ['gardening'],
-      enabled: true,
-    }]);
-    setNewSubreddit('');
-    setNewKeywords('');
+  const deleteCampaign = (campaignId: string) => {
+    setCampaigns(previous => {
+      const updated = previous.filter(campaign => campaign.id !== campaignId);
+      saveCampaigns(updated);
+      return updated;
+    });
+    addToast('Draft removed.', 'info');
   };
 
-  const toggleSubreddit = (name: string) => {
-    setSubredditTargets(prev => prev.map(s =>
-      s.name === name ? { ...s, enabled: !s.enabled } : s
-    ));
+  const exportCampaign = (campaign: RedditAdCampaign) => {
+    if (campaign.status !== 'approved' && campaign.status !== 'exported') {
+      addToast('Approve the campaign before exporting it.', 'error');
+      return;
+    }
+    const exportedAt = new Date().toISOString();
+    const payload = {
+      schema_version: 'trellis.reddit-ads.v1',
+      deployment_status: 'not_deployed',
+      exported_at: exportedAt,
+      campaign: {
+        ...campaign,
+        status: 'exported' as const,
+        exportedAt,
+        deployment: undefined,
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = `${campaign.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'reddit-ad-campaign'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(href);
+    commitCampaign({ ...campaign, status: 'exported', exportedAt, updatedAt: exportedAt });
+    addToast('Campaign package exported. Nothing was deployed.', 'success');
   };
 
-  const removeSubreddit = (name: string) => {
-    setSubredditTargets(prev => prev.filter(s => s.name !== name));
+  const updateVariant = (variantId: string, patch: Partial<RedditAdVariant>) => {
+    setForm(previous => ({
+      ...previous,
+      variants: previous.variants.map(variant => variant.id === variantId ? { ...variant, ...patch } : variant),
+    }));
   };
 
-  // ─── n8n Blueprint Actions ────────────────────────────────────
-  const handleCopyBlueprint = async (type: 'scanner' | 'poster') => {
-    const blueprint = type === 'scanner' ? SCANNER_BLUEPRINT : POSTER_BLUEPRINT;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(blueprint, null, 2));
-      addToast(`${type === 'scanner' ? 'Scanner' : 'Poster'} blueprint copied to clipboard.`);
-    } catch {
-      addToast('Failed to copy blueprint.', 'error');
+  const addTarget = (kind: 'community' | 'location') => {
+    const raw = kind === 'community' ? communityInput : locationInput;
+    const target = kind === 'community' ? normalizeTarget(raw) : raw.trim();
+    if (!target) return;
+    if (kind === 'community') {
+      setForm(previous => ({ ...previous, communityTargets: Array.from(new Set([...previous.communityTargets, target])) }));
+      setCommunityInput('');
+    } else {
+      setForm(previous => ({ ...previous, locationTargets: Array.from(new Set([...previous.locationTargets, target])) }));
+      setLocationInput('');
     }
   };
 
-  const handleOpenN8n = () => {
-    window.open('https://n8n.sproutify.app', '_blank', 'noopener,noreferrer');
-  };
+  const branchName = (slug: string) => branchContext?.allBranches.find(branch => branch.slug === slug)?.name || slug || 'Unassigned';
 
-  // ─── Helpers ──────────────────────────────────────────────────
-  const getTimeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const hours = Math.floor(diff / 3600000);
-    const mins = Math.floor(diff / 60000);
-    if (hours > 0) return `${hours}h ago`;
-    return `${mins}m ago`;
-  };
+  const metricCards = [
+    { label: 'Campaigns', value: totals.campaigns, icon: Megaphone, color: 'text-slate-700' },
+    { label: 'In Review', value: totals.review, icon: Clock3, color: 'text-amber-600' },
+    { label: 'Approved', value: totals.approved, icon: ShieldCheck, color: 'text-emerald-600' },
+    { label: 'Exported', value: totals.exported, icon: Download, color: 'text-indigo-600' },
+    { label: 'Deployed', value: totals.deployed, icon: Rocket, color: 'text-blue-600' },
+  ];
 
-  const getScoreColor = (score: number) => {
-    if (score >= 85) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-    if (score >= 60) return 'text-amber-600 bg-amber-50 border-amber-200';
-    return 'text-slate-500 bg-slate-50 border-slate-200';
-  };
-
-  // ─── Render ────────────────────────────────────────────────────
   return (
     <div className="space-y-8 min-h-screen pb-40">
-      {/* Header Stats Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <Search size={18} className="text-slate-400" />
-            <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${workflowActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-              {workflowActive ? 'Active' : 'Paused'}
-            </span>
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg">
+            <Megaphone className="w-7 h-7 text-white" />
           </div>
-          <p className="text-3xl font-black text-slate-900">{activeSubreddits.length}</p>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Subreddits Watched</p>
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Reddit Ads</h1>
+              <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-widest">Draft Workspace</span>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Plan, review, and export paid Reddit campaigns</p>
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <MessageSquare size={18} className="text-orange-400 mb-3" />
-          <p className="text-3xl font-black text-slate-900">{filteredComments.length}</p>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">New Opportunities</p>
-        </div>
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <Clock size={18} className="text-amber-500 mb-3" />
-          <p className="text-3xl font-black text-amber-600">{pendingDrafts.length}</p>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Pending Review</p>
-        </div>
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <CheckCircle2 size={18} className="text-emerald-500 mb-3" />
-          <p className="text-3xl font-black text-emerald-600">{approvedDrafts.length}</p>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ready to Post</p>
-        </div>
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <TrendingUp size={18} className="text-indigo-500 mb-3" />
-          <p className="text-3xl font-black text-indigo-600">{postedDrafts.length}</p>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Posted This Cycle</p>
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={startStrategy} className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 border border-orange-200 rounded-xl text-xs font-black text-orange-700 hover:bg-orange-100 transition">
+            <BrainCircuit size={15} /> New Strategy
+          </button>
+          <button type="button" onClick={() => onNavigate('card-studio')} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-600 hover:border-orange-300 transition">
+            <ImageIcon size={15} /> Card Studio
+          </button>
+          <button type="button" onClick={() => onNavigate('video-ad-lab')} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-600 hover:border-orange-300 transition">
+            <Video size={15} /> Creative Studio
+          </button>
+          <button type="button" onClick={startNew} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-600 transition shadow-lg">
+            <Plus size={15} /> Create Ad
+          </button>
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit border border-slate-200 shadow-sm">
-        {[
-          { id: 'monitor' as const, label: 'Monitor', icon: Search },
-          { id: 'review' as const, label: `Review (${pendingDrafts.length})`, icon: Eye },
-          { id: 'posted' as const, label: `Posted (${postedDrafts.length})`, icon: CheckCircle2 },
-          { id: 'settings' as const, label: 'Targeting', icon: Target },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center space-x-3 px-7 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${
-              activeTab === tab.id ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <tab.icon size={16} />
-            <span>{tab.label}</span>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {metricCards.map(metric => (
+          <div key={metric.label} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm">
+            <metric.icon size={17} className={`${metric.color} mb-3`} />
+            <p className={`text-3xl font-black ${metric.color}`}>{metric.value}</p>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{metric.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
+        <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
+        <div>
+          <p className="text-xs font-black text-amber-800 uppercase tracking-widest">Deployment intentionally disabled</p>
+          <p className="text-xs text-amber-700 mt-1 leading-relaxed">This first increment creates honest campaign drafts and exports. A campaign is never marked deployed without a confirmed Reddit campaign ID, ad group ID, and ad IDs.</p>
+        </div>
+      </div>
+
+      <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit max-w-full overflow-x-auto border border-slate-200 shadow-sm">
+        {([
+          { id: 'strategy' as const, label: 'Ad Strategist', icon: BrainCircuit },
+          { id: 'campaigns' as const, label: 'Campaigns', icon: Megaphone },
+          { id: 'create' as const, label: 'Create Ad', icon: Plus },
+          { id: 'review' as const, label: `Review (${totals.review})`, icon: ShieldCheck },
+          { id: 'performance' as const, label: 'Performance', icon: BarChart3 },
+        ]).map(tab => (
+          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition ${activeTab === tab.id ? 'bg-white text-orange-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
+            <tab.icon size={15} /> {tab.label}
           </button>
         ))}
       </div>
 
-      {/* ─── MONITOR TAB ─────────────────────────────────────────── */}
-      {activeTab === 'monitor' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
-          <div className="lg:col-span-2 space-y-6">
-            {/* Scan Controls */}
-            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-black text-slate-800 flex items-center">
-                  <Globe size={22} className="mr-3 text-orange-500" />
-                  Discovered Conversations
-                </h3>
-                <div className="flex items-center space-x-3">
-                  <select
-                    value={filterSubreddit}
-                    onChange={(e) => setFilterSubreddit(e.target.value)}
-                    className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-400"
-                  >
-                    <option value="all">All Subreddits</option>
-                    {activeSubreddits.map(s => (
-                      <option key={s.name} value={s.name}>r/{s.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={handleScanAll}
-                    disabled={isScanning || filteredComments.length === 0}
-                    className="flex items-center space-x-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition disabled:opacity-30"
-                  >
-                    {isScanning ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    <span>{isScanning ? 'Scanning...' : 'AI Scan All'}</span>
-                  </button>
-                </div>
+      {activeTab === 'strategy' && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          <div className="xl:col-span-2 space-y-8">
+            <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100">
+                <BrainCircuit className="text-orange-500" size={22} />
+                <div><h2 className="text-lg font-black text-slate-800">Research & Strategy</h2><p className="text-xs text-slate-400">Give Trellis evidence, then review the recommendation before any campaign exists</p></div>
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <label><span className="form-label">Brand Branch</span><select value={strategyForm.branchSlug} onChange={event => { const slug = event.target.value; const website = branchContext?.allBranches.find(branch => branch.slug === slug)?.website_url || ''; setStrategyForm(previous => ({ ...previous, branchSlug: slug, websiteUrl: website, landingPageUrl: website })); }} className="form-input"><option value="">Select branch</option>{branchContext?.allBranches.map(branch => <option key={branch.slug} value={branch.slug}>{branch.name}</option>)}</select></label>
+                <label><span className="form-label">Website or Candidate Landing Page</span><div className="relative"><Globe2 size={14} className="absolute left-4 top-3.5 text-slate-400" /><input value={strategyForm.websiteUrl} onChange={event => setStrategyForm(previous => ({ ...previous, websiteUrl: event.target.value }))} placeholder="https://rekkrd.com" className="form-input pl-10" /></div></label>
+                <label className="md:col-span-2"><span className="form-label">Product or Offer to Evaluate</span><input value={strategyForm.productName} onChange={event => setStrategyForm(previous => ({ ...previous, productName: event.target.value }))} placeholder="Free trial, subscription, price alerts, or a specific product" className="form-input" /></label>
+                <label className="md:col-span-2"><span className="form-label">Product and Website Evidence</span><textarea rows={7} value={strategyForm.productEvidence} onChange={event => setStrategyForm(previous => ({ ...previous, productEvidence: event.target.value }))} placeholder="Paste product-page copy, pricing, features, customer problem, constraints, and anything Trellis must treat as fact." className="form-input resize-none" /><span className="text-[10px] text-slate-400 mt-2 block">A URL identifies the destination; pasted evidence prevents the model from pretending it inspected content it cannot see.</span></label>
+              </div>
+              <div className="mt-7 flex flex-wrap justify-end gap-3">
+                <button type="button" onClick={() => commitStrategy({ ...strategyForm, id: strategyForm.id || `reddit_strategy_${Date.now()}`, updatedAt: new Date().toISOString() })} className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black uppercase tracking-widest"><Save size={14} /> Save Inputs</button>
+                <button type="button" onClick={runStrategy} disabled={isGeneratingStrategy} className="flex items-center gap-2 px-6 py-3 bg-slate-900 disabled:bg-slate-400 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-orange-600 transition"><Sparkles size={14} /> {isGeneratingStrategy ? 'Analyzing…' : 'Generate Strategy'}</button>
+              </div>
+            </section>
 
-              {filteredComments.length === 0 ? (
-                <div className="py-20 text-center">
-                  <CheckCircle2 size={48} className="mx-auto text-emerald-300 mb-4" />
-                  <p className="text-sm font-black text-slate-400 uppercase tracking-widest">All Caught Up</p>
-                  <p className="text-xs text-slate-400 mt-2">Every discovered comment has been drafted.</p>
+            {(strategyForm.status === 'generated' || strategyForm.status === 'approved') && (
+              <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-8 pb-6 border-b border-slate-100"><div><h2 className="text-lg font-black text-slate-800">Recommended First Test</h2><p className="text-xs text-slate-400">Editable recommendation · facts and assumptions remain separate</p></div><span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${strategyForm.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>{strategyForm.status}</span></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <label className="md:col-span-2"><span className="form-label">Offer</span><input value={strategyForm.offerName} onChange={event => setStrategyForm(previous => ({ ...previous, offerName: event.target.value, status: 'generated' }))} className="form-input" /></label>
+                  <label className="md:col-span-2"><span className="form-label">Why This Test</span><textarea rows={4} value={strategyForm.rationale} onChange={event => setStrategyForm(previous => ({ ...previous, rationale: event.target.value, status: 'generated' }))} className="form-input resize-none" /></label>
+                  <label><span className="form-label">Objective</span><select value={strategyForm.objective} onChange={event => setStrategyForm(previous => ({ ...previous, objective: event.target.value as RedditAdObjective, status: 'generated' }))} className="form-input">{Object.entries(OBJECTIVE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label><span className="form-label">Recommended Daily Test Budget</span><div className="relative"><DollarSign size={14} className="absolute left-4 top-3.5 text-slate-400" /><input type="number" min="1" value={strategyForm.recommendedDailyBudgetUsd} onChange={event => setStrategyForm(previous => ({ ...previous, recommendedDailyBudgetUsd: Number(event.target.value), status: 'generated' }))} className="form-input pl-10" /></div></label>
+                  <label className="md:col-span-2"><span className="form-label">Landing Page</span><input value={strategyForm.landingPageUrl} onChange={event => setStrategyForm(previous => ({ ...previous, landingPageUrl: event.target.value, status: 'generated' }))} className="form-input" /></label>
+                  <label className="md:col-span-2"><span className="form-label">Target Audience</span><textarea rows={3} value={strategyForm.targetAudience} onChange={event => setStrategyForm(previous => ({ ...previous, targetAudience: event.target.value, status: 'generated' }))} className="form-input resize-none" /></label>
+                  <label><span className="form-label">Community Hypotheses</span><input value={strategyForm.communityTargets.join(', ')} onChange={event => setStrategyForm(previous => ({ ...previous, communityTargets: event.target.value.split(',').map(item => normalizeTarget(item)).filter(Boolean), status: 'generated' }))} className="form-input" /></label>
+                  <label><span className="form-label">Locations</span><input value={strategyForm.locationTargets.join(', ')} onChange={event => setStrategyForm(previous => ({ ...previous, locationTargets: event.target.value.split(',').map(item => item.trim()).filter(Boolean), status: 'generated' }))} className="form-input" /></label>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredComments.map(comment => (
-                    <div key={comment.id} className="p-6 rounded-[2rem] border-2 border-slate-100 bg-slate-50/50 hover:border-emerald-200 hover:bg-white transition-all group">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-3 py-1 rounded-full uppercase">
-                            r/{comment.subreddit}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400">
-                            u/{comment.author} · {getTimeAgo(comment.created_utc)}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-bold">
-                          <TrendingUp size={12} />
-                          <span>{comment.score} pts</span>
-                        </div>
-                      </div>
-                      <p className="text-[11px] font-bold text-slate-500 mb-2 line-clamp-1">
-                        Re: {comment.post_title}
-                      </p>
-                      <p className="text-sm text-slate-700 leading-relaxed mb-4 line-clamp-3">
-                        {comment.body}
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <a
-                          href={comment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] font-bold text-slate-400 hover:text-emerald-600 flex items-center space-x-1"
-                        >
-                          <ExternalLink size={10} />
-                          <span>View on Reddit</span>
-                        </a>
-                        <button
-                          onClick={() => handleGenerateDraft(comment)}
-                          disabled={generatingIds.includes(comment.id)}
-                          className="flex items-center space-x-2 px-5 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition disabled:opacity-40"
-                        >
-                          {generatingIds.includes(comment.id) ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Sparkles size={12} />
-                          )}
-                          <span>{generatingIds.includes(comment.id) ? 'Drafting...' : 'Generate Draft'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="mt-8 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Creative Concepts</h3>
+                  {strategyForm.creatives.map((creative, index) => <div key={`${creative.angle}_${index}`} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl"><p className="text-[10px] font-black uppercase tracking-widest text-orange-600 mb-2">{creative.angle || `Concept ${index + 1}`}</p><p className="font-black text-slate-800">{creative.headline}</p><p className="text-xs text-slate-500 mt-2 leading-relaxed">{creative.body}</p><span className="inline-block mt-3 text-[9px] font-black uppercase tracking-widest text-indigo-600">{creative.callToAction}</span></div>)}
                 </div>
-              )}
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8"><div className="p-5 rounded-2xl bg-rose-50 border border-rose-100"><h3 className="text-[10px] font-black uppercase tracking-widest text-rose-700 mb-3">Risks</h3>{strategyForm.risks.length ? strategyForm.risks.map(item => <p key={item} className="text-xs text-rose-700 mb-2">• {item}</p>) : <p className="text-xs text-rose-500">No risks returned.</p>}</div><div className="p-5 rounded-2xl bg-amber-50 border border-amber-100"><h3 className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-3">Assumptions to Verify</h3>{strategyForm.assumptions.length ? strategyForm.assumptions.map(item => <p key={item} className="text-xs text-amber-700 mb-2">• {item}</p>) : <p className="text-xs text-amber-500">No assumptions returned.</p>}</div></div>
+                <div className="mt-8 flex flex-wrap justify-end gap-3"><button type="button" onClick={approveStrategy} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest"><CheckCircle2 size={14} /> Approve Strategy</button><button type="button" onClick={createCampaignFromStrategy} disabled={strategyForm.status !== 'approved'} className="flex items-center gap-2 px-6 py-3 bg-slate-900 disabled:bg-slate-300 text-white rounded-xl text-xs font-black uppercase tracking-widest"><Megaphone size={14} /> Create Paused Draft</button></div>
+              </section>
+            )}
           </div>
 
-          {/* Sidebar — Active Subreddits & Workflow Status */}
-          <div className="space-y-6">
-            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center">
-                  <Shield size={18} className="mr-3 text-indigo-500" />
-                  Workflow Status
-                </h3>
-                <button
-                  onClick={() => setWorkflowActive(!workflowActive)}
-                  className={`p-2 rounded-lg transition ${workflowActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}
-                >
-                  {workflowActive ? <Play size={14} /> : <Pause size={14} />}
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-500">Scan Interval</span>
-                  <span className="font-black text-slate-800">Every {scanInterval}h</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-500">AI Engine</span>
-                  <span className="font-black text-emerald-600">Gemini 2.0 Flash</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-500">Auto-Post</span>
-                  <span className="font-black text-rose-500 flex items-center space-x-1">
-                    <Ban size={10} />
-                    <span>Disabled (Human Review)</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-500">n8n Webhook</span>
-                  <span className="font-black text-slate-800">Connected</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center mb-6">
-                <Hash size={18} className="mr-3 text-orange-500" />
-                Active Targets
-              </h3>
-              <div className="space-y-3">
-                {activeSubreddits.map(sub => (
-                  <div key={sub.name} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-xs font-black text-slate-800">r/{sub.name}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {sub.keywords.map(kw => (
-                        <span key={kw} className="text-[9px] font-bold bg-white text-slate-500 px-2 py-0.5 rounded-md border border-slate-200">
-                          {kw}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-[2rem] border border-amber-200">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-xs font-black text-amber-800 uppercase tracking-widest mb-2">Safety Reminder</p>
-                  <p className="text-[11px] text-amber-700 leading-relaxed">
-                    Every draft requires human review before posting. No auto-posting. No links. No brand mentions. Value-first engagement only.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <aside className="space-y-6">
+            <div className="bg-slate-900 p-7 rounded-[2.5rem] text-white"><h3 className="text-sm font-black uppercase tracking-widest mb-4">Safety Gate</h3><div className="space-y-3 text-xs text-slate-300"><p>AI recommendations remain editable drafts.</p><p>Assumptions must be verified before approval.</p><p>Creating a campaign does not deploy it.</p><p>Billing and launch remain outside this step.</p></div></div>
+            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-200 shadow-sm"><h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Saved Strategies</h3>{strategies.length === 0 ? <p className="text-xs text-slate-400">No strategy records yet.</p> : <div className="space-y-2">{strategies.slice(0, 6).map(strategy => <button key={strategy.id} type="button" onClick={() => setStrategyForm(strategy)} className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-orange-300"><p className="text-xs font-black text-slate-700 truncate">{strategy.offerName || strategy.productName || 'Untitled strategy'}</p><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">{branchName(strategy.branchSlug)} · {strategy.status}</p></button>)}</div>}</div>
+          </aside>
         </div>
       )}
 
-      {/* ─── REVIEW TAB ──────────────────────────────────────────── */}
-      {activeTab === 'review' && (
-        <div className="space-y-6 animate-in fade-in duration-500">
-          {pendingDrafts.length === 0 && approvedDrafts.length === 0 ? (
-            <div className="py-32 text-center bg-slate-50 border-4 border-dashed border-slate-200 rounded-[4rem]">
-              <Eye size={64} className="mx-auto text-slate-200 mb-6 opacity-40" />
-              <p className="text-xl font-black text-slate-400 uppercase tracking-widest">Review Queue Empty</p>
-              <p className="text-xs text-slate-500 font-bold mt-2">Run a scan from the Monitor tab to generate drafts.</p>
-            </div>
-          ) : (
-            <>
-              {/* Pending Review */}
-              {pendingDrafts.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-black text-amber-600 uppercase tracking-widest mb-4 flex items-center">
-                    <Clock size={16} className="mr-2" />
-                    Pending Review ({pendingDrafts.length})
-                  </h3>
-                  <div className="space-y-6">
-                    {pendingDrafts.map(draft => (
-                      <div key={draft.id} className="bg-white rounded-[3rem] border-2 border-amber-200 shadow-sm overflow-hidden">
-                        {/* Comment Context */}
-                        <div className="p-8 bg-slate-50 border-b border-slate-200">
-                          <div className="flex items-center space-x-3 mb-3">
-                            <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-3 py-1 rounded-full uppercase">
-                              r/{draft.comment.subreddit}
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-400">
-                              u/{draft.comment.author}
-                            </span>
-                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${getScoreColor(draft.relevance_score)}`}>
-                              {draft.relevance_score}% match
-                            </span>
-                          </div>
-                          <p className="text-xs font-bold text-slate-500 mb-2">{draft.comment.post_title}</p>
-                          <p className="text-sm text-slate-600 leading-relaxed italic">"{draft.comment.body}"</p>
-                        </div>
-
-                        {/* AI Generated Response */}
-                        <div className="p-8">
-                          <div className="flex items-center space-x-2 mb-4">
-                            <Sparkles size={14} className="text-emerald-500" />
-                            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">AI Draft — Gemini</span>
-                          </div>
-
-                          {editingDraft === draft.id ? (
-                            <div className="space-y-4">
-                              <textarea
-                                value={editText}
-                                onChange={(e) => setEditText(e.target.value)}
-                                className="w-full bg-slate-50 border-2 border-emerald-300 rounded-2xl p-6 text-sm font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[180px]"
-                              />
-                              <div className="flex justify-end space-x-3">
-                                <button
-                                  onClick={() => setEditingDraft(null)}
-                                  className="px-5 py-2 text-slate-500 bg-slate-100 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  onClick={() => handleSaveEdit(draft.id)}
-                                  className="px-5 py-2 text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-200 transition"
-                                >
-                                  Save Edit
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-6">
-                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                                {draft.edited_response || draft.generated_response}
-                              </p>
-                            </div>
-                          )}
-
-                          {/* Action Buttons */}
-                          {editingDraft !== draft.id && (
-                            <div className="flex items-center justify-between mt-6">
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  onClick={() => handleStartEdit(draft)}
-                                  className="flex items-center space-x-2 px-5 py-2.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-100 transition"
-                                >
-                                  <Edit2 size={12} />
-                                  <span>Edit</span>
-                                </button>
-                                <button
-                                  onClick={() => handleReject(draft.id)}
-                                  className="flex items-center space-x-2 px-5 py-2.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition"
-                                >
-                                  <ThumbsDown size={12} />
-                                  <span>Reject</span>
-                                </button>
-                              </div>
-                              <button
-                                onClick={() => handleApprove(draft.id)}
-                                className="flex items-center space-x-2 px-8 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition shadow-lg"
-                              >
-                                <ThumbsUp size={14} />
-                                <span>Approve</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Approved — Ready to Post */}
-              {approvedDrafts.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center">
-                    <CheckCircle2 size={16} className="mr-2" />
-                    Approved — Ready to Post ({approvedDrafts.length})
-                  </h3>
-                  <div className="space-y-4">
-                    {approvedDrafts.map(draft => (
-                      <div key={draft.id} className="bg-white p-8 rounded-[2.5rem] border-2 border-emerald-300 shadow-sm">
-                        <div className="flex items-center space-x-3 mb-3">
-                          <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-3 py-1 rounded-full uppercase">
-                            r/{draft.comment.subreddit}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400">
-                            Replying to u/{draft.comment.author}
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-700 leading-relaxed mb-6 line-clamp-3">
-                          {draft.edited_response || draft.generated_response}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <button
-                            onClick={() => {
-                              setDrafts(prev => prev.map(d =>
-                                d.id === draft.id ? { ...d, status: 'pending_review' as const } : d
-                              ));
-                            }}
-                            className="text-[10px] font-bold text-slate-400 hover:text-slate-600 flex items-center space-x-1"
-                          >
-                            <RotateCcw size={10} />
-                            <span>Back to Review</span>
-                          </button>
-                          <button
-                            onClick={() => handlePost(draft.id)}
-                            className="flex items-center space-x-2 px-8 py-3 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition shadow-xl"
-                          >
-                            <Send size={14} />
-                            <span>Post to Reddit</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ─── POSTED TAB ──────────────────────────────────────────── */}
-      {activeTab === 'posted' && (
-        <div className="space-y-6 animate-in fade-in duration-500">
-          {postedDrafts.length === 0 ? (
-            <div className="py-32 text-center bg-slate-50 border-4 border-dashed border-slate-200 rounded-[4rem]">
-              <Rocket size={64} className="mx-auto text-slate-200 mb-6 opacity-40" />
-              <p className="text-xl font-black text-slate-400 uppercase tracking-widest">No Posts Yet</p>
-              <p className="text-xs text-slate-500 font-bold mt-2">Approved drafts will appear here once posted.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {postedDrafts.map(draft => (
-                <div key={draft.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase flex items-center space-x-1">
-                        <CheckCircle2 size={10} />
-                        <span>Posted</span>
-                      </span>
-                      <span className="text-[10px] font-black bg-orange-100 text-orange-700 px-3 py-1 rounded-full uppercase">
-                        r/{draft.comment.subreddit}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {draft.posted_at ? getTimeAgo(draft.posted_at) : ''}
-                      </span>
-                    </div>
-                    <a
-                      href={draft.comment.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 flex items-center space-x-1"
-                    >
-                      <ExternalLink size={10} />
-                      <span>View Thread</span>
-                    </a>
-                  </div>
-                  <p className="text-xs font-bold text-slate-500 mb-2">{draft.comment.post_title}</p>
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    {draft.edited_response || draft.generated_response}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Rejected Archive */}
-          {rejectedDrafts.length > 0 && (
+      {activeTab === 'campaigns' && (
+        <section className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-8 border-b border-slate-100 flex items-center justify-between gap-4">
             <div>
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center">
-                <Archive size={16} className="mr-2" />
-                Rejected ({rejectedDrafts.length})
-              </h3>
-              <div className="space-y-3">
-                {rejectedDrafts.map(draft => (
-                  <div key={draft.id} className="bg-slate-50 p-6 rounded-2xl border border-slate-200 opacity-60">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <span className="text-[10px] font-black bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">Rejected</span>
-                      <span className="text-[10px] font-bold text-slate-400">r/{draft.comment.subreddit}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 line-clamp-2">{draft.generated_response}</p>
-                  </div>
-                ))}
-              </div>
+              <h2 className="text-lg font-black text-slate-800">Paid Campaigns</h2>
+              <p className="text-xs text-slate-400 mt-1">{branchContext && !branchContext.isAllSelected ? `Filtered to ${branchContext.activeBranchSlugs.length} selected branches` : 'All branch campaigns'}</p>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* ─── SETTINGS TAB ────────────────────────────────────────── */}
-      {activeTab === 'settings' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
-          {/* Subreddit Targets */}
-          <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
-            <h3 className="text-lg font-black text-slate-800 flex items-center mb-8 pb-6 border-b border-slate-100">
-              <Target size={24} className="mr-4 text-orange-500" />
-              Subreddit Targets
-            </h3>
-
-            {/* Add New */}
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-6">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Add Subreddit</p>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="e.g. UrbanGardening"
-                  value={newSubreddit}
-                  onChange={(e) => setNewSubreddit(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-emerald-400"
-                />
-                <input
-                  type="text"
-                  placeholder="Keywords (comma-separated)"
-                  value={newKeywords}
-                  onChange={(e) => setNewKeywords(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-emerald-400"
-                />
-                <button
-                  onClick={handleAddSubreddit}
-                  disabled={!newSubreddit.trim()}
-                  className="flex items-center space-x-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-600 transition disabled:opacity-30"
-                >
-                  <Plus size={14} />
-                  <span>Add Target</span>
-                </button>
-              </div>
+            <button type="button" onClick={startNew} className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-700 border border-orange-200 rounded-xl text-[10px] font-black uppercase tracking-widest"><Plus size={13} /> New Campaign</button>
+          </div>
+          {visibleCampaigns.length === 0 ? (
+            <div className="py-24 text-center px-6">
+              <Megaphone size={52} className="mx-auto text-slate-200 mb-4" />
+              <h3 className="text-lg font-black text-slate-600">No Reddit ad campaigns yet</h3>
+              <p className="text-sm text-slate-400 mt-2">Create the first real campaign brief. No sample performance or fake deployments are shown.</p>
+              <button type="button" onClick={startNew} className="mt-6 px-6 py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest">Create First Ad</button>
             </div>
-
-            {/* Existing Targets */}
-            <div className="space-y-3">
-              {subredditTargets.map(sub => (
-                <div key={sub.name} className={`p-5 rounded-2xl border-2 transition-all ${sub.enabled ? 'bg-white border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-3">
-                      <button
-                        onClick={() => toggleSubreddit(sub.name)}
-                        className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition ${sub.enabled ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}
-                      >
-                        {sub.enabled && <Check size={12} className="text-white" />}
-                      </button>
-                      <span className="text-sm font-black text-slate-800">r/{sub.name}</span>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {visibleCampaigns.map(campaign => (
+                <div key={campaign.id} className="p-6 lg:p-8 flex flex-col lg:flex-row lg:items-center gap-5 hover:bg-slate-50/60 transition">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <h3 className="font-black text-slate-800">{campaign.name || 'Untitled campaign'}</h3>
+                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${STATUS_STYLES[campaign.status]}`}>{STATUS_LABELS[campaign.status]}</span>
                     </div>
-                    <button
-                      onClick={() => removeSubreddit(sub.name)}
-                      className="p-1.5 text-slate-300 hover:text-rose-500 transition"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-[11px] font-bold text-slate-400">
+                      <span>{branchName(campaign.branchSlug)}</span>
+                      <span>{OBJECTIVE_LABELS[campaign.objective]}</span>
+                      <span>${campaign.dailyBudgetUsd.toFixed(2)}/day</span>
+                      <span>{campaign.variants.length} creative{campaign.variants.length === 1 ? '' : 's'}</span>
+                      <span>{formatDate(campaign.startAt)} – {formatDate(campaign.endAt)}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 ml-8">
-                    {sub.keywords.map(kw => (
-                      <span key={kw} className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md">
-                        {kw}
-                      </span>
-                    ))}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {campaign.status === 'approved' || campaign.status === 'exported' ? (
+                      <button type="button" onClick={() => exportCampaign(campaign)} className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition"><Download size={13} /> Export</button>
+                    ) : null}
+                    <button type="button" onClick={() => editCampaign(campaign)} className="p-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl hover:text-orange-600 transition" aria-label={`Edit ${campaign.name}`}><Pencil size={15} /></button>
+                    {campaign.status === 'draft' || campaign.status === 'rejected' ? (
+                      <button type="button" onClick={() => deleteCampaign(campaign.id)} className="p-2.5 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-rose-600 transition" aria-label={`Delete ${campaign.name}`}><Trash2 size={15} /></button>
+                    ) : null}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </section>
+      )}
 
-          {/* Workflow Configuration */}
-          <div className="space-y-8">
-            <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-black text-slate-800 flex items-center mb-8 pb-6 border-b border-slate-100">
-                <Settings2 size={24} className="mr-4 text-indigo-500" />
-                Workflow Config
-              </h3>
+      {activeTab === 'create' && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          <div className="xl:col-span-2 space-y-8">
+            <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100">
+                <Target className="text-orange-500" size={22} />
+                <div><h2 className="text-lg font-black text-slate-800">Campaign Brief</h2><p className="text-xs text-slate-400">Objective, brand, budget, and schedule</p></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <label className="md:col-span-2"><span className="form-label">Campaign Name</span><input value={form.name} onChange={event => setForm(previous => ({ ...previous, name: event.target.value }))} placeholder="Fall container garden launch" className="form-input" /></label>
+                <label><span className="form-label">Brand Branch</span><select value={form.branchSlug} onChange={event => setForm(previous => ({ ...previous, branchSlug: event.target.value }))} className="form-input"><option value="">Select branch</option>{branchContext?.allBranches.map(branch => <option key={branch.slug} value={branch.slug}>{branch.name}</option>)}</select></label>
+                <label><span className="form-label">Objective</span><select value={form.objective} onChange={event => setForm(previous => ({ ...previous, objective: event.target.value as RedditAdObjective }))} className="form-input">{Object.entries(OBJECTIVE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><span className="text-[10px] text-slate-400 mt-1 block">{OBJECTIVE_HELP[form.objective]}</span></label>
+                <label><span className="form-label">Daily Budget (USD)</span><div className="relative"><DollarSign size={14} className="absolute left-4 top-3.5 text-slate-400" /><input type="number" min="1" step="1" value={form.dailyBudgetUsd} onChange={event => setForm(previous => ({ ...previous, dailyBudgetUsd: Number(event.target.value) }))} className="form-input pl-10" /></div></label>
+                <label><span className="form-label">Conversion Pixel ID {form.objective === 'conversions' ? '(Required)' : '(Optional)'}</span><input value={form.conversionPixelId || ''} onChange={event => setForm(previous => ({ ...previous, conversionPixelId: event.target.value }))} placeholder="Reddit pixel ID" className="form-input" /></label>
+                <label><span className="form-label">Start</span><input type="datetime-local" value={form.startAt} onChange={event => setForm(previous => ({ ...previous, startAt: event.target.value }))} className="form-input" /></label>
+                <label><span className="form-label">End</span><input type="datetime-local" value={form.endAt} onChange={event => setForm(previous => ({ ...previous, endAt: event.target.value }))} className="form-input" /></label>
+              </div>
+            </section>
 
+            <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100"><Hash className="text-indigo-500" size={22} /><div><h2 className="text-lg font-black text-slate-800">Audience Targeting</h2><p className="text-xs text-slate-400">Communities and locations are validated during deployment</p></div></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div><span className="form-label">Community Targets</span><div className="flex gap-2"><input value={communityInput} onChange={event => setCommunityInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTarget('community'); } }} placeholder="r/UrbanGardening" className="form-input" /><button type="button" onClick={() => addTarget('community')} className="px-4 bg-slate-900 text-white rounded-xl"><Plus size={15} /></button></div><div className="flex flex-wrap gap-2 mt-3">{form.communityTargets.map(target => <button type="button" key={target} onClick={() => setForm(previous => ({ ...previous, communityTargets: previous.communityTargets.filter(item => item !== target) }))} className="px-3 py-1.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 text-[10px] font-black">r/{target} ×</button>)}</div></div>
+                <div><span className="form-label">Location Targets</span><div className="flex gap-2"><input value={locationInput} onChange={event => setLocationInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTarget('location'); } }} placeholder="Georgia, United States" className="form-input" /><button type="button" onClick={() => addTarget('location')} className="px-4 bg-slate-900 text-white rounded-xl"><Plus size={15} /></button></div><div className="flex flex-wrap gap-2 mt-3">{form.locationTargets.map(target => <button type="button" key={target} onClick={() => setForm(previous => ({ ...previous, locationTargets: previous.locationTargets.filter(item => item !== target) }))} className="px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black">{target} ×</button>)}</div></div>
+              </div>
+            </section>
+
+            <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+              <div className="flex items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-100"><div className="flex items-center gap-3"><Layers3 className="text-emerald-500" size={22} /><div><h2 className="text-lg font-black text-slate-800">Creative Variants</h2><p className="text-xs text-slate-400">Every variant needs copy, a destination, and an approved asset</p></div></div><button type="button" onClick={() => setForm(previous => ({ ...previous, variants: [...previous.variants, newVariant(previous.variants.length + 1)] }))} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-[10px] font-black uppercase tracking-widest"><Plus size={13} /> Add Variant</button></div>
               <div className="space-y-6">
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Scan Interval (hours)</label>
-                  <div className="flex items-center space-x-3">
-                    {[1, 3, 6, 12, 24].map(h => (
-                      <button
-                        key={h}
-                        onClick={() => setScanInterval(h)}
-                        className={`px-4 py-2 rounded-xl text-xs font-black transition ${scanInterval === h ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                      >
-                        {h}h
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">AI Engine</label>
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center space-x-3">
-                    <Sparkles size={16} className="text-emerald-600" />
-                    <div>
-                      <p className="text-xs font-black text-emerald-800">Google Gemini 2.0 Flash</p>
-                      <p className="text-[10px] text-emerald-600">
-                        {geminiApiKey ? 'Using your Trellis API key' : 'No API key configured — add one in Settings'}
-                      </p>
+                {form.variants.map((variant, index) => {
+                  const FormatIcon = FORMAT_ICONS[variant.format];
+                  return <div key={variant.id} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-200">
+                    <div className="flex items-center justify-between gap-3 mb-5"><div className="flex items-center gap-2"><FormatIcon size={16} className="text-orange-500" /><span className="text-xs font-black text-slate-700">{variant.name}</span></div>{form.variants.length > 1 && <button type="button" onClick={() => setForm(previous => ({ ...previous, variants: previous.variants.filter(item => item.id !== variant.id) }))} className="text-slate-300 hover:text-rose-500"><Trash2 size={15} /></button>}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label><span className="form-label">Variant Name</span><input value={variant.name} onChange={event => updateVariant(variant.id, { name: event.target.value })} className="form-input" /></label>
+                      <label><span className="form-label">Format</span><select value={variant.format} onChange={event => updateVariant(variant.id, { format: event.target.value as RedditAdFormat })} className="form-input"><option value="image">Image</option><option value="video">Video</option><option value="carousel">Carousel</option></select></label>
+                      <label className="md:col-span-2"><span className="form-label">Headline</span><input maxLength={300} value={variant.headline} onChange={event => updateVariant(variant.id, { headline: event.target.value })} placeholder="A clear, specific reason to stop scrolling" className="form-input" /></label>
+                      <label className="md:col-span-2"><span className="form-label">Body Copy</span><textarea rows={4} value={variant.body} onChange={event => updateVariant(variant.id, { body: event.target.value })} placeholder="Helpful, transparent copy written for the target community" className="form-input resize-none" /></label>
+                      <label><span className="form-label">Call to Action</span><select value={variant.callToAction} onChange={event => updateVariant(variant.id, { callToAction: event.target.value })} className="form-input"><option>Learn More</option><option>Shop Now</option><option>Sign Up</option><option>Download</option><option>Get Quote</option></select></label>
+                      <label><span className="form-label">Landing URL</span><input value={variant.landingUrl} onChange={event => updateVariant(variant.id, { landingUrl: event.target.value })} placeholder="https://..." className="form-input" /></label>
+                      <label className="md:col-span-2"><span className="form-label">Approved Creative URL</span><input value={variant.assetUrl || ''} onChange={event => updateVariant(variant.id, { assetUrl: event.target.value })} placeholder="Paste an approved Card Studio or Creative Studio asset URL" className="form-input" /></label>
                     </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Safety Guardrails</label>
-                  <div className="space-y-2">
-                    {[
-                      { label: 'Human review required before posting', enabled: true, locked: true },
-                      { label: 'No links or URLs in responses', enabled: true, locked: true },
-                      { label: 'No brand names or product mentions', enabled: true, locked: true },
-                      { label: 'Skip bot & moderator comments', enabled: true, locked: false },
-                      { label: 'Minimum relevance score: 50%', enabled: true, locked: false },
-                    ].map(guard => (
-                      <div key={guard.label} className="flex items-center space-x-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className={`w-4 h-4 rounded-md flex items-center justify-center ${guard.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-                          {guard.enabled && <Check size={10} className="text-white" />}
-                        </div>
-                        <span className="text-xs font-bold text-slate-600 flex-1">{guard.label}</span>
-                        {guard.locked && (
-                          <Shield size={12} className="text-slate-400" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                  </div>;
+                })}
               </div>
-            </div>
+            </section>
 
-            {/* n8n Integration Card */}
-            <div className="bg-gradient-to-br from-indigo-50 to-violet-50 p-8 rounded-[2.5rem] border border-indigo-200">
-              <h3 className="text-sm font-black text-indigo-800 uppercase tracking-widest flex items-center mb-4">
-                <Terminal size={18} className="mr-3 text-indigo-500" />
-                n8n Workflow Blueprints
-              </h3>
-              <p className="text-xs text-indigo-700 leading-relaxed mb-4">
-                Two n8n workflows power this module. <strong>Scanner</strong> runs on a schedule to discover posts and stage drafts. <strong>Poster</strong> fires via webhook when you hit "Post to Reddit."
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() => handleCopyBlueprint('scanner')}
-                  className="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition shadow-lg"
-                >
-                  <Copy size={12} />
-                  <span>Copy Scanner</span>
-                </button>
-                <button
-                  onClick={() => handleCopyBlueprint('poster')}
-                  className="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition shadow-lg"
-                >
-                  <Copy size={12} />
-                  <span>Copy Poster</span>
-                </button>
-                <button
-                  onClick={handleOpenN8n}
-                  className="flex items-center space-x-2 px-5 py-2.5 bg-white text-indigo-700 border border-indigo-200 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-50 transition"
-                >
-                  <ExternalLink size={12} />
-                  <span>Open n8n</span>
-                </button>
-              </div>
+            <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" onClick={saveDraft} className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black uppercase tracking-widest"><Save size={14} /> Save Draft</button>
+              <button type="button" onClick={submitForReview} className="flex items-center gap-2 px-7 py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-600 transition shadow-lg"><ShieldCheck size={14} /> Submit for Review</button>
             </div>
           </div>
+
+          <aside className="space-y-6">
+            <div className="bg-slate-900 p-7 rounded-[2.5rem] text-white sticky top-6">
+              <h3 className="text-sm font-black uppercase tracking-widest mb-5">Readiness</h3>
+              <div className="space-y-3">{reviewErrors(form).length === 0 ? <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold"><CheckCircle2 size={15} /> Ready for human review</div> : reviewErrors(form).slice(0, 6).map(error => <div key={error} className="flex items-start gap-2 text-slate-300 text-xs"><XCircle size={14} className="text-amber-400 shrink-0 mt-0.5" /><span>{error}</span></div>)}</div>
+              <div className="border-t border-slate-700 mt-6 pt-6 space-y-3 text-xs text-slate-300"><div className="flex justify-between"><span>Objective</span><strong className="text-white">{OBJECTIVE_LABELS[form.objective]}</strong></div><div className="flex justify-between"><span>Daily budget</span><strong className="text-white">${Number.isFinite(form.dailyBudgetUsd) ? form.dailyBudgetUsd.toFixed(2) : '0.00'}</strong></div><div className="flex justify-between"><span>Variants</span><strong className="text-white">{form.variants.length}</strong></div><div className="flex justify-between"><span>Communities</span><strong className="text-white">{form.communityTargets.length}</strong></div></div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {activeTab === 'review' && (
+        <div className="space-y-5">
+          {reviewCampaigns.length === 0 ? <div className="py-28 text-center bg-slate-50 border-4 border-dashed border-slate-200 rounded-[4rem]"><ShieldCheck size={56} className="mx-auto text-slate-200 mb-4" /><h3 className="text-lg font-black text-slate-500">Review queue is empty</h3><p className="text-sm text-slate-400 mt-2">Complete a campaign brief and submit it for review.</p></div> : reviewCampaigns.map(campaign => <div key={campaign.id} className="bg-white p-7 lg:p-9 rounded-[2.5rem] border border-slate-200 shadow-sm"><div className="flex flex-col lg:flex-row lg:items-start gap-6"><div className="flex-1"><div className="flex flex-wrap items-center gap-2 mb-3"><h3 className="text-lg font-black text-slate-800">{campaign.name}</h3><span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${STATUS_STYLES[campaign.status]}`}>{STATUS_LABELS[campaign.status]}</span></div><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">{[{ icon: Target, label: OBJECTIVE_LABELS[campaign.objective] }, { icon: DollarSign, label: `$${campaign.dailyBudgetUsd}/day` }, { icon: Hash, label: `${campaign.communityTargets.length} communities` }, { icon: CalendarDays, label: formatDate(campaign.startAt) }].map(item => <div key={item.label} className="flex items-center gap-2 text-[11px] font-bold text-slate-500"><item.icon size={13} className="text-orange-500" />{item.label}</div>)}</div><div className="space-y-3">{campaign.variants.map(variant => <div key={variant.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black uppercase tracking-widest text-indigo-600">{variant.name} · {variant.format}</span></div><p className="text-sm font-black text-slate-700">{variant.headline}</p><p className="text-xs text-slate-500 mt-1 line-clamp-2">{variant.body}</p><a href={variant.landingUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 mt-2"><ExternalLink size={10} /> Inspect destination</a></div>)}</div></div><div className="flex lg:flex-col gap-2 shrink-0">{campaign.status === 'pending_review' && <><button type="button" onClick={() => changeStatus(campaign, 'approved')} className="flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"><CheckCircle2 size={13} /> Approve</button><button type="button" onClick={() => changeStatus(campaign, 'rejected')} className="flex items-center justify-center gap-2 px-5 py-3 bg-white border border-rose-200 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest"><XCircle size={13} /> Changes</button></>}{(campaign.status === 'approved' || campaign.status === 'exported') && <button type="button" onClick={() => exportCampaign(campaign)} className="flex items-center justify-center gap-2 px-5 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"><Download size={13} /> Export Package</button>}<button type="button" onClick={() => editCampaign(campaign)} className="flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest"><Pencil size={13} /> Edit</button></div></div></div>)}
+        </div>
+      )}
+
+      {activeTab === 'performance' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 py-28 text-center bg-white border border-slate-200 rounded-[3rem] shadow-sm px-8"><BarChart3 size={58} className="mx-auto text-slate-200 mb-5" /><h3 className="text-xl font-black text-slate-700">No Reddit delivery data connected</h3><p className="text-sm text-slate-400 max-w-xl mx-auto mt-3 leading-relaxed">Spend, impressions, clicks, CTR, CPC, conversions, and ROAS will appear only after the Reddit Ads API reporting connection is implemented. Trellis will not manufacture performance metrics.</p><button type="button" onClick={() => onNavigate('ad-performance')} className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"><BarChart3 size={13} /> Open Ad Performance</button></div>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-[3rem] p-8"><h3 className="text-sm font-black text-indigo-900 uppercase tracking-widest mb-5">Next Integration</h3><div className="space-y-4 text-xs text-indigo-800"><div className="flex gap-3"><Link size={15} className="shrink-0" /><span>Authenticated Reddit Ads developer application</span></div><div className="flex gap-3"><ShieldCheck size={15} className="shrink-0" /><span>Supabase-owned campaign records and approval audit</span></div><div className="flex gap-3"><Rocket size={15} className="shrink-0" /><span>n8n deployment with confirmed provider IDs</span></div><div className="flex gap-3"><BarChart3 size={15} className="shrink-0" /><span>Scheduled reporting sync and attribution</span></div><div className="flex gap-3"><MapPin size={15} className="shrink-0" /><span>Provider validation for communities and locations</span></div></div></div>
         </div>
       )}
     </div>

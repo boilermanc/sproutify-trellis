@@ -766,6 +766,94 @@ export interface DeployedCampaign {
   channels: ChannelDeployResult[];
 }
 
+// === REDDIT ADS WORKSPACE (Phase 1: local campaign orchestration) ===
+// These are Trellis intent values, not Reddit API enums. The deployment adapter
+// owns provider-specific mappings so API enum migrations do not corrupt drafts.
+export type RedditAdObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+export type RedditAdFormat = 'image' | 'video' | 'carousel';
+export type RedditAdCampaignStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'exported'
+  | 'deployed'
+  | 'failed';
+
+export interface RedditAdVariant {
+  id: string;
+  name: string;
+  format: RedditAdFormat;
+  headline: string;
+  body: string;
+  callToAction: string;
+  landingUrl: string;
+  assetUrl?: string;
+}
+
+export interface RedditAdDeployment {
+  provider: 'reddit';
+  campaignId: string;
+  adGroupId: string;
+  adIds: string[];
+  deployedAt: string;
+}
+
+export interface RedditAdCampaign {
+  id: string;
+  name: string;
+  branchSlug: string;
+  objective: RedditAdObjective;
+  status: RedditAdCampaignStatus;
+  dailyBudgetUsd: number;
+  startAt: string;
+  endAt: string;
+  communityTargets: string[];
+  locationTargets: string[];
+  conversionPixelId?: string;
+  variants: RedditAdVariant[];
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string;
+  approvedAt?: string;
+  exportedAt?: string;
+  deployment?: RedditAdDeployment;
+  lastError?: string;
+}
+
+export type RedditAdStrategyStatus = 'draft' | 'generated' | 'approved';
+
+export interface RedditAdStrategyCreative {
+  headline: string;
+  body: string;
+  callToAction: string;
+  angle: string;
+}
+
+export interface RedditAdStrategy {
+  id: string;
+  branchSlug: string;
+  status: RedditAdStrategyStatus;
+  productName: string;
+  productEvidence: string;
+  websiteUrl: string;
+  offerName: string;
+  rationale: string;
+  objective: RedditAdObjective;
+  landingPageUrl: string;
+  targetAudience: string;
+  communityTargets: string[];
+  locationTargets: string[];
+  recommendedDailyBudgetUsd: number;
+  creatives: RedditAdStrategyCreative[];
+  risks: string[];
+  assumptions: string[];
+  createdAt: string;
+  updatedAt: string;
+  generatedAt?: string;
+  approvedAt?: string;
+}
+
 // === CONTENT CALENDAR & BRAND GOVERNANCE ===
 
 export type ApprovalStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
