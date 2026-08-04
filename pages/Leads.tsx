@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { BranchContext, Lead, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
 import LeadTimeline from '../components/leads/LeadTimeline';
+import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
 import {
   checkExistingLeads,
   createLead,
@@ -28,6 +29,7 @@ import {
   fetchLeadTimeline,
   fetchPipelines,
   LeadExistenceStatus,
+  logLeadActivity,
   parseLeadPaste,
   parseLeadRows,
   updateLead,
@@ -139,6 +141,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [stageSavingId, setStageSavingId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, TimelineEntry[]>>({});
   const [timelineLoadingId, setTimelineLoadingId] = useState<string | null>(null);
+  const [quickActivity, setQuickActivity] = useState<{ lead: Lead; kind: QuickActivityKind } | null>(null);
+  const [savingActivity, setSavingActivity] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -282,6 +286,19 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
   };
 
+  const loadTimeline = useCallback(async (lead: Lead) => {
+    setTimelineLoadingId(lead.id);
+    try {
+      const entries = await fetchLeadTimeline(lead.id, lead.profile_id);
+      setTimelines(current => ({ ...current, [lead.id]: entries }));
+    } catch (error) {
+      console.error('Failed to load lead timeline:', error);
+      addToast('Could not load lead activity.', 'error');
+    } finally {
+      setTimelineLoadingId(current => current === lead.id ? null : current);
+    }
+  }, [addToast]);
+
   const toggleLeadDetails = (lead: Lead) => {
     if (expandedLeadId === lead.id) {
       setExpandedLeadId(null);
@@ -290,14 +307,31 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
     setExpandedLeadId(lead.id);
     setDetailDraft({ notes: lead.notes, next_action_at: lead.next_action_at });
-    setTimelineLoadingId(lead.id);
-    fetchLeadTimeline(lead.id, lead.profile_id)
-      .then(entries => setTimelines(current => ({ ...current, [lead.id]: entries })))
-      .catch(error => {
-        console.error('Failed to load lead timeline:', error);
-        addToast('Could not load lead activity.', 'error');
-      })
-      .finally(() => setTimelineLoadingId(current => current === lead.id ? null : current));
+    void loadTimeline(lead);
+  };
+
+  const submitQuickActivity = async (submission: ActivitySubmission) => {
+    if (!quickActivity) return;
+    setSavingActivity(true);
+    try {
+      await logLeadActivity({
+        leadId: quickActivity.lead.id,
+        profileId: quickActivity.lead.profile_id,
+        ...submission,
+      });
+      if (submission.nextActionAt !== undefined) {
+        setLeads(current => current.map(lead => lead.id === quickActivity.lead.id ? { ...lead, next_action_at: submission.nextActionAt || null } : lead));
+        setDetailDraft(current => ({ ...current, next_action_at: submission.nextActionAt || null }));
+      }
+      await loadTimeline(quickActivity.lead);
+      addToast('Lead activity saved.', 'success');
+      setQuickActivity(null);
+    } catch (error) {
+      console.error('Failed to log lead activity:', error);
+      addToast('Could not save lead activity.', 'error');
+    } finally {
+      setSavingActivity(false);
+    }
   };
 
   const saveDetail = async (lead: Lead, field: 'notes' | 'next_action_at') => {
@@ -617,6 +651,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                               <td colSpan={7} className="bg-[#0A0E27]/70 px-6 py-6">
                                 <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
                                   <div className="space-y-4">
+                                    <div className="flex flex-wrap gap-2">
+                                      <button type="button" onClick={() => setQuickActivity({ lead, kind: 'call' })} className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-cyan-300 hover:bg-cyan-400/10">Log Call</button>
+                                      <button type="button" onClick={() => setQuickActivity({ lead, kind: 'note' })} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]">Log Note</button>
+                                      <button type="button" onClick={() => setQuickActivity({ lead, kind: 'meeting' })} className="rounded-xl border border-indigo-400/20 bg-indigo-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-indigo-300 hover:bg-indigo-400/10">Log Meeting</button>
+                                    </div>
                                     <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
                                       <p className="text-sm leading-6 text-slate-200">{lead.inquiry_text || 'No inquiry text provided.'}</p>
@@ -703,6 +742,16 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
             </div>
           </form>
         </ModalShell>
+      )}
+
+      {quickActivity && (
+        <LeadActivityModal
+          lead={quickActivity.lead}
+          kind={quickActivity.kind}
+          pending={savingActivity}
+          onClose={() => !savingActivity && setQuickActivity(null)}
+          onSubmit={submitQuickActivity}
+        />
       )}
 
       {showImportModal && activeBranch && selectedPipeline && (
