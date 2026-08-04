@@ -11,8 +11,6 @@ const MODELS = {
   IMAGE: 'gemini-2.0-flash'      // Image generation (if available)
 } as const;
 
-const MSHOTS_BASE = 'https://s0.wp.com/mshots/v1/';
-
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
@@ -30,10 +28,6 @@ function formatUrl(input: string): string {
     return trimmed;
   }
   return `https://${trimmed}`;
-}
-
-function getScreenshotUrl(websiteUrl: string): string {
-  return `${MSHOTS_BASE}${encodeURIComponent(websiteUrl)}?w=1280&h=960`;
 }
 
 function safeParseJSON<T>(text: string | undefined, fallback: T): T {
@@ -159,7 +153,10 @@ function buildBrand(
     target_audience: data.targetAudience || '',
     voice: data.voice || '',
     website_url: formattedUrl,
-    screenshot_url: getScreenshotUrl(formattedUrl),
+    // Site screenshots previously used WordPress mShots (s0.wp.com), which
+    // frequently never resolves and shows a stuck WordPress-logo placeholder.
+    // Dropped — the screenshot is no longer displayed anywhere.
+    screenshot_url: undefined,
     color_palette: data.colorPalette || EMPTY_BRAND_DATA.colorPalette,
     typography: data.typography || EMPTY_BRAND_DATA.typography,
     image_prompt: data.imagePrompt || '',

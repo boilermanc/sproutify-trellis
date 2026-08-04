@@ -44,6 +44,28 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     const target = norm(slug);
     return branchContext?.allBranches.find(b => norm(b.slug) === target)?.id || slug;
   };
+  // Resolve a brand's identity-avatar style from its branch. Brand DNA
+  // color_palette.primary is extracted from the site theme and is often
+  // near-black, which renders as an unreadable black chip. The Branches view
+  // keys identity avatars off branches.primary_color — mirror that here so the
+  // cards show the same on-brand colored initial (or logo) instead.
+  const getBranchAvatar = (branchId: string) => {
+    const norm = (s: string) => (s || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
+    const target = norm(branchId);
+    const b = branchContext?.allBranches.find(x => norm(x.slug) === target);
+    return { color: b?.primary_color || '#64748b', logo: b?.logo_url || null };
+  };
+  const BrandAvatar: React.FC<{ brand: BrandIdentity; className: string; rounded?: string }> = ({ brand, className, rounded = 'rounded-xl' }) => {
+    const { color, logo } = getBranchAvatar(brand.branch_id);
+    return (
+      <div
+        className={`${className} ${rounded} flex items-center justify-center text-white font-black shadow-sm flex-shrink-0 overflow-hidden`}
+        style={{ backgroundColor: color }}
+      >
+        {logo ? <img src={logo} alt="" className="w-full h-full object-contain" /> : (brand.name.charAt(0) || 'B').toUpperCase()}
+      </div>
+    );
+  };
   // State
   const [brands, setBrands] = useState<BrandIdentity[]>(MOCK_BRAND_IDENTITIES);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -538,10 +560,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
     setAnalysisState('analyzing_site');
     setError(null);
-
-    // Show screenshot preview immediately
-    const formattedUrl = urlInput.startsWith('http') ? urlInput : `https://${urlInput}`;
-    setScreenshotUrl(`https://s0.wp.com/mshots/v1/${encodeURIComponent(formattedUrl)}?w=1024&h=768`);
+    setScreenshotUrl(null);
 
     try {
       const brandData = await extractBrandFromUrl(urlInput, targetBranch, geminiApiKey);
@@ -801,7 +820,6 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
         target_audience: messaging.target_audience,
         voice: messaging.voice,
         website_url: messagingUrl || undefined,
-        screenshot_url: messagingUrl ? `https://s0.wp.com/mshots/v1/${encodeURIComponent(messagingUrl.startsWith('http') ? messagingUrl : 'https://' + messagingUrl)}?w=1280&h=960` : undefined,
         color_palette: manualColors,
         typography: manualFonts,
         image_prompt: `Professional brand imagery for ${manualName}, using colors ${manualColors.primary} and ${manualColors.accent}`,
@@ -1236,10 +1254,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     className="p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-violet-300 transition-all cursor-pointer group"
                   >
                     <div className="flex items-center gap-3 mb-2">
-                      <div
-                        className="w-8 h-8 rounded-lg"
-                        style={{ backgroundColor: brand.color_palette.primary }}
-                      />
+                      <BrandAvatar brand={brand} className="w-8 h-8 text-sm" rounded="rounded-lg" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-800 truncate">{brand.name}</p>
                         <p className="text-[10px] text-slate-500 font-mono">{brand.branch_id}</p>
@@ -1302,10 +1317,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     className="p-6 bg-slate-50 rounded-2xl border border-slate-100 hover:border-violet-300 transition-all group cursor-pointer"
                   >
                     <div className="flex items-start gap-4 mb-4">
-                      <div
-                        className="w-12 h-12 rounded-xl shadow-inner"
-                        style={{ backgroundColor: brand.color_palette.primary }}
-                      />
+                      <BrandAvatar brand={brand} className="w-12 h-12 text-lg" />
                       <div className="flex-1 min-w-0">
                         <p className="text-lg font-bold text-slate-800 truncate">{brand.name}</p>
                         <p className="text-[10px] text-slate-500 font-mono">{brand.branch_id}</p>
@@ -1351,10 +1363,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     className="p-6 bg-slate-100 rounded-2xl border border-slate-200 opacity-75 hover:opacity-100 transition-all"
                   >
                     <div className="flex items-start gap-4 mb-4">
-                      <div
-                        className="w-12 h-12 rounded-xl shadow-inner grayscale"
-                        style={{ backgroundColor: brand.color_palette.primary }}
-                      />
+                      <div className="grayscale">
+                        <BrandAvatar brand={brand} className="w-12 h-12 text-lg" />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-lg font-bold text-slate-600 truncate">{brand.name}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{brand.branch_id}</p>
@@ -1422,10 +1433,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               {/* Name & Tagline */}
               <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
                 <div className="flex items-center gap-4 mb-3">
-                  <div
-                    className="w-14 h-14 rounded-2xl shadow-inner border border-white/20"
-                    style={{ backgroundColor: viewingBrand.color_palette.primary }}
-                  />
+                  <BrandAvatar brand={viewingBrand} className="w-14 h-14 text-2xl" rounded="rounded-2xl" />
                   <div>
                     <h2 className="text-4xl font-black text-slate-800">{viewingBrand.name}</h2>
                     {viewingBrand.tagline && (
@@ -1502,17 +1510,6 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
             {/* Right Column */}
             <div className="lg:col-span-5 space-y-6">
-              {/* Screenshot */}
-              {viewingBrand.screenshot_url && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                  <img
-                    src={viewingBrand.screenshot_url}
-                    alt="Website screenshot"
-                    className="w-full aspect-video object-cover object-top"
-                  />
-                </div>
-              )}
-
               {/* Color Palette */}
               <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -2084,17 +2081,6 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
             {/* Right Column */}
             <div className="lg:col-span-5 space-y-6">
-              {/* Screenshot */}
-              {previewBrand.screenshot_url && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-sm">
-                  <img
-                    src={previewBrand.screenshot_url}
-                    alt="Website screenshot"
-                    className="w-full aspect-video object-cover object-top"
-                  />
-                </div>
-              )}
-
               {/* Color Palette */}
               <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
