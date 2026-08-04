@@ -269,18 +269,37 @@ CREATE INDEX IF NOT EXISTS idx_task_queue_status_priority ON marketing_task_queu
 CREATE TABLE IF NOT EXISTS campaigns (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
-  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'deployed', 'paused', 'completed')),
-  query_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
-  -- query_definition shape: { branches: string[], presets: string[], template: string, subject: string, trigger: string, branchContent: {} }
-  audience_size_at_launch INTEGER DEFAULT 0,
-  consent_confirmed BOOLEAN DEFAULT false,
-  deployed_at TIMESTAMPTZ,
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'active', 'completed', 'paused')),
+  template TEXT NOT NULL,
+  subject TEXT,
+  trigger_type TEXT DEFAULT 'immediate' CHECK (trigger_type IN ('immediate', 'scheduled', 'event_based')),
+  scheduled_at TIMESTAMPTZ,
+  segments JSONB DEFAULT '[]'::jsonb,
+  tags JSONB DEFAULT '[]'::jsonb,
+  branches JSONB DEFAULT '[]'::jsonb,
+  audience_size INTEGER DEFAULT 0,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_by TEXT,
+  owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT auth.uid(),
+  launched_at TIMESTAMPTZ,
+  campaign_type TEXT DEFAULT 'standard' CHECK (campaign_type IN ('standard', 'marketing_wizard')),
+  dispatch JSONB,
+  send_status TEXT CHECK (send_status IN ('queued', 'sending', 'sent', 'partial', 'failed')),
+  send_error TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns (status);
-CREATE INDEX IF NOT EXISTS idx_campaigns_deployed ON campaigns (deployed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_campaigns_launched ON campaigns (launched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_campaigns_owner_updated ON campaigns (owner_id, updated_at DESC);
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES auth.users(id) ON DELETE SET NULL DEFAULT auth.uid();
+ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON campaigns FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON campaigns TO authenticated;
+GRANT ALL ON campaigns TO service_role;
 
 -- 6b. EMAIL REPORTING & SUPPRESSION
 -- Suppression list (do-not-email). Trellis reads consent live from spokes but keeps
@@ -739,7 +758,8 @@ CREATE TRIGGER trg_ssp_updated_at
 -- 10. MARKETING CAMPAIGN GENERATOR: BRAND PROFILES
 CREATE TABLE IF NOT EXISTS marketing_brands (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  branch_id UUID REFERENCES branches(id) ON DELETE CASCADE,
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+  brand_identity_id UUID REFERENCES brand_identities(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   industry TEXT,
   description TEXT,
@@ -749,6 +769,15 @@ CREATE TABLE IF NOT EXISTS marketing_brands (
   primary_color TEXT DEFAULT '#059669',
   logo_url TEXT,
   website_url TEXT,
+  legal_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  address_line_1 TEXT,
+  address_line_2 TEXT,
+  city TEXT,
+  state_region TEXT,
+  postal_code TEXT,
+  country_code TEXT NOT NULL DEFAULT 'US',
   keywords JSONB DEFAULT '[]'::jsonb,
   competitors JSONB DEFAULT '[]'::jsonb,
   metadata JSONB DEFAULT '{}'::jsonb,
@@ -757,8 +786,61 @@ CREATE TABLE IF NOT EXISTS marketing_brands (
 );
 
 CREATE INDEX IF NOT EXISTS idx_marketing_brands_branch ON marketing_brands (branch_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_marketing_brands_branch_unique ON marketing_brands (branch_id);
+CREATE INDEX IF NOT EXISTS idx_marketing_brands_brand_identity ON marketing_brands (brand_identity_id);
 ALTER TABLE marketing_brands ENABLE ROW LEVEL SECURITY;
+
+CREATE SCHEMA IF NOT EXISTS private;
+
+CREATE OR REPLACE FUNCTION private.is_active_trellis_user()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.trellis_users
+    WHERE auth_user_id = (SELECT auth.uid()) AND status = 'active'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION private.can_manage_marketing()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.trellis_users
+    WHERE auth_user_id = (SELECT auth.uid())
+      AND role IN ('owner', 'admin', 'operator')
+      AND status = 'active'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION private.is_active_trellis_user() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION private.can_manage_marketing() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.is_active_trellis_user() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.can_manage_marketing() TO authenticated, service_role;
+
+DROP POLICY IF EXISTS "campaigns_app_access" ON campaigns;
+DROP POLICY IF EXISTS "Active Trellis users read campaigns" ON campaigns;
+CREATE POLICY "Active Trellis users read campaigns" ON campaigns FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));
+DROP POLICY IF EXISTS "Active Trellis users create campaigns" ON campaigns;
+CREATE POLICY "Active Trellis users create campaigns" ON campaigns FOR INSERT TO authenticated WITH CHECK ((SELECT private.is_active_trellis_user()) AND owner_id = (SELECT auth.uid()));
+DROP POLICY IF EXISTS "Campaign owners manage campaigns" ON campaigns;
+CREATE POLICY "Campaign owners manage campaigns" ON campaigns FOR UPDATE TO authenticated USING (owner_id = (SELECT auth.uid()) OR (SELECT private.can_manage_marketing())) WITH CHECK (owner_id = (SELECT auth.uid()) OR (SELECT private.can_manage_marketing()));
+DROP POLICY IF EXISTS "Campaign owners delete drafts" ON campaigns;
+CREATE POLICY "Campaign owners delete drafts" ON campaigns FOR DELETE TO authenticated USING (status = 'draft' AND (owner_id = (SELECT auth.uid()) OR (SELECT private.can_manage_marketing())));
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON marketing_brands TO authenticated;
+
+DROP POLICY IF EXISTS "Service Role Full Access" ON marketing_brands;
 CREATE POLICY "Service Role Full Access" ON marketing_brands FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Active Trellis users read brand profiles" ON marketing_brands;
+CREATE POLICY "Active Trellis users read brand profiles" ON marketing_brands FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));
+DROP POLICY IF EXISTS "Marketing operators create brand profiles" ON marketing_brands;
+CREATE POLICY "Marketing operators create brand profiles" ON marketing_brands FOR INSERT TO authenticated WITH CHECK ((SELECT private.can_manage_marketing()));
+DROP POLICY IF EXISTS "Marketing operators update brand profiles" ON marketing_brands;
+CREATE POLICY "Marketing operators update brand profiles" ON marketing_brands FOR UPDATE TO authenticated USING ((SELECT private.can_manage_marketing())) WITH CHECK ((SELECT private.can_manage_marketing()));
+DROP POLICY IF EXISTS "Marketing operators delete brand profiles" ON marketing_brands;
+CREATE POLICY "Marketing operators delete brand profiles" ON marketing_brands FOR DELETE TO authenticated USING ((SELECT private.can_manage_marketing()));
 
 -- 11. MARKETING CAMPAIGN GENERATOR: AI GENERATION LOG
 CREATE TABLE IF NOT EXISTS marketing_generations (
@@ -787,7 +869,13 @@ CREATE INDEX IF NOT EXISTS idx_marketing_gen_campaign ON marketing_generations (
 CREATE INDEX IF NOT EXISTS idx_marketing_gen_type ON marketing_generations (generation_type);
 CREATE INDEX IF NOT EXISTS idx_marketing_gen_created ON marketing_generations (created_at DESC);
 ALTER TABLE marketing_generations ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON marketing_generations TO authenticated;
+DROP POLICY IF EXISTS "Service Role Full Access" ON marketing_generations;
 CREATE POLICY "Service Role Full Access" ON marketing_generations FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Active Trellis users read marketing generations" ON marketing_generations;
+CREATE POLICY "Active Trellis users read marketing generations" ON marketing_generations FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));
+DROP POLICY IF EXISTS "Marketing operators create marketing generations" ON marketing_generations;
+CREATE POLICY "Marketing operators create marketing generations" ON marketing_generations FOR INSERT TO authenticated WITH CHECK ((SELECT private.can_manage_marketing()));
 
 -- 14. SPOKE CONNECTIONS (Federated Data Sources)
 CREATE TABLE IF NOT EXISTS spoke_connections (
@@ -1106,15 +1194,18 @@ CREATE TABLE IF NOT EXISTS studio_feature_flags (
 INSERT INTO studio_feature_flags (organization_id, key, enabled) VALUES ('00000000-0000-0000-0000-000000000001', 'studio_music_enabled', false) ON CONFLICT (organization_id, key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS studio_albums (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), organization_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001', created_by UUID NOT NULL,
-  title TEXT NOT NULL, artist_name TEXT NOT NULL, description TEXT, genre TEXT, mood TEXT, era TEXT, theme TEXT, vocal_direction TEXT NOT NULL DEFAULT 'instrumental',
+  title TEXT NOT NULL, artist_name TEXT NOT NULL, description TEXT, genre TEXT, mood TEXT, era TEXT, theme TEXT,
+  style_preset_id TEXT, style_profile JSONB NOT NULL DEFAULT '{}'::jsonb, vocal_direction TEXT NOT NULL DEFAULT 'instrumental',
   target_duration_seconds INTEGER NOT NULL CHECK (target_duration_seconds > 0), actual_duration_seconds INTEGER,
-  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','planning','generating','review','mastering','master_review','visuals','video','metadata','ready_to_publish','published','failed','archived')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','planning','generating','review','mastering','master_review','visuals','video','metadata','ready_to_publish','published','failed','archived','track_planning','track_generation','track_review','release_identity','artwork_review','animation_review','video_rendering','video_review','metadata_review','publishing')),
   music_generation_status TEXT NOT NULL DEFAULT 'not_started' CHECK (music_generation_status IN ('not_started','queued','processing','complete','failed')),
-  master_status TEXT NOT NULL DEFAULT 'not_started' CHECK (master_status IN ('not_started','queued','processing','approved','failed')),
+  master_status TEXT NOT NULL DEFAULT 'not_started' CHECK (master_status IN ('not_started','queued','processing','pending_review','approved','failed')),
   artwork_status TEXT NOT NULL DEFAULT 'not_started' CHECK (artwork_status IN ('not_started','queued','processing','approved','failed')),
-  video_status TEXT NOT NULL DEFAULT 'not_started' CHECK (video_status IN ('not_started','queued','processing','approved','failed')),
+  video_status TEXT NOT NULL DEFAULT 'not_started' CHECK (video_status IN ('not_started','queued','processing','pending_review','approved','failed')),
   metadata_status TEXT NOT NULL DEFAULT 'not_started' CHECK (metadata_status IN ('not_started','queued','processing','approved','failed')),
   publishing_status TEXT NOT NULL DEFAULT 'not_started' CHECK (publishing_status IN ('not_started','ready','submitted','published','failed')),
+  release_subtitle TEXT, series_name TEXT, subgenre TEXT, short_description TEXT, credits TEXT, ai_disclosure TEXT, copyright_note TEXT, catalog_number TEXT,
+  release_identity_status TEXT NOT NULL DEFAULT 'not_started' CHECK (release_identity_status IN ('not_started','draft','approved')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS studio_tracks (
@@ -1128,7 +1219,8 @@ CREATE TABLE IF NOT EXISTS studio_assets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), album_id UUID NOT NULL REFERENCES studio_albums(id) ON DELETE CASCADE, track_id UUID REFERENCES studio_tracks(id) ON DELETE CASCADE,
   asset_type TEXT NOT NULL CHECK (asset_type IN ('track_audio','master_mp3','master_wav','cover_art','thumbnail','scene_image','scene_loop','final_video','logo_overlay','cta_overlay','waveform')),
   storage_bucket TEXT NOT NULL DEFAULT 'studio-assets', storage_path TEXT NOT NULL, mime_type TEXT, file_size BIGINT, duration_seconds INTEGER, width INTEGER, height INTEGER,
-  version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending','processing','active','failed','archived')), metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending','processing','active','failed','archived')),
+  error_message TEXT, metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS studio_jobs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), album_id UUID NOT NULL REFERENCES studio_albums(id) ON DELETE CASCADE, track_id UUID REFERENCES studio_tracks(id) ON DELETE CASCADE,
@@ -1136,10 +1228,39 @@ CREATE TABLE IF NOT EXISTS studio_jobs (
   status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','completed','failed','cancelled')), progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100), provider TEXT, attempt_count INTEGER NOT NULL DEFAULT 0, error_message TEXT,
   input_json JSONB NOT NULL DEFAULT '{}'::jsonb, output_json JSONB NOT NULL DEFAULT '{}'::jsonb, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS style_preset_id TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS style_profile JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS release_subtitle TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS series_name TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS subgenre TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS short_description TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS credits TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS ai_disclosure TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS copyright_note TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS catalog_number TEXT;
+ALTER TABLE studio_albums ADD COLUMN IF NOT EXISTS release_identity_status TEXT NOT NULL DEFAULT 'not_started';
+ALTER TABLE studio_albums DROP CONSTRAINT IF EXISTS studio_albums_status_check;
+ALTER TABLE studio_albums ADD CONSTRAINT studio_albums_status_check CHECK (status IN ('draft','planning','generating','review','mastering','master_review','visuals','video','metadata','ready_to_publish','published','failed','archived','track_planning','track_generation','track_review','release_identity','artwork_review','animation_review','video_rendering','video_review','metadata_review','publishing'));
+ALTER TABLE studio_albums DROP CONSTRAINT IF EXISTS studio_albums_master_status_check;
+ALTER TABLE studio_albums ADD CONSTRAINT studio_albums_master_status_check CHECK (master_status IN ('not_started','queued','processing','pending_review','approved','failed'));
+ALTER TABLE studio_albums DROP CONSTRAINT IF EXISTS studio_albums_video_status_check;
+ALTER TABLE studio_albums ADD CONSTRAINT studio_albums_video_status_check CHECK (video_status IN ('not_started','queued','processing','pending_review','approved','failed'));
+ALTER TABLE studio_albums DROP CONSTRAINT IF EXISTS studio_albums_release_identity_status_check;
+ALTER TABLE studio_albums ADD CONSTRAINT studio_albums_release_identity_status_check CHECK (release_identity_status IN ('not_started','draft','approved'));
+ALTER TABLE studio_assets ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE studio_assets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_studio_albums_org_updated ON studio_albums (organization_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_studio_albums_style_preset ON studio_albums (style_preset_id);
 CREATE INDEX IF NOT EXISTS idx_studio_tracks_album_order ON studio_tracks (album_id, track_number);
 CREATE INDEX IF NOT EXISTS idx_studio_assets_album ON studio_assets (album_id, asset_type);
 CREATE INDEX IF NOT EXISTS idx_studio_jobs_album_status ON studio_jobs (album_id, status, created_at);
+DROP INDEX IF EXISTS idx_studio_one_active_job_per_type;
+WITH duplicate_active_studio_track_jobs AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY album_id, job_type, track_id ORDER BY created_at DESC, id DESC) AS position FROM studio_jobs WHERE status IN ('queued', 'processing') AND track_id IS NOT NULL)
+UPDATE studio_jobs SET status = 'cancelled', error_message = COALESCE(error_message, 'Superseded while enforcing one active Studio job per track.'), completed_at = NOW(), updated_at = NOW() WHERE id IN (SELECT id FROM duplicate_active_studio_track_jobs WHERE position > 1);
+WITH duplicate_active_studio_album_jobs AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY album_id, job_type ORDER BY created_at DESC, id DESC) AS position FROM studio_jobs WHERE status IN ('queued', 'processing') AND track_id IS NULL)
+UPDATE studio_jobs SET status = 'cancelled', error_message = COALESCE(error_message, 'Superseded while enforcing one active Studio album job per type.'), completed_at = NOW(), updated_at = NOW() WHERE id IN (SELECT id FROM duplicate_active_studio_album_jobs WHERE position > 1);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_one_active_track_job ON studio_jobs (album_id, job_type, track_id) WHERE status IN ('queued', 'processing') AND track_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_studio_one_active_album_job ON studio_jobs (album_id, job_type) WHERE status IN ('queued', 'processing') AND track_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_studio_feature_flags_users ON studio_feature_flags USING GIN (enabled_for_user_ids jsonb_path_ops);
 INSERT INTO storage.buckets (id, name, public) VALUES ('studio-assets', 'studio-assets', false) ON CONFLICT (id) DO NOTHING;
 ALTER TABLE studio_feature_flags ENABLE ROW LEVEL SECURITY; ALTER TABLE studio_albums ENABLE ROW LEVEL SECURITY; ALTER TABLE studio_tracks ENABLE ROW LEVEL SECURITY; ALTER TABLE studio_assets ENABLE ROW LEVEL SECURITY; ALTER TABLE studio_jobs ENABLE ROW LEVEL SECURITY;

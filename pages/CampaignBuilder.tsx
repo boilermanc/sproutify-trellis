@@ -1,11 +1,11 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult } from '../types';
 import { Segment, PRESET_SEGMENTS } from '../segmentTypes';
 import { evaluateSegment } from '../segmentEngine';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
-import { createCampaign, fetchCampaigns, Campaign, enqueueCampaignRecipients, pingCampaignSender } from '../supabaseService';
+import { createCampaign, fetchCampaignById, fetchCampaigns, saveCampaignDraft, launchCampaignDraft, Campaign, CampaignCreateInput, enqueueCampaignRecipients, pingCampaignSender } from '../supabaseService';
 import { loadNameCache } from '../demographicsService';
 import { timeAgo, formatBranchName } from '../utils';
 import { isSubscribedForAnyBranch } from '../consentUtils';
@@ -25,7 +25,7 @@ import {
   Globe, ChevronDown, AlertTriangle,
   Instagram, Twitter, Linkedin, MessageSquare,
   Phone, Zap, ArrowRight, Layers,
-  Eye, XCircle, Loader2
+  Eye, XCircle, Loader2, Save
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════
@@ -59,6 +59,29 @@ interface CampaignBuilderProps {
   setEvents?: React.Dispatch<React.SetStateAction<MarketingEvent[]>>;
   onCampaignDeployed?: (campaign: DeployedCampaign) => void;
   onOpenArticle?: (article: Article) => void;
+  draftCampaignId?: string | null;
+  onDraftIdChange?: (id: string | null) => void;
+}
+
+interface CampaignBuilderDraftState {
+  version: 1;
+  currentStep: number;
+  campaignName: string;
+  emailSubject: string;
+  emailCc: string;
+  selectedBranches: string[];
+  selectedSegments: string[];
+  selectedSavedSegments: string[];
+  triggerType: 'immediate' | 'scheduled' | 'staggered';
+  enabledChannels: CampaignChannel[];
+  channelContents: Record<CampaignChannel, string>;
+  activeComposeTab: CampaignChannel;
+  emailTemplate: string;
+  customTemplateFields: Record<string, string>;
+  timingRules: CampaignTimingRule[];
+  scheduledDate: string;
+  scheduledTime: string;
+  branchContent: Record<string, string>;
 }
 
 interface ChannelConfig {
@@ -140,11 +163,14 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   setEvents,
   onCampaignDeployed,
   onOpenArticle,
+  draftCampaignId = null,
+  onDraftIdChange,
 }) => {
   // Ref for launch interval cleanup on unmount
   const launchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const stepContentRef = useRef<HTMLDivElement>(null);
+  const draftHydrationRequestRef = useRef(0);
 
   // Step state
   const [currentStep, setCurrentStep] = useState(0);
@@ -246,6 +272,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [authoritativeNewsletterAudience, setAuthoritativeNewsletterAudience] = useState<NewsletterAudienceRecipient[] | null>(null);
   const [newsletterAudienceError, setNewsletterAudienceError] = useState<string | null>(null);
   const [isLoadingNewsletterAudience, setIsLoadingNewsletterAudience] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(draftCampaignId);
+  const [isDraftHydrated, setIsDraftHydrated] = useState(!draftCampaignId);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<string | null>(null);
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
 
   const [campaignHistory, setCampaignHistory] = useState<CampaignRecord[]>(() => {
     try {
@@ -269,6 +300,75 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     };
     loadCampaigns();
   }, []);
+
+  // Restore a saved draft into the wizard. Audience and consent are deliberately
+  // not restored: both are re-evaluated from the live federated sources.
+  useEffect(() => {
+    const requestId = ++draftHydrationRequestRef.current;
+    setDraftId(draftCampaignId);
+    onDraftIdChange?.(draftCampaignId);
+
+    if (!draftCampaignId) {
+      setIsDraftHydrated(true);
+      setLastDraftSavedAt(null);
+      setDraftSaveError(null);
+      return;
+    }
+
+    setIsDraftHydrated(false);
+    const restoreDraft = async () => {
+      try {
+        const campaign = await fetchCampaignById(draftCampaignId);
+        if (requestId !== draftHydrationRequestRef.current) return;
+        if (!campaign || campaign.status !== 'draft') {
+          throw new Error('This campaign draft is no longer available.');
+        }
+
+        const saved = campaign.metadata?.builder_state as Partial<CampaignBuilderDraftState> | undefined;
+        if (!saved || saved.version !== 1) {
+          throw new Error('This draft does not contain resumable builder data.');
+        }
+
+        const validChannels = (saved.enabledChannels || []).filter((channel): channel is CampaignChannel =>
+          CHANNEL_CONFIG.some(config => config.id === channel)
+        );
+        const restoredChannels = validChannels.length > 0 ? validChannels : ['email' as CampaignChannel];
+        const restoredComposeTab = saved.activeComposeTab && restoredChannels.includes(saved.activeComposeTab)
+          ? saved.activeComposeTab
+          : restoredChannels[0];
+
+        setCurrentStep(Math.max(0, Math.min(STEPS.length - 1, Number(saved.currentStep) || 0)));
+        setCampaignName(saved.campaignName || campaign.name || '');
+        setEmailSubject(saved.emailSubject || campaign.subject || '');
+        setEmailCc(saved.emailCc || '');
+        setSelectedBranches(Array.isArray(saved.selectedBranches) ? saved.selectedBranches : campaign.branches);
+        setSelectedSegments(Array.isArray(saved.selectedSegments) ? saved.selectedSegments : campaign.segments);
+        setSelectedSavedSegments(Array.isArray(saved.selectedSavedSegments) ? saved.selectedSavedSegments : []);
+        setTriggerType(['immediate', 'scheduled', 'staggered'].includes(saved.triggerType || '') ? saved.triggerType! : 'immediate');
+        setEnabledChannels(new Set(restoredChannels));
+        setChannelContents({ email: '', instagram: '', x: '', linkedin: '', sms: '', ...(saved.channelContents || {}) });
+        setActiveComposeTab(restoredComposeTab);
+        setEmailTemplate(saved.emailTemplate || campaign.template || 'UnifiedSproutifyUpdate');
+        setCustomTemplateFields(saved.customTemplateFields || {});
+        setTimingRules(Array.isArray(saved.timingRules) ? saved.timingRules : []);
+        setScheduledDate(saved.scheduledDate || '');
+        setScheduledTime(saved.scheduledTime || '09:00');
+        setBranchContent(saved.branchContent || {});
+        setConsentConfirmed(false);
+        setLastDraftSavedAt(campaign.updated_at);
+        setDraftSaveError(null);
+        addToast?.(`Draft restored: ${campaign.name}`, 'info');
+      } catch (err: any) {
+        if (requestId !== draftHydrationRequestRef.current) return;
+        console.error('Failed to restore campaign draft:', err);
+        setDraftSaveError(err.message || 'Failed to restore campaign draft.');
+        addToast?.(err.message || 'Failed to restore campaign draft.', 'error');
+      } finally {
+        if (requestId === draftHydrationRequestRef.current) setIsDraftHydrated(true);
+      }
+    };
+    restoreDraft();
+  }, [draftCampaignId]);
 
   useEffect(() => {
     loadNameCache();
@@ -605,6 +705,108 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
 
   const enabledChannelCount = enabledChannels.size;
 
+  const draftSnapshot = useMemo<CampaignBuilderDraftState>(() => ({
+    version: 1,
+    currentStep,
+    campaignName,
+    emailSubject,
+    emailCc,
+    selectedBranches,
+    selectedSegments,
+    selectedSavedSegments,
+    triggerType,
+    enabledChannels: channelList,
+    channelContents,
+    activeComposeTab,
+    emailTemplate,
+    customTemplateFields,
+    timingRules,
+    scheduledDate,
+    scheduledTime,
+    branchContent,
+  }), [
+    currentStep, campaignName, emailSubject, emailCc, selectedBranches,
+    selectedSegments, selectedSavedSegments, triggerType, channelList,
+    channelContents, activeComposeTab, emailTemplate, customTemplateFields,
+    timingRules, scheduledDate, scheduledTime, branchContent,
+  ]);
+
+  const hasDraftContent = useMemo(() => (
+    !!campaignName.trim()
+    || !!emailSubject.trim()
+    || selectedBranches.length > 0
+    || Object.keys(channelContents).some(channel => channelContents[channel as CampaignChannel].trim().length > 0)
+    || Object.keys(customTemplateFields).some(field => customTemplateFields[field].trim().length > 0)
+    || Object.keys(branchContent).some(branch => branchContent[branch].trim().length > 0)
+  ), [campaignName, emailSubject, selectedBranches, channelContents, customTemplateFields, branchContent]);
+
+  const draftSaveInFlightRef = useRef(false);
+  const handleSaveDraft = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!isDraftHydrated || isLaunching || draftSaveInFlightRef.current) return;
+    draftSaveInFlightRef.current = true;
+    setIsSavingDraft(true);
+
+    const scheduledAt = triggerType === 'scheduled' && scheduledDate
+      ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
+      : null;
+    const savedAt = new Date().toISOString();
+    const { campaign, error } = await saveCampaignDraft(draftId, {
+      name: campaignName.trim() || 'Untitled campaign',
+      template: emailTemplate,
+      subject: emailSubject,
+      trigger_type: triggerType === 'immediate' ? 'immediate' : triggerType === 'scheduled' ? 'scheduled' : 'event_based',
+      scheduled_at: scheduledAt,
+      segments: selectedSegments,
+      tags: selectedTags,
+      branches: selectedBranches,
+      audience_size: audienceSize,
+      metadata: {
+        builder_state: draftSnapshot,
+        query: {
+          branches: selectedBranches,
+          presets: selectedSegments,
+          saved_segments: selectedSavedSegments,
+          branch_content: branchContent,
+        },
+        channels: channelList,
+        timing_rules: triggerType === 'staggered' ? timingRules : [],
+        channel_contents: Object.fromEntries(channelList.map(channel => [channel, channelContents[channel]])),
+        draft_saved_at: savedAt,
+      },
+      created_by: 'app',
+      campaign_type: 'standard',
+    });
+
+    draftSaveInFlightRef.current = false;
+    setIsSavingDraft(false);
+    if (!campaign || error) {
+      setDraftSaveError(error || 'Draft could not be saved.');
+      if (!silent) addToast?.(error || 'Draft could not be saved.', 'error');
+      return;
+    }
+
+    setDraftId(campaign.id);
+    onDraftIdChange?.(campaign.id);
+    setLastDraftSavedAt(campaign.updated_at || savedAt);
+    setDraftSaveError(null);
+    setSavedCampaigns(prev => [campaign, ...prev.filter(existing => existing.id !== campaign.id)]);
+    if (!silent) addToast?.('Campaign draft saved.', 'success');
+  }, [
+    isDraftHydrated, isLaunching, triggerType, scheduledDate, scheduledTime,
+    draftId, campaignName, emailTemplate, emailSubject, selectedSegments,
+    selectedTags, selectedBranches, audienceSize, draftSnapshot,
+    selectedSavedSegments, branchContent, channelList, timingRules,
+    channelContents, addToast, onDraftIdChange,
+  ]);
+
+  // Autosave meaningful work after a short idle period. The explicit Save Draft
+  // button remains available for an immediate checkpoint.
+  useEffect(() => {
+    if (!isDraftHydrated || isLaunching || !hasDraftContent) return;
+    const timer = window.setTimeout(() => handleSaveDraft({ silent: true }), 1500);
+    return () => window.clearTimeout(timer);
+  }, [draftSnapshot, isDraftHydrated, isLaunching, hasDraftContent, handleSaveDraft]);
+
   // ═══════════════════════════════════════════════════════════════
   // HANDLERS
   // ═══════════════════════════════════════════════════════════════
@@ -653,6 +855,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const handoffAppliedRef = useRef(false);
   useEffect(() => {
     if (handoffAppliedRef.current) return;
+    if (draftCampaignId || draftId) return;
     let pending: string | null = null;
     try { pending = localStorage.getItem('trellis_pending_campaign_segment'); } catch { /* ignore */ }
     if (!pending) { handoffAppliedRef.current = true; return; }
@@ -666,7 +869,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       setCurrentStep(0);
       setShowAudiencePreview(true);
     }
-  }, [savedSegments, availableBranches]);
+  }, [savedSegments, availableBranches, draftCampaignId, draftId]);
 
   // Seed the branch scope from the global Branch Scope picker (top bar) so
   // narrowing the global scope pre-selects those branches here. Runs once, is
@@ -675,6 +878,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const scopeSeededRef = useRef(false);
   useEffect(() => {
     if (scopeSeededRef.current) return;
+    if (draftCampaignId || draftId) return;
     if (!branchContext || branchContext.isAllSelected) return;
     if (availableBranches.length === 0) return;
     let pending: string | null = null;
@@ -684,7 +888,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     const active = new Set(branchContext.activeBranchSlugs);
     const seeded = availableBranches.filter(b => active.has(b));
     if (seeded.length) setSelectedBranches(seeded);
-  }, [branchContext, availableBranches]);
+  }, [branchContext, availableBranches, draftCampaignId, draftId]);
 
   const toggleChannel = (channel: CampaignChannel) => {
     setEnabledChannels(prev => {
@@ -886,7 +1090,7 @@ Return ONLY the post content, no explanations or labels.`,
       unsubscribe_url_template: brandUnsubscribeUrl || undefined,
     };
 
-    const newCampaign = await createCampaign({
+    const campaignPayload: CampaignCreateInput = {
       name: campaignName,
       status: triggerType === 'scheduled' ? 'scheduled' : 'active',
       template: emailTemplate,
@@ -917,9 +1121,13 @@ Return ONLY the post content, no explanations or labels.`,
         snapshot_audience_size: segmentProfiles.length,
         evaluated_at: new Date().toISOString(),
       },
-      created_by: 'system',
+      created_by: 'app',
       launched_at: triggerType === 'immediate' ? launchedAt : null,
-    });
+      campaign_type: 'standard',
+    };
+    const newCampaign = draftId
+      ? await launchCampaignDraft(draftId, campaignPayload)
+      : await createCampaign(campaignPayload);
 
     if (!newCampaign) {
       // Persisting the campaign is the gate for sending — if it fails, nothing
@@ -929,6 +1137,9 @@ Return ONLY the post content, no explanations or labels.`,
       setChannelDeployResults([]);
       return;
     }
+    setDraftId(null);
+    onDraftIdChange?.(null);
+    setLastDraftSavedAt(null);
     setSavedCampaigns(prev => [newCampaign, ...prev]);
 
     // Snapshot the EXACT audience into the durable outbox BEFORE any send, so a
@@ -1048,6 +1259,7 @@ Return ONLY the post content, no explanations or labels.`,
           setCurrentStep(0);
           setCampaignName('');
           setEmailSubject('');
+          setEmailCc('');
           setSelectedBranches([]);
           setSelectedSegments([]);
           setTriggerType('immediate');
@@ -2424,6 +2636,36 @@ Return ONLY the post content, no explanations or labels.`,
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-12 pb-20">
       <div className="lg:col-span-3 space-y-12">
+        <div className={`rounded-2xl border px-5 py-4 flex flex-wrap items-center justify-between gap-4 ${
+          draftSaveError ? 'border-rose-200 bg-rose-50' : 'border-emerald-100 bg-emerald-50/70'
+        }`}>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">
+              {draftId ? 'Saved campaign draft' : 'Draft autosave'}
+            </p>
+            <p className={`mt-1 text-xs font-bold ${draftSaveError ? 'text-rose-600' : 'text-slate-500'}`}>
+              {!isDraftHydrated
+                ? 'Restoring your draft…'
+                : isSavingDraft
+                  ? 'Saving your latest changes…'
+                  : draftSaveError
+                    ? draftSaveError
+                    : lastDraftSavedAt
+                      ? `Saved ${timeAgo(lastDraftSavedAt)} — audience and consent will be refreshed before launch.`
+                      : 'Your work saves automatically after you begin. You can also save a checkpoint now.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleSaveDraft()}
+            disabled={!isDraftHydrated || isSavingDraft || isLaunching}
+            className="inline-flex items-center gap-2 rounded-xl bg-white border border-emerald-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-emerald-700 shadow-sm hover:bg-emerald-100 transition disabled:opacity-50"
+          >
+            {isSavingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+            Save Draft
+          </button>
+        </div>
+
         {/* Step Progress */}
         <div className="flex justify-between items-start relative px-4">
           <div className="absolute top-6 left-10 right-10 h-1 bg-slate-100 -z-10 rounded-full">
@@ -2432,7 +2674,7 @@ Return ONLY the post content, no explanations or labels.`,
           {STEPS.map((step, idx) => {
             const isActive = idx === currentStep;
             const isCompleted = idx < currentStep;
-            const canNavigate = !isLaunching && (
+            const canNavigate = isDraftHydrated && !isLaunching && (
               idx <= currentStep ||
               (idx === 1 && selectedBranches.length > 0 && campaignName) ||
               (idx === 2 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete && emailCcIsValid) ||
@@ -2456,12 +2698,16 @@ Return ONLY the post content, no explanations or labels.`,
         </div>
 
         <div ref={stepContentRef} className="min-h-[500px]">
-          {renderStep()}
+          {!isDraftHydrated ? (
+            <div className="min-h-[500px] flex items-center justify-center gap-3 text-slate-400 font-bold">
+              <Loader2 size={22} className="animate-spin" /> Restoring campaign draft…
+            </div>
+          ) : renderStep()}
         </div>
 
         {/* Navigation */}
         <div className="flex justify-between items-center pt-10 border-t border-slate-200">
-          <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={currentStep === 0 || isLaunching} className="px-8 py-4 flex items-center space-x-3 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-slate-800 transition disabled:opacity-0 group">
+          <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={!isDraftHydrated || currentStep === 0 || isLaunching} className="px-8 py-4 flex items-center space-x-3 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-slate-800 transition disabled:opacity-0 group">
             <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
             <span>Previous Step</span>
           </button>
@@ -2469,7 +2715,7 @@ Return ONLY the post content, no explanations or labels.`,
           {currentStep === STEPS.length - 1 ? (
             <button
               onClick={handleLaunch}
-              disabled={isLaunching || audienceSize === 0 || !campaignName || !emailSubject || !consentConfirmed || !emailCcIsValid}
+              disabled={!isDraftHydrated || isSavingDraft || isLaunching || audienceSize === 0 || !campaignName || !emailSubject || !consentConfirmed || !emailCcIsValid}
               className="px-12 py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-slate-900/40 hover:bg-emerald-600 transition disabled:opacity-50 flex items-center space-x-4"
             >
               <Rocket size={24} className="text-emerald-400" />
@@ -2479,6 +2725,7 @@ Return ONLY the post content, no explanations or labels.`,
             <button
               onClick={() => setCurrentStep(Math.min(STEPS.length - 1, currentStep + 1))}
               disabled={
+                !isDraftHydrated ||
                 (currentStep === 0 && (selectedBranches.length === 0 || !campaignName)) ||
                 (currentStep === 1 && (!emailSubject || emailComposeIncomplete || !emailCcIsValid)) ||
                 (currentStep === 2 && triggerType === 'scheduled' && !scheduledDate)

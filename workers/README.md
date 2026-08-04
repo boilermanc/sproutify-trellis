@@ -5,7 +5,7 @@ Two Flask workers back the heavy media steps of the AI content pipeline:
 | Worker | Port | Endpoint | Job |
 |--------|------|----------|-----|
 | `stitch_worker.py` | 8099 | `POST /stitch` | crossfade approved session tracks → master mp3 (bucket `music-sessions`) |
-| `video_worker.py`  | 8100 | `POST /video`  | ffmpeg: master audio + cover image → mp4 (bucket `episode-assets`) |
+| `video_worker.py`  | 8100 | `POST /video`  | ffmpeg: master audio + cover image → mp4 (Episodes or private Studio Albums) |
 
 Both: `pip install -r requirements.txt` (needs **ffmpeg**), set `SUPABASE_URL` +
 `SUPABASE_SERVICE_ROLE_KEY`, run. Both are CORS-enabled and respond 202
@@ -19,10 +19,11 @@ slow-zoom music video should usually fit under common standard upload limits.
 If you need 1080p+ high-bitrate one-hour video, use Supabase resumable uploads
 or external object storage instead of the standard upload endpoint.
 
-The video worker writes heartbeat details into `trellis_episode_assets.metadata.worker`
-while rendering. The Episodes UI reads that field to show current stage, ffmpeg
-progress, elapsed time, and last worker update. If you deploy a new worker build,
-restart `trellis-video` so heartbeat updates start on future renders.
+The video worker preserves asset metadata and writes heartbeat details into
+`trellis_episode_assets.metadata.worker` or `studio_assets.metadata_json.worker`.
+Studio requests are accepted only when the album, pending final-video asset,
+queued job, private bucket, and album-scoped storage path all match. If you deploy
+a new worker build, restart `trellis-video` so heartbeat updates start on future renders.
 
 The stitch worker writes the same style of heartbeat details into
 `trellis_music_renders.metadata.worker` while rebuilding a master. The Studio UI

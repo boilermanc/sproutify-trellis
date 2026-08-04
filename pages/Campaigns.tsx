@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, RefreshCw, Loader2, X, Calendar, Users, Mail, MailCheck, Eye,
-  MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch,
+  MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch, Pencil,
 } from 'lucide-react';
 import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
@@ -10,6 +10,7 @@ import { BranchContext } from '../types';
 interface CampaignsProps {
   branchContext?: BranchContext;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onEditDraft?: (campaignId: string) => void;
 }
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
@@ -47,7 +48,7 @@ const emptyStat = (subject: string): CampaignEmailStat => ({
   bounced: 0, complained: 0, first_event_at: null, last_event_at: null,
 });
 
-const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast }) => {
+const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDraft }) => {
   const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,7 +161,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast }) => {
               <Rocket className="w-7 h-7 text-slate-300" />
             </div>
             <h3 className="text-lg font-black text-slate-700 mb-1">No campaigns yet</h3>
-            <p className="text-sm text-slate-400">Launch a campaign from Campaign Builder and it'll show up here with live engagement stats.</p>
+            <p className="text-sm text-slate-400">Save a draft or launch a campaign from Campaign Builder and it will appear here.</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-50">
@@ -169,7 +170,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast }) => {
               return (
                 <button
                   key={c.id}
-                  onClick={() => setSelected(c)}
+                  onClick={() => c.status === 'draft' && onEditDraft ? onEditDraft(c.id) : setSelected(c)}
                   className="w-full text-left px-6 py-5 hover:bg-slate-50/80 transition flex items-center gap-4"
                 >
                   <div className="flex-1 min-w-0">
@@ -190,19 +191,24 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast }) => {
                       <span className="flex items-center gap-1"><Users className="w-3 h-3" />{c.audience_size?.toLocaleString() || 0} targeted</span>
                     </div>
                   </div>
-                  {/* Mini metrics */}
-                  <div className="hidden md:flex items-center gap-5 shrink-0">
-                    {[
-                      { label: 'Sent', value: s.sent, color: 'text-slate-600' },
-                      { label: 'Open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
-                      { label: 'Click', value: `${pct(s.clicked, s.delivered)}%`, color: 'text-violet-600' },
-                    ].map((m) => (
-                      <div key={m.label} className="text-center w-14">
-                        <div className={`text-sm font-black ${m.color}`}>{m.value}</div>
-                        <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{m.label}</div>
-                      </div>
-                    ))}
-                  </div>
+                  {c.status === 'draft' ? (
+                    <div className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-700 shrink-0">
+                      <Pencil className="w-3.5 h-3.5" /> Continue Editing
+                    </div>
+                  ) : (
+                    <div className="hidden md:flex items-center gap-5 shrink-0">
+                      {[
+                        { label: 'Sent', value: s.sent, color: 'text-slate-600' },
+                        { label: 'Open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
+                        { label: 'Click', value: `${pct(s.clicked, s.delivered)}%`, color: 'text-violet-600' },
+                      ].map((m) => (
+                        <div key={m.label} className="text-center w-14">
+                          <div className={`text-sm font-black ${m.color}`}>{m.value}</div>
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{m.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
                 </button>
               );

@@ -1,0 +1,163 @@
+{
+  "name": "Trellis: Studio Album Publish (YouTube)",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "trellis-studio-album-publish", "responseMode": "onReceived", "options": {} },
+      "name": "Studio Publish Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [160, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || $json;\nfor (const key of ['publication_id','job_id','album_id','organization_id','video_url']) if (!b[key]) throw new Error('Missing required Studio publish field: ' + key);\nif (b.pipeline !== 'studio' || b.platform !== 'youtube') throw new Error('Only Studio YouTube publishing is accepted');\nconst m = b.metadata || {};\nconst chapters = Array.isArray(m.chapters) ? m.chapters : [];\nconst chapterLines = chapters.map(c => `${c.time || '0:00'} ${c.title || ''}`.trim()).filter(Boolean).join('\\n');\nconst description = [String(m.description || '').trim(), chapterLines ? 'Chapters:\\n' + chapterLines : ''].filter(Boolean).join('\\n\\n').slice(0, 4900);\nconst tags = (Array.isArray(m.tags) ? m.tags : []).map(v => String(v || '').replace(/^#+/, '').trim()).filter(Boolean).slice(0, 15).join(',');\nreturn { json: { ...b, title: String(m.title || 'Untitled Album').slice(0, 95), description, tags, visibility: ['private','unlisted','public'].includes(b.visibility) ? b.visibility : 'private' } };"
+      },
+      "name": "Validate Studio Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "onError": "continueErrorOutput",
+      "position": [380, 300]
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_publications",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Validate Studio Payload').item.json.publication_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "submitting" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Mark Studio Uploading",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "onError": "continueErrorOutput",
+      "position": [600, 300],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": { "method": "GET", "url": "={{ $('Validate Studio Payload').item.json.video_url }}", "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } }, "timeout": 300000 } },
+      "name": "Download Private Studio Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "onError": "continueErrorOutput",
+      "position": [820, 300]
+    },
+    {
+      "parameters": {
+        "resource": "video", "operation": "upload", "title": "={{ $('Validate Studio Payload').item.json.title }}", "categoryId": "10", "binaryProperty": "data",
+        "options": { "description": "={{ $('Validate Studio Payload').item.json.description }}", "privacyStatus": "={{ $('Validate Studio Payload').item.json.visibility }}", "tags": "={{ $('Validate Studio Payload').item.json.tags }}", "selfDeclaredMadeForKids": "={{ $('Validate Studio Payload').item.json.made_for_kids === true }}" }
+      },
+      "name": "Upload Studio Album to YouTube",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "onError": "continueErrorOutput",
+      "position": [1040, 300],
+      "credentials": { "youTubeOAuth2Api": { "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL", "name": "YouTube account" } }
+    },
+    {
+      "parameters": { "mode": "runOnceForEachItem", "jsCode": "const y = $json || {}; let id = typeof y.id === 'object' ? y.id?.videoId : y.id; id = id || y?.snippet?.resourceId?.videoId || y.videoId; if (!id) throw new Error('YouTube upload returned no video id'); return { json: { video_id: id, youtube_url: 'https://youtu.be/' + id } };" },
+      "name": "Extract Studio Video ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "onError": "continueErrorOutput",
+      "position": [1260, 300]
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_publications",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Validate Studio Payload').item.json.publication_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "live" }, { "fieldId": "external_id", "fieldValue": "={{ $('Extract Studio Video ID').item.json.video_id }}" }, { "fieldId": "external_url", "fieldValue": "={{ $('Extract Studio Video ID').item.json.youtube_url }}" }, { "fieldId": "published_at", "fieldValue": "={{ $now.toISO() }}" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Mark Studio Publication Live",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1480, 220],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_albums",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Validate Studio Payload').item.json.album_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "published" }, { "fieldId": "publishing_status", "fieldValue": "published" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Mark Studio Album Published",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1700, 220],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_jobs",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Validate Studio Payload').item.json.job_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "completed" }, { "fieldId": "progress", "fieldValue": "100" }, { "fieldId": "completed_at", "fieldValue": "={{ $now.toISO() }}" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Complete Studio Publish Job",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1920, 220],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": { "mode": "runOnceForEachItem", "jsCode": "const b = $('Studio Publish Webhook').item.json.body || {}; const e = $json || {}; const message = String(e.message || e.error?.message || e.description || 'Studio publishing workflow failed').slice(0, 500); return { json: { publication_id: b.publication_id, album_id: b.album_id, job_id: b.job_id, message } };" },
+      "name": "Build Studio Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 560]
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_publications",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Studio Failure').item.json.publication_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "failed" }, { "fieldId": "error_message", "fieldValue": "={{ $('Build Studio Failure').item.json.message }}" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Fail Studio Publication",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1260, 560],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_albums",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Studio Failure').item.json.album_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "ready_to_publish" }, { "fieldId": "publishing_status", "fieldValue": "failed" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Fail Studio Album Publishing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1480, 560],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "resource": "row", "operation": "update", "tableId": "studio_jobs",
+        "filters": { "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Build Studio Failure').item.json.job_id }}" }] },
+        "dataToSend": "defineBelow", "fieldsUi": { "fieldValues": [{ "fieldId": "status", "fieldValue": "failed" }, { "fieldId": "error_message", "fieldValue": "={{ $('Build Studio Failure').item.json.message }}" }, { "fieldId": "completed_at", "fieldValue": "={{ $now.toISO() }}" }, { "fieldId": "updated_at", "fieldValue": "={{ $now.toISO() }}" }] }
+      },
+      "name": "Fail Studio Publish Job",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1700, 560],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Supabase account" } }
+    },
+    {
+      "parameters": { "content": "## Trellis: Studio Album Publish (YouTube)\n\nDedicated Studio publisher. Do not point Studio at the Episode workflow: their durable tables and status contracts differ.\n\n**Webhook:** `trellis-studio-album-publish`\n**Secret:** set `STUDIO_PUBLISH_WEBHOOK` on the `studio-albums` Edge Function.\n\nThe Edge Function supplies six-hour signed URLs for the private video and cover. This workflow validates Studio IDs, uploads to YouTube, and updates `studio_publications`, `studio_albums`, and `studio_jobs`. Error outputs converge on a failure branch so releases never remain stuck in `submitting`.\n\n### Setup\n1. Map every Supabase node to the Hub service-role credential.\n2. Map the YouTube node to the approved channel OAuth credential.\n3. Keep new releases private for the first live test.\n4. Activate only after the Studio publication migration and Edge Function are deployed.\n\nScheduling and custom-thumbnail upload are intentionally disabled until verified end to end.", "width": 560, "height": 460 },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [100, -220]
+    }
+  ],
+  "connections": {
+    "Studio Publish Webhook": { "main": [[{ "node": "Validate Studio Payload", "type": "main", "index": 0 }]] },
+    "Validate Studio Payload": { "main": [[{ "node": "Mark Studio Uploading", "type": "main", "index": 0 }], [{ "node": "Build Studio Failure", "type": "main", "index": 0 }]] },
+    "Mark Studio Uploading": { "main": [[{ "node": "Download Private Studio Video", "type": "main", "index": 0 }], [{ "node": "Build Studio Failure", "type": "main", "index": 0 }]] },
+    "Download Private Studio Video": { "main": [[{ "node": "Upload Studio Album to YouTube", "type": "main", "index": 0 }], [{ "node": "Build Studio Failure", "type": "main", "index": 0 }]] },
+    "Upload Studio Album to YouTube": { "main": [[{ "node": "Extract Studio Video ID", "type": "main", "index": 0 }], [{ "node": "Build Studio Failure", "type": "main", "index": 0 }]] },
+    "Extract Studio Video ID": { "main": [[{ "node": "Mark Studio Publication Live", "type": "main", "index": 0 }], [{ "node": "Build Studio Failure", "type": "main", "index": 0 }]] },
+    "Mark Studio Publication Live": { "main": [[{ "node": "Mark Studio Album Published", "type": "main", "index": 0 }]] },
+    "Mark Studio Album Published": { "main": [[{ "node": "Complete Studio Publish Job", "type": "main", "index": 0 }]] },
+    "Build Studio Failure": { "main": [[{ "node": "Fail Studio Publication", "type": "main", "index": 0 }]] },
+    "Fail Studio Publication": { "main": [[{ "node": "Fail Studio Album Publishing", "type": "main", "index": 0 }]] },
+    "Fail Studio Album Publishing": { "main": [[{ "node": "Fail Studio Publish Job", "type": "main", "index": 0 }]] }
+  }
+}

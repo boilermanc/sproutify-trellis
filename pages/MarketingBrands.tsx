@@ -12,6 +12,9 @@ import {
   X,
   Loader2,
   ChevronDown,
+  Mail,
+  MapPin,
+  Phone,
 } from 'lucide-react';
 import { MarketingBrand, BranchContext } from '../types';
 import { marketingBrandService } from '../services/marketingBrandService';
@@ -39,6 +42,15 @@ const EMPTY_FORM = {
   tone: '',
   value_proposition: '',
   website_url: '',
+  legal_name: '',
+  contact_email: '',
+  contact_phone: '',
+  address_line_1: '',
+  address_line_2: '',
+  city: '',
+  state_region: '',
+  postal_code: '',
+  country_code: 'US',
   primary_color: '#10b981',
   keywords: '',
   competitors: '',
@@ -121,14 +133,25 @@ export default function MarketingBrands({
     return brands.filter((b) => activeBranchIds.includes(b.branch_id));
   }, [brands, activeBranchIds]);
 
+  const availableCreateBranches = useMemo(() => {
+    const configuredBranchIds = new Set(brands.map((brand) => brand.branch_id));
+    return branchContext.allBranches.filter(
+      (branch) => branch.is_active && !configuredBranchIds.has(branch.id),
+    );
+  }, [brands, branchContext.allBranches]);
+
   /* ---- form helpers ---- */
 
   const openCreate = () => {
+    if (availableCreateBranches.length === 0) {
+      addToast('Every active branch already has a brand profile.', 'info');
+      return;
+    }
     setEditingBrand(null);
     setFormData({
       ...EMPTY_FORM,
       branch_id:
-        activeBranchIds.length === 1 ? activeBranchIds[0] : '',
+        availableCreateBranches.length === 1 ? availableCreateBranches[0].id : '',
     });
     setShowCreateModal(true);
   };
@@ -144,6 +167,15 @@ export default function MarketingBrands({
       tone: brand.tone ?? '',
       value_proposition: brand.value_proposition ?? '',
       website_url: brand.website_url ?? '',
+      legal_name: brand.legal_name ?? '',
+      contact_email: brand.contact_email ?? '',
+      contact_phone: brand.contact_phone ?? '',
+      address_line_1: brand.address_line_1 ?? '',
+      address_line_2: brand.address_line_2 ?? '',
+      city: brand.city ?? '',
+      state_region: brand.state_region ?? '',
+      postal_code: brand.postal_code ?? '',
+      country_code: brand.country_code ?? 'US',
       primary_color: brand.primary_color ?? '#10b981',
       keywords: (brand.keywords ?? []).join(', '),
       competitors: (brand.competitors ?? []).join(', '),
@@ -185,6 +217,15 @@ export default function MarketingBrands({
         tone: formData.tone.trim() || undefined,
         value_proposition: formData.value_proposition.trim() || undefined,
         website_url: formData.website_url.trim() || undefined,
+        legal_name: formData.legal_name.trim() || undefined,
+        contact_email: formData.contact_email.trim() || undefined,
+        contact_phone: formData.contact_phone.trim() || undefined,
+        address_line_1: formData.address_line_1.trim() || undefined,
+        address_line_2: formData.address_line_2.trim() || undefined,
+        city: formData.city.trim() || undefined,
+        state_region: formData.state_region.trim() || undefined,
+        postal_code: formData.postal_code.trim() || undefined,
+        country_code: formData.country_code.trim().toUpperCase() || 'US',
         primary_color: formData.primary_color,
         keywords: formData.keywords
           .split(',')
@@ -201,7 +242,7 @@ export default function MarketingBrands({
         await marketingBrandService.updateBrand(editingBrand.id, payload);
         addToast(`Updated "${payload.name}".`, 'success');
       } else {
-        await marketingBrandService.createBrand(payload as any);
+        await marketingBrandService.createBrand(payload);
         addToast(`Created "${payload.name}".`, 'success');
       }
       closeModal();
@@ -241,6 +282,17 @@ export default function MarketingBrands({
 
   const getBranchColor = (branchId: string) => {
     return branchMap[branchId]?.primary_color ?? '#64748b';
+  };
+
+  const formatCompanyAddress = (brand: MarketingBrand) => {
+    if (!brand.address_line_1 && !brand.city) return '';
+    const locality = [brand.city, brand.state_region, brand.postal_code]
+      .filter(Boolean)
+      .join(', ')
+      .replace(/, ([^,]+)$/, ' $1');
+    return [brand.address_line_1, brand.address_line_2, locality, brand.country_code]
+      .filter(Boolean)
+      .join(', ');
   };
 
   /* ================================================================ */
@@ -375,6 +427,35 @@ export default function MarketingBrands({
                 </p>
               )}
 
+              <div className="space-y-2 mb-4">
+                {brand.contact_email && (
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                    <Mail size={13} className="text-slate-400" />
+                    <span className="truncate">{brand.contact_email}</span>
+                  </div>
+                )}
+                {brand.contact_phone && (
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                    <Phone size={13} className="text-slate-400" />
+                    <span>{brand.contact_phone}</span>
+                  </div>
+                )}
+                {formatCompanyAddress(brand) ? (
+                  <div className="flex items-start gap-2 text-xs font-bold text-slate-500">
+                    <MapPin size={13} className="text-slate-400 mt-0.5 shrink-0" />
+                    <span>{formatCompanyAddress(brand)}</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => openEdit(brand)}
+                    className="flex items-center gap-2 text-xs font-black text-amber-700 hover:text-amber-800"
+                  >
+                    <MapPin size={13} />
+                    Add mailing address
+                  </button>
+                )}
+              </div>
+
               {/* Spacer */}
               <div className="flex-1" />
 
@@ -432,11 +513,14 @@ export default function MarketingBrands({
                     name="branch_id"
                     value={formData.branch_id}
                     onChange={handleChange}
+                    disabled={!!editingBrand}
                     className="w-full appearance-none px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition pr-10"
                   >
                     <option value="">Select a branch…</option>
-                    {branchContext.allBranches
-                      .filter((b) => b.is_active)
+                    {(editingBrand
+                      ? branchContext.allBranches.filter((b) => b.is_active)
+                      : availableCreateBranches
+                    )
                       .map((b) => (
                         <option key={b.id} value={b.id}>
                           {formatBranchName(b.slug)}
@@ -556,6 +640,127 @@ export default function MarketingBrands({
                   />
                 </div>
               </label>
+
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="text-xs font-black uppercase tracking-widest text-slate-800">
+                  Company &amp; Compliance
+                </h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Used for sender identity, campaign contact information, and required email footers.
+                </p>
+              </div>
+
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                  Legal Company Name
+                </span>
+                <input
+                  name="legal_name"
+                  value={formData.legal_name}
+                  onChange={handleChange}
+                  placeholder="Registered business or organization name"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                    Contact Email
+                  </span>
+                  <input
+                    type="email"
+                    name="contact_email"
+                    value={formData.contact_email}
+                    onChange={handleChange}
+                    placeholder="hello@example.com"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                    Contact Phone
+                  </span>
+                  <input
+                    type="tel"
+                    name="contact_phone"
+                    value={formData.contact_phone}
+                    onChange={handleChange}
+                    placeholder="(404) 555-0123"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                  Mailing Address
+                </span>
+                <input
+                  name="address_line_1"
+                  value={formData.address_line_1}
+                  onChange={handleChange}
+                  placeholder="Street address or P.O. box"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                />
+                <input
+                  name="address_line_2"
+                  value={formData.address_line_2}
+                  onChange={handleChange}
+                  placeholder="Suite, unit, or attention line"
+                  className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block col-span-2 sm:col-span-1">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                    City
+                  </span>
+                  <input
+                    name="city"
+                    value={formData.city}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                    State / Region
+                  </span>
+                  <input
+                    name="state_region"
+                    value={formData.state_region}
+                    onChange={handleChange}
+                    placeholder="GA"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                    Postal Code
+                  </span>
+                  <input
+                    name="postal_code"
+                    value={formData.postal_code}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                    Country Code
+                  </span>
+                  <input
+                    name="country_code"
+                    value={formData.country_code}
+                    onChange={handleChange}
+                    maxLength={2}
+                    placeholder="US"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold uppercase text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition"
+                  />
+                </label>
+              </div>
 
               {/* Primary Color */}
               <label className="block">

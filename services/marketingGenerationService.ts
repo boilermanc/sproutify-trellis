@@ -50,6 +50,31 @@ function parseJsonResponse<T>(text: string): T {
   return JSON.parse(cleaned);
 }
 
+function buildBrandContext(brand: MarketingBrand): string {
+  return [
+    brand.description && `Description: ${brand.description}`,
+    brand.target_audience && `Core audience: ${brand.target_audience}`,
+    brand.value_proposition && `Value proposition: ${brand.value_proposition}`,
+    brand.keywords?.length && `Brand keywords: ${brand.keywords.join(', ')}`,
+    brand.website_url && `Website: ${brand.website_url}`,
+  ].filter(Boolean).join('\n') || 'No additional brand context provided.';
+}
+
+function buildComplianceFooter(brand: MarketingBrand): string {
+  if (!brand.address_line_1 || !brand.city || !brand.state_region || !brand.postal_code) {
+    return '';
+  }
+
+  const addressLines = [
+    brand.address_line_1,
+    brand.address_line_2,
+    `${brand.city}, ${brand.state_region} ${brand.postal_code}`,
+    brand.country_code && brand.country_code !== 'US' ? brand.country_code : '',
+  ].filter(Boolean);
+
+  return `\n\n---\n${brand.legal_name || brand.name}\n${addressLines.join('\n')}`;
+}
+
 export const marketingGenerationService = {
 
   // ── Logging ──────────────────────────────────────────────
@@ -99,7 +124,8 @@ export const marketingGenerationService = {
       brand.tone || 'Professional',
       productDescription,
       competitors,
-      targetSegments
+      targetSegments,
+      buildBrandContext(brand)
     );
 
     const result = await generateText(apiKeys, {
@@ -174,7 +200,8 @@ export const marketingGenerationService = {
       positioning.statement,
       positioning.unique_angle,
       targetSegments,
-      objective
+      objective,
+      buildBrandContext(brand)
     );
 
     const result = await generateText(apiKeys, {
@@ -253,7 +280,8 @@ export const marketingGenerationService = {
         chapter.title,
         chapter.description,
         chapter.key_points,
-        outlineContext
+        outlineContext,
+        buildBrandContext(brand)
       );
 
       const result = await generateText(apiKeys, {
@@ -302,7 +330,8 @@ export const marketingGenerationService = {
       positioning.unique_angle,
       productDescription,
       targetSegments,
-      platforms
+      platforms,
+      buildBrandContext(brand)
     );
 
     const result = await generateText(apiKeys, {
@@ -380,7 +409,8 @@ export const marketingGenerationService = {
       leadMagnet.title,
       productDescription,
       targetSegments,
-      objective
+      objective,
+      buildBrandContext(brand)
     );
 
     const result = await generateText(apiKeys, {
@@ -425,6 +455,17 @@ export const marketingGenerationService = {
         console.warn('Failed to log generation error:', logErr);
       }
       throw new Error('AI returned invalid JSON for email sequence. Try regenerating.');
+    }
+
+    const complianceFooter = buildComplianceFooter(brand);
+    if (complianceFooter) {
+      parsed = {
+        ...parsed,
+        emails: parsed.emails.map((email) => ({
+          ...email,
+          body_markdown: `${email.body_markdown}${complianceFooter}`,
+        })),
+      };
     }
 
     await this.logGeneration({

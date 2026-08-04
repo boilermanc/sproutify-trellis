@@ -17,7 +17,8 @@ export function buildPositioningPrompt(
   brandTone: string,
   productDescription: string,
   competitors: string[],
-  targetSegments: string[]
+  targetSegments: string[],
+  brandContext: string
 ): PromptPair {
   return {
     systemPrompt: MARKETING_SYSTEM_BASE,
@@ -26,6 +27,7 @@ export function buildPositioningPrompt(
 BRAND: ${brandName}
 INDUSTRY: ${brandIndustry}
 BRAND VOICE: ${brandTone}
+BRAND CONTEXT: ${brandContext}
 PRODUCT/SERVICE: ${productDescription}
 TARGET SEGMENTS: ${targetSegments.join(', ')}
 COMPETITORS: ${competitors.length > 0 ? competitors.join(', ') : 'None specified — infer 3 likely competitors from the industry and product description'}
@@ -56,7 +58,8 @@ export function buildLeadMagnetOutlinePrompt(
   positioningStatement: string,
   uniqueAngle: string,
   targetSegments: string[],
-  objective: string
+  objective: string,
+  brandContext: string
 ): PromptPair {
   return {
     systemPrompt: MARKETING_SYSTEM_BASE,
@@ -64,6 +67,7 @@ export function buildLeadMagnetOutlinePrompt(
 
 BRAND: ${brandName}
 BRAND VOICE: ${brandTone}
+BRAND CONTEXT: ${brandContext}
 POSITIONING: ${positioningStatement}
 UNIQUE ANGLE: ${uniqueAngle}
 TARGET AUDIENCE: ${targetSegments.join(', ')}
@@ -96,7 +100,8 @@ export function buildLeadMagnetContentPrompt(
   chapterTitle: string,
   chapterDescription: string,
   keyPoints: string[],
-  fullOutlineContext: string
+  fullOutlineContext: string,
+  brandContext: string
 ): PromptPair {
   return {
     systemPrompt: `${MARKETING_SYSTEM_BASE}
@@ -105,6 +110,7 @@ For this task, you are writing one chapter of a lead magnet. Write in markdown f
     prompt: `Write the complete content for this chapter of a lead magnet by ${brandName}.
 
 BRAND VOICE: ${brandTone}
+BRAND CONTEXT: ${brandContext}
 CHAPTER TITLE: ${chapterTitle}
 CHAPTER DESCRIPTION: ${chapterDescription}
 KEY POINTS TO COVER: ${keyPoints.join(', ')}
@@ -123,7 +129,8 @@ export function buildAdCopyPrompt(
   uniqueAngle: string,
   productDescription: string,
   targetSegments: string[],
-  platforms: string[]
+  platforms: string[],
+  brandContext: string
 ): PromptPair {
   return {
     systemPrompt: MARKETING_SYSTEM_BASE,
@@ -131,6 +138,7 @@ export function buildAdCopyPrompt(
 
 BRAND: ${brandName}
 BRAND VOICE: ${brandTone}
+BRAND CONTEXT: ${brandContext}
 POSITIONING: ${positioningStatement}
 UNIQUE ANGLE: ${uniqueAngle}
 PRODUCT/SERVICE: ${productDescription}
@@ -164,7 +172,8 @@ export function buildEmailSequencePrompt(
   leadMagnetTitle: string,
   productDescription: string,
   targetSegments: string[],
-  objective: string
+  objective: string,
+  brandContext: string
 ): PromptPair {
   return {
     systemPrompt: MARKETING_SYSTEM_BASE,
@@ -172,6 +181,7 @@ export function buildEmailSequencePrompt(
 
 BRAND: ${brandName}
 BRAND VOICE: ${brandTone}
+BRAND CONTEXT: ${brandContext}
 POSITIONING: ${positioningStatement}
 LEAD MAGNET: ${leadMagnetTitle}
 PRODUCT/SERVICE: ${productDescription}
