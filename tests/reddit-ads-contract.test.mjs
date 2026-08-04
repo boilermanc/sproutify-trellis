@@ -86,4 +86,7 @@ test('creative variants can generate, preview, and attach assets without leaving
   assert.match(page, /Approve & Attach/);
   assert.match(page, /uploadPostImage/);
   assert.match(page, /It does not save or submit the campaign/);
+  assert.match(page, /rekkrdVinylBackgroundDataUrl/);
+  assert.match(page, /Click to expand/);
+  assert.match(page, /Expanded creative preview/);
 });

@@ -3,7 +3,7 @@ import {
   AlertTriangle, BarChart3, CalendarDays, CheckCircle2, Clock3,
   BrainCircuit, DollarSign, Download, ExternalLink, Globe2, Hash, Image as ImageIcon, Layers3,
   Link, MapPin, Megaphone, Pencil, Plus, Rocket, Save, ShieldCheck,
-  Sparkles, Target, Trash2, Video, XCircle, Loader2, Wand2,
+  Sparkles, Target, Trash2, Video, XCircle, Loader2, Wand2, X,
 } from 'lucide-react';
 import {
   ApiKeyConfig,
@@ -37,6 +37,11 @@ interface InlineCreativeDraft {
   isGenerating: boolean;
   isApproving: boolean;
   error?: string;
+}
+
+interface ExpandedCreative {
+  src: string;
+  alt: string;
 }
 
 const STORAGE_KEY = 'trellis_reddit_ad_campaigns_v1';
@@ -218,6 +223,36 @@ function buildInlineCreativeBrandContext(branch: BranchContext['allBranches'][nu
   return `Brand: ${branch.name}.${website}`;
 }
 
+function rekkrdVinylBackgroundDataUrl(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+    <defs>
+      <radialGradient id="record" cx="50%" cy="50%" r="50%">
+        <stop offset="0" stop-color="#e8621a"/>
+        <stop offset="0.075" stop-color="#26170f"/>
+        <stop offset="0.11" stop-color="#090807"/>
+        <stop offset="1" stop-color="#17130f"/>
+      </radialGradient>
+      <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+        <stop stop-color="#0b0907"/>
+        <stop offset="1" stop-color="#21170f"/>
+      </linearGradient>
+      <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="-22" dy="30" stdDeviation="34" flood-color="#000" flood-opacity="0.7"/>
+      </filter>
+    </defs>
+    <rect width="1080" height="1350" fill="url(#background)"/>
+    <g transform="translate(785 720) rotate(-12)" filter="url(#shadow)">
+      <circle r="430" fill="url(#record)" stroke="#3b3128" stroke-width="3"/>
+      <g fill="none" stroke="#62564a" stroke-opacity="0.32" stroke-width="2">
+        <circle r="390"/><circle r="350"/><circle r="310"/><circle r="270"/><circle r="230"/><circle r="190"/>
+      </g>
+      <circle r="92" fill="#e8621a"/><circle r="68" fill="#18110d"/><circle r="13" fill="#efe9e0"/>
+      <path d="M-395 -95 A406 406 0 0 1 255 -318" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="18" stroke-linecap="round"/>
+    </g>
+  </svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 function reviewErrors(campaign: RedditAdCampaign): string[] {
   const errors: string[] = [];
   if (!campaign.name.trim()) errors.push('Add a campaign name.');
@@ -287,6 +322,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
   const [communityInput, setCommunityInput] = useState('');
   const [locationInput, setLocationInput] = useState('');
   const [inlineCreativeDrafts, setInlineCreativeDrafts] = useState<Record<string, InlineCreativeDraft>>({});
+  const [expandedCreative, setExpandedCreative] = useState<ExpandedCreative | null>(null);
 
   const visibleCampaigns = useMemo(() => {
     if (!branchContext || branchContext.isAllSelected) return campaigns;
@@ -568,6 +604,10 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
     });
 
     try {
+      const baseCardStyle = getBrandCardStyle(branch.slug);
+      const inlineCardStyle = branch.slug.toLowerCase() === 'rekkrd' && baseCardStyle
+        ? { ...baseCardStyle, templatePolicy: { mode: 'restricted' as const, allowed: ['editorial' as const] } }
+        : baseCardStyle;
       const concepts = await generateCardConcepts({
         apiKey: apiKeys.gemini_api_key,
         brandName: branch.name,
@@ -579,8 +619,11 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
           `Campaign objective: ${OBJECTIVE_LABELS[form.objective]}.`,
           `Audience: ${form.communityTargets.map(target => `r/${target}`).join(', ') || 'Reddit users'}.`,
           'Make the message readable at feed size. Do not invent features, prices, guarantees, statistics, testimonials, or offers.',
+          branch.slug.toLowerCase() === 'rekkrd'
+            ? 'Use a sophisticated vinyl-record background with generous negative space. Keep every feature row short enough to fit on one or two lines.'
+            : '',
           'Do not use scripture. Keep the design appropriate for a paid Reddit placement and the supplied brand.',
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
         count: 1,
         scripturePolicy: 'avoid',
         palette: {
@@ -588,10 +631,13 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
           secondary: branch.secondary_color,
           accent: branch.accent_color,
         },
-        cardStyle: getBrandCardStyle(branch.slug),
+        cardStyle: inlineCardStyle,
       });
-      const concept = concepts[0];
-      if (!concept) throw new Error('The creative director did not return a usable concept.');
+      const generatedConcept = concepts[0];
+      if (!generatedConcept) throw new Error('The creative director did not return a usable concept.');
+      const concept = branch.slug.toLowerCase() === 'rekkrd' && generatedConcept.template === 'editorial'
+        ? { ...generatedConcept, backgroundUrl: rekkrdVinylBackgroundDataUrl(), scrimStrength: 0.56 }
+        : generatedConcept;
       const previewUrl = await renderCardPreviewDataUrl(concept);
       updateInlineCreativeDraft(variant.id, { concept, previewUrl, isGenerating: false });
       addToast(`${variant.name || 'Variant'} creative is ready for review.`, 'success');
@@ -873,7 +919,18 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
 
                         {creativeDraft?.previewUrl && creativeDraft.concept && (
                           <div className="mt-5 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5 items-start">
-                            <img src={creativeDraft.previewUrl} alt={`${variant.name || `Variant ${index + 1}`} generated creative preview`} className="w-full max-w-[220px] aspect-square object-cover rounded-2xl border border-slate-200 shadow-sm" />
+                            <button
+                              type="button"
+                              onClick={() => setExpandedCreative({
+                                src: creativeDraft.previewUrl as string,
+                                alt: `${variant.name || `Variant ${index + 1}`} generated creative preview`,
+                              })}
+                              className="group relative w-full max-w-[220px] rounded-2xl focus:outline-none focus:ring-4 focus:ring-orange-200"
+                              aria-label={`Expand ${variant.name || `Variant ${index + 1}`} creative preview`}
+                            >
+                              <img src={creativeDraft.previewUrl} alt={`${variant.name || `Variant ${index + 1}`} generated creative preview`} className="w-full aspect-[4/5] object-cover rounded-2xl border border-slate-200 shadow-sm" />
+                              <span className="absolute inset-x-3 bottom-3 rounded-xl bg-black/70 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition">Click to expand</span>
+                            </button>
                             <div>
                               <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Preview only</p>
                               <p className="text-xs text-slate-600 leading-relaxed mt-2">{creativeDraft.concept.rationale || 'Review the layout and copy before attaching it to this ad variant.'}</p>
@@ -925,6 +982,31 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 py-28 text-center bg-white border border-slate-200 rounded-[3rem] shadow-sm px-8"><BarChart3 size={58} className="mx-auto text-slate-200 mb-5" /><h3 className="text-xl font-black text-slate-700">No Reddit delivery data connected</h3><p className="text-sm text-slate-400 max-w-xl mx-auto mt-3 leading-relaxed">Spend, impressions, clicks, CTR, CPC, conversions, and ROAS will appear only after the Reddit Ads API reporting connection is implemented. Trellis will not manufacture performance metrics.</p><button type="button" onClick={() => onNavigate('ad-performance')} className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"><BarChart3 size={13} /> Open Ad Performance</button></div>
           <div className="bg-indigo-50 border border-indigo-200 rounded-[3rem] p-8"><h3 className="text-sm font-black text-indigo-900 uppercase tracking-widest mb-5">Next Integration</h3><div className="space-y-4 text-xs text-indigo-800"><div className="flex gap-3"><Link size={15} className="shrink-0" /><span>Authenticated Reddit Ads developer application</span></div><div className="flex gap-3"><ShieldCheck size={15} className="shrink-0" /><span>Supabase-owned campaign records and approval audit</span></div><div className="flex gap-3"><Rocket size={15} className="shrink-0" /><span>n8n deployment with confirmed provider IDs</span></div><div className="flex gap-3"><BarChart3 size={15} className="shrink-0" /><span>Scheduled reporting sync and attribution</span></div><div className="flex gap-3"><MapPin size={15} className="shrink-0" /><span>Provider validation for communities and locations</span></div></div></div>
+        </div>
+      )}
+
+      {expandedCreative && (
+        <div
+          className="fixed inset-0 z-[120] bg-slate-950/90 backdrop-blur-sm p-4 sm:p-8 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded creative preview"
+          onClick={() => setExpandedCreative(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setExpandedCreative(null)}
+            className="absolute top-5 right-5 w-11 h-11 rounded-full bg-white/10 border border-white/20 text-white flex items-center justify-center hover:bg-white/20 transition"
+            aria-label="Close expanded creative preview"
+          >
+            <X size={22} />
+          </button>
+          <img
+            src={expandedCreative.src}
+            alt={expandedCreative.alt}
+            onClick={event => event.stopPropagation()}
+            className="max-h-[90vh] max-w-[92vw] object-contain rounded-2xl shadow-2xl"
+          />
         </div>
       )}
     </div>
