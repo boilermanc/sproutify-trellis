@@ -57,7 +57,22 @@ test('ad strategist separates evidence, assumptions, approval, and campaign crea
   assert.match(page, /Create Paused Draft/);
   assert.match(page, /status !== 'approved'/);
   assert.match(service, /generateText\(apiKeys/);
-  assert.match(service, /Never claim that you inspected a website/);
+  assert.match(service, /A URL is an identifier, not permission to claim you inspected its contents/);
   assert.match(service, /Do not invent prices, trial terms, testimonials/);
   assert.match(types, /RedditAdStrategyStatus = 'draft' \| 'generated' \| 'approved'/);
+});
+
+test('strategy creatives are editable and unsupported claims block approval', () => {
+  const page = read('pages/RedditGrowth.tsx');
+  const service = read('services/redditAdStrategyService.ts');
+
+  assert.match(page, /updateStrategyCreative/);
+  assert.match(page, /Resolve Before Approval/);
+  assert.match(page, /EVIDENCE_REQUIRED_CLAIMS/);
+  assert.match(page, /no data loss/);
+  assert.match(page, /automatic/);
+  assert.match(page, /disabled=\{strategyErrors\.length > 0\}/);
+  assert.match(service, /Every factual assertion in ad copy must be directly supported/);
+  assert.match(service, /locationTargets: strings\(item\.locationTargets, 1\)/);
+  assert.match(service, /temperature: 0\.3/);
 });

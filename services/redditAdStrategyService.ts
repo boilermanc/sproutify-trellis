@@ -68,7 +68,7 @@ function normalizeRecommendation(value: unknown, input: RedditAdStrategyInput): 
     landingPageUrl: String(item.landingPageUrl || input.websiteUrl || '').trim(),
     targetAudience: String(item.targetAudience || '').trim(),
     communityTargets: strings(item.communityTargets),
-    locationTargets: strings(item.locationTargets),
+    locationTargets: strings(item.locationTargets, 1),
     recommendedDailyBudgetUsd: Math.max(1, Number(item.recommendedDailyBudgetUsd) || 25),
     creatives,
     risks: strings(item.risks, 6),
@@ -81,7 +81,19 @@ export async function generateRedditAdStrategy(
   input: RedditAdStrategyInput,
 ): Promise<RedditAdStrategyRecommendation> {
   const result = await generateText(apiKeys, {
-    systemPrompt: `You are Trellis Ad Strategist. Build conservative, testable paid Reddit campaign strategies. Never claim that you inspected a website unless its contents are included in the supplied evidence. Separate facts from assumptions. Recommend communities as targeting hypotheses, not permission to spam or post organically. Return only valid JSON.`,
+    systemPrompt: `You are Trellis Ad Strategist. Build conservative, testable paid Reddit campaign strategies.
+
+Evidence rules:
+- Treat only the supplied product evidence as factual. A URL is an identifier, not permission to claim you inspected its contents.
+- Every factual assertion in ad copy must be directly supported by the supplied evidence.
+- Never add absolute or implied guarantees such as “no data loss,” “guaranteed,” “secure,” “automatic,” or “free” unless that exact capability or term is explicitly supported by the evidence.
+- If a useful claim is not supported, omit it from the creative and list it under assumptions instead.
+
+Testing rules:
+- Recommend exactly one location for the first test; default to United States when no market is supplied.
+- Separate facts from assumptions.
+- Recommend communities as targeting hypotheses, not permission to spam or post organically.
+- Return only valid JSON.`,
     prompt: `Create a first-test Reddit Ads strategy for this brand.
 
 Brand: ${input.brandName}
@@ -99,7 +111,7 @@ Return this exact JSON shape:
   "landingPageUrl": "best supplied destination URL or empty string",
   "targetAudience": "plain-language audience definition",
   "communityTargets": ["subreddit name without r/"],
-  "locationTargets": ["country or region"],
+  "locationTargets": ["exactly one country or region"],
   "recommendedDailyBudgetUsd": 25,
   "creatives": [
     {"headline":"...","body":"...","callToAction":"Learn More","angle":"..."}
@@ -108,9 +120,9 @@ Return this exact JSON shape:
   "assumptions": ["..."]
 }
 
-Provide three distinct creative concepts. Keep headlines under 100 characters. Do not invent prices, trial terms, testimonials, performance claims, or product capabilities.`,
+Provide three distinct creative concepts. Keep headlines under 100 characters. Use neutral, reversible language suitable for an early test. Do not invent prices, trial terms, testimonials, performance claims, data-safety guarantees, automation behavior, or product capabilities.`,
     maxTokens: 2200,
-    temperature: 0.5,
+    temperature: 0.3,
   });
 
   if (result.error || !result.text) {

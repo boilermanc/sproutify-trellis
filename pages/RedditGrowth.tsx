@@ -221,6 +221,36 @@ function reviewErrors(campaign: RedditAdCampaign): string[] {
   return errors;
 }
 
+const EVIDENCE_REQUIRED_CLAIMS = [
+  { pattern: /\bno data loss\b/i, evidence: /\bno data loss\b/i, message: '“No data loss” is an absolute guarantee and must appear in the supplied evidence.' },
+  { pattern: /\bautomatic(?:ally)?\b/i, evidence: /\bautomatic(?:ally)?\b/i, message: 'Automatic synchronization must be explicitly supported by the supplied evidence.' },
+  { pattern: /\bguarantee(?:d|s)?\b/i, evidence: /\bguarantee(?:d|s)?\b/i, message: 'Guarantee language must be explicitly supported by the supplied evidence.' },
+  { pattern: /\bfree(?: trial)?\b/i, evidence: /\bfree(?: trial)?\b/i, message: 'Free or free-trial language must be explicitly supported by the supplied evidence.' },
+];
+
+function strategyReviewErrors(strategy: RedditAdStrategy): string[] {
+  const errors: string[] = [];
+  if (!strategy.offerName.trim()) errors.push('Add a specific offer.');
+  if (!strategy.targetAudience.trim()) errors.push('Define the target audience.');
+  if (!validHttpUrl(strategy.landingPageUrl)) errors.push('Add a valid landing page URL.');
+  if (strategy.locationTargets.length !== 1) errors.push('Keep a first test to one location so results are interpretable.');
+  if (strategy.creatives.length === 0) errors.push('Add at least one creative concept.');
+
+  strategy.creatives.forEach((creative, index) => {
+    const label = `Creative ${index + 1}`;
+    if (!creative.headline.trim()) errors.push(`${label}: add a headline.`);
+    if (!creative.body.trim()) errors.push(`${label}: add body copy.`);
+    const copy = `${creative.headline}\n${creative.body}`;
+    EVIDENCE_REQUIRED_CLAIMS.forEach(rule => {
+      if (rule.pattern.test(copy) && !rule.evidence.test(strategy.productEvidence)) {
+        errors.push(`${label}: ${rule.message}`);
+      }
+    });
+  });
+
+  return errors;
+}
+
 function formatDate(value: string): string {
   if (!value) return 'Not scheduled';
   const date = new Date(value);
@@ -250,6 +280,8 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
     () => visibleCampaigns.filter(campaign => ['pending_review', 'approved', 'rejected', 'exported'].includes(campaign.status)),
     [visibleCampaigns],
   );
+
+  const strategyErrors = useMemo(() => strategyReviewErrors(strategyForm), [strategyForm]);
 
   const totals = useMemo(() => ({
     campaigns: visibleCampaigns.length,
@@ -328,13 +360,22 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
   };
 
   const approveStrategy = () => {
-    if (!strategyForm.offerName.trim() || !strategyForm.targetAudience.trim() || strategyForm.creatives.length === 0) {
-      addToast('Generate and review a complete recommendation before approval.', 'error');
+    if (strategyErrors.length > 0) {
+      addToast(strategyErrors[0], 'error');
       return;
     }
     const now = new Date().toISOString();
     commitStrategy({ ...strategyForm, status: 'approved', approvedAt: now, updatedAt: now });
     addToast('Strategy approved. It can now seed a paused campaign draft.', 'success');
+  };
+
+  const updateStrategyCreative = (index: number, patch: Partial<RedditAdStrategy['creatives'][number]>) => {
+    setStrategyForm(previous => ({
+      ...previous,
+      status: 'generated',
+      approvedAt: undefined,
+      creatives: previous.creatives.map((creative, creativeIndex) => creativeIndex === index ? { ...creative, ...patch } : creative),
+    }));
   };
 
   const createCampaignFromStrategy = () => {
@@ -594,10 +635,11 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
                 </div>
                 <div className="mt-8 space-y-4">
                   <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Creative Concepts</h3>
-                  {strategyForm.creatives.map((creative, index) => <div key={`${creative.angle}_${index}`} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl"><p className="text-[10px] font-black uppercase tracking-widest text-orange-600 mb-2">{creative.angle || `Concept ${index + 1}`}</p><p className="font-black text-slate-800">{creative.headline}</p><p className="text-xs text-slate-500 mt-2 leading-relaxed">{creative.body}</p><span className="inline-block mt-3 text-[9px] font-black uppercase tracking-widest text-indigo-600">{creative.callToAction}</span></div>)}
+                  {strategyForm.creatives.map((creative, index) => <div key={index} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><label><span className="form-label">Angle</span><input value={creative.angle} onChange={event => updateStrategyCreative(index, { angle: event.target.value })} className="form-input" /></label><label><span className="form-label">Call to Action</span><input value={creative.callToAction} onChange={event => updateStrategyCreative(index, { callToAction: event.target.value })} className="form-input" /></label><label className="md:col-span-2"><span className="form-label">Headline</span><input maxLength={100} value={creative.headline} onChange={event => updateStrategyCreative(index, { headline: event.target.value })} className="form-input" /></label><label className="md:col-span-2"><span className="form-label">Body Copy</span><textarea rows={4} value={creative.body} onChange={event => updateStrategyCreative(index, { body: event.target.value })} className="form-input resize-none" /></label></div></div>)}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-8"><div className="p-5 rounded-2xl bg-rose-50 border border-rose-100"><h3 className="text-[10px] font-black uppercase tracking-widest text-rose-700 mb-3">Risks</h3>{strategyForm.risks.length ? strategyForm.risks.map(item => <p key={item} className="text-xs text-rose-700 mb-2">• {item}</p>) : <p className="text-xs text-rose-500">No risks returned.</p>}</div><div className="p-5 rounded-2xl bg-amber-50 border border-amber-100"><h3 className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-3">Assumptions to Verify</h3>{strategyForm.assumptions.length ? strategyForm.assumptions.map(item => <p key={item} className="text-xs text-amber-700 mb-2">• {item}</p>) : <p className="text-xs text-amber-500">No assumptions returned.</p>}</div></div>
-                <div className="mt-8 flex flex-wrap justify-end gap-3"><button type="button" onClick={approveStrategy} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest"><CheckCircle2 size={14} /> Approve Strategy</button><button type="button" onClick={createCampaignFromStrategy} disabled={strategyForm.status !== 'approved'} className="flex items-center gap-2 px-6 py-3 bg-slate-900 disabled:bg-slate-300 text-white rounded-xl text-xs font-black uppercase tracking-widest"><Megaphone size={14} /> Create Paused Draft</button></div>
+                {strategyErrors.length > 0 && <div className="mt-6 p-5 rounded-2xl bg-rose-50 border border-rose-200"><div className="flex items-center gap-2 mb-3"><AlertTriangle size={15} className="text-rose-600" /><h3 className="text-[10px] font-black uppercase tracking-widest text-rose-700">Resolve Before Approval</h3></div>{strategyErrors.map(error => <p key={error} className="text-xs text-rose-700 mb-2">• {error}</p>)}</div>}
+                <div className="mt-8 flex flex-wrap justify-end gap-3"><button type="button" onClick={approveStrategy} disabled={strategyErrors.length > 0} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black uppercase tracking-widest"><CheckCircle2 size={14} /> Approve Strategy</button><button type="button" onClick={createCampaignFromStrategy} disabled={strategyForm.status !== 'approved'} className="flex items-center gap-2 px-6 py-3 bg-slate-900 disabled:bg-slate-300 text-white rounded-xl text-xs font-black uppercase tracking-widest"><Megaphone size={14} /> Create Paused Draft</button></div>
               </section>
             )}
           </div>
