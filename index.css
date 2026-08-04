@@ -18,6 +18,42 @@
   width: 6px;
   height: 6px;
 }
+
+/* Leads keeps its cyan/emerald CRM accents while using the application's light shell. */
+.leads-light [class*="bg-[#0A0E27]"],
+.leads-light [class*="bg-[#10142E]"] {
+  background-color: #ffffff !important;
+}
+
+.leads-light [class*="border-white/"],
+.leads-light [class*="ring-white/"] {
+  border-color: #e2e8f0 !important;
+}
+
+.leads-light [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+.leads-light [class~="text-slate-200"] { color: #334155 !important; }
+.leads-light [class~="text-slate-300"] { color: #475569 !important; }
+.leads-light [class~="text-cyan-200"],
+.leads-light [class~="text-cyan-300"] { color: #0891b2 !important; }
+.leads-light [class~="text-emerald-300"] { color: #059669 !important; }
+.leads-light [class~="text-amber-300"] { color: #d97706 !important; }
+.leads-light [class~="text-rose-300"] { color: #e11d48 !important; }
+
+.leads-light h1[class~="text-white"],
+.leads-light h2[class~="text-white"],
+.leads-light h3[class~="text-white"],
+.leads-light h4[class~="text-white"],
+.leads-light input[class~="text-white"],
+.leads-light select[class~="text-white"],
+.leads-light textarea[class~="text-white"] {
+  color: #0f172a !important;
+}
+
+.leads-light [class*="hover:text-white"]:hover { color: #0f172a !important; }
+.leads-light [class*="hover:bg-white/5"]:hover { background-color: #f1f5f9 !important; }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
