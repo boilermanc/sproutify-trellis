@@ -18,12 +18,14 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { BranchContext, Lead, LeadPipeline, NewLeadInput } from '../types';
+import { BranchContext, Lead, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
+import LeadTimeline from '../components/leads/LeadTimeline';
 import {
   checkExistingLeads,
   createLead,
   createLeadsBulk,
   fetchLeads,
+  fetchLeadTimeline,
   fetchPipelines,
   LeadExistenceStatus,
   parseLeadPaste,
@@ -135,6 +137,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [detailDraft, setDetailDraft] = useState<Partial<Lead>>({});
   const [savingDetail, setSavingDetail] = useState<string | null>(null);
   const [stageSavingId, setStageSavingId] = useState<string | null>(null);
+  const [timelines, setTimelines] = useState<Record<string, TimelineEntry[]>>({});
+  const [timelineLoadingId, setTimelineLoadingId] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -167,6 +171,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     setPipelines([]);
     setSelectedPipelineId('');
     setLeads([]);
+    setTimelines({});
     setStageFilter('all');
 
     if (!activeBranch) {
@@ -285,6 +290,14 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
     setExpandedLeadId(lead.id);
     setDetailDraft({ notes: lead.notes, next_action_at: lead.next_action_at });
+    setTimelineLoadingId(lead.id);
+    fetchLeadTimeline(lead.id, lead.profile_id)
+      .then(entries => setTimelines(current => ({ ...current, [lead.id]: entries })))
+      .catch(error => {
+        console.error('Failed to load lead timeline:', error);
+        addToast('Could not load lead activity.', 'error');
+      })
+      .finally(() => setTimelineLoadingId(current => current === lead.id ? null : current));
   };
 
   const saveDetail = async (lead: Lead, field: 'notes' | 'next_action_at') => {
@@ -608,6 +621,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
                                       <p className="text-sm leading-6 text-slate-200">{lead.inquiry_text || 'No inquiry text provided.'}</p>
                                     </div>
+                                    <LeadTimeline entries={timelines[lead.id] || []} loading={timelineLoadingId === lead.id} />
                                     <label className="block rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <span className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
                                         Notes {savingDetail === 'notes' && <Loader2 className="h-3 w-3 animate-spin text-cyan-300" />}
