@@ -7,6 +7,7 @@ export interface SendEmailParams {
   subject: string;
   html: string;
   from?: string;
+  cc?: string;
   replyTo?: string;
   tags?: Array<{ name: string; value: string }>;
 }
@@ -15,6 +16,7 @@ export interface SendEmailResult {
   id: string;
   from: string;
   to: string;
+  cc?: string;
   subject: string;
   created_at?: string;
 }
@@ -37,6 +39,7 @@ export async function sendEmail(
     p_subject: params.subject,
     p_html: params.html,
     ...(params.from ? { p_from: params.from } : {}),
+    ...(params.cc ? { p_cc: params.cc } : {}),
   });
 
   if (error) {
@@ -53,6 +56,7 @@ export async function sendEmail(
     id: result?.id || 'unknown',
     from: params.from || 'default',
     to: Array.isArray(params.to) ? params.to[0] : params.to,
+    cc: params.cc,
     subject: params.subject,
     created_at: result?.created_at,
   };

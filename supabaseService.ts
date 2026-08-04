@@ -34,6 +34,7 @@ export interface Campaign {
 export interface CampaignDispatch {
   subject: string;
   from?: string;
+  cc?: string;
   html_template: string;              // content tokens filled; {{first_name}}/{{unsubscribe_url}} intact
   unsubscribe_url_template?: string;  // brand template with {{token}}, filled per recipient by the worker
 }

@@ -45,6 +45,8 @@ interface CampaignRecord {
   channels?: ChannelDeployResult[];
 }
 
+const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 interface CampaignBuilderProps {
   onCampaignLaunch: (campaign: { name: string, audienceSize: number, segments: string[] }) => void;
   profiles: Profile[];
@@ -150,6 +152,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Campaign identity
   const [campaignName, setCampaignName] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
+  const [emailCc, setEmailCc] = useState('');
+  const emailCcIsValid = !emailCc.trim() || EMAIL_ADDRESS_PATTERN.test(emailCc.trim());
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
   const [selectedSavedSegments, setSelectedSavedSegments] = useState<string[]>([]);
@@ -801,7 +805,7 @@ Return ONLY the post content, no explanations or labels.`,
   };
 
   const handleSendTest = async () => {
-    if (!testEmailAddress) return;
+    if (!testEmailAddress || !emailCcIsValid) return;
     setIsSendingTest(true);
     setTestSendError(null);
     setTestSentStatus(null);
@@ -828,6 +832,7 @@ Return ONLY the post content, no explanations or labels.`,
 
       const result = await sendEmail({
         to: testEmailAddress,
+        cc: emailCc.trim() || undefined,
         subject: `[TEST] ${emailSubject || 'Campaign Preview'}`,
         html,
         from: activeBranch?.resend_from_address || undefined,
@@ -876,6 +881,7 @@ Return ONLY the post content, no explanations or labels.`,
     const dispatch = {
       subject: emailSubject,
       from: activeBranch?.resend_from_address || undefined,
+      cc: emailCc.trim() || undefined,
       html_template: buildDispatchHtml({ email: '', first_name: '' } as Profile),
       unsubscribe_url_template: brandUnsubscribeUrl || undefined,
     };
@@ -1670,6 +1676,36 @@ Return ONLY the post content, no explanations or labels.`,
                     value={emailSubject}
                     onChange={e => setEmailSubject(e.target.value)}
                   />
+                  <div className="grid gap-2 sm:grid-cols-[9rem_1fr] sm:items-center">
+                    <label htmlFor="campaign-email-cc" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      CC <span className="font-bold normal-case tracking-normal text-slate-400">(optional)</span>
+                    </label>
+                    <div>
+                      <input
+                        id="campaign-email-cc"
+                        type="email"
+                        placeholder="proof@sproutify.app"
+                        className={`w-full rounded-2xl border-2 bg-white px-5 py-3 text-sm font-bold text-slate-800 outline-none transition focus:border-cyan-500 ${
+                          !emailCcIsValid
+                            ? 'border-rose-300'
+                            : 'border-slate-200'
+                        }`}
+                        value={emailCc}
+                        onChange={e => setEmailCc(e.target.value)}
+                        aria-invalid={!emailCcIsValid}
+                        aria-describedby="campaign-email-cc-help"
+                      />
+                      <p id="campaign-email-cc-help" className={`mt-2 text-[10px] font-bold ${
+                        !emailCcIsValid
+                          ? 'text-rose-600'
+                          : 'text-slate-400'
+                      }`}>
+                        {!emailCcIsValid
+                          ? 'Enter one valid email address.'
+                          : 'Receives a copy of test sends and every email in this campaign.'}
+                      </p>
+                    </div>
+                  </div>
                   <div className="flex items-center space-x-3">
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Token Injection:</span>
                     <div className="flex gap-2">
@@ -2250,7 +2286,7 @@ Return ONLY the post content, no explanations or labels.`,
                       />
                       <button
                         onClick={handleSendTest}
-                        disabled={isSendingTest || !testEmailAddress}
+                        disabled={isSendingTest || !testEmailAddress || !emailCcIsValid}
                         className={`px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center space-x-3 shadow-xl ${
                           testSentStatus === 'success'
                           ? 'bg-emerald-600 text-white'
@@ -2399,8 +2435,8 @@ Return ONLY the post content, no explanations or labels.`,
             const canNavigate = !isLaunching && (
               idx <= currentStep ||
               (idx === 1 && selectedBranches.length > 0 && campaignName) ||
-              (idx === 2 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete) ||
-              (idx === 3 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete && (triggerType !== 'scheduled' || scheduledDate))
+              (idx === 2 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete && emailCcIsValid) ||
+              (idx === 3 && selectedBranches.length > 0 && campaignName && emailSubject && !emailComposeIncomplete && emailCcIsValid && (triggerType !== 'scheduled' || scheduledDate))
             );
             return (
               <div key={step.id} className={`flex flex-col items-center group ${canNavigate ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`} onClick={() => canNavigate && setCurrentStep(idx)}>
@@ -2433,7 +2469,7 @@ Return ONLY the post content, no explanations or labels.`,
           {currentStep === STEPS.length - 1 ? (
             <button
               onClick={handleLaunch}
-              disabled={isLaunching || audienceSize === 0 || !campaignName || !emailSubject || !consentConfirmed}
+              disabled={isLaunching || audienceSize === 0 || !campaignName || !emailSubject || !consentConfirmed || !emailCcIsValid}
               className="px-12 py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-slate-900/40 hover:bg-emerald-600 transition disabled:opacity-50 flex items-center space-x-4"
             >
               <Rocket size={24} className="text-emerald-400" />
@@ -2444,7 +2480,7 @@ Return ONLY the post content, no explanations or labels.`,
               onClick={() => setCurrentStep(Math.min(STEPS.length - 1, currentStep + 1))}
               disabled={
                 (currentStep === 0 && (selectedBranches.length === 0 || !campaignName)) ||
-                (currentStep === 1 && (!emailSubject || emailComposeIncomplete)) ||
+                (currentStep === 1 && (!emailSubject || emailComposeIncomplete || !emailCcIsValid)) ||
                 (currentStep === 2 && triggerType === 'scheduled' && !scheduledDate)
               }
               className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group"
@@ -2642,6 +2678,10 @@ Return ONLY the post content, no explanations or labels.`,
                 <span className="text-slate-800">{sendResult.from}</span>
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">To</span>
                 <span className="font-mono text-slate-800">{sendResult.to}</span>
+                {sendResult.cc && <>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">CC</span>
+                  <span className="font-mono text-slate-800">{sendResult.cc}</span>
+                </>}
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-0.5">Subject</span>
                 <span className="text-slate-800">{sendResult.subject}</span>
               </div>
