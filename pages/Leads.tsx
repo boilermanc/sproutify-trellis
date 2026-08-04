@@ -5,6 +5,7 @@ import {
   Calendar,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleDollarSign,
   FileSpreadsheet,
@@ -19,13 +20,14 @@ import {
   Target,
   Upload,
   UserPlus,
+  X,
 } from 'lucide-react';
 import { BranchContext, Lead, LeadEmailEligibility, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
 import LeadTimeline from '../components/leads/LeadTimeline';
 import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
 import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
-import { followUpState, getFollowUpWindow, sortFollowUps } from '../components/leads/leadViewUtils';
+import { followUpState, getFollowUpWindow, leadMatchesSearch, paginateItems, sortFollowUps } from '../components/leads/leadViewUtils';
 import LeadBoard from '../components/leads/LeadBoard';
 import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
@@ -122,6 +124,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [statusFilter, setStatusFilter] = useState<LeadStatusFilter>('open');
   const [stageFilter, setStageFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [detailDraft, setDetailDraft] = useState<Partial<Lead>>({});
   const [savingDetail, setSavingDetail] = useState<string | null>(null);
@@ -233,17 +237,25 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   useEffect(() => { void loadLeads(); }, [loadLeads, refreshNonce]);
 
   const filteredLeads = useMemo(() => {
-    const needle = search.trim().toLowerCase();
     const matched = leads.filter(lead => {
       if (lead.pipeline_id !== selectedPipelineId) return false;
       if (statusFilter === 'followups' && !followUpState(lead)) return false;
       if (statusFilter !== 'all' && statusFilter !== 'followups' && lead.status !== statusFilter) return false;
       if (stageFilter !== 'all' && lead.stage !== stageFilter) return false;
-      if (!needle) return true;
-      return `${profileName(lead)} ${lead.profile?.email || ''}`.toLowerCase().includes(needle);
+      return leadMatchesSearch(lead, search);
     });
     return statusFilter === 'followups' ? sortFollowUps(matched) : matched;
   }, [leads, search, selectedPipelineId, stageFilter, statusFilter]);
+
+  const pagination = useMemo(
+    () => paginateItems(filteredLeads, page, pageSize),
+    [filteredLeads, page, pageSize]
+  );
+  const paginatedLeads = pagination.items;
+
+  useEffect(() => {
+    if (page !== pagination.page) setPage(pagination.page);
+  }, [page, pagination.page]);
 
   const followUpCounts = useMemo(() => {
     const window = getFollowUpWindow();
@@ -284,12 +296,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   });
 
   const selectedLeads = leads.filter(lead => selectedLeadIds.has(lead.id));
-  const allVisibleSelected = filteredLeads.length > 0 && filteredLeads.every(lead => selectedLeadIds.has(lead.id));
+  const allVisibleSelected = paginatedLeads.length > 0 && paginatedLeads.every(lead => selectedLeadIds.has(lead.id));
 
   const toggleAllVisible = () => setSelectedLeadIds(current => {
     const next = new Set(current);
-    if (allVisibleSelected) filteredLeads.forEach(lead => next.delete(lead.id));
-    else filteredLeads.forEach(lead => next.add(lead.id));
+    if (allVisibleSelected) paginatedLeads.forEach(lead => next.delete(lead.id));
+    else paginatedLeads.forEach(lead => next.add(lead.id));
     return next;
   });
 
@@ -675,7 +687,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
               <span className="sr-only">Pipeline</span>
               <select
                 value={selectedPipelineId}
-                onChange={event => { setSelectedPipelineId(event.target.value); setStageFilter('all'); }}
+                onChange={event => { setSelectedPipelineId(event.target.value); setStageFilter('all'); setPage(1); }}
                 className="appearance-none rounded-xl border border-white/10 bg-[#10142E] py-3 pl-4 pr-10 text-xs font-bold text-white outline-none transition focus:border-cyan-400/50"
               >
                 {pipelines.map(pipeline => <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>)}
@@ -727,7 +739,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                 <button
                   key={filter.value}
                   type="button"
-                  onClick={() => setStatusFilter(filter.value)}
+                  onClick={() => { setStatusFilter(filter.value); setPage(1); }}
                   className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${statusFilter === filter.value ? 'bg-[#00D9FF] text-[#07101D]' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
                 >
                   {filter.label}{filter.value === 'followups' && <span className={`ml-2 rounded-full px-1.5 py-0.5 ${statusFilter === 'followups' ? 'bg-[#07101D]/15' : 'bg-white/10'}`}>{followUpCounts.total}</span>}
@@ -739,7 +751,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                 <span className="sr-only">Filter by stage</span>
                 <select
                   value={stageFilter}
-                  onChange={event => setStageFilter(event.target.value)}
+                  onChange={event => { setStageFilter(event.target.value); setPage(1); }}
                   className="w-full appearance-none rounded-xl border border-white/10 bg-[#0A0E27] py-2.5 pl-4 pr-10 text-xs font-bold text-slate-200 outline-none focus:border-cyan-400/50 sm:w-48"
                 >
                   <option value="all">All stages</option>
@@ -748,13 +760,15 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                 <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-500" />
               </label>
               <label className="relative">
+                <span className="sr-only">Search leads</span>
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
                 <input
                   value={search}
-                  onChange={event => setSearch(event.target.value)}
-                  placeholder="Search name or email"
-                  className="w-full rounded-xl border border-white/10 bg-[#0A0E27] py-2.5 pl-10 pr-4 text-xs text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50 sm:w-64"
+                  onChange={event => { setSearch(event.target.value); setPage(1); }}
+                  placeholder="Search leads…"
+                  className="w-full rounded-xl border border-white/10 bg-[#0A0E27] py-2.5 pl-10 pr-10 text-xs text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50 sm:w-72"
                 />
+                {search && <button type="button" onClick={() => { setSearch(''); setPage(1); }} aria-label="Clear lead search" className="absolute right-2 top-1.5 rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-white"><X size={14} /></button>}
               </label>
             </div>
           </div>
@@ -777,8 +791,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                 <p className="mt-2 text-sm text-slate-400">{statusFilter === 'followups' ? 'There are no overdue or upcoming follow-ups in the next seven days.' : 'Adjust the filters, add a lead, or import rows from a spreadsheet.'}</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[920px] text-left">
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[920px] text-left">
                   <thead className="border-b border-white/10 bg-white/[0.025] text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
                     <tr>
                       <th className="px-4 py-4"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} aria-label="Select all visible leads" className="h-4 w-4 accent-cyan-400" /></th>
@@ -792,7 +807,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.06]">
-                    {filteredLeads.map(lead => {
+                    {paginatedLeads.map(lead => {
                       const isExpanded = expandedLeadId === lead.id;
                       const tags = profileTags(lead);
                       return (
@@ -901,7 +916,22 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                       );
                     })}
                   </tbody>
-                </table>
+                  </table>
+                </div>
+                <div className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 text-xs text-slate-400">
+                  <p aria-live="polite">Showing <span className="font-bold text-slate-200">{pagination.startItem}–{pagination.endItem}</span> of <span className="font-bold text-slate-200">{pagination.totalItems}</span> lead{pagination.totalItems === 1 ? '' : 's'}</p>
+                  <div className="flex max-w-[350px] flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2">
+                      <span>Rows</span>
+                      <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }} aria-label="Rows per page" className="rounded-lg border border-white/10 bg-[#0A0E27] px-2 py-1.5 text-xs font-bold text-white outline-none focus:border-cyan-400/50">
+                        {[10, 25, 50].map(size => <option key={size} value={size}>{size}</option>)}
+                      </select>
+                    </label>
+                    <span className="min-w-20 text-center font-bold text-slate-300">Page {pagination.page} of {pagination.totalPages}</span>
+                    <button type="button" onClick={() => setPage(pagination.page - 1)} disabled={pagination.page === 1} aria-label="Previous leads page" className="flex items-center gap-1 rounded-lg border border-white/10 px-3 py-2 font-bold text-slate-300 hover:border-cyan-400/30 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft size={15} /> Previous</button>
+                    <button type="button" onClick={() => setPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} aria-label="Next leads page" className="flex items-center gap-1 rounded-lg border border-white/10 px-3 py-2 font-bold text-slate-300 hover:border-cyan-400/30 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-30">Next <ChevronRight size={15} /></button>
+                  </div>
+                </div>
               </div>
             )}
           </div>}
