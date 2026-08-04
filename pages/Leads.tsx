@@ -8,7 +8,9 @@ import {
   ChevronRight,
   CircleDollarSign,
   FileSpreadsheet,
+  Columns3,
   Loader2,
+  List,
   Mail,
   Plus,
   Search,
@@ -24,6 +26,7 @@ import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../com
 import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
 import { followUpState, getFollowUpWindow, sortFollowUps } from '../components/leads/leadViewUtils';
+import LeadBoard from '../components/leads/LeadBoard';
 import {
   checkExistingLeads,
   createLead,
@@ -31,6 +34,7 @@ import {
   fetchLeads,
   fetchLeadTimeline,
   fetchLeadEmailEligibility,
+  fetchLeadStageDates,
   fetchPipelines,
   LeadExistenceStatus,
   logLeadActivity,
@@ -158,6 +162,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [savingQuote, setSavingQuote] = useState(false);
   const [acceptedQuoteLogged, setAcceptedQuoteLogged] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+  const [stageDates, setStageDates] = useState<Record<string, string>>({});
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [leadForm, setLeadForm] = useState<NewLeadInput>(emptyLeadForm);
@@ -227,6 +233,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
         stage: undefined,
       });
       setLeads(data);
+      try {
+        setStageDates(await fetchLeadStageDates(data.map(lead => lead.id)));
+      } catch (stageDateError) {
+        console.error('Failed to load lead stage dates:', stageDateError);
+        setStageDates({});
+      }
     } catch (error) {
       console.error('Failed to load leads:', error);
       addToast('Failed to load leads.', 'error');
@@ -616,6 +628,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {selectedPipeline && <div className="flex rounded-xl border border-white/10 bg-[#10142E] p-1"><button type="button" onClick={() => setViewMode('list')} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider ${viewMode === 'list' ? 'bg-cyan-400 text-[#07101D]' : 'text-slate-500 hover:text-white'}`}><List size={14} />List</button><button type="button" onClick={() => setViewMode('board')} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider ${viewMode === 'board' ? 'bg-cyan-400 text-[#07101D]' : 'text-slate-500 hover:text-white'}`}><Columns3 size={14} />Board</button></div>}
           {pipelines.length > 0 && (
             <label className="relative">
               <span className="sr-only">Pipeline</span>
@@ -705,7 +718,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#10142E] shadow-xl shadow-slate-950/20">
+          {viewMode === 'board' ? (
+            <LeadBoard stages={selectedPipeline?.stages || []} leads={filteredLeads} stageDates={stageDates} pendingLeadId={stageSavingId} onMove={changeStage} />
+          ) : <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#10142E] shadow-xl shadow-slate-950/20">
             {loadingLeads ? (
               <div className="flex items-center justify-center gap-3 py-24 text-sm text-slate-400">
                 <Loader2 className="animate-spin text-cyan-300" size={20} /> Loading leads…
@@ -842,7 +857,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                 </table>
               </div>
             )}
-          </div>
+          </div>}
         </>
       )}
 

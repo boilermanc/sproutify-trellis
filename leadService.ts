@@ -365,6 +365,35 @@ export async function fetchLeadTimeline(
   return (data || []) as TimelineEntry[];
 }
 
+/** Resolve the latest recorded stage transition timestamp for each lead. */
+export async function fetchLeadStageDates(leadIds: string[]): Promise<Record<string, string>> {
+  const uniqueIds = [...new Set(leadIds.filter(Boolean))];
+  const stageDates: Record<string, string> = {};
+  const batchSize = 100;
+
+  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
+    const batch = uniqueIds.slice(offset, offset + batchSize);
+    const { data, error } = await supabase
+      .from('marketing_events')
+      .select('payload, created_at')
+      .eq('event_type', 'lead_stage_change')
+      .in('payload->>lead_id', batch)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching lead stage dates:', error);
+      throw error;
+    }
+
+    for (const event of data || []) {
+      const leadId = event.payload?.lead_id;
+      if (typeof leadId === 'string' && !stageDates[leadId]) stageDates[leadId] = event.created_at;
+    }
+  }
+
+  return stageDates;
+}
+
 export function classifyLeadEmailEligibility(input: {
   isSubscribed: boolean | null | undefined;
   marketingPause: boolean | null | undefined;
