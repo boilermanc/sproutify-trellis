@@ -1,6 +1,13 @@
 import { supabase } from './lib/supabase';
 import { getProfileByEmail } from './lib/supabaseService';
-import { Lead, LeadPipeline, NewLeadInput, Profile } from './types';
+import {
+  Lead,
+  LeadActivityType,
+  LeadPipeline,
+  NewLeadInput,
+  Profile,
+  TimelineEntry,
+} from './types';
 
 const LEAD_TAG = 'tower-farm-lead';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -280,6 +287,79 @@ export async function checkExistingLeads(
   return statuses;
 }
 
+type LoggableLeadActivity = Extract<
+  LeadActivityType,
+  'lead_note' | 'lead_call' | 'lead_email' | 'lead_meeting' | 'lead_quote'
+>;
+
+/** Record a CRM activity and optionally schedule the lead's next action. */
+export async function logLeadActivity(input: {
+  leadId: string;
+  profileId: string;
+  type: LoggableLeadActivity;
+  payload: object;
+  nextActionAt?: string;
+}): Promise<TimelineEntry> {
+  const { data: lead, error: leadError } = await supabase
+    .from('leads')
+    .select('id, branch_id, profile_id')
+    .eq('id', input.leadId)
+    .eq('profile_id', input.profileId)
+    .single();
+
+  if (leadError) {
+    console.error('Error resolving lead for activity:', leadError);
+    throw leadError;
+  }
+
+  const { data: event, error: eventError } = await supabase
+    .from('marketing_events')
+    .insert({
+      event_type: input.type,
+      source: 'manual',
+      profile_id: input.profileId,
+      payload: {
+        ...input.payload,
+        lead_id: input.leadId,
+        branch_id: lead.branch_id,
+      },
+    })
+    .select('id, profile_id, event_type, source, payload, created_at')
+    .single();
+
+  if (eventError) {
+    console.error('Error logging lead activity:', eventError);
+    throw eventError;
+  }
+
+  if (input.nextActionAt !== undefined) {
+    await updateLead(input.leadId, { next_action_at: input.nextActionAt || null });
+  }
+
+  return event as TimelineEntry;
+}
+
+/** Fetch the immutable CRM history for a single resolved lead identity. */
+export async function fetchLeadTimeline(
+  leadId: string,
+  profileId: string
+): Promise<TimelineEntry[]> {
+  const { data, error } = await supabase
+    .from('marketing_events')
+    .select('id, profile_id, event_type, source, payload, created_at')
+    .eq('profile_id', profileId)
+    .like('event_type', 'lead_%')
+    .eq('payload->>lead_id', leadId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching lead timeline:', error);
+    throw error;
+  }
+
+  return (data || []) as TimelineEntry[];
+}
+
 /** Move a lead to another stage and record the transition. */
 export async function updateLeadStage(leadId: string, stage: string): Promise<Lead> {
   const { data: existing, error: fetchError } = await supabase
@@ -312,12 +392,35 @@ export async function updateLeadStage(leadId: string, stage: string): Promise<Le
     throw updateError;
   }
 
-  const { error: eventError } = await supabase.from('marketing_events').insert({
+  const events = [{
     event_type: 'lead_stage_change',
     source: 'manual',
     profile_id: existing.profile_id,
-    payload: { lead_id: leadId, from: existing.stage, to: stage },
-  });
+    payload: {
+      lead_id: leadId,
+      branch_id: existing.branch_id,
+      pipeline_id: existing.pipeline_id,
+      from: existing.stage,
+      to: stage,
+    },
+  }];
+
+  if (stage === 'won' && existing.status !== 'won') {
+    events.push({
+      event_type: 'lead_converted',
+      source: 'manual',
+      profile_id: existing.profile_id,
+      payload: {
+        lead_id: leadId,
+        branch_id: existing.branch_id,
+        pipeline_id: existing.pipeline_id,
+        from: existing.stage,
+        to: stage,
+      },
+    });
+  }
+
+  const { error: eventError } = await supabase.from('marketing_events').insert(events);
 
   if (eventError) {
     console.error('Error logging lead stage change:', eventError);

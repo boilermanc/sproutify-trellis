@@ -460,6 +460,25 @@ export interface NewLeadInput {
   pipeline_id: string;
 }
 
+export type LeadActivityType =
+  | 'lead_created'
+  | 'lead_stage_change'
+  | 'lead_note'
+  | 'lead_call'
+  | 'lead_email'
+  | 'lead_meeting'
+  | 'lead_quote'
+  | 'lead_converted';
+
+export interface TimelineEntry {
+  id: string;
+  profile_id: string;
+  event_type: LeadActivityType;
+  source: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
 export type TaskType = 'copywriting' | 'design' | 'audience' | 'technical' | 'analysis' | 'social';
 
 export interface AuditLogEntry {
