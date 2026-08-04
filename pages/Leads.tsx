@@ -23,6 +23,7 @@ import LeadTimeline from '../components/leads/LeadTimeline';
 import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
 import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
+import { followUpState, getFollowUpWindow, sortFollowUps } from '../components/leads/leadViewUtils';
 import {
   checkExistingLeads,
   createLead,
@@ -45,7 +46,7 @@ interface LeadsProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-type LeadStatusFilter = 'open' | 'won' | 'lost' | 'recycled' | 'all';
+type LeadStatusFilter = 'open' | 'followups' | 'won' | 'lost' | 'recycled' | 'all';
 type ImportStep = 'paste' | 'preview' | 'result';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -59,6 +60,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 const STATUS_FILTERS: Array<{ value: LeadStatusFilter; label: string }> = [
   { value: 'open', label: 'Open' },
+  { value: 'followups', label: 'Follow-ups' },
   { value: 'won', label: 'Won' },
   { value: 'lost', label: 'Lost' },
   { value: 'recycled', label: 'Recycled' },
@@ -221,8 +223,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     setLoadingLeads(true);
     try {
       const data = await fetchLeads(activeBranch.id, {
-        status: statusFilter === 'all' ? undefined : statusFilter,
-        stage: stageFilter === 'all' ? undefined : stageFilter,
+        status: undefined,
+        stage: undefined,
       });
       setLeads(data);
     } catch (error) {
@@ -231,20 +233,35 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     } finally {
       setLoadingLeads(false);
     }
-  }, [activeBranch, addToast, selectedPipeline, stageFilter, statusFilter]);
+  }, [activeBranch, addToast, selectedPipeline]);
 
   useEffect(() => { void loadLeads(); }, [loadLeads, refreshNonce]);
 
   const filteredLeads = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return leads.filter(lead => {
+    const matched = leads.filter(lead => {
       if (lead.pipeline_id !== selectedPipelineId) return false;
-      if (statusFilter !== 'all' && lead.status !== statusFilter) return false;
+      if (statusFilter === 'followups' && !followUpState(lead)) return false;
+      if (statusFilter !== 'all' && statusFilter !== 'followups' && lead.status !== statusFilter) return false;
       if (stageFilter !== 'all' && lead.stage !== stageFilter) return false;
       if (!needle) return true;
       return `${profileName(lead)} ${lead.profile?.email || ''}`.toLowerCase().includes(needle);
     });
+    return statusFilter === 'followups' ? sortFollowUps(matched) : matched;
   }, [leads, search, selectedPipelineId, stageFilter, statusFilter]);
+
+  const followUpCounts = useMemo(() => {
+    const window = getFollowUpWindow();
+    let total = 0;
+    let overdue = 0;
+    for (const lead of leads) {
+      if (lead.pipeline_id !== selectedPipelineId) continue;
+      const state = followUpState(lead, window);
+      if (state) total += 1;
+      if (state === 'overdue') overdue += 1;
+    }
+    return { total, overdue };
+  }, [leads, selectedPipelineId]);
 
   const openAddModal = () => {
     if (!activeBranch || !selectedPipeline) return;
@@ -628,6 +645,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           >
             <Plus size={16} /> Add Lead
           </button>
+          {selectedPipeline && <span className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${followUpCounts.overdue > 0 ? 'border-amber-400/25 bg-amber-400/[0.08] text-amber-300' : 'border-white/10 bg-white/[0.03] text-slate-500'}`}><Calendar size={14} />{followUpCounts.overdue} overdue follow-up{followUpCounts.overdue === 1 ? '' : 's'}</span>}
         </div>
       </div>
 
@@ -658,7 +676,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                   onClick={() => setStatusFilter(filter.value)}
                   className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${statusFilter === filter.value ? 'bg-[#00D9FF] text-[#07101D]' : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white'}`}
                 >
-                  {filter.label}
+                  {filter.label}{filter.value === 'followups' && <span className={`ml-2 rounded-full px-1.5 py-0.5 ${statusFilter === 'followups' ? 'bg-[#07101D]/15' : 'bg-white/10'}`}>{followUpCounts.total}</span>}
                 </button>
               ))}
             </div>
@@ -745,7 +763,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                 {stageSavingId === lead.id ? <Loader2 className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 animate-spin text-cyan-300" /> : <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-cyan-300" />}
                               </div>
                             </td>
-                            <td className="px-4 py-5 text-xs text-slate-400">{formatDate(lead.next_action_at)}</td>
+                            <td className={`px-4 py-5 text-xs ${followUpState(lead) === 'overdue' ? 'font-black text-amber-300' : 'text-slate-400'}`}>{formatDate(lead.next_action_at)}{followUpState(lead) === 'overdue' && <span className="ml-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-[8px] uppercase tracking-wider">Overdue</span>}</td>
                             <td className="px-4 py-5 text-xs text-slate-400">{formatDate(lead.created_at)}</td>
                             <td className="px-4 py-5 text-slate-500"><ChevronRight className={`h-4 w-4 transition ${isExpanded ? 'rotate-90 text-cyan-300' : ''}`} /></td>
                           </tr>

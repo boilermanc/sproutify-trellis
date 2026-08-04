@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test:leads": "node --test tests/lead-parser.test.mjs tests/lead-timeline.test.mjs tests/lead-activity.test.mjs tests/lead-email.test.mjs tests/lead-quote.test.mjs",
+    "test:leads": "node --test tests/lead-parser.test.mjs tests/lead-timeline.test.mjs tests/lead-activity.test.mjs tests/lead-email.test.mjs tests/lead-quote.test.mjs tests/lead-followups.test.mjs",
     "test:posthog": "node --test tests/posthog-contract.test.mjs",
     "preview": "vite preview"
   },
