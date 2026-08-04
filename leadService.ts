@@ -3,6 +3,7 @@ import { getProfileByEmail } from './lib/supabaseService';
 import {
   Lead,
   LeadActivityType,
+  LeadEmailEligibility,
   LeadPipeline,
   NewLeadInput,
   Profile,
@@ -57,7 +58,11 @@ export async function fetchLeads(
       profile:profiles (
         first_name,
         last_name,
-        email
+        email,
+        phone,
+        tags,
+        is_subscribed,
+        marketing_pause
       )
     `)
     .eq('branch_id', branchId)
@@ -358,6 +363,90 @@ export async function fetchLeadTimeline(
   }
 
   return (data || []) as TimelineEntry[];
+}
+
+export function classifyLeadEmailEligibility(input: {
+  isSubscribed: boolean | null | undefined;
+  marketingPause: boolean | null | undefined;
+  suppressionReasons: string[];
+}): LeadEmailEligibility {
+  const reasons = input.suppressionReasons.map(reason => reason.trim().toLowerCase());
+  const hardBlockReasons = [...new Set(reasons.filter(reason => reason === 'bounce' || reason === 'complaint'))];
+  return {
+    hardBlocked: hardBlockReasons.length > 0,
+    hardBlockReasons,
+    marketingUnsubscribed: input.isSubscribed === false
+      || input.marketingPause === true
+      || reasons.includes('unsubscribe'),
+    fieldsChecked: [
+      'profiles.is_subscribed',
+      'profiles.marketing_pause',
+      'email_suppressions.reason',
+    ],
+  };
+}
+
+/** Resolve hard suppressions and marketing consent flags before composing a lead email. */
+export async function fetchLeadEmailEligibility(
+  profileId: string,
+  email: string
+): Promise<LeadEmailEligibility> {
+  const [profileResult, suppressionResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('is_subscribed, marketing_pause')
+      .eq('id', profileId)
+      .single(),
+    supabase
+      .from('email_suppressions')
+      .select('reason')
+      .eq('email', email.trim().toLowerCase()),
+  ]);
+
+  if (profileResult.error) {
+    console.error('Error checking lead email consent:', profileResult.error);
+    throw profileResult.error;
+  }
+  if (suppressionResult.error) {
+    console.error('Error checking lead email suppression:', suppressionResult.error);
+    throw suppressionResult.error;
+  }
+
+  return classifyLeadEmailEligibility({
+    isSubscribed: profileResult.data?.is_subscribed,
+    marketingPause: profileResult.data?.marketing_pause,
+    suppressionReasons: (suppressionResult.data || []).map(row => row.reason),
+  });
+}
+
+export function leadPlainTextToHtml(body: string): string {
+  const escaped = body
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  return `<div style="white-space:pre-wrap;font-family:Arial,sans-serif;line-height:1.6">${escaped}</div>`;
+}
+
+/** Send one inquiry-specific email through the existing server-side Resend RPC. */
+export async function sendLeadEmail(input: {
+  to: string;
+  subject: string;
+  body: string;
+}): Promise<{ id: string }> {
+  const { data, error } = await supabase.rpc('send_resend_email', {
+    p_to: input.to.trim().toLowerCase(),
+    p_subject: input.subject.trim(),
+    p_html: leadPlainTextToHtml(input.body),
+  });
+
+  if (error) throw new Error(`Email send failed: ${error.message}`);
+  const result = typeof data === 'string' ? JSON.parse(data) : data;
+  if (result?.statusCode && result.statusCode >= 400) {
+    throw new Error(`Resend error (${result.statusCode}): ${result.message || 'Unknown error'}`);
+  }
+  return { id: result?.id || 'unknown' };
 }
 
 /** Move a lead to another stage and record the transition. */

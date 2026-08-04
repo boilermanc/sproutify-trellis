@@ -427,6 +427,10 @@ export interface LeadProfile {
   first_name: string;
   last_name: string;
   email: string;
+  phone?: string | null;
+  tags?: string[];
+  is_subscribed?: boolean;
+  marketing_pause?: boolean;
 }
 
 export interface Lead {
@@ -477,6 +481,13 @@ export interface TimelineEntry {
   source: string;
   payload: Record<string, unknown>;
   created_at: string;
+}
+
+export interface LeadEmailEligibility {
+  hardBlocked: boolean;
+  hardBlockReasons: string[];
+  marketingUnsubscribed: boolean;
+  fieldsChecked: Array<'profiles.is_subscribed' | 'profiles.marketing_pause' | 'email_suppressions.reason'>;
 }
 
 export type TaskType = 'copywriting' | 'design' | 'audience' | 'technical' | 'analysis' | 'social';

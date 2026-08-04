@@ -18,20 +18,23 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { BranchContext, Lead, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
+import { BranchContext, Lead, LeadEmailEligibility, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
 import LeadTimeline from '../components/leads/LeadTimeline';
 import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
+import LeadEmailModal from '../components/leads/LeadEmailModal';
 import {
   checkExistingLeads,
   createLead,
   createLeadsBulk,
   fetchLeads,
   fetchLeadTimeline,
+  fetchLeadEmailEligibility,
   fetchPipelines,
   LeadExistenceStatus,
   logLeadActivity,
   parseLeadPaste,
   parseLeadRows,
+  sendLeadEmail,
   updateLead,
   updateLeadStage,
 } from '../leadService';
@@ -143,6 +146,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [timelineLoadingId, setTimelineLoadingId] = useState<string | null>(null);
   const [quickActivity, setQuickActivity] = useState<{ lead: Lead; kind: QuickActivityKind } | null>(null);
   const [savingActivity, setSavingActivity] = useState(false);
+  const [emailLead, setEmailLead] = useState<Lead | null>(null);
+  const [emailEligibility, setEmailEligibility] = useState<LeadEmailEligibility | null>(null);
+  const [checkingEmailEligibility, setCheckingEmailEligibility] = useState(false);
+  const [emailEligibilityError, setEmailEligibilityError] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -331,6 +339,52 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       addToast('Could not save lead activity.', 'error');
     } finally {
       setSavingActivity(false);
+    }
+  };
+
+  const openEmailModal = async (lead: Lead) => {
+    if (!lead.profile?.email) {
+      addToast('This lead does not have an email address.', 'error');
+      return;
+    }
+    setEmailLead(lead);
+    setEmailEligibility(null);
+    setEmailEligibilityError('');
+    setCheckingEmailEligibility(true);
+    try {
+      setEmailEligibility(await fetchLeadEmailEligibility(lead.profile_id, lead.profile.email));
+    } catch (error) {
+      console.error('Failed to verify lead email eligibility:', error);
+      setEmailEligibilityError('The suppression or consent lookup failed.');
+    } finally {
+      setCheckingEmailEligibility(false);
+    }
+  };
+
+  const submitLeadEmail = async (input: { subject: string; body: string }) => {
+    if (!emailLead?.profile?.email || emailEligibility?.hardBlocked || emailEligibilityError) return;
+    setSendingEmail(true);
+    try {
+      await sendLeadEmail({ to: emailLead.profile.email, ...input });
+      try {
+        await logLeadActivity({
+          leadId: emailLead.id,
+          profileId: emailLead.profile_id,
+          type: 'lead_email',
+          payload: { subject: input.subject, direction: 'outbound', preview: input.body.slice(0, 200) },
+        });
+        await loadTimeline(emailLead);
+        addToast('Email sent and activity logged.', 'success');
+      } catch (activityError) {
+        console.error('Email sent but activity logging failed:', activityError);
+        addToast('Email sent, but the timeline could not be updated.', 'info');
+      }
+      setEmailLead(null);
+    } catch (error) {
+      console.error('Failed to send lead email:', error);
+      addToast(error instanceof Error ? error.message : 'Could not send email.', 'error');
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -655,6 +709,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <button type="button" onClick={() => setQuickActivity({ lead, kind: 'call' })} className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-cyan-300 hover:bg-cyan-400/10">Log Call</button>
                                       <button type="button" onClick={() => setQuickActivity({ lead, kind: 'note' })} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]">Log Note</button>
                                       <button type="button" onClick={() => setQuickActivity({ lead, kind: 'meeting' })} className="rounded-xl border border-indigo-400/20 bg-indigo-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-indigo-300 hover:bg-indigo-400/10">Log Meeting</button>
+                                      <button type="button" onClick={() => void openEmailModal(lead)} className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 hover:bg-rose-400/10">Send Email</button>
                                     </div>
                                     <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
@@ -751,6 +806,18 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           pending={savingActivity}
           onClose={() => !savingActivity && setQuickActivity(null)}
           onSubmit={submitQuickActivity}
+        />
+      )}
+
+      {emailLead && (
+        <LeadEmailModal
+          lead={emailLead}
+          eligibility={emailEligibility}
+          checkingEligibility={checkingEmailEligibility}
+          eligibilityError={emailEligibilityError}
+          pending={sendingEmail}
+          onClose={() => !sendingEmail && setEmailLead(null)}
+          onSubmit={submitLeadEmail}
         />
       )}
 
