@@ -21,6 +21,7 @@ test('campaign CC reaches both test RPC and durable batch sends', async () => {
   ]);
 
   assert.match(builder, /cc:\s*emailCc\.trim\(\) \|\| undefined/);
+  assert.match(builder, /useState\('team@sproutify\.app'\)/);
   assert.match(resend, /p_from:[\s\S]*p_cc:/);
   assert.match(worker, /\.\.\.\(cc \? \{ cc: \[cc\] \} : \{\}\)/);
 });
