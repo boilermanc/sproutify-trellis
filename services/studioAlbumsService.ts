@@ -1,7 +1,9 @@
-import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioReleaseIdentity, StudioTrack } from '../types';
+import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioPublication, StudioPublicationDraft, StudioReleaseIdentity, StudioTrack, StudioVideo } from '../types';
 import { supabase } from '../lib/supabase';
 
-export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'genre' | 'mood' | 'era' | 'theme' | 'vocal_direction' | 'target_duration_seconds'> & { description?: string };
+export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'genre' | 'mood' | 'era' | 'theme' | 'vocal_direction' | 'target_duration_seconds'> & { description?: string; style_preset_id?: string; style_profile?: Record<string, unknown> };
+export interface StudioBatchGenerationResult { tracks: StudioTrack[]; failures: Array<{ track_id: string; title: string; error: string }>; }
+export interface StudioBulkApprovalResult { tracks: StudioTrack[]; remaining_review_count: number; }
 
 async function callStudio(action: string, payload: Record<string, unknown> = {}): Promise<any> {
   const { data, error } = await supabase.functions.invoke('studio-albums', { body: { action, ...payload } });
@@ -22,9 +24,9 @@ export async function getStudioTracks(albumId: string): Promise<StudioTrack[]> {
   return (await callStudio('tracks', { album_id: albumId })).tracks as StudioTrack[];
 }
 
-export async function getStudioAlbumWorkspace(albumId: string): Promise<{ tracks: StudioTrack[]; master: StudioMaster }> {
+export async function getStudioAlbumWorkspace(albumId: string): Promise<{ tracks: StudioTrack[]; master: StudioMaster; video: StudioVideo; publication: StudioPublication | null }> {
   const data = await callStudio('tracks', { album_id: albumId });
-  return { tracks: data.tracks as StudioTrack[], master: data.master as StudioMaster };
+  return { tracks: data.tracks as StudioTrack[], master: data.master as StudioMaster, video: data.video as StudioVideo, publication: (data.publication || null) as StudioPublication | null };
 }
 
 export async function planStudioTrack(albumId: string): Promise<{ title: string; prompt: string }> {
@@ -67,12 +69,18 @@ export async function approveAllPlannedStudioTracks(albumId: string): Promise<St
   return (await callStudio('approve_all_planned_tracks', { album_id: albumId })).tracks as StudioTrack[];
 }
 
-export async function generateAllApprovedStudioTracks(albumId: string): Promise<StudioTrack[]> {
-  return (await callStudio('generate_all_approved_tracks', { album_id: albumId })).tracks as StudioTrack[];
+export async function generateAllApprovedStudioTracks(albumId: string): Promise<StudioBatchGenerationResult> {
+  const data = await callStudio('generate_all_approved_tracks', { album_id: albumId });
+  return { tracks: data.tracks as StudioTrack[], failures: (data.failures || []) as StudioBatchGenerationResult['failures'] };
 }
 
-export async function approveAllGeneratedStudioTracks(albumId: string): Promise<StudioTrack[]> {
-  return (await callStudio('approve_all_generated_tracks', { album_id: albumId })).tracks as StudioTrack[];
+export async function approveAllGeneratedStudioTracks(albumId: string): Promise<StudioBulkApprovalResult> {
+  const data = await callStudio('approve_all_generated_tracks', { album_id: albumId });
+  return { tracks: data.tracks as StudioTrack[], remaining_review_count: Number(data.remaining_review_count || 0) };
+}
+
+export async function reopenStudioTrackReview(trackId: string): Promise<StudioTrack> {
+  return (await callStudio('reopen_track_review', { track_id: trackId })).track as StudioTrack;
 }
 
 export async function buildStudioMaster(albumId: string): Promise<StudioMaster> {
@@ -96,6 +104,11 @@ export async function generateStudioCoverConcept(albumId: string, direction: str
 export async function selectStudioCoverConcept(assetId: string): Promise<StudioCoverConcept> { return (await callStudio('select_cover_concept', { asset_id: assetId })).concept as StudioCoverConcept; }
 export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
 export async function prepareStudioVisualProduction(albumId: string, motion: string, direction: string): Promise<StudioAlbum> { return (await callStudio('prepare_visual_production', { album_id: albumId, motion, direction })).album as StudioAlbum; }
+export async function approveStudioVideo(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_video', { album_id: albumId })).album as StudioAlbum; }
+export async function prepareStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('prepare_publication', { album_id: albumId })).publication as StudioPublication; }
+export async function saveStudioPublication(albumId: string, publication: StudioPublicationDraft): Promise<StudioPublication> { return (await callStudio('save_publication', { album_id: albumId, publication })).publication as StudioPublication; }
+export async function approveStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('approve_publication', { album_id: albumId })).publication as StudioPublication; }
+export async function publishStudioAlbum(albumId: string): Promise<StudioPublication> { return (await callStudio('publish_album', { album_id: albumId })).publication as StudioPublication; }
 
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;

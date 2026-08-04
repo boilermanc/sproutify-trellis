@@ -58,6 +58,7 @@ Deno.serve(async () => {
     const d = campaign.dispatch || {};
     const subject: string = d.subject || campaign.subject || "";
     const from: string = d.from || defaultFrom;
+    const cc: string | undefined = typeof d.cc === "string" && d.cc.trim() ? d.cc.trim() : undefined;
     const template: string = d.html_template || "";
     const unsubTemplate: string = d.unsubscribe_url_template || "";
 
@@ -104,7 +105,13 @@ Deno.serve(async () => {
       }
       if (send.length === 0) continue;
 
-      const batch = send.map((r: Rec) => ({ from, to: [r.email], subject, html: personalize(template, unsubTemplate, scope, r) }));
+      const batch = send.map((r: Rec) => ({
+        from,
+        to: [r.email],
+        ...(cc ? { cc: [cc] } : {}),
+        subject,
+        html: personalize(template, unsubTemplate, scope, r),
+      }));
       try {
         const resp = await fetch(RESEND_BATCH_URL, {
           method: "POST",

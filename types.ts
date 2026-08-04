@@ -522,6 +522,8 @@ export interface StudioAlbum {
   mood: string | null;
   era: string | null;
   theme: string | null;
+  style_preset_id: string | null;
+  style_profile: Record<string, unknown>;
   vocal_direction: string;
   target_duration_seconds: number;
   actual_duration_seconds: number | null;
@@ -554,6 +556,10 @@ export interface StudioTrack {
   duration_seconds: number | null;
   review_status: 'planned' | 'generated' | 'pending_review' | 'approved' | 'rejected' | 'regenerating' | 'locked' | 'failed';
   rejection_reason: string | null;
+  narrative_purpose?: string | null;
+  energy?: number | null;
+  legacy_generation_id?: string | null;
+  studio_asset_id?: string | null;
   audio_url?: string | null;
 }
 
@@ -563,6 +569,38 @@ export interface StudioMaster {
   duration_seconds?: number | null;
   error_message?: string | null;
 }
+
+export interface StudioVideo {
+  status: 'not_started' | 'queued' | 'processing' | 'pending_review' | 'approved' | 'failed';
+  video_url?: string | null;
+  duration_seconds?: number | null;
+  progress?: number | null;
+  stage?: string | null;
+  message?: string | null;
+  error_message?: string | null;
+  asset_id?: string | null;
+}
+
+export interface StudioPublication {
+  id: string;
+  album_id: string;
+  platform: 'youtube';
+  status: 'draft' | 'ready' | 'submitting' | 'live' | 'failed' | 'cancelled';
+  title: string;
+  description: string;
+  tags: string[];
+  chapters: Array<{ time: string; title: string }>;
+  visibility: 'private' | 'unlisted' | 'public';
+  made_for_kids: boolean;
+  scheduled_for: string | null;
+  external_id: string | null;
+  external_url: string | null;
+  error_message: string | null;
+  submitted_at: string | null;
+  published_at: string | null;
+}
+
+export type StudioPublicationDraft = Pick<StudioPublication, 'title' | 'description' | 'tags' | 'visibility' | 'made_for_kids' | 'scheduled_for'>;
 
 export interface StudioReleaseIdentity {
   release_subtitle: string;
@@ -991,6 +1029,7 @@ export interface MergedBranch {
 export interface MarketingBrand {
   id: string;
   branch_id: string;
+  brand_identity_id?: string;
   name: string;
   industry?: string;
   description?: string;
@@ -1000,6 +1039,15 @@ export interface MarketingBrand {
   primary_color: string;
   logo_url?: string;
   website_url?: string;
+  legal_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  address_line_1?: string;
+  address_line_2?: string;
+  city?: string;
+  state_region?: string;
+  postal_code?: string;
+  country_code: string;
   keywords: string[];
   competitors: string[];
   metadata: Record<string, any>;

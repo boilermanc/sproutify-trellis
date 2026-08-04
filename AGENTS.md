@@ -22,7 +22,7 @@ Sproutify Trellis is a **unified marketing intelligence platform** that serves a
 - Federated spoke connector live to ATL Urban Farms Supabase
 - AI-powered content generation via Google Gemini
 - n8n workflow orchestration for automation
-- Hub Supabase: `cdhymstkzhlxcucbzipr.supabase.co`
+- Hub Supabase: `horvjqqifgrzxesuxtfm.supabase.co`
 - ATL Spoke Supabase: `povudgtvzggnxwgtjexa.supabase.co`
 
 ---
@@ -93,7 +93,7 @@ Campaign Engine → Resend / Mailchimp / Social APIs
 ### Two Supabase Instances
 | Instance | Role | URL |
 |----------|------|-----|
-| **Hub** | Orchestration, events, task queues | `cdhymstkzhlxcucbzipr.supabase.co` |
+| **Hub** | Orchestration, events, task queues | `horvjqqifgrzxesuxtfm.supabase.co` |
 | **ATL Spoke** | Customer data, orders, products | `povudgtvzggnxwgtjexa.supabase.co` |
 
 ### Identity Resolution
@@ -267,7 +267,7 @@ sproutify-trellis/
 
 | Service | Endpoint/Key Reference |
 |---------|----------------------|
-| Hub Supabase | `cdhymstkzhlxcucbzipr.supabase.co` |
+| Hub Supabase | `horvjqqifgrzxesuxtfm.supabase.co` |
 | ATL Spoke Supabase | `povudgtvzggnxwgtjexa.supabase.co` |
 | n8n Webhooks | `https://n8n.sproutify.io/webhook/{endpoint}` |
 | Gemini AI | `process.env.API_KEY` / `process.env.GEMINI_API_KEY` |
@@ -385,7 +385,7 @@ npm run preview  # Preview production build
 ```bash
 # .env.local (gitignored)
 GEMINI_API_KEY=your_key_here
-VITE_SUPABASE_URL=https://cdhymstkzhlxcucbzipr.supabase.co
+VITE_SUPABASE_URL=https://horvjqqifgrzxesuxtfm.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
 

@@ -53,15 +53,32 @@ async function getGeminiKey(supabase: any): Promise<string> {
   return data.gemini_api_key;
 }
 
-async function generateAudio(track: Track, key: string): Promise<Uint8Array> {
+function formatTargetDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (!minutes) return `${remainder} seconds`;
+  if (!remainder) return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ${remainder} seconds`;
+}
+
+function buildDurationAwarePrompt(track: Track): { model: string; input: string } {
   const duration = track.duration_seconds || 180;
-  const model = duration <= 45 ? "lyria-3-clip-preview" : "lyria-3-pro-preview";
+  const useClip = duration === 30;
+  const model = useClip ? "lyria-3-clip-preview" : "lyria-3-pro-preview";
+  const durationDirection = useClip
+    ? "Create a complete 30-second clip."
+    : `Create an approximately ${formatTargetDuration(duration)} piece. Shape the arrangement to finish naturally near ${formatTargetDuration(duration)}; the requested runtime is a target, not permission to cut off the ending.`;
+  return { model, input: `${durationDirection} ${track.prompt}` };
+}
+
+async function generateAudio(track: Track, key: string): Promise<Uint8Array> {
+  const { model, input } = buildDurationAwarePrompt(track);
   const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       model,
-      input: track.prompt,
+      input,
       response_format: { type: "audio" },
     }),
   });
@@ -87,7 +104,7 @@ async function uploadTrack(supabase: any, track: Track, bytes: Uint8Array): Prom
         "Content-Type": "audio/mpeg",
         "x-upsert": "true",
       },
-      body: bytes,
+      body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
     });
     if (!res.ok) throw new Error(`Storage upload failed (${error.message}) / raw ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
@@ -115,8 +132,8 @@ async function markSessionIfDone(supabase: any, sessionId: string): Promise<bool
     .eq("session_id", sessionId);
   if (error) throw new Error(`Failed to inspect session tracks: ${error.message}`);
   const tracks = data || [];
-  const hasQueued = tracks.some((t) => t.status === "queued" || t.status === "generating");
-  const hasCompleted = tracks.some((t) => t.status === "completed");
+  const hasQueued = tracks.some((t: { status: string }) => t.status === "queued" || t.status === "generating");
+  const hasCompleted = tracks.some((t: { status: string }) => t.status === "completed");
   if (!hasQueued && hasCompleted) {
     await supabase.from("trellis_music_sessions")
       .update({ status: "review", updated_at: new Date().toISOString() })

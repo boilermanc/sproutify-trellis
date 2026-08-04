@@ -6,6 +6,7 @@ export { supabase };
 // Campaign interface
 export interface Campaign {
   id: string;
+  owner_id?: string | null;
   name: string;
   status: 'draft' | 'scheduled' | 'active' | 'completed' | 'paused';
   template: string;
@@ -21,6 +22,7 @@ export interface Campaign {
   created_at: string;
   updated_at: string;
   launched_at: string | null;
+  campaign_type?: 'standard' | 'marketing_wizard';
   // Durable outbox fields (send state machine driven by the campaign-sender worker)
   dispatch?: CampaignDispatch | null;
   send_status?: 'queued' | 'sending' | 'sent' | 'partial' | 'failed' | null;
@@ -29,11 +31,18 @@ export interface Campaign {
   last_attempt_at?: string | null;
 }
 
+export type CampaignCreateInput = Omit<Campaign, 'id' | 'created_at' | 'updated_at' | 'owner_id'>;
+export type CampaignDraftInput = Omit<
+  CampaignCreateInput,
+  'status' | 'launched_at' | 'dispatch' | 'send_status' | 'send_error' | 'retry_count' | 'last_attempt_at'
+>;
+
 // The fully-rendered email saved at launch time so a send can be (re)tried later
 // without re-deriving anything. The worker reads this off the campaign row.
 export interface CampaignDispatch {
   subject: string;
   from?: string;
+  cc?: string;
   html_template: string;              // content tokens filled; {{first_name}}/{{unsubscribe_url}} intact
   unsubscribe_url_template?: string;  // brand template with {{token}}, filled per recipient by the worker
 }
@@ -44,6 +53,32 @@ export interface CampaignRecipientStats {
   sent: number;
   failed: number;
 }
+
+const mapCampaignRow = (row: any): Campaign => ({
+  id: row.id,
+  owner_id: row.owner_id ?? null,
+  name: row.name,
+  status: row.status,
+  template: row.template,
+  subject: row.subject,
+  trigger_type: row.trigger_type,
+  scheduled_at: row.scheduled_at,
+  segments: Array.isArray(row.segments) ? row.segments : [],
+  tags: Array.isArray(row.tags) ? row.tags : [],
+  branches: Array.isArray(row.branches) ? row.branches : [],
+  audience_size: row.audience_size,
+  metadata: row.metadata,
+  created_by: row.created_by,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+  launched_at: row.launched_at,
+  campaign_type: row.campaign_type ?? 'standard',
+  dispatch: row.dispatch ?? null,
+  send_status: row.send_status ?? null,
+  send_error: row.send_error ?? null,
+  retry_count: row.retry_count ?? 0,
+  last_attempt_at: row.last_attempt_at ?? null,
+});
 
 /**
  * Fetch all active profiles from the profiles table
@@ -102,29 +137,18 @@ export async function fetchCampaigns(): Promise<Campaign[]> {
     throw error;
   }
 
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    name: row.name,
-    status: row.status,
-    template: row.template,
-    subject: row.subject,
-    trigger_type: row.trigger_type,
-    scheduled_at: row.scheduled_at,
-    segments: Array.isArray(row.segments) ? row.segments : [],
-    tags: Array.isArray(row.tags) ? row.tags : [],
-    branches: Array.isArray(row.branches) ? row.branches : [],
-    audience_size: row.audience_size,
-    metadata: row.metadata,
-    created_by: row.created_by,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    launched_at: row.launched_at,
-    dispatch: row.dispatch ?? null,
-    send_status: row.send_status ?? null,
-    send_error: row.send_error ?? null,
-    retry_count: row.retry_count ?? 0,
-    last_attempt_at: row.last_attempt_at ?? null,
-  }));
+  return (data || []).map(mapCampaignRow);
+}
+
+export async function fetchCampaignById(id: string): Promise<Campaign | null> {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? mapCampaignRow(data) : null;
 }
 
 /**
@@ -132,7 +156,7 @@ export async function fetchCampaigns(): Promise<Campaign[]> {
  * Returns the created campaign or null on error
  */
 export async function createCampaign(
-  campaign: Omit<Campaign, 'id' | 'created_at' | 'updated_at'>
+  campaign: CampaignCreateInput
 ): Promise<Campaign | null> {
   const { data, error } = await supabase
     .from('campaigns')
@@ -145,7 +169,59 @@ export async function createCampaign(
     return null;
   }
 
-  return data;
+  return mapCampaignRow(data);
+}
+
+/**
+ * Insert a new draft or update the same draft row. Drafts never contain a
+ * dispatch snapshot or send state, so saving work cannot enqueue an email.
+ */
+export async function saveCampaignDraft(
+  id: string | null,
+  draft: CampaignDraftInput,
+): Promise<{ campaign: Campaign | null; error: string | null }> {
+  const payload = {
+    ...draft,
+    status: 'draft',
+    launched_at: null,
+    dispatch: null,
+    send_status: null,
+    send_error: null,
+    retry_count: 0,
+    last_attempt_at: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const query = id
+    ? supabase.from('campaigns').update(payload).eq('id', id).eq('status', 'draft')
+    : supabase.from('campaigns').insert(payload);
+
+  const { data, error } = await query.select('*').single();
+  if (error) {
+    console.error('Error saving campaign draft:', error);
+    return { campaign: null, error: error.message };
+  }
+  return { campaign: mapCampaignRow(data), error: null };
+}
+
+/** Update an existing draft into its launch state without creating a duplicate. */
+export async function launchCampaignDraft(
+  id: string,
+  campaign: CampaignCreateInput,
+): Promise<Campaign | null> {
+  const { data, error } = await supabase
+    .from('campaigns')
+    .update({ ...campaign, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'draft')
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Error launching campaign draft:', error);
+    return null;
+  }
+  return mapCampaignRow(data);
 }
 
 /**

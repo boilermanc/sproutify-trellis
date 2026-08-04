@@ -62,6 +62,7 @@ const AppContent: React.FC = () => {
   const { user, loading, isPasswordRecovery, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
+  const [campaignDraftId, setCampaignDraftId] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team' | undefined>(undefined);
   const [connectionAutoStart, setConnectionAutoStart] = useState<{ nonce: number; name?: string }>({ nonce: 0 });
   const [helpArticle, setHelpArticle] = useState<Article | null>(null);
@@ -394,10 +395,10 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
+      case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'leads': return <Leads branchContext={branchContext} addToast={addToast} />;
-      case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setActiveView('campaign-builder'); }} />;
+      case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setCampaignDraftId(null); setActiveView('campaign-builder'); }} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
@@ -415,8 +416,8 @@ const AppContent: React.FC = () => {
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'help-center': return <HelpCenter initialArticle={helpArticle} />;
-      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} branchStats={branchStats} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} />;
-      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} />;
+      case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} branchStats={branchStats} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} draftCampaignId={campaignDraftId} onDraftIdChange={setCampaignDraftId} />;
+      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} onEditDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} />;
       case 'marketing-brands': return (
         <MarketingBrands
           branchContext={branchContext}
@@ -470,7 +471,7 @@ const AppContent: React.FC = () => {
           onConnectionAutoStartConsumed={() => setConnectionAutoStart(prev => ({ nonce: 0, name: undefined }))}
         />
       );
-      default: return <Dashboard onViewChange={setActiveView} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
+      default: return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
     }
   };
 
@@ -496,7 +497,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={(v) => { setSettingsInitialTab(undefined); setActiveView(v); }} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
+    <Layout activeView={activeView} onViewChange={(v) => { setSettingsInitialTab(undefined); if (v === 'campaign-builder') setCampaignDraftId(null); setActiveView(v); }} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
       {renderView()}
 
       {/* Global Toast Notification Engine */}
