@@ -33,6 +33,14 @@ test('review UI explains and confirms approve-all behavior', async () => {
   assert.match(page, /Return this approved track to audio review/);
 });
 
+test('album brief suggestions use a reliable editable combobox', async () => {
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(page, /role="listbox"/);
+  assert.match(page, /You can also type your own/);
+  assert.match(page, /Show \$\{label\.toLowerCase\(\)\} suggestions/);
+  assert.doesNotMatch(page, /<datalist/);
+});
+
 test('music generation carries the planned runtime into the Lyria prompt', async () => {
   const fn = await read('supabase/functions/generate-session-track/index.ts');
   assert.match(fn, /const useClip = duration === 30/);
