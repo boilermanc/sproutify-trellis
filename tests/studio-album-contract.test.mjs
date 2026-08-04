@@ -27,10 +27,22 @@ test('batch generation reports partial failures instead of hiding queued tracks'
 
 test('review UI explains and confirms approve-all behavior', async () => {
   const page = await read('pages/StudioAlbums.tsx');
+  const confirmation = await read('components/ConfirmationModal.tsx');
   assert.match(page, /Reject any exceptions first, then approve everything remaining/);
   assert.match(page, /Approve all ready/);
   assert.match(page, /Rejected, failed, and unfinished tracks will not be changed/);
   assert.match(page, /Return this approved track to audio review/);
+  assert.match(confirmation, /role="alertdialog"/);
+  assert.match(confirmation, /aria-modal="true"/);
+});
+
+test('Studio actions avoid browser-native confirmation dialogs', async () => {
+  const page = await read('pages/StudioAlbums.tsx');
+  const publishing = await read('components/StudioPublishingPanel.tsx');
+  assert.doesNotMatch(page, /window\.confirm/);
+  assert.doesNotMatch(publishing, /window\.confirm/);
+  assert.match(page, /<ConfirmationModal/);
+  assert.match(publishing, /<ConfirmationModal/);
 });
 
 test('album brief suggestions use a reliable editable combobox', async () => {
@@ -59,7 +71,7 @@ test('master review distinguishes measured runtime from the plan', async () => {
   const page = await read('pages/StudioAlbums.tsx');
   assert.match(page, /Measured master runtime/);
   assert.match(page, /hasMaterialMasterVariance/);
-  assert.match(page, /Approve it anyway/);
+  assert.match(page, /Approve this master anyway/);
   assert.match(page, /planned \{track\.duration_seconds/);
 });
 
@@ -83,7 +95,7 @@ test('Studio publishing requires review and has a durable failure path', async (
   const workflow = JSON.parse(await read('n8n-blueprints/E10-studio-album-publish.json'));
   assert.match(fn, /approve_publication/);
   assert.match(fn, /publication\.status !== "ready"/);
-  assert.match(panel, /Submit .* to YouTube as/);
+  assert.match(panel, /Submit .* to YouTube with/);
   assert.match(panel, /New releases default to private/);
   assert.ok(workflow.nodes.some(node => node.name === 'Build Studio Failure'));
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Publication'));
