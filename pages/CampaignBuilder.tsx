@@ -16,6 +16,14 @@ import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
 import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
 import { BUILTIN_EMAIL_TEMPLATES } from '../constants';
+import CampaignBrandAssetLibrary from '../components/CampaignBrandAssetLibrary';
+import {
+  applyTemplateImageOverrides,
+  extractTemplateImageSlots,
+  listBrandGalleryAssets,
+  uploadBrandGalleryAsset,
+  BrandGalleryAsset,
+} from '../services/brandAssetLibraryService';
 import {
   Users, Mail, Calendar, Rocket, ChevronRight,
   ChevronLeft, CheckCircle2, Target,
@@ -78,6 +86,7 @@ interface CampaignBuilderDraftState {
   activeComposeTab: CampaignChannel;
   emailTemplate: string;
   customTemplateFields: Record<string, string>;
+  templateImageOverrides: Record<string, string>;
   timingRules: CampaignTimingRule[];
   scheduledDate: string;
   scheduledTime: string;
@@ -210,6 +219,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Keys are discovered from the selected template — NOT hardcoded — so the
   // Compose form always matches whatever tokens the template author placed.
   const [customTemplateFields, setCustomTemplateFields] = useState<Record<string, string>>({});
+  const [templateImageOverrides, setTemplateImageOverrides] = useState<Record<string, string>>({});
+  const [brandGalleryAssets, setBrandGalleryAssets] = useState<BrandGalleryAsset[]>([]);
+  const [isLoadingBrandAssets, setIsLoadingBrandAssets] = useState(false);
+  const [isUploadingBrandAsset, setIsUploadingBrandAsset] = useState(false);
+  const [brandAssetError, setBrandAssetError] = useState<string | null>(null);
   const isCustomTemplate = emailTemplate.startsWith('custom:');
   // The HTML of the currently-selected template (custom row or built-in).
   const selectedTemplateHtml = isCustomTemplate
@@ -232,6 +246,10 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     return seen;
   }, [selectedTemplateHtml]);
   const templateHasTokens = templateTokens.length > 0;
+  const templateImageSlots = useMemo(
+    () => extractTemplateImageSlots(selectedTemplateHtml),
+    [selectedTemplateHtml],
+  );
   // Pretty label for a token: body_copy -> "Body Copy", cta_url -> "CTA URL".
   const humanizeToken = (t: string) => t
     .replace(/_/g, ' ')
@@ -350,6 +368,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         setActiveComposeTab(restoredComposeTab);
         setEmailTemplate(saved.emailTemplate || campaign.template || 'UnifiedSproutifyUpdate');
         setCustomTemplateFields(saved.customTemplateFields || {});
+        setTemplateImageOverrides(saved.templateImageOverrides || {});
         setTimingRules(Array.isArray(saved.timingRules) ? saved.timingRules : []);
         setScheduledDate(saved.scheduledDate || '');
         setScheduledTime(saved.scheduledTime || '09:00');
@@ -409,6 +428,53 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     };
     loadBranchBrandData();
   }, [selectedBranches]);
+
+  const brandAssetBranch = useMemo(() => {
+    if (selectedBranches.length === 0) return '';
+    const normalize = (value: string) => (value || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
+    const selected = selectedBranches[0];
+    return branchContext?.allBranches.find(branch => normalize(branch.slug) === normalize(selected))?.slug || selected;
+  }, [selectedBranches, branchContext]);
+
+  const loadBrandAssets = useCallback(async () => {
+    if (!brandAssetBranch) {
+      setBrandGalleryAssets([]);
+      setBrandAssetError(null);
+      return;
+    }
+    setIsLoadingBrandAssets(true);
+    setBrandAssetError(null);
+    try {
+      setBrandGalleryAssets(await listBrandGalleryAssets(brandAssetBranch));
+    } catch (err) {
+      setBrandGalleryAssets([]);
+      setBrandAssetError(err instanceof Error ? err.message : 'Could not load brand images.');
+    } finally {
+      setIsLoadingBrandAssets(false);
+    }
+  }, [brandAssetBranch]);
+
+  useEffect(() => {
+    loadBrandAssets();
+  }, [loadBrandAssets]);
+
+  const handleBrandAssetUpload = useCallback(async (file: File): Promise<BrandGalleryAsset | null> => {
+    setIsUploadingBrandAsset(true);
+    setBrandAssetError(null);
+    try {
+      const asset = await uploadBrandGalleryAsset(brandAssetBranch, file);
+      setBrandGalleryAssets(previous => [asset, ...previous.filter(item => item.path !== asset.path)]);
+      addToast?.(`Added "${file.name}" to the ${formatBranchName(brandAssetBranch)} asset library.`, 'success');
+      return asset;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not upload the image.';
+      setBrandAssetError(message);
+      addToast?.(message, 'error');
+      return null;
+    } finally {
+      setIsUploadingBrandAsset(false);
+    }
+  }, [brandAssetBranch, addToast]);
 
   // Initialize timing rules when channels change
   useEffect(() => {
@@ -720,6 +786,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     activeComposeTab,
     emailTemplate,
     customTemplateFields,
+    templateImageOverrides,
     timingRules,
     scheduledDate,
     scheduledTime,
@@ -728,6 +795,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     currentStep, campaignName, emailSubject, emailCc, selectedBranches,
     selectedSegments, selectedSavedSegments, triggerType, channelList,
     channelContents, activeComposeTab, emailTemplate, customTemplateFields,
+    templateImageOverrides,
     timingRules, scheduledDate, scheduledTime, branchContent,
   ]);
 
@@ -737,8 +805,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     || selectedBranches.length > 0
     || Object.keys(channelContents).some(channel => channelContents[channel as CampaignChannel].trim().length > 0)
     || Object.keys(customTemplateFields).some(field => customTemplateFields[field].trim().length > 0)
+    || Object.keys(templateImageOverrides).some(source => templateImageOverrides[source].trim().length > 0)
     || Object.keys(branchContent).some(branch => branchContent[branch].trim().length > 0)
-  ), [campaignName, emailSubject, selectedBranches, channelContents, customTemplateFields, branchContent]);
+  ), [campaignName, emailSubject, selectedBranches, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
 
   const draftSaveInFlightRef = useRef(false);
   const handleSaveDraft = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -964,7 +1033,7 @@ Return ONLY the post content, no explanations or labels.`,
   // Build HTML for the selected template (custom OR built-in — both editable)
   const buildDispatchHtml = (profile: Profile): string => {
     const fill = (html: string) => {
-      let out = html;
+      let out = applyTemplateImageOverrides(html, templateImageOverrides);
       // Replace each discovered token with the value typed in Compose. Empty
       // tokens collapse to '' so a raw {{token}} never leaks into the sent email.
       // A FUNCTION replacer is used (not a string) so `$` sequences in the copy
@@ -2017,6 +2086,23 @@ Return ONLY the post content, no explanations or labels.`,
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                     {/* LEFT — fill-in fields (token templates) or as-is note */}
                     <div className="space-y-4">
+                      <CampaignBrandAssetLibrary
+                        brandName={formatBranchName(brandAssetBranch || selectedBranches[0] || 'selected brand')}
+                        assets={brandGalleryAssets}
+                        imageSlots={templateImageSlots}
+                        imageOverrides={templateImageOverrides}
+                        isLoading={isLoadingBrandAssets}
+                        isUploading={isUploadingBrandAsset}
+                        error={brandAssetError}
+                        onRefresh={loadBrandAssets}
+                        onUpload={handleBrandAssetUpload}
+                        onSelect={(originalSource, assetUrl) => setTemplateImageOverrides(previous => ({ ...previous, [originalSource]: assetUrl }))}
+                        onReset={originalSource => setTemplateImageOverrides(previous => {
+                          const next = { ...previous };
+                          delete next[originalSource];
+                          return next;
+                        })}
+                      />
                       {templateHasTokens ? (
                         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
                           <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs mb-1 flex items-center">

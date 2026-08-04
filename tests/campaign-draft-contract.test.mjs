@@ -25,6 +25,23 @@ test('builder saves, restores, and launches the same draft row', () => {
   assert.match(builder, /setTimeout\(\(\) => handleSaveDraft\(\{ silent: true \}\), 1500\)/);
 });
 
+test('campaign image choices persist and render through the shared brand asset library', () => {
+  const builder = read('pages/CampaignBuilder.tsx');
+  const library = read('services/brandAssetLibraryService.ts');
+  const picker = read('components/CampaignBrandAssetLibrary.tsx');
+
+  assert.match(builder, /templateImageOverrides:\s*Record<string, string>/);
+  assert.match(builder, /setTemplateImageOverrides\(saved\.templateImageOverrides \|\| \{\}\)/);
+  assert.match(builder, /applyTemplateImageOverrides\(html, templateImageOverrides\)/);
+  assert.match(builder, /<CampaignBrandAssetLibrary/);
+  assert.match(library, /const BRAND_ASSET_BUCKET = 'email-assets'/);
+  assert.match(library, /`\$\{branchSlug\}\/gallery`/);
+  assert.match(library, /extractTemplateImageSlots/);
+  assert.match(library, /uploadBrandGalleryAsset/);
+  assert.match(picker, /Choose an email image/);
+  assert.match(picker, /Pick a library image/);
+});
+
 test('campaign list exposes the resume handoff', () => {
   const campaigns = read('pages/Campaigns.tsx');
   const app = read('App.tsx');
