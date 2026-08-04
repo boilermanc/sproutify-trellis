@@ -45,6 +45,25 @@ test('Studio actions avoid browser-native confirmation dialogs', async () => {
   assert.match(publishing, /<ConfirmationModal/);
 });
 
+test('Studio surfaces Edge Function messages and only retries safe reads', async () => {
+  const service = await read('services/studioAlbumsService.ts');
+  assert.match(service, /FunctionsHttpError/);
+  assert.match(service, /error\.context\.clone\(\)\.json\(\)/);
+  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts'\]\)/);
+  assert.match(service, /details\.status === 503/);
+});
+
+test('production compiles Tailwind instead of loading the CDN runtime', async () => {
+  const html = await read('index.html');
+  const css = await read('index.css');
+  const tailwind = await read('tailwind.config.cjs');
+  const postcss = await read('postcss.config.cjs');
+  assert.doesNotMatch(html, /cdn\.tailwindcss\.com/);
+  assert.match(css, /@tailwind utilities/);
+  assert.match(tailwind, /content:/);
+  assert.match(postcss, /autoprefixer/);
+});
+
 test('album brief suggestions use a reliable editable combobox', async () => {
   const page = await read('pages/StudioAlbums.tsx');
   assert.match(page, /role="listbox"/);

@@ -686,7 +686,9 @@ Deno.serve(async (req) => {
       return json({ publication: submitting });
     }
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Studio track operation failed." }, 400);
+    const message = error instanceof Error ? error.message : "Studio track operation failed.";
+    console.error("studio-albums action failed", { action: body.action || "unknown", message });
+    return json({ error: message }, 400);
   }
   return json({ error: "Unknown action" }, 400);
 });

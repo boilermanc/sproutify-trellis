@@ -1,15 +1,43 @@
 import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioPublication, StudioPublicationDraft, StudioReleaseIdentity, StudioTrack, StudioVideo } from '../types';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'genre' | 'mood' | 'era' | 'theme' | 'vocal_direction' | 'target_duration_seconds'> & { description?: string; style_preset_id?: string; style_profile?: Record<string, unknown> };
 export interface StudioBatchGenerationResult { tracks: StudioTrack[]; failures: Array<{ track_id: string; title: string; error: string }>; }
 export interface StudioBulkApprovalResult { tracks: StudioTrack[]; remaining_review_count: number; }
 
+const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts']);
+
+async function studioFunctionError(error: unknown): Promise<{ message: string; status?: number }> {
+  if (error instanceof FunctionsHttpError) {
+    const status = error.context.status;
+    try {
+      const payload = await error.context.clone().json();
+      const message = typeof payload?.error === 'string' ? payload.error : typeof payload?.message === 'string' ? payload.message : error.message;
+      return { message, status };
+    } catch {
+      return { message: error.message, status };
+    }
+  }
+  return { message: error instanceof Error ? error.message : 'Studio request failed.' };
+}
+
 async function callStudio(action: string, payload: Record<string, unknown> = {}): Promise<any> {
-  const { data, error } = await supabase.functions.invoke('studio-albums', { body: { action, ...payload } });
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
-  return data;
+  const attempts = RETRYABLE_STUDIO_READS.has(action) ? 3 : 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const { data, error } = await supabase.functions.invoke('studio-albums', { body: { action, ...payload } });
+    if (!error) {
+      if (data?.error) throw new Error(data.error);
+      return data;
+    }
+    const details = await studioFunctionError(error);
+    if (details.status === 503 && attempt < attempts - 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 400 * (attempt + 1)));
+      continue;
+    }
+    throw new Error(details.message);
+  }
+  throw new Error('Studio request failed after retrying.');
 }
 
 export async function getStudioAlbums(): Promise<StudioAlbum[]> {
