@@ -27,6 +27,7 @@ import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
 import { followUpState, getFollowUpWindow, sortFollowUps } from '../components/leads/leadViewUtils';
 import LeadBoard from '../components/leads/LeadBoard';
+import LeadMetrics from '../components/leads/LeadMetrics';
 import {
   checkExistingLeads,
   createLead,
@@ -274,6 +275,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
     return { total, overdue };
   }, [leads, selectedPipelineId]);
+
+  const allPipelineLeads = useMemo(
+    () => leads.filter(lead => lead.pipeline_id === selectedPipelineId),
+    [leads, selectedPipelineId]
+  );
 
   const openAddModal = () => {
     if (!activeBranch || !selectedPipeline) return;
@@ -717,6 +723,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
               </label>
             </div>
           </div>
+
+          <LeadMetrics filteredLeads={filteredLeads} allPipelineLeads={allPipelineLeads} stages={selectedPipeline?.stages || []} />
 
           {viewMode === 'board' ? (
             <LeadBoard stages={selectedPipeline?.stages || []} leads={filteredLeads} stageDates={stageDates} pendingLeadId={stageSavingId} onMove={changeStage} />
