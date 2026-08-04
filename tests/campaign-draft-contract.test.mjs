@@ -42,6 +42,15 @@ test('campaign image choices persist and render through the shared brand asset l
   assert.match(picker, /Pick a library image/);
 });
 
+test('Brand Intelligence exposes the shared asset gallery as a first-class tab', () => {
+  const brandIntelligence = read('BrandIntelligence.tsx');
+  assert.match(brandIntelligence, /'templates' \| 'assets'/);
+  assert.match(brandIntelligence, /Brand Asset Library/);
+  assert.match(brandIntelligence, /Upload Assets/);
+  assert.match(brandIntelligence, /Available in Campaign Builder/);
+  assert.match(brandIntelligence, /activeTab === 'assets'/);
+});
+
 test('campaign list exposes the resume handoff', () => {
   const campaigns = read('pages/Campaigns.tsx');
   const app = read('App.tsx');
