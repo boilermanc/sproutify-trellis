@@ -22,6 +22,7 @@ import { BranchContext, Lead, LeadEmailEligibility, LeadPipeline, NewLeadInput, 
 import LeadTimeline from '../components/leads/LeadTimeline';
 import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
 import LeadEmailModal from '../components/leads/LeadEmailModal';
+import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
 import {
   checkExistingLeads,
   createLead,
@@ -151,6 +152,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [checkingEmailEligibility, setCheckingEmailEligibility] = useState(false);
   const [emailEligibilityError, setEmailEligibilityError] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [quoteLead, setQuoteLead] = useState<Lead | null>(null);
+  const [savingQuote, setSavingQuote] = useState(false);
+  const [acceptedQuoteLogged, setAcceptedQuoteLogged] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -385,6 +389,51 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       addToast(error instanceof Error ? error.message : 'Could not send email.', 'error');
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  const submitQuote = async (payload: { amount: number; description: string; status: QuoteStatus }) => {
+    if (!quoteLead) return;
+    setSavingQuote(true);
+    try {
+      const updated = await updateLead(quoteLead.id, { estimated_value: payload.amount });
+      await logLeadActivity({
+        leadId: quoteLead.id,
+        profileId: quoteLead.profile_id,
+        type: 'lead_quote',
+        payload,
+      });
+      const enriched = { ...updated, profile: quoteLead.profile };
+      setLeads(current => current.map(lead => lead.id === quoteLead.id ? enriched : lead));
+      setQuoteLead(enriched);
+      await loadTimeline(enriched);
+      addToast('Quote logged.', 'success');
+      if (payload.status === 'accepted') setAcceptedQuoteLogged(true);
+      else setQuoteLead(null);
+    } catch (error) {
+      console.error('Failed to log lead quote:', error);
+      addToast('Could not log the quote.', 'error');
+    } finally {
+      setSavingQuote(false);
+    }
+  };
+
+  const markQuotedLeadWon = async () => {
+    if (!quoteLead) return;
+    setSavingQuote(true);
+    try {
+      const updated = await updateLeadStage(quoteLead.id, 'won');
+      const enriched = { ...updated, profile: quoteLead.profile };
+      setLeads(current => current.map(lead => lead.id === quoteLead.id ? enriched : lead));
+      await loadTimeline(enriched);
+      addToast('Lead marked won.', 'success');
+      setQuoteLead(null);
+      setAcceptedQuoteLogged(false);
+    } catch (error) {
+      console.error('Failed to mark quoted lead won:', error);
+      addToast('The quote is saved, but the lead could not be marked won.', 'error');
+    } finally {
+      setSavingQuote(false);
     }
   };
 
@@ -710,6 +759,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <button type="button" onClick={() => setQuickActivity({ lead, kind: 'note' })} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]">Log Note</button>
                                       <button type="button" onClick={() => setQuickActivity({ lead, kind: 'meeting' })} className="rounded-xl border border-indigo-400/20 bg-indigo-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-indigo-300 hover:bg-indigo-400/10">Log Meeting</button>
                                       <button type="button" onClick={() => void openEmailModal(lead)} className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 hover:bg-rose-400/10">Send Email</button>
+                                      <button type="button" onClick={() => { setQuoteLead(lead); setAcceptedQuoteLogged(false); }} className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300 hover:bg-amber-400/10">Log Quote</button>
                                     </div>
                                     <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
@@ -818,6 +868,17 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           pending={sendingEmail}
           onClose={() => !sendingEmail && setEmailLead(null)}
           onSubmit={submitLeadEmail}
+        />
+      )}
+
+      {quoteLead && (
+        <LeadQuoteModal
+          lead={quoteLead}
+          pending={savingQuote}
+          acceptedLogged={acceptedQuoteLogged}
+          onClose={() => { if (!savingQuote) { setQuoteLead(null); setAcceptedQuoteLogged(false); } }}
+          onSubmit={submitQuote}
+          onMarkWon={markQuotedLeadWon}
         />
       )}
 
