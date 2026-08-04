@@ -168,6 +168,12 @@ const BranchCard: React.FC<{
           </div>
         </div>
 
+        {card.openLeads > 0 && (
+          <div className="mt-3 inline-flex rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700">
+            {card.openLeads.toLocaleString()} open leads
+          </div>
+        )}
+
         {/* metric grid */}
         <div className="mt-[14px] grid grid-cols-2 gap-x-[10px] gap-y-3">
           <MetricCell value={formatNumber(card.profiles)} label="profiles" delta={fmtCountDelta(card.profilesDelta)} />

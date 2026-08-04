@@ -27,6 +27,29 @@ export interface LeadParseResult {
   skipped: { line: string; reason: string }[];
 }
 
+/** Return open lead totals keyed by branch UUID for dashboard health cards. */
+export async function fetchOpenLeadCountsByBranch(
+  branchIds: string[],
+): Promise<Record<string, number>> {
+  if (branchIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select('branch_id')
+    .in('branch_id', branchIds)
+    .eq('status', 'open');
+
+  if (error) {
+    console.error('Error fetching open lead counts:', error);
+    throw error;
+  }
+
+  return (data || []).reduce<Record<string, number>>((counts, row: any) => {
+    if (row.branch_id) counts[row.branch_id] = (counts[row.branch_id] || 0) + 1;
+    return counts;
+  }, {});
+}
+
 /** Fetch the pipelines configured for a branch. */
 export async function fetchPipelines(branchId: string): Promise<LeadPipeline[]> {
   const { data, error } = await supabase

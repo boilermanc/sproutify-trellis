@@ -422,8 +422,14 @@ export function buildTimeline(
       id: `event:${event.id}`,
       at: event.created_at,
       ...meta,
-      text: `${event.event_type} event recorded`,
+      text: event.event_type === 'lead_created'
+        ? 'Lead created'
+        : event.event_type === 'lead_converted'
+          ? 'Lead converted'
+          : `${event.event_type} event recorded`,
       state: 'synced',
+      actionLabel: event.event_type.startsWith('lead_') ? 'View' : undefined,
+      actionView: event.event_type.startsWith('lead_') ? 'leads' : undefined,
     });
   }
 
@@ -877,6 +883,7 @@ export function buildBranchCards(
       healthLabel,
       profiles: stats?.profileCount ?? 0,
       profilesDelta,
+      openLeads: 0,
       revenue: revenueCur,
       revenueDelta,
       followers,

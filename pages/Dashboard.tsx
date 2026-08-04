@@ -24,6 +24,7 @@ import MorningStandup from '../components/dashboard/MorningStandup';
 import BranchBoard from '../components/dashboard/BranchBoard';
 import EmailPulse from '../components/dashboard/EmailPulse';
 import { RefreshCw, Loader2 } from 'lucide-react';
+import { fetchOpenLeadCountsByBranch } from '../leadService';
 
 // The three tabs replace the old overview page wholesale. Sage is deliberately
 // absent here (no briefing, no "strategic action" banner) — the floating chat in
@@ -90,6 +91,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [whatWorked, setWhatWorked] = useState<WhatWorked | null>(null);
   const [snoozed, setSnoozed] = useState<Record<string, string>>({});
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
+  const [openLeadCounts, setOpenLeadCounts] = useState<Record<string, number>>({});
 
   // Tab lives in the URL so a reload or a shared link lands on the same view.
   const selectTab = useCallback((next: DashboardTab) => {
@@ -112,7 +114,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       p.catch(err => { console.error(`[dashboard] ${label} failed:`, err); return fallback; });
 
     const [
-      ordersRes, postsRes, emailRes, schedRes, jobsRes, workedRes, snoozeRes, eventsRes,
+      ordersRes, postsRes, emailRes, schedRes, jobsRes, workedRes, snoozeRes, eventsRes, leadCountsRes,
     ] = await Promise.all([
       // fetchAllSpokesOrders returns { orders, errors } — a per-spoke failure is
       // reported rather than thrown, so unwrap and log instead of silently
@@ -143,6 +145,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       settle(getWhatWorked(timeWindow), 'post performance', null as WhatWorked | null),
       settle(fetchSnoozes(), 'snoozes', {} as Record<string, string>),
       settle(fetchRecentEvents(50), 'recent events', [] as MarketingEvent[]),
+      settle(fetchOpenLeadCountsByBranch(branches.map(branch => branch.id)), 'open lead counts', {} as Record<string, number>),
     ]);
 
     setOrders(ordersRes);
@@ -153,6 +156,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setWhatWorked(workedRes);
     setSnoozed(snoozeRes);
     setRecentEvents(eventsRes);
+    setOpenLeadCounts(leadCountsRes);
 
     // Meta insights are per-branch, keyed by branch UUID (how the meta-insights
     // function stores credentials). One branch failing must not lose the rest.
@@ -315,8 +319,12 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [spokeConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats, snoozed]);
 
   const branchCards = useMemo(
-    () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow),
-    [scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow],
+    () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow)
+      .map(card => ({
+        ...card,
+        openLeads: openLeadCounts[scopedBranches.find(branch => branch.slug === card.slug)?.id || ''] || 0,
+      })),
+    [scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow, openLeadCounts],
   );
 
   const degradedCount = useMemo(() => systems.filter(s => s.status !== 'ok').length, [systems]);

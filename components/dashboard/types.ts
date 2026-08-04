@@ -116,6 +116,7 @@ export interface BranchCardData {
   healthLabel: string;
   profiles: number;
   profilesDelta: number | null;
+  openLeads: number;
   revenue: number;
   revenueDelta: number | null;
   followers: number | null;      // null when Meta insights are unavailable

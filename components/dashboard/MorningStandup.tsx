@@ -472,6 +472,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-bold text-[#111827]">{b.name}</p>
+                  {b.openLeads > 0 && <p className="text-[11px] font-semibold text-[#0891B2]">{b.openLeads} open leads</p>}
                   <p
                     className="truncate text-[11px] font-semibold"
                     style={{ color: b.nextAction ? TONE_COLOR[b.nextAction.tone] : '#94A3B8' }}

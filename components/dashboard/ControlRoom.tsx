@@ -171,6 +171,7 @@ const BranchTile: React.FC<{ branch: BranchCardData; onSelectBranch: (slug: stri
             {profilesDeltaText}
           </span>
         )}
+        {branch.openLeads > 0 && <span className="font-semibold text-[#0891B2]">· {branch.openLeads} open leads</span>}
       </div>
     </button>
   );
