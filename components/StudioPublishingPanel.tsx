@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, ExternalLink, Loader2, Save, Send, Sparkles } from 'lucide-react';
 import { StudioAlbum, StudioPublication, StudioPublicationDraft } from '../types';
 import { approveStudioPublication, prepareStudioPublication, publishStudioAlbum, saveStudioPublication } from '../services/studioAlbumsService';
+import ConfirmationModal from './ConfirmationModal';
 
 type Props = {
   album: StudioAlbum;
@@ -15,6 +16,7 @@ const EMPTY: StudioPublicationDraft = { title: '', description: '', tags: [], vi
 const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, onChange }) => {
   const [draft, setDraft] = useState<StudioPublicationDraft>(EMPTY);
   const [busy, setBusy] = useState<'prepare' | 'save' | 'approve' | 'publish' | null>(null);
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   useEffect(() => {
     if (!publication) return setDraft(EMPTY);
@@ -23,9 +25,14 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
 
   const run = async (kind: NonNullable<typeof busy>, work: () => Promise<StudioPublication>, success: string) => {
     setBusy(kind);
-    try { const next = await work(); onChange(next); addToast(success, 'success'); }
-    catch (error) { addToast(error instanceof Error ? error.message : 'Publishing action failed.', 'error'); }
+    try { const next = await work(); onChange(next); addToast(success, 'success'); return true; }
+    catch (error) { addToast(error instanceof Error ? error.message : 'Publishing action failed.', 'error'); return false; }
     finally { setBusy(null); }
+  };
+
+  const confirmYouTubeSubmission = async () => {
+    const submitted = await run('publish', () => publishStudioAlbum(album.id), 'Album submitted to the YouTube publishing workflow.');
+    if (submitted) setConfirmPublish(false);
   };
 
   const locked = publication?.status === 'submitting' || publication?.status === 'live';
@@ -49,10 +56,11 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
       <div className="mt-5 flex flex-wrap gap-3">
         {!locked && <button type="button" onClick={() => run('save', () => saveStudioPublication(album.id, draft), 'Publishing metadata saved.')} disabled={busy !== null || !draft.title.trim() || !draft.description.trim()} className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wider text-sky-800 disabled:opacity-50">{busy === 'save' ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Save draft</button>}
         {publication.status === 'draft' && <button type="button" onClick={() => run('approve', () => approveStudioPublication(album.id), 'Publishing metadata approved. The release is ready to submit.')} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'approve' ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} Approve metadata</button>}
-        {(publication.status === 'ready' || publication.status === 'failed') && <button type="button" onClick={() => { if (window.confirm(`Submit “${draft.title}” to YouTube as ${draft.visibility}?`)) void run('publish', () => publishStudioAlbum(album.id), 'Album submitted to the YouTube publishing workflow.'); }} disabled={busy !== null || publication.status !== 'ready'} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'publish' ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} Submit to YouTube</button>}
+        {(publication.status === 'ready' || publication.status === 'failed') && <button type="button" onClick={() => setConfirmPublish(true)} disabled={busy !== null || publication.status !== 'ready'} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'publish' ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} Submit to YouTube</button>}
         {publication.external_url && <a href={publication.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white"><ExternalLink size={16} /> View release</a>}
       </div>
     </>}
+    <ConfirmationModal open={confirmPublish} title="Submit this album to YouTube?" message={`Submit “${draft.title}” to YouTube with ${draft.visibility} visibility. The publishing workflow will begin immediately.`} confirmLabel="Submit to YouTube" busy={busy === 'publish'} onCancel={() => { if (!busy) setConfirmPublish(false); }} onConfirm={() => void confirmYouTubeSubmission()} />
   </section>;
 };
 
