@@ -11,6 +11,10 @@ interface Props {
   defaultSeries?: string;
   defaultTitleColor?: string;
   defaultTitleFont?: string;
+  defaultSubtitleColor?: string;
+  defaultSubtitleFont?: string;
+  defaultSeriesColor?: string;
+  defaultSeriesFont?: string;
   onSaved: (concept: StudioCoverConcept) => void;
 }
 
@@ -36,6 +40,8 @@ const FONT_OPTIONS = [
   { id: 'playfair', label: 'Playfair Display', family: '"Playfair Display", Georgia, serif' },
   { id: 'oswald', label: 'Oswald', family: '"Oswald", Impact, sans-serif' },
   { id: 'montserrat', label: 'Montserrat', family: '"Montserrat", Arial, sans-serif' },
+  { id: 'inter', label: 'Inter', family: '"Inter", Arial, sans-serif' },
+  { id: 'jetbrains', label: 'JetBrains Mono', family: '"JetBrains Mono", "Courier New", monospace' },
 ] as const;
 type FontId = typeof FONT_OPTIONS[number]['id'];
 const FONT_FAMILY: Record<FontId, string> = Object.fromEntries(FONT_OPTIONS.map(item => [item.id, item.family])) as Record<FontId, string>;
@@ -76,7 +82,10 @@ function drawLetterspaced(ctx: CanvasRenderingContext2D, text: string, x: number
   });
 }
 
-export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultTitle, defaultSubtitle = '', defaultSeries = 'Rekkrd After Dark', defaultTitleColor, defaultTitleFont, onSaved }) => {
+const DEFAULT_SERIES_COLOR = '#fff4d6';
+const DEFAULT_SERIES_FONT: FontId = 'inter';
+
+export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultTitle, defaultSubtitle = '', defaultSeries = 'Rekkrd After Dark', defaultTitleColor, defaultTitleFont, defaultSubtitleColor, defaultSubtitleFont, defaultSeriesColor, defaultSeriesFont, onSaved }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
   const [title, setTitle] = useState(defaultTitle);
@@ -85,6 +94,10 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
   const [treatment, setTreatment] = useState<Treatment>('riviera_editorial');
   const [titleColor, setTitleColor] = useState(defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
   const [titleFont, setTitleFont] = useState<FontId>(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial);
+  const [subtitleColor, setSubtitleColor] = useState(defaultSubtitleColor || defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
+  const [subtitleFont, setSubtitleFont] = useState<FontId>(isFontId(defaultSubtitleFont) ? defaultSubtitleFont : (isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial));
+  const [seriesColor, setSeriesColor] = useState(defaultSeriesColor || DEFAULT_SERIES_COLOR);
+  const [seriesFont, setSeriesFont] = useState<FontId>(isFontId(defaultSeriesFont) ? defaultSeriesFont : DEFAULT_SERIES_FONT);
   const [vintageBorder, setVintageBorder] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -96,9 +109,19 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     setSeries(defaultSeries || 'Rekkrd After Dark');
     setTitleColor(defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
     setTitleFont(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial);
-  }, [defaultSeries, defaultSubtitle, defaultTitle, defaultTitleColor, defaultTitleFont, source.id]);
+    setSubtitleColor(defaultSubtitleColor || defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
+    setSubtitleFont(isFontId(defaultSubtitleFont) ? defaultSubtitleFont : (isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial));
+    setSeriesColor(defaultSeriesColor || DEFAULT_SERIES_COLOR);
+    setSeriesFont(isFontId(defaultSeriesFont) ? defaultSeriesFont : DEFAULT_SERIES_FONT);
+  }, [defaultSeries, defaultSubtitle, defaultTitle, defaultTitleColor, defaultTitleFont, defaultSubtitleColor, defaultSubtitleFont, defaultSeriesColor, defaultSeriesFont, source.id]);
 
-  const changeTreatment = (next: Treatment) => { setTreatment(next); setTitleColor(TREATMENT_DEFAULT_COLOR[next]); setTitleFont(TREATMENT_DEFAULT_FONT[next]); };
+  const changeTreatment = (next: Treatment) => {
+    setTreatment(next);
+    setTitleColor(TREATMENT_DEFAULT_COLOR[next]);
+    setTitleFont(TREATMENT_DEFAULT_FONT[next]);
+    setSubtitleColor(TREATMENT_DEFAULT_COLOR[next]);
+    setSubtitleFont(TREATMENT_DEFAULT_FONT[next]);
+  };
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -106,6 +129,8 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !image) return;
     const fontFamily = FONT_FAMILY[titleFont];
+    const subtitleFontFamily = FONT_FAMILY[subtitleFont];
+    const seriesFontFamily = FONT_FAMILY[seriesFont];
 
     ctx.clearRect(0, 0, W, H);
     const scale = Math.max(W / image.width, H / image.height);
@@ -142,8 +167,8 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       } while (size > 44 && lines.some(line => ctx.measureText(line).width > 500));
       lines.forEach((line, index) => ctx.fillText(line, 952, 105 + index * size * 0.92));
       if (subtitle.trim()) {
-        ctx.font = `italic 30px ${fontFamily}`;
-        ctx.fillStyle = titleColor;
+        ctx.font = `italic 30px ${subtitleFontFamily}`;
+        ctx.fillStyle = subtitleColor;
         ctx.fillText(subtitle, 952, 135 + lines.length * size * 0.92);
       }
     } else if (treatment === 'travel_poster') {
@@ -159,8 +184,8 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       }
       lines.forEach((line, index) => ctx.fillText(line, 66, 112 + index * size * 0.91));
       if (subtitle.trim()) {
-        ctx.font = `700 30px ${fontFamily}`;
-        ctx.fillStyle = titleColor;
+        ctx.font = `700 30px ${subtitleFontFamily}`;
+        ctx.fillStyle = subtitleColor;
         ctx.fillText(subtitle.toUpperCase(), 70, 145 + lines.length * size * 0.91);
       }
     } else {
@@ -170,8 +195,8 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       const lines = wrapText(ctx, title, 830, 3);
       lines.forEach((line, index) => ctx.fillText(line, 70, 700 + index * 84));
       if (subtitle.trim()) {
-        ctx.font = `italic 31px ${fontFamily}`;
-        ctx.fillStyle = titleColor;
+        ctx.font = `italic 31px ${subtitleFontFamily}`;
+        ctx.fillStyle = subtitleColor;
         ctx.fillText(subtitle, 74, 700 - 54);
       }
     }
@@ -179,12 +204,12 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     ctx.shadowColor = 'rgba(0,0,0,0.65)';
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 2;
-    ctx.font = '700 24px Inter, Arial, sans-serif';
-    ctx.fillStyle = '#fff4d6';
+    ctx.font = `700 24px ${seriesFontFamily}`;
+    ctx.fillStyle = seriesColor;
     drawLetterspaced(ctx, (series.trim() || 'Rekkrd After Dark').toUpperCase(), W / 2, H - 36, 5, 'center');
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
-  }, [series, subtitle, title, titleColor, titleFont, treatment, vintageBorder]);
+  }, [series, seriesColor, seriesFont, subtitle, subtitleColor, subtitleFont, title, titleColor, titleFont, treatment, vintageBorder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +244,7 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     setSaved(false);
     setError(null);
     try {
-      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont });
+      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont, subtitle_color: subtitleColor, subtitle_font: subtitleFont, series_color: seriesColor, series_font: seriesFont });
       setSaved(true);
       onSaved(concept);
       window.setTimeout(() => setSaved(false), 3500);
@@ -236,11 +261,34 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       <canvas ref={canvasRef} width={W} height={H} className="aspect-square w-full rounded-xl border border-amber-200 bg-slate-900" />
       <div className="space-y-3">
         <label className="block text-xs font-bold text-slate-700">Typography style<select value={treatment} onChange={event => changeTreatment(event.target.value as Treatment)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{TREATMENTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label className="block text-xs font-bold text-slate-700">Font<select value={titleFont} onChange={event => setTitleFont(event.target.value as FontId)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{FONT_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label className="block text-xs font-bold text-slate-700">Text color<input type="color" value={titleColor} onChange={event => setTitleColor(event.target.value)} className="mt-1.5 h-10 w-full cursor-pointer rounded-xl border border-amber-200 bg-white p-1" /></label>
-        <label className="block text-xs font-bold text-slate-700">Album title<textarea value={title} onChange={event => setTitle(event.target.value)} className="mt-1.5 min-h-20 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" /></label>
-        <label className="block text-xs font-bold text-slate-700">Release subtitle<input value={subtitle} onChange={event => setSubtitle(event.target.value)} placeholder="Optional" className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" /></label>
-        <label className="block text-xs font-bold text-slate-700">Bottom imprint<input value={series} onChange={event => setSeries(event.target.value)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" /></label>
+
+        <div className="rounded-xl border border-amber-200 bg-white/60 p-3 space-y-2.5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Album title</p>
+          <textarea value={title} onChange={event => setTitle(event.target.value)} className="w-full min-h-20 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" />
+          <div className="grid grid-cols-2 gap-2.5">
+            <label className="block text-xs font-bold text-slate-700">Font<select value={titleFont} onChange={event => setTitleFont(event.target.value as FontId)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{FONT_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <label className="block text-xs font-bold text-slate-700">Color<input type="color" value={titleColor} onChange={event => setTitleColor(event.target.value)} className="mt-1.5 h-10 w-full cursor-pointer rounded-xl border border-amber-200 bg-white p-1" /></label>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-amber-200 bg-white/60 p-3 space-y-2.5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Release subtitle</p>
+          <input value={subtitle} onChange={event => setSubtitle(event.target.value)} placeholder="Optional" className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" />
+          <div className="grid grid-cols-2 gap-2.5">
+            <label className="block text-xs font-bold text-slate-700">Font<select value={subtitleFont} onChange={event => setSubtitleFont(event.target.value as FontId)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{FONT_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <label className="block text-xs font-bold text-slate-700">Color<input type="color" value={subtitleColor} onChange={event => setSubtitleColor(event.target.value)} className="mt-1.5 h-10 w-full cursor-pointer rounded-xl border border-amber-200 bg-white p-1" /></label>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-amber-200 bg-white/60 p-3 space-y-2.5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Bottom imprint</p>
+          <input value={series} onChange={event => setSeries(event.target.value)} className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" />
+          <div className="grid grid-cols-2 gap-2.5">
+            <label className="block text-xs font-bold text-slate-700">Font<select value={seriesFont} onChange={event => setSeriesFont(event.target.value as FontId)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{FONT_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <label className="block text-xs font-bold text-slate-700">Color<input type="color" value={seriesColor} onChange={event => setSeriesColor(event.target.value)} className="mt-1.5 h-10 w-full cursor-pointer rounded-xl border border-amber-200 bg-white p-1" /></label>
+          </div>
+        </div>
+
         <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700"><input type="checkbox" checked={vintageBorder} onChange={event => setVintageBorder(event.target.checked)} className="h-4 w-4 accent-amber-700" /> Vintage postcard border</label>
         <button type="button" onClick={save} disabled={saving || !source.image_url || !title.trim()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{saving ? <Loader2 className="animate-spin" size={16} /> : saved ? <CheckCircle2 size={16} /> : <Save size={16} />}{saved ? 'Titled cover saved' : 'Save titled cover'}</button>
         {error && <p className="text-xs font-medium text-rose-600">{error}</p>}

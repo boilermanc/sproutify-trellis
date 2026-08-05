@@ -12,7 +12,8 @@ const VIDEO_RENDER_WEBHOOK = Deno.env.get("STUDIO_VIDEO_RENDER_WEBHOOK") || Deno
 const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-studio-album-publish";
 const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
 const IMAGE_EDIT_MODEL = Deno.env.get("IMAGE_EDIT_MODEL") || "gemini-3.1-flash-image";
-const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat"]);
+const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains"]);
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const cleanText = (value: unknown, limit: number) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -787,8 +788,12 @@ Deno.serve(async (req) => {
         series: cleanText(body.typography?.series, 120) || "Rekkrd After Dark",
         treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial",
         vintage_border: body.typography?.vintage_border !== false,
-        title_color: /^#[0-9a-fA-F]{6}$/.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
+        title_color: HEX_COLOR_RE.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
         title_font: VALID_COVER_FONTS.has(String(body.typography?.title_font || "")) ? body.typography.title_font : undefined,
+        subtitle_color: HEX_COLOR_RE.test(String(body.typography?.subtitle_color || "")) ? body.typography.subtitle_color : undefined,
+        subtitle_font: VALID_COVER_FONTS.has(String(body.typography?.subtitle_font || "")) ? body.typography.subtitle_font : undefined,
+        series_color: HEX_COLOR_RE.test(String(body.typography?.series_color || "")) ? body.typography.series_color : undefined,
+        series_font: VALID_COVER_FONTS.has(String(body.typography?.series_font || "")) ? body.typography.series_font : undefined,
       };
       if (!typography.title) throw new Error("Add the album title before saving the cover.");
       await clearCoverSelections(db, album.id);
