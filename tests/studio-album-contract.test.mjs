@@ -49,7 +49,7 @@ test('Studio surfaces Edge Function messages and only retries safe reads', async
   const service = await read('services/studioAlbumsService.ts');
   assert.match(service, /FunctionsHttpError/);
   assert.match(service, /error\.context\.clone\(\)\.json\(\)/);
-  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts'\]\)/);
+  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'get_video_source'\]\)/);
   assert.match(service, /details\.status === 503/);
 });
 
@@ -224,7 +224,7 @@ test('Studio video renders with no separate artwork-approval step', async () => 
   assert.match(worker, /framed_cover = os\.path\.join\(tmp, "framed-cover\.png"\)/);
   assert.doesNotMatch(page, /StudioVideoArtworkComposer/);
   assert.doesNotMatch(page, /Step 6a/);
-  assert.match(page, /The approved cover fills the YouTube frame/);
+  assert.match(page, /Your widescreen video image/);
   assert.match(page, /Render final video/);
 });
 
@@ -233,8 +233,8 @@ test('video renders from a native 16:9 text-free companion photo, not a crop of 
   // edges either clips the text or throws away ~44% of the photo. Episodes never
   // hits this because its cover_art is generated natively at 16:9 with no text
   // at all. Studio Albums now generates the same kind of clean, native 16:9
-  // companion photo (same scene/style/direction, text-free) the first time a
-  // video is rendered, and reuses it on every re-render for that same cover.
+  // companion photo (same scene/style/direction, text-free) and reuses it on
+  // every re-render for that same cover.
   const fn = await read('supabase/functions/studio-albums/index.ts');
   assert.match(fn, /async function generateStudioVideoSource\(db: any, album: any, sourceConcept: any\)/);
   assert.match(fn, /buildCoverPrompt\("Widescreen 16:9"/);
@@ -244,9 +244,31 @@ test('video renders from a native 16:9 text-free companion photo, not a crop of 
   assert.match(fn, /role: "video_source", source_asset_id: sourceConcept\.id, aspect_ratio: "16:9"/);
   assert.match(fn, /const sourceConceptId = approvedCover\.metadata_json\?\.source_asset_id \|\| approvedCover\.id/);
   assert.match(fn, /The clean source photo behind the approved cover is unavailable\./);
-  assert.match(fn, /contains\("metadata_json", \{ role: "video_source", source_asset_id: sourceConcept\.id \}\)/);
+  assert.match(fn, /contains\("metadata_json", \{ role: "video_source", source_asset_id: sourceConceptId \}\)/);
   assert.match(fn, /if \(!videoSource\) videoSource = await generateStudioVideoSource\(db, album, sourceConcept\)/);
   assert.match(fn, /style_prompt: stylePrompt/);
+});
+
+test('the widescreen video image is generated, previewed, and can be regenerated before rendering', async () => {
+  // The video-step card must show the ACTUAL 16:9 image that will render, not
+  // the square cover CSS-cropped into a 16:9 box (which looked like the top and
+  // bottom were chopped off). It auto-loads/generates on arrival and offers a
+  // regenerate for a different take, with only one active at a time.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(fn, /body\.action === "get_video_source"/);
+  assert.match(fn, /body\.action === "generate_video_source"/);
+  assert.match(fn, /async function activeVideoSource/);
+  assert.match(fn, /Only one video-source stays active at a time/);
+  assert.match(service, /getStudioVideoSource/);
+  assert.match(service, /regenerateStudioVideoSource/);
+  assert.match(service, /'get_video_source'\]\)/);
+  assert.match(page, /Your widescreen video image/);
+  assert.match(page, /Nothing is cropped/);
+  assert.match(page, /regenerateVideoImage/);
+  assert.match(page, /alt="Widescreen video image"/);
+  assert.doesNotMatch(page, /alt="Approved album cover" className="mt-4 aspect-video/);
 });
 
 test('cover typography has a text color picker and font selector, and no video crop guide', async () => {

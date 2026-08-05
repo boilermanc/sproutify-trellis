@@ -238,9 +238,25 @@ async function generateStudioVideoSource(db: any, album: any, sourceConcept: any
   const path = `studio/${ORG_ID}/albums/${album.id}/video-source/scene-v${version}.png`;
   const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
   if (uploadError) throw new Error(`Could not store the video source image: ${uploadError.message}`);
+  // Only one video-source stays active at a time so the preview and the render
+  // always agree, and regenerating cleanly supersedes the previous take.
+  await db.from("studio_assets").update({ status: "archived", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { role: "video_source" });
   const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "video_source", source_asset_id: sourceConcept.id, aspect_ratio: "16:9", prompt, model: IMAGE_MODEL } }).select("*").single();
   if (error || !asset) throw new Error(error?.message || "Could not register the video source image.");
   return asset;
+}
+
+async function activeVideoSource(db: any, albumId: string, sourceConceptId: string) {
+  const { data } = await db.from("studio_assets").select("*").eq("album_id", albumId).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { role: "video_source", source_asset_id: sourceConceptId }).order("version", { ascending: false }).limit(1).maybeSingle();
+  return data || null;
+}
+
+async function approvedCoverSource(db: any, album: any) {
+  const { data: approvedCover } = await db.from("studio_assets").select("id, metadata_json").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
+  if (!approvedCover) return { approvedCover: null, sourceConcept: null };
+  const sourceConceptId = approvedCover.metadata_json?.source_asset_id || approvedCover.id;
+  const { data: sourceConcept } = await db.from("studio_assets").select("*").eq("id", sourceConceptId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+  return { approvedCover, sourceConcept: sourceConcept || null };
 }
 
 async function masterWithAsset(db: any, albumId: string, fallback: any = {}) {
@@ -708,22 +724,35 @@ Deno.serve(async (req) => {
       if (error || !data) throw new Error(error?.message || "Could not approve the cover.");
       return json({ album: data });
     }
+    if (body.action === "get_video_source") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { sourceConcept } = await approvedCoverSource(db, album);
+      if (!sourceConcept) return json({ concept: null });
+      const existing = await activeVideoSource(db, album.id, sourceConcept.id);
+      return json({ concept: existing ? await coverWithUrl(db, existing) : null });
+    }
+    if (body.action === "generate_video_source") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.artwork_status !== "approved") throw new Error("Approve the cover before creating the video image.");
+      const { sourceConcept } = await approvedCoverSource(db, album);
+      if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
+      const asset = await generateStudioVideoSource(db, album, sourceConcept);
+      return json({ concept: await coverWithUrl(db, asset) }, 201);
+    }
     if (body.action === "prepare_visual_production") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       if (album.artwork_status !== "approved") throw new Error("Approve the cover before preparing Visual Production.");
       if (album.master_status !== "approved") throw new Error("Approve the master before preparing Visual Production.");
       const motion = String(body.motion || "ken_burns").slice(0, 80);
       const direction = String(body.direction || "Subtle cinematic movement that preserves the approved cover composition.").trim().slice(0, 500);
-      const { data: approvedCover } = await db.from("studio_assets").select("id, metadata_json").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
+      const { approvedCover, sourceConcept } = await approvedCoverSource(db, album);
       if (!approvedCover) throw new Error("Approve the cover before rendering the final video.");
-      const sourceConceptId = approvedCover.metadata_json?.source_asset_id || approvedCover.id;
-      const { data: sourceConcept } = await db.from("studio_assets").select("*").eq("id", sourceConceptId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
       if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
       // The video never derives from the square typography'd cover — it renders
       // a native 16:9, text-free companion photo generated from the same scene
       // (same pattern as the Episodes pipeline: born the right shape, so the
       // worker never has to crop away or letterbox around anything meaningful).
-      let videoSource = (await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { role: "video_source", source_asset_id: sourceConcept.id }).maybeSingle()).data;
+      let videoSource = await activeVideoSource(db, album.id, sourceConcept.id);
       if (!videoSource) videoSource = await generateStudioVideoSource(db, album, sourceConcept);
       const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!master) throw new Error("The approved master is required before preparing Visual Production.");

@@ -5,7 +5,7 @@ import StudioPublishingPanel from '../components/StudioPublishingPanel';
 import ConfirmationModal from '../components/ConfirmationModal';
 import StudioCoverComposer from '../components/StudioCoverComposer';
 import { EPISODE_ART_STYLES } from '../constants';
-import { approveAllGeneratedStudioTracks, approveAllPlannedStudioTracks, approvePlannedStudioTrack, approveStudioCover, approveStudioMaster, approveStudioReleaseIdentity, approveStudioVideo, buildStudioMaster, createPlannedStudioTrack, createStudioAlbum, deletePlannedStudioTrack, deleteStudioCoverConcept, enhanceStudioCoverConcept, generateAllApprovedStudioTracks, generatePlannedStudioTrack, generateStudioCoverConcept, getStudioAlbumWorkspace, getStudioAlbums, getStudioCoverConcepts, planStudioAlbum, planStudioTrack, prepareStudioVisualProduction, reopenStudioTrackReview, reviewStudioTrack, saveStudioReleaseIdentity, selectStudioCoverConcept, StudioTrackDraft, updatePlannedStudioTrack } from '../services/studioAlbumsService';
+import { approveAllGeneratedStudioTracks, approveAllPlannedStudioTracks, approvePlannedStudioTrack, approveStudioCover, approveStudioMaster, approveStudioReleaseIdentity, approveStudioVideo, buildStudioMaster, createPlannedStudioTrack, createStudioAlbum, deletePlannedStudioTrack, deleteStudioCoverConcept, enhanceStudioCoverConcept, generateAllApprovedStudioTracks, generatePlannedStudioTrack, generateStudioCoverConcept, getStudioAlbumWorkspace, getStudioAlbums, getStudioCoverConcepts, getStudioVideoSource, planStudioAlbum, planStudioTrack, prepareStudioVisualProduction, regenerateStudioVideoSource, reopenStudioTrackReview, reviewStudioTrack, saveStudioReleaseIdentity, selectStudioCoverConcept, StudioTrackDraft, updatePlannedStudioTrack } from '../services/studioAlbumsService';
 import { getStudioStylePreset, planStudioRuntime, STUDIO_MAX_ALBUM_MINUTES, STUDIO_MIN_TRACK_SECONDS, STUDIO_STYLE_PRESETS } from '../services/studioAlbumPlanning';
 
 interface Props { addToast: (message: string, type?: 'success' | 'error' | 'info') => void; }
@@ -118,6 +118,9 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   const [visualDirection, setVisualDirection] = useState('Subtle cinematic movement that preserves the approved cover composition.');
   const [preparingVisuals, setPreparingVisuals] = useState(false);
   const [approvingVideo, setApprovingVideo] = useState(false);
+  const [videoSource, setVideoSource] = useState<StudioCoverConcept | null>(null);
+  const [videoSourceLoading, setVideoSourceLoading] = useState(false);
+  const [regeneratingVideoSource, setRegeneratingVideoSource] = useState(false);
   const [planningTrack, setPlanningTrack] = useState(false);
   const [batchTrackCount, setBatchTrackCount] = useState(1);
   const [planningAlbum, setPlanningAlbum] = useState(false);
@@ -181,6 +184,27 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   const approvedAudioCount = tracks.filter(track => track.review_status === 'approved').length;
   const allAudioApproved = tracks.length > 0 && approvedAudioCount === tracks.length;
   const masterApproved = !!selected && (master?.status === 'approved' || selected.master_status === 'approved');
+  // The widescreen video image is a clean, native 16:9 photo — the actual frame
+  // the video renders, shown here so the preview matches the result. Load it once
+  // the album reaches the video step; generate it on first arrival if missing.
+  const readyForVideoImage = !!selected && masterApproved && selected.artwork_status === 'approved';
+  useEffect(() => {
+    if (!selected || !readyForVideoImage) { setVideoSource(null); return; }
+    let cancelled = false;
+    (async () => {
+      setVideoSourceLoading(true);
+      try {
+        let source = await getStudioVideoSource(selected.id);
+        if (!source && !cancelled) source = await regenerateStudioVideoSource(selected.id);
+        if (!cancelled) setVideoSource(source);
+      } catch (error) {
+        if (!cancelled) { setVideoSource(null); addToast(error instanceof Error ? error.message : 'Could not prepare the widescreen video image.', 'error'); }
+      } finally {
+        if (!cancelled) setVideoSourceLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selected?.id, readyForVideoImage, addToast]);
   const applyStylePreset = (presetId: string) => {
     const preset = getStudioStylePreset(presetId);
     setStylePresetId(preset.id);
@@ -293,6 +317,7 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   const saveTitledCover = (concept: StudioCoverConcept) => { setCoverConcepts(current => [concept, ...current.map(item => ({ ...item, metadata_json: { ...item.metadata_json, selection_status: 'unselected' as const } }))]); addToast('Titled cover saved and selected. Review it, then approve the cover.', 'success'); };
   const enhanceCover = async (source: StudioCoverConcept) => { if (!selected) return; setEnhancingCover(true); try { const concept = await enhanceStudioCoverConcept(selected.id, source.id, coverDirection); setCoverConcepts(current => [concept, ...current.map(item => ({ ...item, metadata_json: { ...item.metadata_json, selection_status: 'unselected' as const } }))]); addToast('Enhanced concept created and selected. The original is still available.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not enhance the cover concept.', 'error'); } finally { setEnhancingCover(false); } };
   const requestDeleteCover = (concept: StudioCoverConcept) => setConfirmation({ title: `Archive cover concept v${concept.version}?`, message: 'This removes the unused concept from the album library but keeps its file recoverable. A concept used by the approved cover cannot be archived.', confirmLabel: 'Archive concept', tone: 'danger', action: async () => { await deleteStudioCoverConcept(concept.id); setCoverConcepts(current => current.filter(item => item.id !== concept.id)); addToast(`Cover concept v${concept.version} archived.`, 'success'); } });
+  const regenerateVideoImage = async () => { if (!selected) return; setRegeneratingVideoSource(true); try { const source = await regenerateStudioVideoSource(selected.id); setVideoSource(source); addToast('A new widescreen video image is ready.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not regenerate the video image.', 'error'); } finally { setRegeneratingVideoSource(false); } };
   const prepareVisuals = async () => { if (!selected) return; setPreparingVisuals(true); try { const album = await prepareStudioVisualProduction(selected.id, visualMotion, visualDirection); setSelected(album); setAlbums(current => current.map(item => item.id === album.id ? album : item)); setVideo({ status: 'queued', progress: 0, stage: 'queued', message: 'Waiting for the video worker' }); addToast('Video render queued. Progress will update here automatically.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not start Visual Production.', 'error'); } finally { setPreparingVisuals(false); } };
   const approveVideo = async () => { if (!selected) return; setApprovingVideo(true); try { const album = await approveStudioVideo(selected.id); setSelected(album); setAlbums(current => current.map(item => item.id === album.id ? album : item)); setVideo(current => current ? { ...current, status: 'approved' } : current); addToast('Final video approved. Publishing metadata is next.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not approve the video.', 'error'); } finally { setApprovingVideo(false); } };
   const saveTrack = async () => {
@@ -356,15 +381,16 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
     {selected && actualMasterSeconds > 0 && <section className={`mt-6 rounded-2xl border p-4 ${hasMaterialMasterVariance ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}><p className={`text-[10px] font-black uppercase tracking-widest ${hasMaterialMasterVariance ? 'text-amber-700' : 'text-emerald-700'}`}>Measured master runtime</p><div className="mt-1 flex flex-wrap items-baseline gap-3"><p className="font-black text-slate-900">{formatLength(actualMasterSeconds)}</p><p className="text-xs text-slate-600">Target {formatLength(targetSeconds)} · {masterDurationDelta === 0 ? 'exact match' : `${formatLength(Math.abs(masterDurationDelta))} ${masterDurationDelta > 0 ? 'over' : 'under'}`}</p></div><p className="mt-1 text-xs text-slate-600">{hasMaterialMasterVariance ? 'Review this difference before approving. Lyria target lengths are approximate; the master measurement is the final runtime used for video.' : 'The measured master is within the accepted 5% or 30-second tolerance.'}</p></section>}
     {selected && masterApproved && selected.artwork_status === 'approved' && <section ref={visualProductionRef} className="mt-6 scroll-mt-4 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-5">
       <div className="rounded-2xl border border-sky-200 bg-white p-5">
-        <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Video artwork</p>
-        <h3 className="mt-1 text-base font-black text-slate-950">The approved cover fills the YouTube frame</h3>
-        <p className="mt-1 text-xs text-slate-600">No separate step needed — the render fits your square cover into the widescreen frame automatically.</p>
-        {approvedCoverConcept?.image_url && <img src={approvedCoverConcept.image_url} alt="Approved album cover" className="mt-4 aspect-video w-full max-w-md rounded-2xl border border-sky-200 object-cover" />}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Video image</p><h3 className="mt-1 text-base font-black text-slate-950">Your widescreen video image</h3><p className="mt-1 max-w-xl text-xs text-slate-600">A clean 16:9 photo from the same scene as your cover — this is exactly the frame the video shows. Nothing is cropped.</p></div>
+          <button type="button" onClick={regenerateVideoImage} disabled={regeneratingVideoSource || videoSourceLoading} className="inline-flex items-center gap-1.5 rounded-xl border border-sky-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-sky-800 disabled:opacity-50">{regeneratingVideoSource ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} {videoSource ? 'Regenerate' : 'Generate'}</button>
+        </div>
+        {videoSourceLoading || regeneratingVideoSource ? <div className="mt-4 flex aspect-video w-full max-w-md items-center justify-center rounded-2xl border border-sky-200 bg-slate-900 text-slate-400"><Loader2 className="animate-spin" size={22} /></div> : videoSource?.image_url ? <img src={videoSource.image_url} alt="Widescreen video image" className="mt-4 aspect-video w-full max-w-md rounded-2xl border border-sky-200 object-cover" /> : <p className="mt-4 text-xs font-bold text-amber-700">The widescreen video image could not be created. Use Generate to try again.</p>}
       </div>
-      <div className="mt-5 border-t border-emerald-200 pt-5"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Final video</p><p className="mt-1 text-xs text-emerald-800">Master audio and the approved cover render into one long-form video.</p></div>
+      <div className="mt-5 border-t border-emerald-200 pt-5"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Final video</p><p className="mt-1 text-xs text-emerald-800">Master audio and the widescreen image above render into one long-form video.</p></div>
       <div className="flex flex-wrap items-center gap-4">
-        <div className="mr-auto"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Final render</p><p className="mt-1 text-sm font-black text-emerald-950">{video?.status === 'pending_review' || video?.status === 'approved' ? 'Your album video is ready' : hasActiveVideo ? (video?.message || 'Rendering the final video') : video?.status === 'failed' ? 'A new render is required' : 'Create the long-form album video'}</p><p className="mt-1 text-xs text-emerald-800">{hasActiveVideo ? `${video?.stage || 'processing'}${video?.progress != null ? ` · ${Math.round(video.progress)}%` : ''}` : video?.error_message || 'The approved cover and measured master are ready.'}</p></div>
-        {!hasActiveVideo && video?.status !== 'pending_review' && video?.status !== 'approved' && <button type="button" onClick={prepareVisuals} disabled={preparingVisuals} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{preparingVisuals ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />} {video?.status === 'failed' ? 'Render corrected video' : 'Render final video'}</button>}
+        <div className="mr-auto"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Final render</p><p className="mt-1 text-sm font-black text-emerald-950">{video?.status === 'pending_review' || video?.status === 'approved' ? 'Your album video is ready' : hasActiveVideo ? (video?.message || 'Rendering the final video') : video?.status === 'failed' ? 'A new render is required' : 'Create the long-form album video'}</p><p className="mt-1 text-xs text-emerald-800">{hasActiveVideo ? `${video?.stage || 'processing'}${video?.progress != null ? ` · ${Math.round(video.progress)}%` : ''}` : video?.error_message || 'The widescreen image and measured master are ready.'}</p></div>
+        {!hasActiveVideo && video?.status !== 'pending_review' && video?.status !== 'approved' && <button type="button" onClick={prepareVisuals} disabled={preparingVisuals || videoSourceLoading || regeneratingVideoSource || !videoSource} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{preparingVisuals ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />} {video?.status === 'failed' ? 'Render corrected video' : 'Render final video'}</button>}
         {video?.status === 'pending_review' && <><button type="button" onClick={prepareVisuals} disabled={preparingVisuals || approvingVideo} className="inline-flex items-center gap-2 rounded-xl border border-emerald-600 bg-white px-5 py-3 text-xs font-black uppercase tracking-wider text-emerald-700 disabled:opacity-50">{preparingVisuals ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />} Re-render video</button><button type="button" onClick={approveVideo} disabled={approvingVideo || preparingVisuals} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{approvingVideo ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Approve video</button></>}
       </div>
       {hasActiveVideo && <div className="mt-4 h-2 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.max(4, video?.progress || 4)}%` }} /></div>}
