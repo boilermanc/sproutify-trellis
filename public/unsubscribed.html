@@ -59,10 +59,11 @@
         markEl.style.display = 'none';
       } else if (brand) {
         // Per-branch unsubscribe. textContent keeps the brand value inert (no HTML injection).
-        msgEl.textContent = "You've been removed from " + brand + " marketing emails. You'll still receive emails from other Sproutify brands you signed up for.";
+        // Name the brand the recipient actually knows — never "Sproutify" (internal name).
+        msgEl.textContent = "You've been removed from " + brand + " marketing emails. You won't receive further " + brand + " campaigns.";
       } else {
-        // Global unsubscribe.
-        msgEl.textContent = "You've been removed from Sproutify marketing emails. You won't receive further campaigns from any of our brands.";
+        // Global unsubscribe (multi-brand / bounce-complaint scope). No single brand to name.
+        msgEl.textContent = "You've been removed from all our marketing emails. You won't receive further campaigns.";
       }
     })();
   </script>

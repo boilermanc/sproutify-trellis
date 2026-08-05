@@ -1055,13 +1055,17 @@ Return ONLY the post content, no explanations or labels.`,
       //     — the authoritative spoke unsubscribe. campaign-sender uses this same
       //     path on real launches when the brand has a template + a recipient token.
       //  2. Hub email-based unsubscribe — a working fallback for test sends to
-      //     addresses that aren't subscribers (no token).
+      //     addresses that aren't subscribers (no token). Scope it to the selected
+      //     branch (single-branch campaign) so the confirmation page names the brand
+      //     — e.g. "ATL Urban Farms", not the generic all-brands message. Mirrors the
+      //     campaign-sender scope logic; multi-branch falls back to 'global'.
       //  3. Keep the {{unsubscribe_url}} token intact for the launch path (empty
       //     profile) so campaign-sender fills it per recipient with the per-branch scope.
+      const testScope = selectedBranches.length === 1 ? selectedBranches[0] : 'global';
       const unsubUrl = (brandUnsubscribeUrl && profile.unsubscribe_token)
         ? brandUnsubscribeUrl.replace(/\{\{\s*token\s*\}\}/gi, () => profile.unsubscribe_token!)
         : profile.email
-          ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&scope=global`
+          ? `https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/unsubscribe?email=${encodeURIComponent(profile.email)}&scope=${encodeURIComponent(testScope)}`
           : '{{unsubscribe_url}}';
       return out
         .replace(/\{\{\s*first_name\s*\}\}/gi, () => profile.first_name || '{{first_name}}')
