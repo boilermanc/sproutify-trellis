@@ -34,7 +34,6 @@
     </div>
     <h1 id="title">You're unsubscribed</h1>
     <p id="message"></p>
-    <p class="sub" id="sub">Changed your mind? Just reply to any past email and we'll help you re-subscribe.</p>
   </div>
 
   <script>
@@ -44,18 +43,15 @@
       var brand = p.get('brand'); // brand DISPLAY name only — never an email address
       var titleEl = document.getElementById('title');
       var msgEl = document.getElementById('message');
-      var subEl = document.getElementById('sub');
       var markEl = document.getElementById('mark');
 
       if (status === 'invalid') {
         titleEl.textContent = 'Invalid link';
         msgEl.textContent = 'This unsubscribe link is missing a valid email address. Please contact support if you keep receiving mail.';
-        subEl.style.display = 'none';
         markEl.style.display = 'none';
       } else if (status === 'error') {
         titleEl.textContent = 'Something went wrong';
         msgEl.textContent = "We couldn't process your request right now. Please try again in a moment, or reply to any past email.";
-        subEl.style.display = 'none';
         markEl.style.display = 'none';
       } else if (brand) {
         // Per-branch unsubscribe. textContent keeps the brand value inert (no HTML injection).
