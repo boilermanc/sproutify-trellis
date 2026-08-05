@@ -679,9 +679,13 @@ Deno.serve(async (req) => {
       if (!asset) throw new Error("Cover concept not found.");
       const album = await getOwnedAlbum(db, asset.album_id, user.id);
       if (asset.metadata_json?.selection_status === "approved") throw new Error("The approved cover cannot be deleted. Choose an unused concept instead.");
-      const { data: approvedDependents, error: dependencyError } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved", source_asset_id: asset.id }).limit(1);
+      // Checks for ANY active titled cover referencing this concept, not just an
+      // approved one — a drafted-but-unapproved titled cover can still be approved
+      // later, and its source must survive until then or approval leaves a dangling
+      // source_asset_id (see the "clean source image ... unavailable" incident).
+      const { data: dependents, error: dependencyError } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { role: "titled_cover", source_asset_id: asset.id }).limit(1);
       if (dependencyError) throw new Error(dependencyError.message);
-      if (approvedDependents?.length) throw new Error("This concept is the source image for the approved cover and must be kept.");
+      if (dependents?.length) throw new Error("This concept is the source image for a titled cover and must be kept.");
       const { error } = await db.from("studio_assets").update({ status: "archived", metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected", deleted_at: new Date().toISOString() }, updated_at: new Date().toISOString() }).eq("id", asset.id);
       if (error) throw new Error(error.message);
       return json({ deleted: true, asset_id: asset.id });
@@ -701,7 +705,12 @@ Deno.serve(async (req) => {
       const { data: selectedCover } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "selected" }).maybeSingle();
       if (!selectedCover) throw new Error("Select a cover concept before approving it.");
       if (selectedCover.metadata_json?.role !== "titled_cover") throw new Error("Finish and save the cover typography before approving it.");
-      await db.from("studio_assets").update({ metadata_json: { ...(selectedCover.metadata_json || {}), selection_status: "approved" } }).eq("id", selectedCover.id);
+      const sourceAssetId = selectedCover.metadata_json?.source_asset_id;
+      if (sourceAssetId) {
+        const { data: sourceStillActive } = await db.from("studio_assets").select("id").eq("id", sourceAssetId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+        if (!sourceStillActive) throw new Error("The clean source photo behind this titled cover was deleted. Recreate the typography from an available concept before approving.");
+      }
+      await db.from("studio_assets").update({ metadata_json: { ...(selectedCover.metadata_json || {}), selection_status: "approved" }, updated_at: new Date().toISOString() }).eq("id", selectedCover.id);
       await db.from("studio_assets").update({ status: "archived", updated_at: new Date().toISOString() }).eq("album_id", album.id).in("asset_type", ["scene_image", "final_video"]).in("status", ["pending", "processing", "active", "failed"]);
       await db.from("studio_jobs").update({ status: "cancelled", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("job_type", "video_render").in("status", ["queued", "processing"]);
       const { data, error } = await db.from("studio_albums").update({ artwork_status: "approved", status: "animation_review", video_status: "not_started", metadata_status: "not_started", publishing_status: "not_started", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();

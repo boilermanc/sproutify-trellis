@@ -141,9 +141,20 @@ test('Studio covers are editable, removable, and titled before approval', async 
   assert.match(fn, /Finish and save the cover typography before approving it/);
   assert.doesNotMatch(fn, /selection_status === "approved" \|\| album\.artwork_status === "approved"/);
   assert.match(fn, /The approved cover cannot be deleted\. Choose an unused concept instead\./);
-  assert.match(fn, /source image for the approved cover and must be kept/);
+  assert.match(fn, /source image for a titled cover and must be kept/);
   assert.doesNotMatch(fn, /remove\(\[asset\.storage_path\]\)/);
   assert.match(fn, /\["selected", "approved"\]\.includes/);
+});
+
+test('deleting a cover concept protects a drafted-but-unapproved titled cover, and approval verifies its source survives', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  // Regression: a concept could be deleted while its titled-cover draft was only
+  // "selected" (not yet approved), then approval succeeded anyway, leaving the
+  // approved cover pointing at an archived source image.
+  assert.match(fn, /contains\("metadata_json", \{ role: "titled_cover", source_asset_id: asset\.id \}\)/);
+  assert.doesNotMatch(fn, /contains\("metadata_json", \{ selection_status: "approved", source_asset_id: asset\.id \}\)/);
+  assert.match(fn, /const sourceAssetId = selectedCover\.metadata_json\?\.source_asset_id/);
+  assert.match(fn, /The clean source photo behind this titled cover was deleted/);
 });
 
 test('Studio publishing stays isolated from Episode state', async () => {
