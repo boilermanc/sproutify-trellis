@@ -164,11 +164,6 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
         ctx.fillText(subtitle.toUpperCase(), 70, 145 + lines.length * size * 0.91);
       }
     } else {
-      const shade = ctx.createLinearGradient(0, H * 0.45, 0, H);
-      shade.addColorStop(0, 'rgba(6,14,25,0)');
-      shade.addColorStop(1, 'rgba(6,14,25,0.88)');
-      ctx.fillStyle = shade;
-      ctx.fillRect(0, H * 0.42, W, H * 0.58);
       ctx.fillStyle = titleColor;
       ctx.textAlign = 'left';
       ctx.font = `700 82px ${fontFamily}`;
