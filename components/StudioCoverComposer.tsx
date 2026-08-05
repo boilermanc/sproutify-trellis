@@ -131,13 +131,6 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     ctx.shadowOffsetY = 3;
 
     if (treatment === 'riviera_editorial') {
-      const wash = ctx.createLinearGradient(W * 0.38, 0, W, 0);
-      wash.addColorStop(0, 'rgba(247,235,207,0)');
-      wash.addColorStop(1, 'rgba(247,235,207,0.88)');
-      ctx.fillStyle = wash;
-      ctx.fillRect(W * 0.34, 0, W * 0.66, H * 0.47);
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
       ctx.fillStyle = titleColor;
       ctx.textAlign = 'right';
       let size = 72;
@@ -154,13 +147,6 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
         ctx.fillText(subtitle, 952, 135 + lines.length * size * 0.92);
       }
     } else if (treatment === 'travel_poster') {
-      const wash = ctx.createLinearGradient(0, 0, W * 0.72, 0);
-      wash.addColorStop(0, 'rgba(248,226,169,0.94)');
-      wash.addColorStop(1, 'rgba(248,226,169,0)');
-      ctx.fillStyle = wash;
-      ctx.fillRect(0, 0, W * 0.76, H * 0.52);
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
       ctx.fillStyle = titleColor;
       ctx.textAlign = 'left';
       let size = 94;
