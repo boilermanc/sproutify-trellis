@@ -532,6 +532,13 @@ Deno.serve(async (req) => {
       const releases = (pubs || []).map((p: any) => ({ ...p, album_title: byId.get(p.album_id)?.title || "", artist_name: byId.get(p.album_id)?.artist_name || "" }));
       return json({ releases });
     }
+    if (body.action === "get_youtube_metrics") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const limit = Number.isInteger(body.limit) && body.limit > 0 ? body.limit : 30;
+      const { data, error } = await db.from("trellis_youtube_daily_metrics").select("*").eq("studio_album_id", album.id).order("metric_date", { ascending: false }).limit(limit);
+      if (error) throw new Error(error.message);
+      return json({ metrics: data || [] });
+    }
     if (body.action === "rename_album") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const title = String(body.title || "").replace(/\s+/g, " ").trim().slice(0, 300);

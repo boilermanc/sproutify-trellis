@@ -1,4 +1,4 @@
-import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioPublication, StudioPublicationDraft, StudioReleaseIdentity, StudioTrack, StudioVideo } from '../types';
+import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioPublication, StudioPublicationDraft, StudioReleaseIdentity, StudioTrack, StudioVideo, YouTubeDailyMetric } from '../types';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -170,6 +170,7 @@ export async function prepareStudioPublication(albumId: string): Promise<StudioP
 export async function saveStudioPublication(albumId: string, publication: StudioPublicationDraft): Promise<StudioPublication> { return (await callStudio('save_publication', { album_id: albumId, publication })).publication as StudioPublication; }
 export async function approveStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('approve_publication', { album_id: albumId })).publication as StudioPublication; }
 export async function publishStudioAlbum(albumId: string): Promise<StudioPublication> { return (await callStudio('publish_album', { album_id: albumId })).publication as StudioPublication; }
+export async function getStudioYouTubeMetrics(albumId: string, limit = 30): Promise<YouTubeDailyMetric[]> { return (await callStudio('get_youtube_metrics', { album_id: albumId, limit })).metrics as YouTubeDailyMetric[]; }
 
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {
   return (await callStudio('generate_one', { album_id: albumId, track })).track as StudioTrack;

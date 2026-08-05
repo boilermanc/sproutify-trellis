@@ -1657,6 +1657,8 @@ export interface YouTubeDailyMetric {
   id: string;
   episode_id: string | null;
   publication_id: string | null;
+  studio_album_id: string | null;
+  studio_publication_id: string | null;
   youtube_video_id: string;
   metric_date: string;
   views: number | null;

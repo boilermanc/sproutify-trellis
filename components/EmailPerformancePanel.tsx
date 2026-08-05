@@ -18,6 +18,8 @@ import {
   CampaignEmailStat,
   SuppressionSummary,
 } from '../services/emailReportingService';
+import { CampaignRecipientsModal } from './CampaignRecipientsModal';
+import { SuppressionListModal } from './SuppressionListModal';
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
 const CAMPAIGNS_PER_PAGE = 10;
@@ -35,6 +37,8 @@ export const EmailPerformancePanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [viewingSubject, setViewingSubject] = useState<string | null>(null);
+  const [suppressionView, setSuppressionView] = useState<{ reason?: string; title: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -99,25 +103,41 @@ export const EmailPerformancePanel: React.FC = () => {
         </button>
       </div>
 
-      {/* Suppression summary */}
+      {/* Suppression summary — click any tile to see who's in it */}
       {suppression && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="bg-slate-50 rounded-2xl p-4 text-center">
+          <button
+            type="button"
+            onClick={() => setSuppressionView({ title: 'All Suppressed' })}
+            className="bg-slate-50 rounded-2xl p-4 text-center hover:bg-slate-100 transition cursor-pointer"
+          >
             <p className="text-2xl font-black text-slate-700">{suppression.total}</p>
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1 flex items-center justify-center gap-1"><ShieldOff size={11} /> Suppressed</p>
-          </div>
-          <div className="bg-amber-50 rounded-2xl p-4 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => setSuppressionView({ reason: 'unsubscribe', title: 'Unsubscribed' })}
+            className="bg-amber-50 rounded-2xl p-4 text-center hover:bg-amber-100 transition cursor-pointer"
+          >
             <p className="text-2xl font-black text-amber-600">{suppression.unsubscribe}</p>
             <p className="text-[9px] font-black uppercase tracking-widest text-amber-500 mt-1">Unsubscribed</p>
-          </div>
-          <div className="bg-rose-50 rounded-2xl p-4 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => setSuppressionView({ reason: 'bounce', title: 'Hard Bounces' })}
+            className="bg-rose-50 rounded-2xl p-4 text-center hover:bg-rose-100 transition cursor-pointer"
+          >
             <p className="text-2xl font-black text-rose-600">{suppression.bounce}</p>
             <p className="text-[9px] font-black uppercase tracking-widest text-rose-500 mt-1">Hard Bounces</p>
-          </div>
-          <div className="bg-purple-50 rounded-2xl p-4 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => setSuppressionView({ reason: 'complaint', title: 'Complaints' })}
+            className="bg-purple-50 rounded-2xl p-4 text-center hover:bg-purple-100 transition cursor-pointer"
+          >
             <p className="text-2xl font-black text-purple-600">{suppression.complaint}</p>
             <p className="text-[9px] font-black uppercase tracking-widest text-purple-500 mt-1">Complaints</p>
-          </div>
+          </button>
         </div>
       )}
 
@@ -183,6 +203,7 @@ export const EmailPerformancePanel: React.FC = () => {
                   <th className="py-2 px-2 text-right">Clicked</th>
                   <th className="py-2 px-2 text-right">Bounced</th>
                   <th className="py-2 pl-2 text-right">Last event</th>
+                  <th className="py-2 pl-2 text-right"></th>
                 </tr>
               </thead>
               <tbody>
@@ -195,6 +216,15 @@ export const EmailPerformancePanel: React.FC = () => {
                     <td className="py-3 px-2 text-right text-xs font-bold text-blue-600">{r.clicked}</td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-rose-600">{r.bounced}</td>
                     <td className="py-3 pl-2 text-right text-[10px] text-slate-400">{fmtDate(r.last_event_at)}</td>
+                    <td className="py-3 pl-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setViewingSubject(r.campaign_subject)}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 text-[9px] font-black uppercase tracking-widest whitespace-nowrap"
+                      >
+                        Recipients
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -241,6 +271,17 @@ export const EmailPerformancePanel: React.FC = () => {
             events combine here. Open/click counts are unique recipients.
           </p>
         </>
+      )}
+
+      {viewingSubject && (
+        <CampaignRecipientsModal campaignSubject={viewingSubject} onClose={() => setViewingSubject(null)} />
+      )}
+      {suppressionView && (
+        <SuppressionListModal
+          reason={suppressionView.reason}
+          title={suppressionView.title}
+          onClose={() => setSuppressionView(null)}
+        />
       )}
     </div>
   );

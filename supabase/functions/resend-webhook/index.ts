@@ -83,6 +83,7 @@ Deno.serve(async (req: Request) => {
     resend_email_id: data.email_id || null,
     campaign_subject: data.subject || mappedSubject || null,
     campaign_id: campaignId,
+    link_url: type === "clicked" ? (data?.click?.link || null) : null,
     metadata: data,
     occurred_at: evt?.created_at || new Date().toISOString(),
   });

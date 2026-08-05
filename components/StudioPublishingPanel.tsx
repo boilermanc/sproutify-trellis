@@ -1,8 +1,31 @@
-import React, { useEffect, useState } from 'react';
-import { Check, ExternalLink, Loader2, Save, Send, Sparkles } from 'lucide-react';
-import { StudioAlbum, StudioPublication, StudioPublicationDraft } from '../types';
-import { approveStudioPublication, prepareStudioPublication, publishStudioAlbum, saveStudioPublication } from '../services/studioAlbumsService';
+import React, { useCallback, useEffect, useState } from 'react';
+import { BarChart3, Check, ExternalLink, Loader2, RefreshCw, Save, Send, Sparkles } from 'lucide-react';
+import { StudioAlbum, StudioPublication, StudioPublicationDraft, YouTubeDailyMetric } from '../types';
+import { approveStudioPublication, getStudioYouTubeMetrics, prepareStudioPublication, publishStudioAlbum, saveStudioPublication } from '../services/studioAlbumsService';
 import ConfirmationModal from './ConfirmationModal';
+
+function formatMetricNumber(value?: number | null): string {
+  if (value == null || Number.isNaN(Number(value))) return '0';
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(value));
+}
+function formatWatchHours(minutes?: number | null): string {
+  const hours = Number(minutes || 0) / 60;
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: hours >= 10 ? 0 : 1 }).format(hours);
+}
+function formatDurationSeconds(seconds?: number | null): string {
+  const total = Math.max(0, Math.round(Number(seconds || 0)));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+function formatSyncAge(value?: string | null): string {
+  if (!value) return 'unknown';
+  const mins = Math.round((Date.now() - new Date(value).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
+}
 
 type Props = {
   album: StudioAlbum;
@@ -17,11 +40,29 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
   const [draft, setDraft] = useState<StudioPublicationDraft>(EMPTY);
   const [busy, setBusy] = useState<'prepare' | 'save' | 'approve' | 'publish' | null>(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
+  const [metrics, setMetrics] = useState<YouTubeDailyMetric[]>([]);
+  const [metricsBusy, setMetricsBusy] = useState(false);
 
   useEffect(() => {
     if (!publication) return setDraft(EMPTY);
     setDraft({ title: publication.title, description: publication.description, tags: publication.tags || [], visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for });
   }, [publication]);
+
+  const refreshMetrics = useCallback(async () => {
+    setMetricsBusy(true);
+    try { setMetrics(await getStudioYouTubeMetrics(album.id)); }
+    catch (error) { addToast(error instanceof Error ? error.message : 'Could not load YouTube analytics.', 'error'); }
+    finally { setMetricsBusy(false); }
+  }, [album.id, addToast]);
+
+  useEffect(() => { if (publication?.status === 'live') void refreshMetrics(); else setMetrics([]); }, [publication?.status, publication?.id, refreshMetrics]);
+
+  const latestMetric = metrics[0];
+  const sevenDayMetrics = metrics.slice(0, 7);
+  const sevenDayViews = sevenDayMetrics.reduce((sum, row) => sum + Number(row.views || 0), 0);
+  const sevenDayWatchMinutes = sevenDayMetrics.reduce((sum, row) => sum + Number(row.estimated_minutes_watched || 0), 0);
+  const totalViews = (latestMetric?.raw?.public_statistics as Record<string, unknown> | undefined)?.viewCount;
+  const totalViewsNumber = totalViews != null ? Number(totalViews) : null;
 
   const run = async (kind: NonNullable<typeof busy>, work: () => Promise<StudioPublication>, success: string) => {
     setBusy(kind);
@@ -46,6 +87,49 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
     {!publication && <button type="button" onClick={() => run('prepare', () => prepareStudioPublication(album.id), 'Publishing draft prepared. Review every field before approval.')} disabled={busy !== null} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'prepare' ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />} Prepare metadata</button>}
     {publication && <>
       {publication.status === 'live' && <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 p-4"><Check size={18} className="text-emerald-700" /><div className="mr-auto"><p className="text-xs font-black uppercase tracking-widest text-emerald-800">Live on YouTube</p>{publication.published_at && <p className="mt-0.5 text-[11px] text-emerald-700">Published {new Date(publication.published_at).toLocaleString()}</p>}</div>{publication.external_url && <a href={publication.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white"><ExternalLink size={16} /> Watch on YouTube</a>}</div>}
+      {publication.status === 'live' && <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h4 className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-sky-900"><BarChart3 size={14} className="text-red-500" /> YouTube Analytics</h4>
+            <p className="mt-1 text-[11px] font-medium text-slate-400">{latestMetric ? `Last synced ${formatSyncAge(latestMetric.synced_at)}` : 'Waiting for the YouTube analytics sync.'}</p>
+          </div>
+          <button type="button" onClick={() => void refreshMetrics()} disabled={metricsBusy} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 transition hover:bg-slate-200 disabled:opacity-40">
+            {metricsBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
+          </button>
+        </div>
+        {!latestMetric ? (
+          <p className="mt-3 text-[11px] font-medium text-slate-400">Next step is the scheduled YouTube sync job. Once it writes to <b>trellis_youtube_daily_metrics</b>, this panel fills in automatically.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {[
+                ['Total Views', totalViewsNumber != null ? formatMetricNumber(totalViewsNumber) : formatMetricNumber(sevenDayViews)],
+                ['7-Day Watch', `${formatWatchHours(sevenDayWatchMinutes)} hr`],
+                ['Avg View', formatDurationSeconds(latestMetric.average_view_duration)],
+                ['Retention', `${formatMetricNumber(latestMetric.average_view_percentage)}%`],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                  <p className="mt-0.5 text-base font-black text-slate-800">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {[
+                ['7-Day Views', formatMetricNumber(sevenDayViews)],
+                ['Latest Day', formatMetricNumber(latestMetric.views)],
+                ['Likes', formatMetricNumber(latestMetric.likes)],
+                ['Comments', formatMetricNumber(latestMetric.comments)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-slate-100 bg-white p-2.5">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                  <p className="mt-0.5 text-xs font-black text-slate-700">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>}
       {publication.status === 'submitting' && <div className="mt-5 flex items-center gap-3 rounded-2xl border border-sky-300 bg-white p-4"><Loader2 size={18} className="animate-spin text-sky-700" /><p className="text-xs font-bold text-sky-900">Publishing to YouTube… this page updates automatically when it goes live.</p></div>}
       <div className="mt-5 grid gap-4">
         <label className="text-xs font-bold text-slate-700">YouTube title<input value={draft.title} disabled={locked} maxLength={95} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">{draft.title.length}/95</span></label>

@@ -135,6 +135,17 @@ export const EmailActivitySection: React.FC<Props> = ({ email }) => {
                         {e.campaign_subject && (
                           <p className="text-[11px] text-gray-500 truncate mt-0.5">{e.campaign_subject}</p>
                         )}
+                        {e.link_url && (
+                          <a
+                            href={e.link_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-violet-600 hover:text-violet-800 hover:underline truncate block mt-0.5"
+                            title={e.link_url}
+                          >
+                            → {e.link_url}
+                          </a>
+                        )}
                       </div>
                     </div>
                   );

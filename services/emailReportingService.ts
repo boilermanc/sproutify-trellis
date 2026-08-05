@@ -67,6 +67,8 @@ export interface EmailEventRow {
   // the Resend account — not a campaign Trellis dispatched.
   campaign_id: string | null;
   resend_email_id: string | null;
+  // Only set on event_type='clicked' — the specific link the recipient clicked.
+  link_url: string | null;
   occurred_at: string;
   metadata: Record<string, any> | null;
 }
@@ -78,7 +80,7 @@ export async function fetchEmailActivity(email: string): Promise<EmailEventRow[]
   try {
     const { data, error } = await supabase
       .from('email_events')
-      .select('id,email,event_type,campaign_subject,resend_email_id,occurred_at,metadata')
+      .select('id,email,event_type,campaign_subject,resend_email_id,link_url,occurred_at,metadata')
       .eq('email', email.toLowerCase())
       .order('occurred_at', { ascending: false })
       .limit(200);
@@ -86,6 +88,58 @@ export async function fetchEmailActivity(email: string): Promise<EmailEventRow[]
     return (data || []) as EmailEventRow[];
   } catch (e) {
     console.error('fetchEmailActivity failed:', e);
+    return [];
+  }
+}
+
+// One row per recipient of a given campaign (matched by subject, same grouping
+// campaign_email_stats uses) — the "who opened/clicked/complained" list, so you
+// don't have to open each customer's profile one at a time to find out.
+export interface CampaignRecipient {
+  email: string;
+  delivered: boolean;
+  opened: boolean;
+  clicked: boolean;
+  bounced: boolean;
+  complained: boolean;
+  // Every distinct link this recipient clicked, in click order.
+  linkUrls: string[];
+  lastEventAt: string;
+}
+
+export async function fetchCampaignRecipients(campaignSubject: string): Promise<CampaignRecipient[]> {
+  if (!campaignSubject) return [];
+  try {
+    const { data, error } = await supabase
+      .from('email_events')
+      .select('email,event_type,link_url,occurred_at')
+      .eq('campaign_subject', campaignSubject)
+      .order('occurred_at', { ascending: true })
+      .range(0, 9999);
+    if (error) throw error;
+
+    const byEmail = new Map<string, CampaignRecipient>();
+    for (const row of (data || []) as { email: string; event_type: string; link_url: string | null; occurred_at: string }[]) {
+      const key = (row.email || '').toLowerCase();
+      if (!key) continue;
+      let r = byEmail.get(key);
+      if (!r) {
+        r = { email: key, delivered: false, opened: false, clicked: false, bounced: false, complained: false, linkUrls: [], lastEventAt: row.occurred_at };
+        byEmail.set(key, r);
+      }
+      if (row.event_type === 'delivered') r.delivered = true;
+      else if (row.event_type === 'opened') r.opened = true;
+      else if (row.event_type === 'clicked') {
+        r.clicked = true;
+        if (row.link_url && !r.linkUrls.includes(row.link_url)) r.linkUrls.push(row.link_url);
+      } else if (row.event_type === 'bounced') r.bounced = true;
+      else if (row.event_type === 'complained') r.complained = true;
+      // Rows are ordered ascending, so the last write always holds the latest timestamp.
+      r.lastEventAt = row.occurred_at;
+    }
+    return Array.from(byEmail.values()).sort((a, b) => (a.lastEventAt < b.lastEventAt ? 1 : -1));
+  } catch (e) {
+    console.error('fetchCampaignRecipients failed:', e);
     return [];
   }
 }
@@ -229,6 +283,34 @@ export function computeEngagementScore(
   else churn_risk = 'critical';
 
   return { engagement_score, churn_risk };
+}
+
+// One row per suppressed address, for the org-wide "who unsubscribed / complained /
+// bounced" list — filter by reason to answer "who complained?" directly instead of
+// paging through campaign recipients or opening profiles one at a time.
+export interface SuppressionRow {
+  email: string;
+  reason: string;
+  source: string | null;
+  campaign_subject: string | null;
+  created_at: string;
+}
+
+export async function fetchSuppressions(reason?: string): Promise<SuppressionRow[]> {
+  try {
+    let query = supabase
+      .from('email_suppressions')
+      .select('email,reason,source,campaign_subject,created_at')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (reason) query = query.eq('reason', reason);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as SuppressionRow[];
+  } catch (e) {
+    console.error('fetchSuppressions failed:', e);
+    return [];
+  }
 }
 
 export interface EmailSuppressionStatus {

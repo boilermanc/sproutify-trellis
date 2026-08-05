@@ -304,23 +304,32 @@ GRANT ALL ON campaigns TO service_role;
 -- 6b. EMAIL REPORTING & SUPPRESSION
 -- Suppression list (do-not-email). Trellis reads consent live from spokes but keeps
 -- its own unsubscribe/bounce/complaint list here (never writes back to spokes).
+-- scope: unsubscribe/complaint/bounce lists are scoped per-branch except bounces
+-- and complaints, which the resend-webhook always writes as scope='global'
+-- (ISP/deliverability signals apply to the address everywhere, not one branch).
 CREATE TABLE IF NOT EXISTS email_suppressions (
-  email TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'global',
   reason TEXT NOT NULL DEFAULT 'unsubscribe' CHECK (reason IN ('unsubscribe','bounce','complaint','manual')),
   source TEXT,
   campaign_subject TEXT,
   detail JSONB DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (email, scope)
 );
 ALTER TABLE email_suppressions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "suppressions_service" ON email_suppressions;
 CREATE POLICY "suppressions_service" ON email_suppressions FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- Read access is authenticated-only: this table holds raw customer email addresses
+-- plus why they were suppressed (complaint/bounce/etc) — not safe for the anon role.
 DROP POLICY IF EXISTS "suppressions_read" ON email_suppressions;
-CREATE POLICY "suppressions_read" ON email_suppressions FOR SELECT TO anon, authenticated USING (true);
-GRANT SELECT ON email_suppressions TO anon, authenticated;
+CREATE POLICY "suppressions_read" ON email_suppressions FOR SELECT TO authenticated USING (true);
+REVOKE SELECT ON email_suppressions FROM anon;
+GRANT SELECT ON email_suppressions TO authenticated;
 GRANT ALL ON email_suppressions TO service_role;
 
 -- Delivery/engagement events ingested from Resend webhooks (resend-webhook edge fn).
+-- link_url: populated only for event_type='clicked', from Resend's click.link field.
 CREATE TABLE IF NOT EXISTS email_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email TEXT NOT NULL,
@@ -328,6 +337,7 @@ CREATE TABLE IF NOT EXISTS email_events (
   resend_email_id TEXT,
   campaign_subject TEXT,
   campaign_id UUID,
+  link_url TEXT,
   metadata JSONB DEFAULT '{}'::jsonb,
   occurred_at TIMESTAMPTZ DEFAULT now(),
   created_at TIMESTAMPTZ DEFAULT now()
@@ -336,13 +346,16 @@ CREATE INDEX IF NOT EXISTS idx_email_events_email ON email_events (email);
 CREATE INDEX IF NOT EXISTS idx_email_events_subject ON email_events (campaign_subject);
 CREATE INDEX IF NOT EXISTS idx_email_events_type ON email_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_email_events_occurred ON email_events (occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_events_link_url ON email_events (link_url) WHERE link_url IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_email_events_dedup ON email_events (resend_email_id, event_type, occurred_at) WHERE resend_email_id IS NOT NULL;
 ALTER TABLE email_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "events_service" ON email_events;
 CREATE POLICY "events_service" ON email_events FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- Read access is authenticated-only — raw recipient addresses, not safe for anon.
 DROP POLICY IF EXISTS "events_read" ON email_events;
-CREATE POLICY "events_read" ON email_events FOR SELECT TO anon, authenticated USING (true);
-GRANT SELECT ON email_events TO anon, authenticated;
+CREATE POLICY "events_read" ON email_events FOR SELECT TO authenticated USING (true);
+REVOKE SELECT ON email_events FROM anon;
+GRANT SELECT ON email_events TO authenticated;
 GRANT ALL ON email_events TO service_role;
 
 -- Per-campaign rollup (matched by subject). security_invoker so it honors caller RLS.
@@ -380,9 +393,11 @@ CREATE INDEX IF NOT EXISTS idx_campaign_sends_email ON campaign_sends (email);
 ALTER TABLE campaign_sends ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "campaign_sends_service" ON campaign_sends;
 CREATE POLICY "campaign_sends_service" ON campaign_sends FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- Read access is authenticated-only — raw recipient addresses, not safe for anon.
 DROP POLICY IF EXISTS "campaign_sends_read" ON campaign_sends;
-CREATE POLICY "campaign_sends_read" ON campaign_sends FOR SELECT TO anon, authenticated USING (true);
-GRANT SELECT ON campaign_sends TO anon, authenticated;
+CREATE POLICY "campaign_sends_read" ON campaign_sends FOR SELECT TO authenticated USING (true);
+REVOKE SELECT ON campaign_sends FROM anon;
+GRANT SELECT ON campaign_sends TO authenticated;
 GRANT ALL ON campaign_sends TO service_role;
 
 -- Per-campaign rollup keyed by campaign_id (exact — no subject-collision risk).
@@ -1371,6 +1386,8 @@ CREATE TABLE IF NOT EXISTS trellis_youtube_daily_metrics (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (youtube_video_id, metric_date)
 );
+ALTER TABLE trellis_youtube_daily_metrics ADD COLUMN IF NOT EXISTS studio_album_id UUID REFERENCES studio_albums(id) ON DELETE CASCADE;
+ALTER TABLE trellis_youtube_daily_metrics ADD COLUMN IF NOT EXISTS studio_publication_id UUID REFERENCES studio_publications(id) ON DELETE CASCADE;
 
 ALTER TABLE trellis_episodes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_episode_assets ENABLE ROW LEVEL SECURITY;
@@ -1405,6 +1422,8 @@ CREATE INDEX IF NOT EXISTS idx_tepub_episode ON trellis_episode_publications (ep
 CREATE INDEX IF NOT EXISTS idx_tytm_episode ON trellis_youtube_daily_metrics (episode_id);
 CREATE INDEX IF NOT EXISTS idx_tytm_publication ON trellis_youtube_daily_metrics (publication_id);
 CREATE INDEX IF NOT EXISTS idx_tytm_video_date ON trellis_youtube_daily_metrics (youtube_video_id, metric_date DESC);
+CREATE INDEX IF NOT EXISTS idx_tytm_studio_album ON trellis_youtube_daily_metrics (studio_album_id);
+CREATE INDEX IF NOT EXISTS idx_tytm_studio_publication ON trellis_youtube_daily_metrics (studio_publication_id);
 
 -- 19. CLIP STUDIO (short-form video: script → B-roll → publish)
 CREATE TABLE IF NOT EXISTS trellis_clip_projects (
