@@ -42,6 +42,7 @@ VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "12"))
 VIDEO_CRF = os.environ.get("VIDEO_CRF", "32").strip()
 VIDEO_AUDIO_BITRATE = os.environ.get("VIDEO_AUDIO_BITRATE", "96k").strip()
 MAX_STANDARD_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_STANDARD_UPLOAD_MB", "48"))
+RENDER_PROFILE = "studio-safe-fit-v1"
 
 app = Flask(__name__)
 
@@ -110,6 +111,7 @@ def _heartbeat(asset_id: str, stage: str, progress: float | None = None, message
                 "fps": VIDEO_FPS,
                 "crf": VIDEO_CRF,
                 "audio_bitrate": VIDEO_AUDIO_BITRATE,
+                "render_profile": RENDER_PROFILE,
             },
         }
         if progress is not None:
@@ -285,7 +287,7 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             "worker": {
                 "stage": "ready", "message": "Video render complete", "progress": 100, "heartbeat_at": _now(),
                 "duration_seconds": round(dur, 1), "file_size_mb": round(len(data) / (1024 * 1024), 1),
-                "settings": {"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT, "fps": VIDEO_FPS, "crf": VIDEO_CRF, "audio_bitrate": VIDEO_AUDIO_BITRATE},
+                "settings": {"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT, "fps": VIDEO_FPS, "crf": VIDEO_CRF, "audio_bitrate": VIDEO_AUDIO_BITRATE, "render_profile": RENDER_PROFILE},
             }
         }
         if pipeline == "studio":
@@ -370,6 +372,7 @@ def health():
         "ok": True,
         "bucket": BUCKET,
         "service_key_is_jwt": SERVICE_KEY.startswith("eyJ"),
+        "render_profile": RENDER_PROFILE,
     })
 
 
