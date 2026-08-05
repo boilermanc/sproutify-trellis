@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, RefreshCw, Loader2, X, Calendar, Users, Mail, MailCheck, Eye,
   MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch, Pencil,
+  Copy, Trash2,
 } from 'lucide-react';
-import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats } from '../supabaseService';
+import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
 import { BranchContext } from '../types';
 
@@ -53,6 +54,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Campaign | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   // Honor the global Branch Scope picker (top bar). A campaign's `branches` are
   // stored as slugs, but older ones may hold display names — match either. A
@@ -84,6 +86,23 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
   };
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDuplicate = async (c: Campaign) => {
+    setBusyId(c.id);
+    const { campaign, error } = await duplicateCampaign(c.id);
+    setBusyId(null);
+    if (campaign) { addToast?.(`Duplicated "${c.name}" as a draft.`, 'success'); load(); }
+    else { addToast?.(`Couldn't duplicate: ${error}`, 'error'); }
+  };
+
+  const handleDelete = async (c: Campaign) => {
+    if (!window.confirm(`Delete draft "${c.name}"? This can't be undone.`)) return;
+    setBusyId(c.id);
+    const { ok, error } = await deleteCampaign(c.id);
+    setBusyId(null);
+    if (ok) { addToast?.(`Deleted draft "${c.name}".`, 'success'); load(); }
+    else { addToast?.(`Couldn't delete: ${error}`, 'error'); }
+  };
 
   // subject -> stat lookup
   const statBySubject = useMemo(() => {
@@ -168,49 +187,80 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
             {campaigns.map((c) => {
               const s = statFor(c);
               return (
-                <button
+                <div
                   key={c.id}
-                  onClick={() => c.status === 'draft' && onEditDraft ? onEditDraft(c.id) : setSelected(c)}
-                  className="w-full text-left px-6 py-5 hover:bg-slate-50/80 transition flex items-center gap-4"
+                  className="w-full px-6 py-5 hover:bg-slate-50/80 transition flex items-center gap-4 group"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-black text-slate-800 text-sm truncate">{c.name}</p>
-                      <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${STATUS_STYLE[c.status] || 'bg-slate-100 text-slate-600'}`}>
-                        {c.status}
-                      </span>
-                      {c.send_status && (
-                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${SEND_STATUS_STYLE[c.send_status] || 'bg-slate-100 text-slate-600'}`}>
-                          {SEND_STATUS_LABEL[c.send_status] || c.send_status}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => c.status === 'draft' && onEditDraft ? onEditDraft(c.id) : setSelected(c)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); c.status === 'draft' && onEditDraft ? onEditDraft(c.id) : setSelected(c); } }}
+                    className="flex-1 min-w-0 flex items-center gap-4 text-left cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-black text-slate-800 text-sm truncate">{c.name}</p>
+                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${STATUS_STYLE[c.status] || 'bg-slate-100 text-slate-600'}`}>
+                          {c.status}
                         </span>
-                      )}
+                        {c.send_status && (
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${SEND_STATUS_STYLE[c.send_status] || 'bg-slate-100 text-slate-600'}`}>
+                            {SEND_STATUS_LABEL[c.send_status] || c.send_status}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">{c.subject || 'No subject'}</p>
+                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400 font-medium">
+                        <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{fmtDate(c.launched_at || c.created_at)}</span>
+                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{c.audience_size?.toLocaleString() || 0} targeted</span>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-400 truncate mt-0.5">{c.subject || 'No subject'}</p>
-                    <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400 font-medium">
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{fmtDate(c.launched_at || c.created_at)}</span>
-                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />{c.audience_size?.toLocaleString() || 0} targeted</span>
-                    </div>
+                    {c.status === 'draft' ? (
+                      <div className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-700 shrink-0">
+                        <Pencil className="w-3.5 h-3.5" /> Continue Editing
+                      </div>
+                    ) : (
+                      <div className="hidden md:flex items-center gap-5 shrink-0">
+                        {[
+                          { label: 'Sent', value: s.sent, color: 'text-slate-600' },
+                          { label: 'Open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
+                          { label: 'Click', value: `${pct(s.clicked, s.delivered)}%`, color: 'text-violet-600' },
+                        ].map((m) => (
+                          <div key={m.label} className="text-center w-14">
+                            <div className={`text-sm font-black ${m.color}`}>{m.value}</div>
+                            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{m.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {c.status === 'draft' ? (
-                    <div className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-700 shrink-0">
-                      <Pencil className="w-3.5 h-3.5" /> Continue Editing
-                    </div>
-                  ) : (
-                    <div className="hidden md:flex items-center gap-5 shrink-0">
-                      {[
-                        { label: 'Sent', value: s.sent, color: 'text-slate-600' },
-                        { label: 'Open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
-                        { label: 'Click', value: `${pct(s.clicked, s.delivered)}%`, color: 'text-violet-600' },
-                      ].map((m) => (
-                        <div key={m.label} className="text-center w-14">
-                          <div className={`text-sm font-black ${m.color}`}>{m.value}</div>
-                          <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{m.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+
+                  {/* Row actions — duplicate any campaign; delete drafts only */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      title="Duplicate as a new draft"
+                      disabled={busyId === c.id}
+                      onClick={(e) => { e.stopPropagation(); handleDuplicate(c); }}
+                      className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition disabled:opacity-40"
+                    >
+                      {busyId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                    {c.status === 'draft' && (
+                      <button
+                        type="button"
+                        title="Delete draft"
+                        disabled={busyId === c.id}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(c); }}
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-40"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                   <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                </button>
+                </div>
               );
             })}
           </div>

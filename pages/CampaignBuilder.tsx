@@ -799,15 +799,17 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     timingRules, scheduledDate, scheduledTime, branchContent,
   ]);
 
-  const hasDraftContent = useMemo(() => (
+  // Autosave only once there's REAL content — a name, subject, or body copy. Selecting
+  // a branch alone is just scoping and shouldn't spawn an "Untitled campaign" draft
+  // (that was the main source of draft clutter on the Campaigns page).
+  const hasSaveworthyContent = useMemo(() => (
     !!campaignName.trim()
     || !!emailSubject.trim()
-    || selectedBranches.length > 0
     || Object.keys(channelContents).some(channel => channelContents[channel as CampaignChannel].trim().length > 0)
     || Object.keys(customTemplateFields).some(field => customTemplateFields[field].trim().length > 0)
     || Object.keys(templateImageOverrides).some(source => templateImageOverrides[source].trim().length > 0)
     || Object.keys(branchContent).some(branch => branchContent[branch].trim().length > 0)
-  ), [campaignName, emailSubject, selectedBranches, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
+  ), [campaignName, emailSubject, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
 
   const draftSaveInFlightRef = useRef(false);
   const handleSaveDraft = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -871,10 +873,10 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Autosave meaningful work after a short idle period. The explicit Save Draft
   // button remains available for an immediate checkpoint.
   useEffect(() => {
-    if (!isDraftHydrated || isLaunching || !hasDraftContent) return;
+    if (!isDraftHydrated || isLaunching || !hasSaveworthyContent) return;
     const timer = window.setTimeout(() => handleSaveDraft({ silent: true }), 1500);
     return () => window.clearTimeout(timer);
-  }, [draftSnapshot, isDraftHydrated, isLaunching, hasDraftContent, handleSaveDraft]);
+  }, [draftSnapshot, isDraftHydrated, isLaunching, hasSaveworthyContent, handleSaveDraft]);
 
   // ═══════════════════════════════════════════════════════════════
   // HANDLERS
