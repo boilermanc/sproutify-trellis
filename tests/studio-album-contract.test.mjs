@@ -126,7 +126,6 @@ test('Studio covers are editable, removable, and titled before approval', async 
   assert.match(page, /Approve titled cover/);
   assert.match(page, /visualProductionRef\.current\?\.scrollIntoView/);
   assert.match(page, /catch \(error\) \{ addToast\(error instanceof Error \? error\.message : 'The requested action could not be completed\.'/);
-  assert.match(page, /Delete unused/);
   assert.match(page, /Create another concept/);
   assert.match(page, /Create an alternate without deleting the approved cover/);
   assert.match(composer, /Rekkrd After Dark/);
@@ -400,4 +399,18 @@ test('the approved cover can be extended to 16:9 as a video image take', async (
   assert.match(service, /extendCoverToStudioVideoSource/);
   assert.match(page, /Extend the cover/);
   assert.match(page, /extendCoverForVideoImage/);
+});
+
+test('a video image can be uploaded, and the redundant post-approval cover gallery is gone', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(fn, /body\.action === "upload_video_source"/);
+  assert.match(fn, /The uploaded image must be a PNG/);
+  assert.match(fn, /method: "uploaded"/);
+  assert.match(service, /uploadStudioVideoSource/);
+  assert.match(page, /uploadVideoImage/);
+  assert.match(page, /type="file" accept="image\/\*"/);
+  // The confusing "Artwork is locked for Visual Production" section is removed.
+  assert.doesNotMatch(page, /Artwork is locked for Visual Production/);
 });

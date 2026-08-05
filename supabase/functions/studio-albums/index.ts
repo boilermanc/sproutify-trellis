@@ -874,6 +874,20 @@ Deno.serve(async (req) => {
       const asset = await extendCoverToVideoSource(db, album, sourceConcept);
       return json({ concept: await coverWithUrl(db, asset) }, 201);
     }
+    if (body.action === "upload_video_source") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.artwork_status !== "approved") throw new Error("Approve the cover before adding a video image.");
+      const { sourceConcept } = await approvedCoverSource(db, album);
+      if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
+      const match = String(body.image_base64 || "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) throw new Error("The uploaded image must be a PNG.");
+      const binary = atob(match[1]);
+      if (binary.length > 15 * 1024 * 1024) throw new Error("The uploaded image is larger than 15 MB.");
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      if (bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error("The uploaded PNG is invalid.");
+      const asset = await storeVideoSource(db, album, sourceConcept, bytes, { model: "upload", method: "uploaded" });
+      return json({ concept: await coverWithUrl(db, asset) }, 201);
+    }
     if (body.action === "select_video_source") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const { data: chosen } = await db.from("studio_assets").select("*").eq("id", body.asset_id).eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { role: "video_source" }).maybeSingle();
