@@ -10,6 +10,8 @@ interface Props {
   defaultSubtitle?: string;
   defaultTitleColor?: string;
   defaultTitleFont?: string;
+  defaultTextV?: string;
+  defaultTextH?: string;
   onSaved: (concept: StudioCoverConcept) => void;
 }
 
@@ -28,6 +30,13 @@ type FontId = typeof FONT_OPTIONS[number]['id'];
 const FONT_FAMILY: Record<FontId, string> = Object.fromEntries(FONT_OPTIONS.map(item => [item.id, item.family])) as Record<FontId, string>;
 const isFontId = (value: unknown): value is FontId => FONT_OPTIONS.some(item => item.id === value);
 
+type VPos = 'top' | 'middle' | 'bottom';
+type HAlign = 'left' | 'center' | 'right';
+const V_POS: VPos[] = ['top', 'middle', 'bottom'];
+const H_ALIGN: HAlign[] = ['left', 'center', 'right'];
+const isVPos = (value: unknown): value is VPos => V_POS.includes(value as VPos);
+const isHAlign = (value: unknown): value is HAlign => H_ALIGN.includes(value as HAlign);
+
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -44,13 +53,15 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
   return lines;
 }
 
-export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageUrl, defaultTitle, defaultSubtitle = '', defaultTitleColor, defaultTitleFont, onSaved }) => {
+export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageUrl, defaultTitle, defaultSubtitle = '', defaultTitleColor, defaultTitleFont, defaultTextV, defaultTextH, onSaved }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
   const [title, setTitle] = useState(defaultTitle);
   const [subtitle, setSubtitle] = useState(defaultSubtitle);
   const [titleColor, setTitleColor] = useState(defaultTitleColor || '#ffffff');
   const [titleFont, setTitleFont] = useState<FontId>(isFontId(defaultTitleFont) ? defaultTitleFont : 'montserrat');
+  const [vPos, setVPos] = useState<VPos>(isVPos(defaultTextV) ? defaultTextV : 'bottom');
+  const [hAlign, setHAlign] = useState<HAlign>(isHAlign(defaultTextH) ? defaultTextH : 'left');
   const [shade, setShade] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -61,7 +72,9 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
     setSubtitle(defaultSubtitle);
     setTitleColor(defaultTitleColor || '#ffffff');
     setTitleFont(isFontId(defaultTitleFont) ? defaultTitleFont : 'montserrat');
-  }, [defaultTitle, defaultSubtitle, defaultTitleColor, defaultTitleFont, sourceImageUrl]);
+    setVPos(isVPos(defaultTextV) ? defaultTextV : 'bottom');
+    setHAlign(isHAlign(defaultTextH) ? defaultTextH : 'left');
+  }, [defaultTitle, defaultSubtitle, defaultTitleColor, defaultTitleFont, defaultTextV, defaultTextH, sourceImageUrl]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -76,20 +89,28 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
     ctx.drawImage(image, (W - dw) / 2, (H - dh) / 2, dw, dh);
 
     if (shade) {
-      // Full-width bottom-up gradient — reads as an intentional cinematic fade,
-      // not a boxed panel. Only there to keep big title text legible over any photo.
-      const grad = ctx.createLinearGradient(0, H * 0.42, 0, H);
-      grad.addColorStop(0, 'rgba(6,10,20,0)');
-      grad.addColorStop(1, 'rgba(6,10,20,0.82)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, H * 0.42, W, H * 0.58);
+      // A soft, full-width fade sitting behind wherever the text is, so the
+      // title stays legible over any photo. Reads as a cinematic gradient,
+      // never a boxed panel.
+      let grad: CanvasGradient;
+      if (vPos === 'top') {
+        grad = ctx.createLinearGradient(0, 0, 0, H * 0.58);
+        grad.addColorStop(0, 'rgba(6,10,20,0.82)');
+        grad.addColorStop(1, 'rgba(6,10,20,0)');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H * 0.58);
+      } else if (vPos === 'middle') {
+        grad = ctx.createLinearGradient(0, H * 0.18, 0, H * 0.82);
+        grad.addColorStop(0, 'rgba(6,10,20,0)');
+        grad.addColorStop(0.5, 'rgba(6,10,20,0.72)');
+        grad.addColorStop(1, 'rgba(6,10,20,0)');
+        ctx.fillStyle = grad; ctx.fillRect(0, H * 0.18, W, H * 0.64);
+      } else {
+        grad = ctx.createLinearGradient(0, H * 0.42, 0, H);
+        grad.addColorStop(0, 'rgba(6,10,20,0)');
+        grad.addColorStop(1, 'rgba(6,10,20,0.82)');
+        ctx.fillStyle = grad; ctx.fillRect(0, H * 0.42, W, H * 0.58);
+      }
     }
-
-    ctx.textBaseline = 'alphabetic';
-    ctx.textAlign = 'left';
-    ctx.shadowColor = 'rgba(0,0,0,0.85)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 3;
 
     const maxWidth = W - 128;
     let size = 118;
@@ -101,18 +122,31 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
       size -= 4;
     }
     const lineHeight = size * 1.04;
-    const firstBaseline = H - 60 - (lines.length - 1) * lineHeight;
+    const subSize = 34;
+    const subBlock = subtitle.trim() ? subSize * 1.3 + 12 : 0;
+    const totalH = subBlock + lines.length * lineHeight;
+    const top = vPos === 'top' ? 52 : vPos === 'middle' ? Math.max(24, (H - totalH) / 2) : H - 52 - totalH;
+    const x = hAlign === 'left' ? 64 : hAlign === 'center' ? W / 2 : W - 64;
+
+    ctx.textBaseline = 'top';
+    ctx.textAlign = hAlign;
+    ctx.shadowColor = 'rgba(0,0,0,0.85)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 3;
+
+    let y = top;
     if (subtitle.trim()) {
-      ctx.font = `600 34px ${fontFamily}`;
+      ctx.font = `600 ${subSize}px ${fontFamily}`;
       ctx.fillStyle = titleColor;
-      ctx.fillText(subtitle.toUpperCase(), 64, firstBaseline - size * 0.82 - 14);
+      ctx.fillText(subtitle.toUpperCase(), x, y);
+      y += subBlock;
     }
     ctx.font = `700 ${size}px ${fontFamily}`;
     ctx.fillStyle = titleColor;
-    lines.forEach((line, index) => ctx.fillText(line, 64, firstBaseline + index * lineHeight));
+    lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight));
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
-  }, [shade, subtitle, title, titleColor, titleFont]);
+  }, [hAlign, shade, subtitle, title, titleColor, titleFont, vPos]);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +171,7 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
     if (!canvas) return;
     setSaving(true); setSaved(false); setError(null);
     try {
-      const concept = await saveStudioThumbnailComposite(albumId, canvas.toDataURL('image/png'), { title, subtitle, title_color: titleColor, title_font: titleFont });
+      const concept = await saveStudioThumbnailComposite(albumId, canvas.toDataURL('image/png'), { title, subtitle, title_color: titleColor, title_font: titleFont, text_v: vPos, text_h: hAlign });
       setSaved(true); onSaved(concept); window.setTimeout(() => setSaved(false), 3500);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not save the thumbnail.'); }
     finally { setSaving(false); }
@@ -148,6 +182,7 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
     <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <canvas ref={canvasRef} width={W} height={H} className="aspect-video w-full rounded-xl border border-violet-200 bg-slate-900" />
       <div className="space-y-3">
+        <div><p className="text-xs font-bold text-slate-700">Text position</p><div className="mt-1.5 grid grid-cols-3 gap-1 rounded-xl border border-violet-200 bg-white p-1.5">{V_POS.map(v => H_ALIGN.map(h => { const active = vPos === v && hAlign === h; return <button type="button" key={`${v}-${h}`} aria-label={`${v} ${h}`} onClick={() => { setVPos(v); setHAlign(h); }} className={`flex h-8 items-center rounded-md ${h === 'left' ? 'justify-start' : h === 'center' ? 'justify-center' : 'justify-end'} ${v === 'top' ? 'items-start' : v === 'middle' ? 'items-center' : 'items-end'} px-1.5 py-1 ${active ? 'bg-violet-600' : 'bg-violet-50 hover:bg-violet-100'}`}><span className={`h-1.5 w-4 rounded-full ${active ? 'bg-white' : 'bg-violet-300'}`} /></button>; }))}</div></div>
         <label className="block text-xs font-bold text-slate-700">Font<select value={titleFont} onChange={event => setTitleFont(event.target.value as FontId)} className="mt-1.5 w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm">{FONT_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label className="block text-xs font-bold text-slate-700">Text color<input type="color" value={titleColor} onChange={event => setTitleColor(event.target.value)} className="mt-1.5 h-10 w-full cursor-pointer rounded-xl border border-violet-200 bg-white p-1" /></label>
         <label className="block text-xs font-bold text-slate-700">Thumbnail title<textarea value={title} onChange={event => setTitle(event.target.value)} className="mt-1.5 min-h-20 w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm" /></label>

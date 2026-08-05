@@ -761,6 +761,8 @@ Deno.serve(async (req) => {
         subtitle: cleanText(body.typography?.subtitle, 160),
         title_color: /^#[0-9a-fA-F]{6}$/.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
         title_font: VALID_COVER_FONTS.has(String(body.typography?.title_font || "")) ? body.typography.title_font : undefined,
+        text_v: ["top", "middle", "bottom"].includes(String(body.typography?.text_v || "")) ? body.typography.text_v : undefined,
+        text_h: ["left", "center", "right"].includes(String(body.typography?.text_h || "")) ? body.typography.text_h : undefined,
       };
       if (!typography.title) throw new Error("Add the title before saving the thumbnail.");
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "thumbnail").order("version", { ascending: false }).limit(1).maybeSingle();

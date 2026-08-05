@@ -219,6 +219,12 @@ test('a dedicated 16:9 thumbnail can be composed and is pushed to YouTube at pub
   assert.match(page, /StudioThumbnailComposer/);
   assert.match(composer, /const W = 1280/);
   assert.match(composer, /const H = 720/);
+  // The title can be repositioned (3x3 anchor grid) and the placement persists.
+  assert.match(composer, /Text position/);
+  assert.match(composer, /setVPos\(v\); setHAlign\(h\)/);
+  assert.match(composer, /text_v: vPos, text_h: hAlign/);
+  assert.match(fn, /\["top", "middle", "bottom"\]\.includes/);
+  assert.match(fn, /\["left", "center", "right"\]\.includes/);
   // The publish workflow downloads the thumbnail and pushes it via thumbnails.set,
   // and never blocks the release if it is missing.
   const download = workflow.nodes.find(n => n.name === 'Download Studio Thumbnail');
