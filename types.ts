@@ -1410,6 +1410,7 @@ export interface CardBullet {
 export interface CardConcept {
   id: string;
   template: CardTemplate;
+  creativeDirectionId?: string; // shared brand art direction used across channel renderers
   palette: CardPalette;
   eyebrow: string;          // small tracked label, e.g. "FOR WHEN YOU FEEL ANXIOUS"
   logoText: string;         // brand mark line

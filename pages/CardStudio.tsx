@@ -10,7 +10,14 @@ import { getBrandCardStyle } from '../services/brandCardStyles';
 import { fetchPassage } from '../services/bibleService';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
 import { uploadPostImage, createScheduledPosts } from '../services/scheduledPostService';
-import { submitStaticAdJob, pollVideoAdJob } from '../services/videoAdService';
+import { generateCreativeBackground } from '../services/creativeBackgroundService';
+import {
+  applyBrandCreativeDirection,
+  buildCreativeDirectionBrief,
+  getBrandCreativeDirection,
+  getBrandCreativeDirectionForIndex,
+  getBrandCreativeDirections,
+} from '../services/brandCreativeDirections';
 import { supabase as hubClient } from '../lib/supabase';
 
 // ─── Card Studio ────────────────────────────────────────────────────
@@ -253,6 +260,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   const [activePreset, setActivePreset] = useState<string | null>(CARD_BRIEF_PRESETS[0]?.label ?? null);
   const [count, setCount] = useState(3);
   const [scripturePolicy, setScripturePolicy] = useState<ScripturePolicy>('mix');
+  const [creativeDirectionId, setCreativeDirectionId] = useState('variety');
   // Null until resolved. A brand with no spoke connection has no Bible source,
   // so verse cards can't render and scripture must be forced off.
   const [hasBibleSource, setHasBibleSource] = useState<boolean | null>(null);
@@ -264,6 +272,14 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   const [draftRestoredAt, setDraftRestoredAt] = useState<string | null>(null);
 
   const geminiKey = apiKeys?.gemini_api_key;
+  const brandCreativeDirections = useMemo(
+    () => getBrandCreativeDirections(selectedBranch?.slug),
+    [selectedBranch?.slug],
+  );
+
+  useEffect(() => {
+    setCreativeDirectionId('variety');
+  }, [selectedBranch?.slug]);
 
   // (The Generate button's blockers are now surfaced in the UI next to the
   // button itself, so no console diagnostic is needed for them.)
@@ -484,11 +500,28 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     setDraftRestoredAt(null);
     try {
       console.log('[CardStudio] Calling Gemini…');
-      const concepts = await generateCardConcepts({
+      const selectedDirection = creativeDirectionId === 'variety'
+        ? undefined
+        : getBrandCreativeDirection(selectedBranch.slug, creativeDirectionId);
+      const requestedDirections = selectedDirection ? [selectedDirection] : brandCreativeDirections;
+      const directedBrief = requestedDirections.length > 0
+        ? creativeDirectionId === 'variety'
+          ? [
+              brief,
+              `Create a visually varied pack using these shared brand directions: ${requestedDirections.map(direction => `${direction.label} — ${direction.description}. Approved overlay: “${direction.safeOverlay.heading}” / “${direction.safeOverlay.footer}”`).join('; ')}.`,
+              'Use the approved overlays verbatim. Do not add product claims, speed claims, guarantees, prices, testimonials, statistics, or offers.',
+            ].join('\n\n')
+          : buildCreativeDirectionBrief(requestedDirections[0], 'instagram', brief)
+        : brief;
+      const baseCardStyle = getBrandCardStyle(selectedBranch.slug);
+      const directedCardStyle = requestedDirections.length > 0 && baseCardStyle
+        ? { ...baseCardStyle, templatePolicy: { mode: 'restricted' as const, allowed: ['editorial' as const] } }
+        : baseCardStyle;
+      const generatedConcepts = await generateCardConcepts({
         apiKey: geminiKey,
         brandName: selectedBranch.name,
         brandContext: buildBrandContext(selectedBranch),
-        brief,
+        brief: directedBrief,
         count,
         scripturePolicy: hasBibleSource === false ? 'avoid' : scripturePolicy,
         palette: {
@@ -498,7 +531,11 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         },
         // Per-brand style: fonts, palette-lock, template restriction. Undefined
         // for brands not yet styled, which leaves generation exactly as before.
-        cardStyle: getBrandCardStyle(selectedBranch.slug),
+        cardStyle: directedCardStyle,
+      });
+      const concepts = generatedConcepts.map((concept, index) => {
+        const direction = selectedDirection || getBrandCreativeDirectionForIndex(selectedBranch.slug, index);
+        return direction ? applyBrandCreativeDirection(concept, direction) : concept;
       });
 
       console.log('[CardStudio] Gemini returned', concepts.length, 'usable concept(s):',
@@ -549,11 +586,19 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         .join('\n');
       const augmentedBrief = `${brief}\n\nAdditional instruction: generate ONE replacement concept only. It is replacing a discarded option alongside concepts that are being KEPT — make this new one visually and thematically DIFFERENT from all of them (different template where reasonable, different palette, different angle):\n${othersSummary || '(none — this will be the only concept)'}`;
 
+      const currentConcept = cards.find(card => card.concept.id === id)?.concept;
+      const direction = getBrandCreativeDirection(selectedBranch.slug, currentConcept?.creativeDirectionId || (creativeDirectionId === 'variety' ? undefined : creativeDirectionId));
+      const replacementBrief = direction ? buildCreativeDirectionBrief(direction, 'instagram', augmentedBrief) : augmentedBrief;
+      const baseCardStyle = getBrandCardStyle(selectedBranch.slug);
+      const replacementCardStyle = direction && baseCardStyle
+        ? { ...baseCardStyle, templatePolicy: { mode: 'restricted' as const, allowed: ['editorial' as const] } }
+        : baseCardStyle;
+
       const replacement = await generateCardConcepts({
         apiKey: geminiKey,
         brandName: selectedBranch.name,
         brandContext: buildBrandContext(selectedBranch),
-        brief: augmentedBrief,
+        brief: replacementBrief,
         count: 1,
         scripturePolicy: hasBibleSource === false ? 'avoid' : scripturePolicy,
         palette: {
@@ -563,7 +608,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         },
         // Per-brand style: fonts, palette-lock, template restriction. Undefined
         // for brands not yet styled, which leaves generation exactly as before.
-        cardStyle: getBrandCardStyle(selectedBranch.slug),
+        cardStyle: replacementCardStyle,
       });
 
       if (replacement.length === 0) {
@@ -572,7 +617,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         return;
       }
 
-      const newConcept = replacement[0];
+      const newConcept = direction ? applyBrandCreativeDirection(replacement[0], direction) : replacement[0];
       setCards((prev) =>
         prev.map((c) =>
           c.concept.id === id
@@ -639,42 +684,14 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     setCards((prev) => prev.map((c) => (c.concept.id === card.concept.id ? { ...c, isGeneratingBackground: true } : c)));
     addToast('Generating a background photo — takes about a minute.', 'info');
     try {
-      const { job_id } = await submitStaticAdJob({
-        branch: selectedBranch.slug,
-        message: scene,
-        target_segment: '',
-        platform: 'general',
-        aspect_ratio: '4:5',
-        setting: '',
-        // Style notes take priority over the pipeline's default photographic
-        // direction, so this is where the editorial-specific composition
-        // lives: subject weighted right, LEFT side calm for the text column.
-        style_notes: 'Warm editorial still life, soft natural light, cozy and inviting. Compose with the subject weighted to the RIGHT side of the frame and keep the LEFT half calm, bright and uncluttered — a designed text column will be placed over the left side.',
-        image_style: 'photo',
-        purpose: 'card_background',
+      const direction = getBrandCreativeDirection(selectedBranch.slug, concept.creativeDirectionId);
+      const backgroundUrl = await generateCreativeBackground({
+        branchSlug: selectedBranch.slug,
+        scene,
+        platform: card.platform === 'instagram' ? 'instagram' : 'general',
+        styleNotes: direction?.styleNotes || 'Warm editorial still life, soft natural light, cozy and inviting. Compose with the subject weighted to the RIGHT side of the frame and keep the LEFT half calm, bright and uncluttered for a designed text column.',
       });
-
-      // Poll until the frame exists. The static pipeline lands at
-      // awaiting_approval with frame_url set; that image IS our background —
-      // approval of the background job itself is irrelevant here.
-      const POLL_MS = 5000;
-      const TIMEOUT_MS = 4 * 60 * 1000;
-      const started = Date.now();
-      let attached = false;
-      while (Date.now() - started < TIMEOUT_MS) {
-        await new Promise((r) => setTimeout(r, POLL_MS));
-        const job = await pollVideoAdJob(job_id).catch(() => null);
-        if (!job) continue;
-        if (job.status === 'failed' || job.status === 'cancelled') {
-          throw new Error(job.error_message || 'Background generation failed.');
-        }
-        if (job.frame_url) {
-          applyBackgroundUrl(card.concept.id, job.frame_url, 'generated');
-          attached = true;
-          break;
-        }
-      }
-      if (!attached) throw new Error('Background generation timed out — check Creative Studio for the job, it may still finish.');
+      applyBackgroundUrl(card.concept.id, backgroundUrl, 'generated');
       addToast('Background photo attached.', 'success');
     } catch (e) {
       addToast(e instanceof Error ? e.message : 'Background generation failed.', 'error');
@@ -935,6 +952,27 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
               </select>
             )}
           </div>
+
+          {brandCreativeDirections.length > 0 && (
+            <div className="flex flex-col gap-1 lg:w-64">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Brand creative direction</span>
+              <select
+                value={creativeDirectionId}
+                onChange={(e) => setCreativeDirectionId(e.target.value)}
+                className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              >
+                <option value="variety">Variety pack</option>
+                {brandCreativeDirections.map(direction => (
+                  <option key={direction.id} value={direction.id}>{direction.label}</option>
+                ))}
+              </select>
+              <span className="text-[10px] text-slate-400">
+                {creativeDirectionId === 'variety'
+                  ? 'Cycles through the shared brand directions.'
+                  : getBrandCreativeDirection(selectedBranch?.slug || '', creativeDirectionId)?.description}
+              </span>
+            </div>
+          )}
 
           {/* Only brands with a connected Bible source can make verse cards, so
               for every other brand this control is noise — hide it entirely

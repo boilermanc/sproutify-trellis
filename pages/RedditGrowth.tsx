@@ -21,6 +21,14 @@ import { generateCardConcepts, type CardConceptWithRef } from '../services/creat
 import { getBrandCardStyle } from '../services/brandCardStyles';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
 import { uploadPostImage } from '../services/scheduledPostService';
+import { generateCreativeBackground } from '../services/creativeBackgroundService';
+import {
+  applyBrandCreativeDirection,
+  buildCreativeDirectionBrief,
+  getBrandCreativeDirection,
+  getBrandCreativeDirectionForIndex,
+  getBrandCreativeDirections,
+} from '../services/brandCreativeDirections';
 
 interface RedditAdsProps {
   branchContext?: BranchContext;
@@ -223,36 +231,6 @@ function buildInlineCreativeBrandContext(branch: BranchContext['allBranches'][nu
   return `Brand: ${branch.name}.${website}`;
 }
 
-function rekkrdVinylBackgroundDataUrl(): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
-    <defs>
-      <radialGradient id="record" cx="50%" cy="50%" r="50%">
-        <stop offset="0" stop-color="#e8621a"/>
-        <stop offset="0.075" stop-color="#26170f"/>
-        <stop offset="0.11" stop-color="#090807"/>
-        <stop offset="1" stop-color="#17130f"/>
-      </radialGradient>
-      <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-        <stop stop-color="#0b0907"/>
-        <stop offset="1" stop-color="#21170f"/>
-      </linearGradient>
-      <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="-22" dy="30" stdDeviation="34" flood-color="#000" flood-opacity="0.7"/>
-      </filter>
-    </defs>
-    <rect width="1080" height="1350" fill="url(#background)"/>
-    <g transform="translate(785 720) rotate(-12)" filter="url(#shadow)">
-      <circle r="430" fill="url(#record)" stroke="#3b3128" stroke-width="3"/>
-      <g fill="none" stroke="#62564a" stroke-opacity="0.32" stroke-width="2">
-        <circle r="390"/><circle r="350"/><circle r="310"/><circle r="270"/><circle r="230"/><circle r="190"/>
-      </g>
-      <circle r="92" fill="#e8621a"/><circle r="68" fill="#18110d"/><circle r="13" fill="#efe9e0"/>
-      <path d="M-395 -95 A406 406 0 0 1 255 -318" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="18" stroke-linecap="round"/>
-    </g>
-  </svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
 function reviewErrors(campaign: RedditAdCampaign): string[] {
   const errors: string[] = [];
   if (!campaign.name.trim()) errors.push('Add a campaign name.');
@@ -322,6 +300,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
   const [communityInput, setCommunityInput] = useState('');
   const [locationInput, setLocationInput] = useState('');
   const [inlineCreativeDrafts, setInlineCreativeDrafts] = useState<Record<string, InlineCreativeDraft>>({});
+  const [inlineCreativeDirectionIds, setInlineCreativeDirectionIds] = useState<Record<string, string>>({});
   const [expandedCreative, setExpandedCreative] = useState<ExpandedCreative | null>(null);
 
   const visibleCampaigns = useMemo(() => {
@@ -604,26 +583,28 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
     });
 
     try {
+      const variantIndex = Math.max(0, form.variants.findIndex(item => item.id === variant.id));
+      const direction = getBrandCreativeDirection(
+        branch.slug,
+        inlineCreativeDirectionIds[variant.id] || getBrandCreativeDirectionForIndex(branch.slug, variantIndex)?.id,
+      );
       const baseCardStyle = getBrandCardStyle(branch.slug);
-      const inlineCardStyle = branch.slug.toLowerCase() === 'rekkrd' && baseCardStyle
+      const inlineCardStyle = direction && baseCardStyle
         ? { ...baseCardStyle, templatePolicy: { mode: 'restricted' as const, allowed: ['editorial' as const] } }
         : baseCardStyle;
+      const sourceBrief = [
+        'Create one static Reddit image-ad concept for this exact campaign variant.',
+        `Approved promoted headline: ${variant.headline.trim()}`,
+        `Approved supporting copy: ${variant.body.trim()}`,
+        `Campaign objective: ${OBJECTIVE_LABELS[form.objective]}.`,
+        `Audience: ${form.communityTargets.map(target => `r/${target}`).join(', ') || 'Reddit users'}.`,
+        'Do not use scripture. Do not invent or rewrite product claims.',
+      ].join('\n');
       const concepts = await generateCardConcepts({
         apiKey: apiKeys.gemini_api_key,
         brandName: branch.name,
         brandContext: buildInlineCreativeBrandContext(branch),
-        brief: [
-          'Create one static Reddit image-ad concept for this exact campaign variant.',
-          `Headline: ${variant.headline.trim()}`,
-          `Supporting copy: ${variant.body.trim()}`,
-          `Campaign objective: ${OBJECTIVE_LABELS[form.objective]}.`,
-          `Audience: ${form.communityTargets.map(target => `r/${target}`).join(', ') || 'Reddit users'}.`,
-          'Make the message readable at feed size. Do not invent features, prices, guarantees, statistics, testimonials, or offers.',
-          branch.slug.toLowerCase() === 'rekkrd'
-            ? 'Use a sophisticated vinyl-record background with generous negative space. Keep every feature row short enough to fit on one or two lines.'
-            : '',
-          'Do not use scripture. Keep the design appropriate for a paid Reddit placement and the supplied brand.',
-        ].filter(Boolean).join('\n'),
+        brief: direction ? buildCreativeDirectionBrief(direction, 'reddit', sourceBrief) : sourceBrief,
         count: 1,
         scripturePolicy: 'avoid',
         palette: {
@@ -635,9 +616,17 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
       });
       const generatedConcept = concepts[0];
       if (!generatedConcept) throw new Error('The creative director did not return a usable concept.');
-      const concept = branch.slug.toLowerCase() === 'rekkrd' && generatedConcept.template === 'editorial'
-        ? { ...generatedConcept, backgroundUrl: rekkrdVinylBackgroundDataUrl(), scrimStrength: 0.56 }
-        : generatedConcept;
+      let concept = direction ? applyBrandCreativeDirection(generatedConcept, direction) : generatedConcept;
+      if (direction) {
+        addToast(`Generating the ${direction.label} background — this takes about a minute.`, 'info');
+        const backgroundUrl = await generateCreativeBackground({
+          branchSlug: branch.slug,
+          scene: direction.photoBrief,
+          styleNotes: direction.styleNotes,
+          platform: 'reddit',
+        });
+        concept = { ...concept, backgroundUrl };
+      }
       const previewUrl = await renderCardPreviewDataUrl(concept);
       updateInlineCreativeDraft(variant.id, { concept, previewUrl, isGenerating: false });
       addToast(`${variant.name || 'Variant'} creative is ready for review.`, 'success');
@@ -888,6 +877,9 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
                 {form.variants.map((variant, index) => {
                   const FormatIcon = FORMAT_ICONS[variant.format];
                   const creativeDraft = inlineCreativeDrafts[variant.id];
+                  const creativeDirections = getBrandCreativeDirections(form.branchSlug);
+                  const defaultCreativeDirection = getBrandCreativeDirectionForIndex(form.branchSlug, index);
+                  const selectedCreativeDirectionId = inlineCreativeDirectionIds[variant.id] || defaultCreativeDirection?.id || '';
                   return <div key={variant.id} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-200">
                     <div className="flex items-center justify-between gap-3 mb-5"><div className="flex items-center gap-2"><FormatIcon size={16} className="text-orange-500" /><span className="text-xs font-black text-slate-700">{variant.name}</span></div>{form.variants.length > 1 && <button type="button" onClick={() => setForm(previous => ({ ...previous, variants: previous.variants.filter(item => item.id !== variant.id) }))} className="text-slate-300 hover:text-rose-500"><Trash2 size={15} /></button>}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -914,6 +906,22 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
                             {creativeDraft?.isGenerating ? 'Generating…' : creativeDraft?.previewUrl ? 'Regenerate' : 'Generate Creative'}
                           </button>
                         </div>
+
+                        {creativeDirections.length > 0 && (
+                          <label className="block mt-4">
+                            <span className="form-label">Brand Creative Direction</span>
+                            <select
+                              value={selectedCreativeDirectionId}
+                              onChange={event => setInlineCreativeDirectionIds(previous => ({ ...previous, [variant.id]: event.target.value }))}
+                              disabled={creativeDraft?.isGenerating || creativeDraft?.isApproving}
+                              className="form-input"
+                            >
+                              {creativeDirections.map(direction => (
+                                <option key={direction.id} value={direction.id}>{direction.label} — {direction.description}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
 
                         {creativeDraft?.error && <div className="mt-4 flex items-start gap-2 rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700"><AlertTriangle size={14} className="shrink-0 mt-0.5" /><span>{creativeDraft.error}</span></div>}
 

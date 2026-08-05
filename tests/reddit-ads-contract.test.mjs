@@ -79,6 +79,8 @@ test('strategy creatives are editable and unsupported claims block approval', ()
 
 test('creative variants can generate, preview, and attach assets without leaving the form', () => {
   const page = read('pages/RedditGrowth.tsx');
+  const cardStudio = read('pages/CardStudio.tsx');
+  const directions = read('services/brandCreativeDirections.ts');
 
   assert.match(page, /Inline Creative Builder/);
   assert.match(page, /generateInlineCreative/);
@@ -86,7 +88,16 @@ test('creative variants can generate, preview, and attach assets without leaving
   assert.match(page, /Approve & Attach/);
   assert.match(page, /uploadPostImage/);
   assert.match(page, /It does not save or submit the campaign/);
-  assert.match(page, /rekkrdVinylBackgroundDataUrl/);
+  assert.match(page, /getBrandCreativeDirectionForIndex/);
+  assert.match(page, /generateCreativeBackground/);
+  assert.match(page, /Brand Creative Direction/);
   assert.match(page, /Click to expand/);
   assert.match(page, /Expanded creative preview/);
+  assert.match(cardStudio, /Brand creative direction/);
+  assert.match(cardStudio, /buildCreativeDirectionBrief/);
+  assert.match(directions, /Vinyl Ritual/);
+  assert.match(directions, /Listening Room/);
+  assert.match(directions, /Collection Detail/);
+  assert.match(directions, /Connected Collection/);
+  assert.match(directions, /Do not add product claims/);
 });
