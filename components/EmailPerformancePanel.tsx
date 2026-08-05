@@ -268,7 +268,7 @@ export const EmailPerformancePanel: React.FC = () => {
           )}
           <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">
             Campaigns are matched by subject line. Batch sends can't tag individual messages, so if two campaigns share a subject their
-            events combine here. Open/click counts are unique recipients.
+            events combine here. Every count is unique recipients, not raw events — a retried send or repeat open only counts once.
           </p>
         </>
       )}

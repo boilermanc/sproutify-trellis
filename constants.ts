@@ -359,16 +359,22 @@ GRANT SELECT ON email_events TO authenticated;
 GRANT ALL ON email_events TO service_role;
 
 -- Per-campaign rollup (matched by subject). security_invoker so it honors caller RLS.
+-- Every column is COUNT(DISTINCT email) — unique recipients, not raw event rows —
+-- so these numbers always match the per-recipient list (fetchCampaignRecipients).
+-- Using COUNT(*) for sent/delivered/bounced/complained looked fine until a
+-- campaign had webhook retries or a same-subject transactional resend, at which
+-- point the row and the recipient list visibly disagreed (e.g. one subject
+-- showed "Sent 26 / Delivered 51" against 15 actual people).
 CREATE OR REPLACE VIEW campaign_email_stats
 WITH (security_invoker = true) AS
 SELECT
   campaign_subject,
-  COUNT(*) FILTER (WHERE event_type = 'sent')                 AS sent,
-  COUNT(*) FILTER (WHERE event_type = 'delivered')            AS delivered,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')  AS opened,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked') AS clicked,
-  COUNT(*) FILTER (WHERE event_type = 'bounced')              AS bounced,
-  COUNT(*) FILTER (WHERE event_type = 'complained')           AS complained,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'sent')       AS sent,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'delivered')  AS delivered,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')     AS opened,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked')    AS clicked,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounced')    AS bounced,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'complained') AS complained,
   MIN(occurred_at) AS first_event_at,
   MAX(occurred_at) AS last_event_at
 FROM email_events
@@ -402,22 +408,61 @@ GRANT ALL ON campaign_sends TO service_role;
 
 -- Per-campaign rollup keyed by campaign_id (exact — no subject-collision risk).
 -- Prefer this over campaign_email_stats once email_events.campaign_id is populated.
+-- Same COUNT(DISTINCT email) treatment as campaign_email_stats above, for the
+-- same reason — every column is unique recipients, not raw event rows.
 CREATE OR REPLACE VIEW campaign_stats_by_id
 WITH (security_invoker = true) AS
 SELECT
   campaign_id,
-  COUNT(*) FILTER (WHERE event_type = 'sent')                 AS sent,
-  COUNT(*) FILTER (WHERE event_type = 'delivered')            AS delivered,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')  AS opened,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked') AS clicked,
-  COUNT(*) FILTER (WHERE event_type = 'bounced')              AS bounced,
-  COUNT(*) FILTER (WHERE event_type = 'complained')           AS complained,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'sent')       AS sent,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'delivered')  AS delivered,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')     AS opened,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked')    AS clicked,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounced')    AS bounced,
+  COUNT(DISTINCT email) FILTER (WHERE event_type = 'complained') AS complained,
   MIN(occurred_at) AS first_event_at,
   MAX(occurred_at) AS last_event_at
 FROM email_events
 WHERE campaign_id IS NOT NULL
 GROUP BY campaign_id;
 GRANT SELECT ON campaign_stats_by_id TO anon, authenticated, service_role;
+
+-- Per-recipient status within one campaign — one row per (campaign_subject, email)
+-- instead of one row per raw event, so a campaign with thousands of delivery/open/
+-- click events collapses to one row per actual person. Backs the "who opened,
+-- clicked & complained" recipient list (CampaignRecipientsModal / fetchCampaignRecipients).
+CREATE OR REPLACE VIEW campaign_recipient_status
+WITH (security_invoker = true) AS
+SELECT
+  campaign_subject,
+  email,
+  bool_or(event_type = 'delivered')  AS delivered,
+  bool_or(event_type = 'opened')     AS opened,
+  bool_or(event_type = 'clicked')    AS clicked,
+  bool_or(event_type = 'bounced')    AS bounced,
+  bool_or(event_type = 'complained') AS complained,
+  array_remove(array_agg(DISTINCT link_url) FILTER (WHERE event_type = 'clicked'), NULL) AS link_urls,
+  max(occurred_at) AS last_event_at
+FROM email_events
+WHERE campaign_subject IS NOT NULL
+GROUP BY campaign_subject, email;
+-- Raw recipient addresses — authenticated-only, same as email_events itself.
+GRANT SELECT ON campaign_recipient_status TO authenticated, service_role;
+
+-- One row per email, all-time, instead of one row per open/click event —
+-- bounded by audience size, not by years of engagement history. Backs
+-- fetchEngagementByEmail/fetchEngagementIndex (churn risk, segment targeting).
+CREATE OR REPLACE VIEW email_engagement_summary
+WITH (security_invoker = true) AS
+SELECT
+  email,
+  COUNT(*) FILTER (WHERE event_type = 'opened')  AS opened,
+  COUNT(*) FILTER (WHERE event_type = 'clicked') AS clicked,
+  MAX(occurred_at) FILTER (WHERE event_type = 'opened')  AS last_opened_at,
+  MAX(occurred_at) FILTER (WHERE event_type = 'clicked') AS last_clicked_at
+FROM email_events
+GROUP BY email;
+GRANT SELECT ON email_engagement_summary TO authenticated, service_role;
 
 -- 7. PERFORMANCE INDEXING
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_spoke_uuid ON profiles (spoke_uuid);

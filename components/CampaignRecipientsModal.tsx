@@ -30,13 +30,17 @@ interface Props {
 export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onClose }) => {
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedCount, setLoadedCount] = useState(0);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchCampaignRecipients(campaignSubject).then((rows) => {
+    setLoadedCount(0);
+    fetchCampaignRecipients(campaignSubject, (rowsSoFar) => {
+      if (!cancelled) setLoadedCount(rowsSoFar);
+    }).then((rows) => {
       if (!cancelled) setRecipients(rows);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -116,8 +120,11 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onCl
 
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {loading ? (
-              <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center justify-center gap-3 py-16">
                 <Loader2 size={22} className="animate-spin text-emerald-500" />
+                <p className="text-xs font-bold text-slate-400">
+                  {loadedCount > 0 ? `Loading recipients… ${loadedCount.toLocaleString()} so far` : 'Loading recipients…'}
+                </p>
               </div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-12">

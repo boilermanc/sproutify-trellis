@@ -1,5 +1,37 @@
 import { supabase } from '../lib/supabase';
 
+// Supabase/PostgREST caps each response at a server-side max-rows setting
+// (commonly 1000) regardless of the range a client requests — a single
+// `.range(0, 9999)` call silently truncates on any table past that size. This
+// walks pages until a short page proves there's nothing left, so bulk reads
+// over email_events (which routinely exceeds 1000 rows for one campaign) get
+// every row instead of just the oldest slice.
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 200; // safety backstop — 200k rows
+
+async function fetchAllPages<T>(
+  table: string,
+  select: string,
+  applyFilters: (query: any) => any,
+  orderColumn: string,
+  onPage?: (rowsSoFar: number) => void,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE_SIZE;
+    let query = supabase.from(table).select(select).order(orderColumn, { ascending: true });
+    query = applyFilters(query);
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const chunk = (data || []) as T[];
+    rows.push(...chunk);
+    onPage?.(rows.length);
+    if (chunk.length < PAGE_SIZE) break;
+    if (page === MAX_PAGES - 1) console.warn(`fetchAllPages(${table}) hit MAX_PAGES — results may be incomplete`);
+  }
+  return rows;
+}
+
 // Per-campaign email metrics, aggregated by subject on the Hub (`campaign_email_stats`
 // view over `email_events`, which the resend-webhook edge function populates).
 export interface CampaignEmailStat {
@@ -107,37 +139,39 @@ export interface CampaignRecipient {
   lastEventAt: string;
 }
 
-export async function fetchCampaignRecipients(campaignSubject: string): Promise<CampaignRecipient[]> {
+// Sourced from campaign_recipient_status — grouped server-side to one row per
+// (campaign_subject, email), not one row per raw event. A campaign with 12,800
+// delivery/open/click events for 5,600 recipients pulls 5,600 rows here, not
+// 12,800, and that count only grows with audience size, not re-opens/re-sends.
+export async function fetchCampaignRecipients(
+  campaignSubject: string,
+  onProgress?: (rowsSoFar: number) => void,
+): Promise<CampaignRecipient[]> {
   if (!campaignSubject) return [];
   try {
-    const { data, error } = await supabase
-      .from('email_events')
-      .select('email,event_type,link_url,occurred_at')
-      .eq('campaign_subject', campaignSubject)
-      .order('occurred_at', { ascending: true })
-      .range(0, 9999);
-    if (error) throw error;
+    const data = await fetchAllPages<{
+      email: string; delivered: boolean; opened: boolean; clicked: boolean;
+      bounced: boolean; complained: boolean; link_urls: string[] | null; last_event_at: string;
+    }>(
+      'campaign_recipient_status',
+      'email,delivered,opened,clicked,bounced,complained,link_urls,last_event_at',
+      (q) => q.eq('campaign_subject', campaignSubject),
+      'email',
+      onProgress,
+    );
 
-    const byEmail = new Map<string, CampaignRecipient>();
-    for (const row of (data || []) as { email: string; event_type: string; link_url: string | null; occurred_at: string }[]) {
-      const key = (row.email || '').toLowerCase();
-      if (!key) continue;
-      let r = byEmail.get(key);
-      if (!r) {
-        r = { email: key, delivered: false, opened: false, clicked: false, bounced: false, complained: false, linkUrls: [], lastEventAt: row.occurred_at };
-        byEmail.set(key, r);
-      }
-      if (row.event_type === 'delivered') r.delivered = true;
-      else if (row.event_type === 'opened') r.opened = true;
-      else if (row.event_type === 'clicked') {
-        r.clicked = true;
-        if (row.link_url && !r.linkUrls.includes(row.link_url)) r.linkUrls.push(row.link_url);
-      } else if (row.event_type === 'bounced') r.bounced = true;
-      else if (row.event_type === 'complained') r.complained = true;
-      // Rows are ordered ascending, so the last write always holds the latest timestamp.
-      r.lastEventAt = row.occurred_at;
-    }
-    return Array.from(byEmail.values()).sort((a, b) => (a.lastEventAt < b.lastEventAt ? 1 : -1));
+    return data
+      .map((r) => ({
+        email: r.email,
+        delivered: r.delivered,
+        opened: r.opened,
+        clicked: r.clicked,
+        bounced: r.bounced,
+        complained: r.complained,
+        linkUrls: r.link_urls || [],
+        lastEventAt: r.last_event_at,
+      }))
+      .sort((a, b) => (a.lastEventAt < b.lastEventAt ? 1 : -1));
   } catch (e) {
     console.error('fetchCampaignRecipients failed:', e);
     return [];
@@ -155,39 +189,20 @@ export interface EngagementSummary {
   last_clicked_at: string | null;
 }
 
-// Bulk engagement aggregate for segment targeting: a single query over email_events
-// (not one call per profile), grouped client-side by lowercased email into open/click
-// counts plus last-touch timestamps. Keyed the same way the rest of the codebase
-// normalizes email identity (see fetchEmailActivity above).
+// Bulk engagement aggregate for segment targeting, sourced from
+// email_engagement_summary — grouped server-side to one row per email (bounded
+// by audience size), not one row per open/click event (bounded by all-time
+// activity, which is what made this table balloon on any decently-aged Hub).
 export async function fetchEngagementByEmail(): Promise<Map<string, EngagementSummary>> {
   const result = new Map<string, EngagementSummary>();
   try {
-    const { data, error } = await supabase
-      .from('email_events')
-      .select('email,event_type,occurred_at')
-      .in('event_type', ['opened', 'clicked'])
-      .order('occurred_at', { ascending: true })
-      // Bulk aggregate query — explicit range so we don't silently fall back to the
-      // client's default 1000-row cap on a large events table.
-      .range(0, 49999);
-    if (error) throw error;
-    for (const row of (data || []) as { email: string; event_type: string; occurred_at: string }[]) {
+    const data = await fetchAllPages<{
+      email: string; opened: number; clicked: number; last_opened_at: string | null; last_clicked_at: string | null;
+    }>('email_engagement_summary', 'email,opened,clicked,last_opened_at,last_clicked_at', (q) => q, 'email');
+    for (const row of data) {
       const key = (row.email || '').toLowerCase();
-      if (!key) continue;
-      let summary = result.get(key);
-      if (!summary) {
-        summary = { email: key, opened: 0, clicked: 0, last_opened_at: null, last_clicked_at: null };
-        result.set(key, summary);
-      }
-      // Rows are ordered ascending by occurred_at, so the last write for each
-      // event_type ends up holding the most recent timestamp.
-      if (row.event_type === 'opened') {
-        summary.opened++;
-        summary.last_opened_at = row.occurred_at;
-      } else if (row.event_type === 'clicked') {
-        summary.clicked++;
-        summary.last_clicked_at = row.occurred_at;
-      }
+      if (!key || (!row.opened && !row.clicked)) continue;
+      result.set(key, { email: key, opened: row.opened, clicked: row.clicked, last_opened_at: row.last_opened_at, last_clicked_at: row.last_clicked_at });
     }
     return result;
   } catch (e) {
@@ -215,32 +230,18 @@ export async function fetchEngagementIndex(): Promise<{
   const summaries = new Map<string, EngagementSummary>();
   const contacted = new Set<string>();
   try {
-    const { data, error } = await supabase
-      .from('email_events')
-      .select('email,event_type,occurred_at')
-      .order('occurred_at', { ascending: true })
-      .range(0, 49999);
-    if (error) throw error;
+    const data = await fetchAllPages<{
+      email: string; opened: number; clicked: number; last_opened_at: string | null; last_clicked_at: string | null;
+    }>('email_engagement_summary', 'email,opened,clicked,last_opened_at,last_clicked_at', (q) => q, 'email');
 
-    for (const row of (data || []) as { email: string; event_type: string; occurred_at: string }[]) {
+    for (const row of data) {
       const key = (row.email || '').toLowerCase();
       if (!key) continue;
+      // Every row here has at least one email_events row (any type), so presence
+      // in this view is itself the "we've contacted this address" signal.
       contacted.add(key);
-
-      if (row.event_type !== 'opened' && row.event_type !== 'clicked') continue;
-      let summary = summaries.get(key);
-      if (!summary) {
-        summary = { email: key, opened: 0, clicked: 0, last_opened_at: null, last_clicked_at: null };
-        summaries.set(key, summary);
-      }
-      // Ascending order means the last write per event_type holds the latest timestamp.
-      if (row.event_type === 'opened') {
-        summary.opened++;
-        summary.last_opened_at = row.occurred_at;
-      } else {
-        summary.clicked++;
-        summary.last_clicked_at = row.occurred_at;
-      }
+      if (!row.opened && !row.clicked) continue;
+      summaries.set(key, { email: key, opened: row.opened, clicked: row.clicked, last_opened_at: row.last_opened_at, last_clicked_at: row.last_clicked_at });
     }
     return { summaries, contacted };
   } catch (e) {
