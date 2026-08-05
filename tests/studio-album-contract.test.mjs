@@ -414,3 +414,14 @@ test('a video image can be uploaded, and the redundant post-approval cover galle
   // The confusing "Artwork is locked for Visual Production" section is removed.
   assert.doesNotMatch(page, /Artwork is locked for Visual Production/);
 });
+
+test('publishing resolves the CURRENT active video and thumbnail, not stale draft ids', async () => {
+  // Regression: the publication captured video_asset_id at prepare time; a later
+  // re-render archived that asset, so submit looked up an archived id, found
+  // nothing, and 400'd with "approved video asset is unavailable". Submit must
+  // resolve the newest active final_video/thumbnail for the album instead.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /Resolve the CURRENT active video and thumbnail, not the ids captured/);
+  assert.match(fn, /const \{ data: video \} = await db\.from\("studio_assets"\)\.select\("\*"\)\.eq\("album_id", album\.id\)\.eq\("asset_type", "final_video"\)\.eq\("status", "active"\)\.order\("version", \{ ascending: false \}\)\.limit\(1\)\.maybeSingle\(\)/);
+  assert.doesNotMatch(fn, /\.eq\("id", publication\.video_asset_id\)/);
+});

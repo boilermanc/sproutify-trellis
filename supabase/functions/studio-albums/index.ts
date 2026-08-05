@@ -1070,14 +1070,15 @@ Deno.serve(async (req) => {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const publication = await publicationForAlbum(db, album.id);
       if (!publication || publication.status !== "ready" || album.metadata_status !== "approved" || album.video_status !== "approved") throw new Error("Approve the video and publishing metadata before submission.");
-      const { data: video } = await db.from("studio_assets").select("*").eq("id", publication.video_asset_id).eq("album_id", album.id).eq("asset_type", "final_video").eq("status", "active").single();
+      // Resolve the CURRENT active video and thumbnail, not the ids captured when
+      // the draft was prepared — re-rendering after prepare archives the old ones,
+      // and the stored reference would otherwise point at an archived asset.
+      const { data: video } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "final_video").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
       if (!video) throw new Error("The approved video asset is unavailable.");
       const { data: signedVideo, error: videoSignError } = await db.storage.from(video.storage_bucket).createSignedUrl(video.storage_path, 60 * 60 * 6);
       let thumbnailUrl: string | null = null;
-      if (publication.thumbnail_asset_id) {
-        const { data: thumbnail } = await db.from("studio_assets").select("storage_bucket,storage_path").eq("id", publication.thumbnail_asset_id).eq("album_id", album.id).eq("status", "active").maybeSingle();
-        if (thumbnail) thumbnailUrl = (await db.storage.from(thumbnail.storage_bucket).createSignedUrl(thumbnail.storage_path, 60 * 60 * 6)).data?.signedUrl || null;
-      }
+      const { data: thumbnail } = await db.from("studio_assets").select("storage_bucket,storage_path").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
+      if (thumbnail) thumbnailUrl = (await db.storage.from(thumbnail.storage_bucket).createSignedUrl(thumbnail.storage_path, 60 * 60 * 6)).data?.signedUrl || null;
       if (videoSignError || !signedVideo?.signedUrl) throw new Error("Could not prepare the private video for publishing.");
       const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "publishing_handoff", status: "queued", progress: 0, provider: "n8n_youtube", attempt_count: 1, input_json: { publication_id: publication.id, video_asset_id: video.id } }).select("*").single();
       if (jobError || !job) throw new Error(jobError?.message || "Could not register the publishing handoff.");
