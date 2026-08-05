@@ -6,7 +6,7 @@ export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'gen
 export interface StudioBatchGenerationResult { tracks: StudioTrack[]; failures: Array<{ track_id: string; title: string; error: string }>; }
 export interface StudioBulkApprovalResult { tracks: StudioTrack[]; remaining_review_count: number; }
 
-const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'list_video_artwork']);
+const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts']);
 
 async function studioFunctionError(error: unknown): Promise<{ message: string; status?: number }> {
   if (error instanceof FunctionsHttpError) {
@@ -141,11 +141,6 @@ export async function enhanceStudioCoverConcept(albumId: string, sourceAssetId: 
 export async function deleteStudioCoverConcept(assetId: string): Promise<void> { await callStudio('delete_cover_concept', { asset_id: assetId }); }
 export async function selectStudioCoverConcept(assetId: string): Promise<StudioCoverConcept> { return (await callStudio('select_cover_concept', { asset_id: assetId })).concept as StudioCoverConcept; }
 export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
-export async function getStudioVideoArtwork(albumId: string): Promise<StudioCoverConcept[]> { return (await callStudio('list_video_artwork', { album_id: albumId })).concepts as StudioCoverConcept[]; }
-export async function generateStudioVideoArtwork(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('generate_video_artwork', { album_id: albumId })).concept as StudioCoverConcept; }
-export async function useCoverAsStudioVideoArtwork(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('use_cover_as_video_artwork', { album_id: albumId })).concept as StudioCoverConcept; }
-export async function saveStudioVideoArtworkComposite(albumId: string, sourceAssetId: string, imageBase64: string, typography: StudioCoverTypography): Promise<StudioCoverConcept> { return (await callStudio('save_video_artwork_composite', { album_id: albumId, source_asset_id: sourceAssetId, image_base64: imageBase64, typography })).concept as StudioCoverConcept; }
-export async function approveStudioVideoArtwork(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('approve_video_artwork', { album_id: albumId })).concept as StudioCoverConcept; }
 export async function prepareStudioVisualProduction(albumId: string, motion: string, direction: string): Promise<StudioAlbum> { return (await callStudio('prepare_visual_production', { album_id: albumId, motion, direction })).album as StudioAlbum; }
 export async function approveStudioVideo(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_video', { album_id: albumId })).album as StudioAlbum; }
 export async function prepareStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('prepare_publication', { album_id: albumId })).publication as StudioPublication; }

@@ -157,66 +157,6 @@ async function clearCoverSelections(db: any, albumId: string) {
   await Promise.all(selected.map((asset: any) => db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("id", asset.id)));
 }
 
-async function clearVideoArtworkSelections(db: any, albumId: string, includeApproved = false) {
-  const { data: candidates, error } = await db.from("studio_assets").select("id,metadata_json").eq("album_id", albumId).eq("asset_type", "scene_image").eq("status", "active");
-  if (error) throw new Error(error.message);
-  const selected = (candidates || []).filter((asset: any) => asset.metadata_json?.selection_status === "selected" || (includeApproved && asset.metadata_json?.selection_status === "approved"));
-  await Promise.all(selected.map((asset: any) => db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("id", asset.id)));
-}
-
-async function generateStudioVideoArtwork(db: any, album: any) {
-  if (album.artwork_status !== "approved") throw new Error("Approve the titled album cover before creating video artwork.");
-  const { data: approvedCover } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
-  if (!approvedCover) throw new Error("The approved album cover is unavailable.");
-  const sourceId = approvedCover.metadata_json?.source_asset_id || approvedCover.id;
-  const { data: source } = await db.from("studio_assets").select("*").eq("id", sourceId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
-  if (!source) throw new Error("The clean source image for the approved cover is unavailable.");
-  const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
-  const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
-  if (!key) throw new Error("Image generation is not configured.");
-  const { data: sourceBlob, error: downloadError } = await db.storage.from(source.storage_bucket).download(source.storage_path);
-  if (downloadError || !sourceBlob) throw new Error(downloadError?.message || "Could not load the approved cover source.");
-  const sourceBytes = new Uint8Array(await sourceBlob.arrayBuffer());
-  const hardConstraints = source.metadata_json?.hard_constraints || {};
-  const subjectConstraint = hardConstraints.single_woman ? "Keep exactly one adult woman as the only human figure; add no other people, reflections, portraits, or crowds." : "Preserve the original focal subject and do not add a crowd or entourage.";
-  const locationConstraint = hardConstraints.french_riviera ? "Preserve a geographically credible French Riviera / Côte d’Azur coastline, deep blue Mediterranean water, yachts, palms, limestone terraces, and Belle Époque resort architecture. No tropical jungle, waterfall, volcano, fantasy island, or Caribbean scenery." : "Preserve the specific geography and architecture of the source setting.";
-  const prompt = `Recompose and outpaint the supplied square, image-only album artwork into a native cinematic 16:9 landscape frame for a long-form YouTube music video. This must look like one intentional full-width photograph or illustration, never a square poster placed over a blurred background. Preserve the source subject, period, wardrobe, palette, lighting, photographic or illustrative medium, and atmosphere. Extend believable scenery to the left and right. Leave calm title-safe negative space in the upper third and preserve important subjects inside the center 80% safe area. ${subjectConstraint} ${locationConstraint} Return image-only artwork with no title, words, letters, numbers, labels, logos, watermark, signature, border, frame, mat, mockup, or readable signage.`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_EDIT_MODEL}:generateContent`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ inlineData: { mimeType: source.mime_type || "image/png", data: bytesToBase64(sourceBytes) } }, { text: prompt }] }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "16:9" } } }) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Video artwork generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
-  const imagePart = payload?.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data || part.inline_data?.data);
-  const encoded = imagePart?.inlineData?.data || imagePart?.inline_data?.data;
-  if (!encoded) throw new Error("The image editor returned no landscape artwork.");
-  const binary = atob(encoded);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
-  const version = Number(previous?.version || 0) + 1;
-  const path = `studio/${ORG_ID}/albums/${album.id}/video-artwork/scene-v${version}.png`;
-  const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
-  if (uploadError) throw new Error(`Could not store the video artwork: ${uploadError.message}`);
-  await clearVideoArtworkSelections(db, album.id);
-  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "video_artwork_source", selection_status: "selected", source_asset_id: source.id, approved_cover_asset_id: approvedCover.id, aspect_ratio: "16:9", prompt, model: IMAGE_EDIT_MODEL } }).select("*").single();
-  if (error || !asset) throw new Error(error?.message || "Could not register the video artwork.");
-  return coverWithUrl(db, asset);
-}
-
-async function useCoverAsStudioVideoArtwork(db: any, album: any) {
-  if (album.artwork_status !== "approved") throw new Error("Approve the titled album cover before creating video artwork.");
-  const { data: approvedCover } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
-  if (!approvedCover) throw new Error("The approved album cover is unavailable.");
-  const sourceId = approvedCover.metadata_json?.source_asset_id || approvedCover.id;
-  const { data: source } = await db.from("studio_assets").select("*").eq("id", sourceId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
-  if (!source) throw new Error("The clean source image for the approved cover is unavailable.");
-  const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
-  const version = Number(previous?.version || 0) + 1;
-  await clearVideoArtworkSelections(db, album.id);
-  // Reuses the approved cover's own file — no image-generation call, no extra
-  // storage copy. The composer's canvas crop/letterbox does the sizing work.
-  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: source.storage_bucket, storage_path: source.storage_path, mime_type: source.mime_type, file_size: source.file_size, width: source.width, height: source.height, version, status: "active", metadata_json: { role: "video_artwork_source", selection_status: "selected", source_asset_id: source.id, approved_cover_asset_id: approvedCover.id, aspect_ratio: source.width && source.height ? `${source.width}:${source.height}` : "1:1", model: "direct_cover_reuse" } }).select("*").single();
-  if (error || !asset) throw new Error(error?.message || "Could not register the video artwork.");
-  return coverWithUrl(db, asset);
-}
-
 async function generateStudioCover(db: any, album: any, input: any) {
   if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before generating cover concepts.");
   const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
@@ -717,71 +657,28 @@ Deno.serve(async (req) => {
       if (error || !data) throw new Error(error?.message || "Could not approve the cover.");
       return json({ album: data });
     }
-    if (body.action === "list_video_artwork") {
-      const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data, error } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").order("version", { ascending: false });
-      if (error) throw new Error(error.message);
-      return json({ concepts: await Promise.all((data || []).map((asset: any) => coverWithUrl(db, asset))) });
-    }
-    if (body.action === "generate_video_artwork") {
-      const album = await getOwnedAlbum(db, body.album_id, user.id);
-      return json({ concept: await generateStudioVideoArtwork(db, album) }, 201);
-    }
-    if (body.action === "use_cover_as_video_artwork") {
-      const album = await getOwnedAlbum(db, body.album_id, user.id);
-      return json({ concept: await useCoverAsStudioVideoArtwork(db, album) }, 201);
-    }
-    if (body.action === "save_video_artwork_composite") {
-      const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data: source } = await db.from("studio_assets").select("*").eq("id", body.source_asset_id).eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").maybeSingle();
-      if (!source || source.metadata_json?.role !== "video_artwork_source") throw new Error("The clean 16:9 video artwork is unavailable.");
-      const match = String(body.image_base64 || "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
-      if (!match) throw new Error("The finished video artwork must be a PNG image.");
-      const binary = atob(match[1]);
-      if (binary.length > 15 * 1024 * 1024) throw new Error("The finished video artwork is larger than 15 MB.");
-      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-      if (bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error("The finished video artwork PNG is invalid.");
-      const typography = { title: cleanText(body.typography?.title, 200), subtitle: cleanText(body.typography?.subtitle, 160), series: cleanText(body.typography?.series, 120) || "Rekkrd After Dark", treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial", vintage_border: body.typography?.vintage_border !== false };
-      if (!typography.title) throw new Error("Add the album title before saving the video artwork.");
-      const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
-      const version = Number(previous?.version || 0) + 1;
-      const path = `studio/${ORG_ID}/albums/${album.id}/video-artwork/scene-v${version}-titled.png`;
-      const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
-      if (uploadError) throw new Error(`Could not store the finished video artwork: ${uploadError.message}`);
-      await clearVideoArtworkSelections(db, album.id);
-      const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "titled_video_artwork", selection_status: "selected", source_asset_id: source.id, approved_cover_asset_id: source.metadata_json?.approved_cover_asset_id, aspect_ratio: "16:9", typography } }).select("*").single();
-      if (error || !asset) throw new Error(error?.message || "Could not register the finished video artwork.");
-      return json({ concept: await coverWithUrl(db, asset) }, 201);
-    }
-    if (body.action === "approve_video_artwork") {
-      const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data: selectedArtwork } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { selection_status: "selected" }).maybeSingle();
-      if (!selectedArtwork || selectedArtwork.metadata_json?.role !== "titled_video_artwork") throw new Error("Finish and save the 16:9 video artwork before approving it.");
-      await clearVideoArtworkSelections(db, album.id, true);
-      await db.from("studio_assets").update({ metadata_json: { ...(selectedArtwork.metadata_json || {}), selection_status: "approved" } }).eq("id", selectedArtwork.id);
-      await db.from("studio_assets").update({ status: "archived", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("asset_type", "final_video").in("status", ["pending", "processing", "active", "failed"]);
-      await db.from("studio_albums").update({ video_status: "not_started", status: "animation_review", metadata_status: "not_started", publishing_status: "not_started", updated_at: new Date().toISOString() }).eq("id", album.id);
-      return json({ concept: await coverWithUrl(db, { ...selectedArtwork, metadata_json: { ...(selectedArtwork.metadata_json || {}), selection_status: "approved" } }) });
-    }
     if (body.action === "prepare_visual_production") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       if (album.artwork_status !== "approved") throw new Error("Approve the cover before preparing Visual Production.");
       if (album.master_status !== "approved") throw new Error("Approve the master before preparing Visual Production.");
       const motion = String(body.motion || "ken_burns").slice(0, 80);
       const direction = String(body.direction || "Subtle cinematic movement that preserves the approved cover composition.").trim().slice(0, 500);
-      const { data: videoArtwork } = await db.from("studio_assets").select("id, storage_path, storage_bucket, metadata_json").eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
+      // The approved cover renders straight into the video, same as the Episodes
+      // pipeline — the worker's blur-letterbox compositing fits any aspect ratio
+      // into 16:9 with no separate artwork-approval step required.
+      const { data: approvedCover } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
       const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (!videoArtwork || videoArtwork.metadata_json?.role !== "titled_video_artwork") throw new Error("Generate, title, and approve the 16:9 video artwork before rendering the final video.");
+      if (!approvedCover) throw new Error("Approve the cover before rendering the final video.");
       if (!master) throw new Error("The approved master is required before preparing Visual Production.");
       const { data: activeJob } = await db.from("studio_jobs").select("id").eq("album_id", album.id).eq("job_type", "video_render").in("status", ["queued", "processing"]).maybeSingle();
       if (activeJob) throw new Error("A video render is already in progress.");
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "final_video").order("version", { ascending: false }).limit(1).maybeSingle();
       const version = Number(previous?.version || 0) + 1;
       const storagePath = `studio/${ORG_ID}/albums/${album.id}/video/final-v${version}.mp4`;
-      const metadata = { role: "visual_production", motion, direction, video_artwork_asset_id: videoArtwork.id, master_asset_id: master.id, artwork_layout: "full_bleed_16x9", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
+      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, master_asset_id: master.id, artwork_layout: "cover_safe_fit", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
       const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "final_video", storage_bucket: "studio-assets", storage_path: storagePath, mime_type: "video/mp4", version, status: "pending", metadata_json: metadata }).select("*").single();
       if (assetError || !asset) throw new Error(assetError?.message || "Could not create the video asset.");
-      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, video_artwork_asset_id: videoArtwork.id, master_asset_id: master.id, motion, direction, artwork_layout: "full_bleed_16x9", storage_path: storagePath } }).select("*").single();
+      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, cover_asset_id: approvedCover.id, master_asset_id: master.id, motion, direction, artwork_layout: "cover_safe_fit", storage_path: storagePath } }).select("*").single();
       if (jobError || !job) {
         await db.from("studio_assets").update({ status: "failed", error_message: jobError?.message || "Could not register the video render job.", updated_at: new Date().toISOString() }).eq("id", asset.id);
         throw new Error(jobError?.message || "Could not register the video render job.");
@@ -794,12 +691,12 @@ Deno.serve(async (req) => {
           db.from("studio_albums").update({ video_status: "failed", status: "video_review", updated_at: now }).eq("id", album.id),
         ]);
       };
-      const [{ data: signedArtwork, error: artworkSignError }, { data: signedMaster, error: masterSignError }] = await Promise.all([
-        db.storage.from(videoArtwork.storage_bucket).createSignedUrl(videoArtwork.storage_path, 60 * 60),
+      const [{ data: signedCover, error: coverSignError }, { data: signedMaster, error: masterSignError }] = await Promise.all([
+        db.storage.from(approvedCover.storage_bucket).createSignedUrl(approvedCover.storage_path, 60 * 60),
         db.storage.from(master.storage_bucket).createSignedUrl(master.storage_path, 60 * 60),
       ]);
-      if (artworkSignError || masterSignError || !signedArtwork?.signedUrl || !signedMaster?.signedUrl) {
-        const message = `Could not prepare private Studio assets for the video worker: ${artworkSignError?.message || masterSignError?.message || "signed URL unavailable"}`;
+      if (coverSignError || masterSignError || !signedCover?.signedUrl || !signedMaster?.signedUrl) {
+        const message = `Could not prepare private Studio assets for the video worker: ${coverSignError?.message || masterSignError?.message || "signed URL unavailable"}`;
         await failQueuedVideo(message);
         throw new Error(message);
       }
@@ -811,7 +708,7 @@ Deno.serve(async (req) => {
       }
       let response: Response;
       try {
-        response = await fetch(VIDEO_RENDER_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", asset_id: asset.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, master_audio_url: signedMaster.signedUrl, cover_image_url: signedArtwork.signedUrl, artwork_layout: "full_bleed_16x9", storage_bucket: "studio-assets", storage_path: storagePath, motion }) });
+        response = await fetch(VIDEO_RENDER_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", asset_id: asset.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, master_audio_url: signedMaster.signedUrl, cover_image_url: signedCover.signedUrl, artwork_layout: "cover_safe_fit", storage_bucket: "studio-assets", storage_path: storagePath, motion }) });
       } catch (dispatchError) {
         const message = `Could not reach the video worker: ${dispatchError instanceof Error ? dispatchError.message : "network error"}`;
         await failQueuedVideo(message);
@@ -828,7 +725,7 @@ Deno.serve(async (req) => {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const { data: asset } = await db.from("studio_assets").select("id,metadata_json").eq("album_id", album.id).eq("asset_type", "final_video").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
       if (!asset) throw new Error("Render the final video before approving it.");
-      if (asset.metadata_json?.artwork_layout !== "full_bleed_16x9") throw new Error("This older render used the square-cover layout. Create and render approved 16:9 video artwork before approval.");
+      if (!asset.metadata_json?.artwork_layout) throw new Error("This render predates artwork layout tracking. Render again before approving.");
       const { data, error } = await db.from("studio_albums").update({ video_status: "approved", status: "metadata_review", metadata_status: "not_started", updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
       if (error || !data) throw new Error(error?.message || "Could not approve the video.");
       return json({ album: data });

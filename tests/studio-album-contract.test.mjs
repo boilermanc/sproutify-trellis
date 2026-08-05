@@ -49,7 +49,7 @@ test('Studio surfaces Edge Function messages and only retries safe reads', async
   const service = await read('services/studioAlbumsService.ts');
   assert.match(service, /FunctionsHttpError/);
   assert.match(service, /error\.context\.clone\(\)\.json\(\)/);
-  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'list_video_artwork'\]\)/);
+  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts'\]\)/);
   assert.match(service, /details\.status === 503/);
 });
 
@@ -192,41 +192,30 @@ test('unsupported publishing promises remain visibly disabled', async () => {
   assert.match(workflow, /Scheduling and custom-thumbnail upload are intentionally disabled/);
 });
 
-test('Studio video requires approved native 16:9 artwork and renders it full bleed', async () => {
+test('Studio video renders straight from the approved cover, matching the Episodes pattern', async () => {
+  // Regression: an earlier design required a separate "16:9 video artwork"
+  // asset (an AI outpaint call, or a compose-and-approve step) before a video
+  // could render at all. Episodes never had this — buildVideo() just fires
+  // whatever cover URL is approved straight at the worker, and the worker's
+  // blur-letterbox compositing fits any aspect ratio into 16:9 on its own.
+  // Studio Albums now matches that: no separate artwork asset, no extra click.
   const worker = await read('workers/video_worker.py');
   const page = await read('pages/StudioAlbums.tsx');
   const fn = await read('supabase/functions/studio-albums/index.ts');
-  const composer = await read('components/StudioVideoArtworkComposer.tsx');
-  assert.match(fn, /generate_video_artwork/);
-  assert.match(fn, /save_video_artwork_composite/);
-  assert.match(fn, /approve_video_artwork/);
-  assert.match(fn, /aspectRatio: "16:9"/);
-  assert.match(fn, /artwork_layout: "full_bleed_16x9"/);
-  assert.match(fn, /Generate, title, and approve the 16:9 video artwork/);
-  assert.match(worker, /artwork_layout == "full_bleed_16x9"/);
+  assert.doesNotMatch(fn, /generate_video_artwork/);
+  assert.doesNotMatch(fn, /use_cover_as_video_artwork/);
+  assert.doesNotMatch(fn, /save_video_artwork_composite/);
+  assert.doesNotMatch(fn, /approve_video_artwork/);
+  assert.doesNotMatch(fn, /list_video_artwork/);
+  assert.match(fn, /artwork_layout: "cover_safe_fit"/);
+  assert.match(fn, /eq\("asset_type", "cover_art"\)\.eq\("status", "active"\)\.contains\("metadata_json", \{ selection_status: "approved" \}\)/);
+  assert.match(fn, /Approve the cover before rendering the final video\./);
+  assert.match(fn, /This render predates artwork layout tracking\. Render again before approving\./);
+  assert.match(worker, /artwork_layout"\) not in \("cover_safe_fit", "full_bleed_16x9"\)/);
   assert.match(worker, /force_original_aspect_ratio=increase/);
   assert.match(worker, /framed_cover = os\.path\.join\(tmp, "framed-cover\.png"\)/);
-  assert.match(worker, /RENDER_PROFILE = "studio-landscape-v1"/);
-  assert.match(worker, /"render_profile": RENDER_PROFILE/);
-  assert.match(page, /Step 6a · YouTube artwork/);
-  assert.match(page, /Generate AI landscape scene/);
-  assert.match(page, /Approve 16:9 artwork/);
-  assert.match(page, /video\.artwork_layout !== 'full_bleed_16x9'/);
-  assert.match(composer, /const W = 1280/);
-  assert.match(composer, /const H = 720/);
-  assert.match(composer, /Rekkrd After Dark/);
-});
-
-test('Studio video artwork can reuse the approved cover instantly, no AI call required', async () => {
-  const fn = await read('supabase/functions/studio-albums/index.ts');
-  const page = await read('pages/StudioAlbums.tsx');
-  const service = await read('services/studioAlbumsService.ts');
-  const composer = await read('components/StudioVideoArtworkComposer.tsx');
-  assert.match(fn, /use_cover_as_video_artwork/);
-  assert.match(fn, /model: "direct_cover_reuse"/);
-  assert.match(service, /useCoverAsStudioVideoArtwork/);
-  assert.match(page, /Use approved cover/);
-  assert.match(page, /useCoverAsStudioVideoArtwork/);
-  assert.match(composer, /safe_fit/);
-  assert.match(composer, /Show full image/);
+  assert.doesNotMatch(page, /StudioVideoArtworkComposer/);
+  assert.doesNotMatch(page, /Step 6a/);
+  assert.match(page, /The approved cover fills the YouTube frame/);
+  assert.match(page, /Render final video/);
 });

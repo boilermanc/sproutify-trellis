@@ -224,8 +224,10 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             still = str(motion).lower() in ("none", "static", "off", "still")
             _heartbeat(asset_id, "probing-audio", 8, "Reading master duration", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
             dur = _duration(audio) or 180.0
-            # Build the final 16:9 frame once. Studio's approved landscape artwork
-            # is rendered full bleed. Legacy square assets keep the safe-fit path.
+            # Build the final 16:9 frame once. The default cover_safe_fit path
+            # (same as Episodes) blurs a cover-fill background and centers the
+            # whole source image on top, so any aspect ratio fits losslessly.
+            # full_bleed_16x9 (legacy, native landscape source) crops to fill.
             # The inexpensive render pass below only loops/zooms the flat frame.
             framed_cover = os.path.join(tmp, "framed-cover.png")
             if pipeline == "studio" and artwork_layout == "full_bleed_16x9":
@@ -342,8 +344,8 @@ def video():
         return jsonify({"error": "asset_id, project id, and master_audio_url required"}), 400
     if pipeline == "studio" and (not b.get("job_id") or b.get("storage_bucket") != "studio-assets" or not str(b.get("storage_path", "")).startswith("studio/")):
         return jsonify({"error": "Studio jobs require job_id and a studio-assets path under studio/"}), 400
-    if pipeline == "studio" and b.get("artwork_layout") != "full_bleed_16x9":
-        return jsonify({"error": "Studio jobs require approved full_bleed_16x9 artwork"}), 400
+    if pipeline == "studio" and b.get("artwork_layout") not in ("cover_safe_fit", "full_bleed_16x9"):
+        return jsonify({"error": "Studio jobs require a known artwork_layout (cover_safe_fit or full_bleed_16x9)"}), 400
     if pipeline == "studio":
         expected_prefix = f"studio/{b.get('organization_id')}/albums/{project_id}/video/"
         asset = _get_row("studio_assets", b["asset_id"], "album_id,asset_type,status,storage_bucket,storage_path")
