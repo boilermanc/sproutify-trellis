@@ -184,12 +184,14 @@ test('unsupported publishing promises remain visibly disabled', async () => {
 test('Studio video keeps the complete square cover inside the YouTube frame', async () => {
   const worker = await read('workers/video_worker.py');
   const page = await read('pages/StudioAlbums.tsx');
-  assert.match(worker, /Never crop the approved artwork/);
+  assert.match(worker, /keeps the entire approved square cover visible/);
   assert.match(worker, /force_original_aspect_ratio=decrease/);
-  assert.match(worker, /gblur=sigma=24/);
+  assert.match(worker, /framed_cover = os\.path\.join\(tmp, "framed-cover\.png"\)/);
+  assert.match(worker, /gblur=sigma=20/);
   assert.match(worker, /overlay=\(W-w\)\/2:\(H-h\)\/2/);
-  assert.match(worker, /RENDER_PROFILE = "studio-safe-fit-v1"/);
+  assert.match(worker, /RENDER_PROFILE = "studio-safe-fit-v2"/);
   assert.match(worker, /"render_profile": RENDER_PROFILE/);
-  assert.doesNotMatch(worker, /f"\[0:v\]\{vf\}\[v\]"/);
+  assert.match(worker, /"-vf", vf/);
+  assert.doesNotMatch(worker, /"-loop", "1", "-i", cover/);
   assert.match(page, /Re-render with safe fit/);
 });

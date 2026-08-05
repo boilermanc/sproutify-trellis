@@ -42,7 +42,7 @@ VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "12"))
 VIDEO_CRF = os.environ.get("VIDEO_CRF", "32").strip()
 VIDEO_AUDIO_BITRATE = os.environ.get("VIDEO_AUDIO_BITRATE", "96k").strip()
 MAX_STANDARD_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_STANDARD_UPLOAD_MB", "48"))
-RENDER_PROFILE = "studio-safe-fit-v1"
+RENDER_PROFILE = "studio-safe-fit-v2"
 
 app = Flask(__name__)
 
@@ -224,47 +224,49 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             still = str(motion).lower() in ("none", "static", "off", "still")
             _heartbeat(asset_id, "probing-audio", 8, "Reading master duration", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
             dur = _duration(audio) or 180.0
-            # Album covers are normally square. Never crop the approved artwork to
-            # fill YouTube's 16:9 canvas: that can remove titles, borders, and faces.
-            # Instead, use a blurred full-frame copy as the background and preserve
-            # the complete cover as a centered foreground with a small safe margin.
-            foreground_h = max(2, VIDEO_HEIGHT - max(24, VIDEO_HEIGHT // 18))
+            # Build the blurred 16:9 composition once. Applying blur + overlay on
+            # every frame of an hour-long video can consume several GB of memory.
+            # The prepared frame keeps the entire approved square cover visible;
+            # the inexpensive render pass below only loops/zooms that flat image.
+            framed_cover = os.path.join(tmp, "framed-cover.png")
+            foreground_h = max(2, VIDEO_HEIGHT - max(80, VIDEO_HEIGHT // 8))
             foreground_filter = (
                 f"scale={VIDEO_WIDTH}:{foreground_h}:force_original_aspect_ratio=decrease:"
                 "force_divisible_by=2,setsar=1"
             )
+            frame_filter = (
+                "[0:v]split=2[bgsrc][fgsrc];"
+                f"[bgsrc]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
+                f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},gblur=sigma=20,eq=brightness=-0.08,setsar=1[bg];"
+                f"[fgsrc]{foreground_filter}[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=rgb24[v]"
+            )
+            _heartbeat(asset_id, "preparing-frame", 9, "Preparing memory-safe widescreen artwork", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
+            subprocess.run([
+                "ffmpeg", "-y", "-loglevel", "error", "-i", cover,
+                "-filter_complex", frame_filter, "-map", "[v]", "-frames:v", "1", framed_cover,
+            ], check=True)
             if still:
-                # Plain static composition — complete cover, no camera motion.
-                vf = (
-                    "[0:v]split=2[bgsrc][fgsrc];"
-                    f"[bgsrc]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
-                    f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},gblur=sigma=24,eq=brightness=-0.08,setsar=1[bg];"
-                    f"[fgsrc]{foreground_filter}[fg];"
-                    "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=yuv420p[v]"
-                )
+                vf = f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT},setsar=1,format=yuv420p"
             else:
-                # Animate only the blurred background. The foreground cover remains
-                # complete and stable, keeping all typography inside YouTube's frame.
+                # A restrained zoom on the already-composited frame keeps the full
+                # cover inside the canvas even at the end of the album.
                 total = max(1, int(dur * fps))
-                zmax = 1.12
+                zmax = 1.04
                 zrate = (zmax - 1.0) / total
                 source_w = VIDEO_WIDTH * 4 // 3
                 source_h = VIDEO_HEIGHT * 4 // 3
                 vf = (
-                    "[0:v]split=2[bgsrc][fgsrc];"
-                    f"[bgsrc]scale={source_w}:{source_h}:force_original_aspect_ratio=increase,"
-                    f"crop={source_w}:{source_h},gblur=sigma=24,eq=brightness=-0.08,"
+                    f"scale={source_w}:{source_h},"
                     f"zoompan=z='min(1+{zrate:.9f}*on,{zmax})':d=1:"
                     "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps},setsar=1[bg];"
-                    f"[fgsrc]{foreground_filter}[fg];"
-                    "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=yuv420p[v]"
+                    f"s={VIDEO_WIDTH}x{VIDEO_HEIGHT}:fps={fps},setsar=1,format=yuv420p"
                 )
             _heartbeat(asset_id, "rendering", 10, "Rendering video with ffmpeg", {"duration_seconds": round(dur, 1), "motion": motion}, pipeline, job_id, project_id if pipeline == "studio" else None)
             _run_ffmpeg([
-                "ffmpeg", "-y", "-nostats", "-progress", "pipe:1", "-loop", "1", "-i", cover, "-i", audio,
-                "-filter_complex", vf,
-                "-map", "[v]", "-map", "1:a",
+                "ffmpeg", "-y", "-nostats", "-progress", "pipe:1", "-loop", "1", "-i", framed_cover, "-i", audio,
+                "-vf", vf,
+                "-map", "0:v", "-map", "1:a",
                 "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", VIDEO_CRF,
                 "-c:a", "aac", "-b:a", VIDEO_AUDIO_BITRATE,
                 "-pix_fmt", "yuv420p", "-r", str(fps), "-shortest",
