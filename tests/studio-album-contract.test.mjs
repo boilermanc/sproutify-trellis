@@ -183,6 +183,15 @@ test('Studio publishing requires review and has a durable failure path', async (
   assert.equal(youtubeUpload?.parameters.categoryId, "={{ '10' }}");
 });
 
+test('publishing draft picks the approved cover as the thumbnail, not just the newest one', async () => {
+  // Regression: querying cover_art ordered by version desc grabs whatever
+  // concept was generated most recently — including an unapproved alternate
+  // created via "Create another concept" after the real cover was approved —
+  // instead of the actual approved titled cover.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /const \{ data: cover \} = await db\.from\("studio_assets"\)\.select\("id"\)\.eq\("album_id", album\.id\)\.eq\("asset_type", "cover_art"\)\.eq\("status", "active"\)\.contains\("metadata_json", \{ selection_status: "approved" \}\)\.maybeSingle\(\);/);
+});
+
 test('unsupported publishing promises remain visibly disabled', async () => {
   const fn = await read('supabase/functions/studio-albums/index.ts');
   const panel = await read('components/StudioPublishingPanel.tsx');
@@ -192,14 +201,12 @@ test('unsupported publishing promises remain visibly disabled', async () => {
   assert.match(workflow, /Scheduling and custom-thumbnail upload are intentionally disabled/);
 });
 
-test('Studio video renders straight from the approved cover, matching the Episodes pattern', async () => {
+test('Studio video renders with no separate artwork-approval step', async () => {
   // Regression: an earlier design required a separate "16:9 video artwork"
   // asset (an AI outpaint call, or a compose-and-approve step) before a video
   // could render at all. Episodes never had this — buildVideo() just fires
-  // whatever cover URL is approved straight at the worker, which already knew
-  // how to turn a square cover into a proper 16:9 frame. Studio Albums now
-  // matches that: no separate artwork asset, no extra click — the worker
-  // crops the approved cover edge to edge (full_bleed_16x9).
+  // whatever cover URL is approved straight at the worker. Studio Albums now
+  // matches that: no separate artwork asset to approve, no extra click.
   const worker = await read('workers/video_worker.py');
   const page = await read('pages/StudioAlbums.tsx');
   const fn = await read('supabase/functions/studio-albums/index.ts');
@@ -221,16 +228,45 @@ test('Studio video renders straight from the approved cover, matching the Episod
   assert.match(page, /Render final video/);
 });
 
-test('cover typography lets you pick a text color and shows the 16:9 video crop guide', async () => {
+test('video renders from a native 16:9 text-free companion photo, not a crop of the square typography cover', async () => {
+  // Root-cause fix: cropping a square cover that has title text burned near its
+  // edges either clips the text or throws away ~44% of the photo. Episodes never
+  // hits this because its cover_art is generated natively at 16:9 with no text
+  // at all. Studio Albums now generates the same kind of clean, native 16:9
+  // companion photo (same scene/style/direction, text-free) the first time a
+  // video is rendered, and reuses it on every re-render for that same cover.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /async function generateStudioVideoSource\(db: any, album: any, sourceConcept: any\)/);
+  assert.match(fn, /buildCoverPrompt\("Widescreen 16:9"/);
+  assert.match(fn, /aspectRatio: "16:9"/);
+  assert.match(fn, /no title, no words/);
+  assert.doesNotMatch(fn, /Recompose and outpaint/);
+  assert.match(fn, /role: "video_source", source_asset_id: sourceConcept\.id, aspect_ratio: "16:9"/);
+  assert.match(fn, /const sourceConceptId = approvedCover\.metadata_json\?\.source_asset_id \|\| approvedCover\.id/);
+  assert.match(fn, /The clean source photo behind the approved cover is unavailable\./);
+  assert.match(fn, /contains\("metadata_json", \{ role: "video_source", source_asset_id: sourceConcept\.id \}\)/);
+  assert.match(fn, /if \(!videoSource\) videoSource = await generateStudioVideoSource\(db, album, sourceConcept\)/);
+  assert.match(fn, /style_prompt: stylePrompt/);
+});
+
+test('cover typography has a text color picker and font selector, and no video crop guide', async () => {
   const composer = await read('components/StudioCoverComposer.tsx');
   const service = await read('services/studioAlbumsService.ts');
   const fn = await read('supabase/functions/studio-albums/index.ts');
   const page = await read('pages/StudioAlbums.tsx');
+  const html = await read('index.html');
   assert.match(composer, /type="color"/);
   assert.match(composer, /TREATMENT_DEFAULT_COLOR/);
-  assert.match(composer, /Show 16:9 video crop guide/);
-  assert.match(composer, /VIDEO_CROP_FRACTION = \(1 - 9 \/ 16\) \/ 2/);
+  assert.match(composer, /FONT_OPTIONS/);
+  assert.match(composer, /TREATMENT_DEFAULT_FONT/);
+  assert.match(composer, /Playfair Display/);
+  assert.doesNotMatch(composer, /crop guide/i);
+  assert.doesNotMatch(composer, /VIDEO_CROP_FRACTION/);
   assert.match(service, /title_color\?: string/);
+  assert.match(service, /title_font\?: string/);
   assert.match(fn, /title_color: \/\^#\[0-9a-fA-F\]\{6\}\$\/\.test/);
+  assert.match(fn, /VALID_COVER_FONTS\.has/);
   assert.match(page, /defaultTitleColor=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_color\}/);
+  assert.match(page, /defaultTitleFont=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_font\}/);
+  assert.match(html, /Playfair\+Display/);
 });

@@ -135,7 +135,7 @@ export interface StudioCoverDirection {
   custom_direction: string;
 }
 export async function generateStudioCoverConcept(albumId: string, direction: StudioCoverDirection): Promise<StudioCoverConcept> { return (await callStudio('generate_cover_concept', { album_id: albumId, ...direction })).concept as StudioCoverConcept; }
-export interface StudioCoverTypography { title: string; subtitle: string; series: string; treatment: string; vintage_border: boolean; title_color?: string; }
+export interface StudioCoverTypography { title: string; subtitle: string; series: string; treatment: string; vintage_border: boolean; title_color?: string; title_font?: string; }
 export async function saveStudioCoverComposite(albumId: string, sourceAssetId: string, imageBase64: string, typography: StudioCoverTypography): Promise<StudioCoverConcept> { return (await callStudio('save_cover_composite', { album_id: albumId, source_asset_id: sourceAssetId, image_base64: imageBase64, typography })).concept as StudioCoverConcept; }
 export async function enhanceStudioCoverConcept(albumId: string, sourceAssetId: string, direction: string): Promise<StudioCoverConcept> { return (await callStudio('enhance_cover_concept', { album_id: albumId, source_asset_id: sourceAssetId, direction })).concept as StudioCoverConcept; }
 export async function deleteStudioCoverConcept(assetId: string): Promise<void> { await callStudio('delete_cover_concept', { asset_id: assetId }); }

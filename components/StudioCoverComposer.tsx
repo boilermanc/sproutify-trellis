@@ -10,15 +10,12 @@ interface Props {
   defaultSubtitle?: string;
   defaultSeries?: string;
   defaultTitleColor?: string;
+  defaultTitleFont?: string;
   onSaved: (concept: StudioCoverConcept) => void;
 }
 
 const W = 1024;
 const H = 1024;
-// The video render crops the square cover to the center 9:16 of 16:9's inverse
-// (720/1280 of the scaled height), so the top and bottom (1 - 9/16)/2 ≈ 21.875%
-// of this canvas gets cut off in the final YouTube video. Shown as a guide below.
-const VIDEO_CROP_FRACTION = (1 - 9 / 16) / 2;
 
 const TREATMENTS = [
   { id: 'riviera_editorial', label: 'Riviera Editorial' },
@@ -31,6 +28,23 @@ const TREATMENT_DEFAULT_COLOR: Record<Treatment, string> = {
   travel_poster: '#d64b1d',
   after_dark: '#f5d58b',
 };
+
+const FONT_OPTIONS = [
+  { id: 'cormorant', label: 'Cormorant Garamond', family: '"Cormorant Garamond", Georgia, serif' },
+  { id: 'abril', label: 'Abril Fatface', family: '"Abril Fatface", Georgia, serif' },
+  { id: 'bebas', label: 'Bebas Neue', family: '"Bebas Neue", Impact, sans-serif' },
+  { id: 'playfair', label: 'Playfair Display', family: '"Playfair Display", Georgia, serif' },
+  { id: 'oswald', label: 'Oswald', family: '"Oswald", Impact, sans-serif' },
+  { id: 'montserrat', label: 'Montserrat', family: '"Montserrat", Arial, sans-serif' },
+] as const;
+type FontId = typeof FONT_OPTIONS[number]['id'];
+const FONT_FAMILY: Record<FontId, string> = Object.fromEntries(FONT_OPTIONS.map(item => [item.id, item.family])) as Record<FontId, string>;
+const TREATMENT_DEFAULT_FONT: Record<Treatment, FontId> = {
+  riviera_editorial: 'cormorant',
+  travel_poster: 'bebas',
+  after_dark: 'abril',
+};
+const isFontId = (value: unknown): value is FontId => FONT_OPTIONS.some(item => item.id === value);
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines = 3): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -62,7 +76,7 @@ function drawLetterspaced(ctx: CanvasRenderingContext2D, text: string, x: number
   });
 }
 
-export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultTitle, defaultSubtitle = '', defaultSeries = 'Rekkrd After Dark', defaultTitleColor, onSaved }) => {
+export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultTitle, defaultSubtitle = '', defaultSeries = 'Rekkrd After Dark', defaultTitleColor, defaultTitleFont, onSaved }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
   const [title, setTitle] = useState(defaultTitle);
@@ -70,8 +84,8 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
   const [series, setSeries] = useState(defaultSeries || 'Rekkrd After Dark');
   const [treatment, setTreatment] = useState<Treatment>('riviera_editorial');
   const [titleColor, setTitleColor] = useState(defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
+  const [titleFont, setTitleFont] = useState<FontId>(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial);
   const [vintageBorder, setVintageBorder] = useState(true);
-  const [showCropGuide, setShowCropGuide] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,15 +95,17 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     setSubtitle(defaultSubtitle);
     setSeries(defaultSeries || 'Rekkrd After Dark');
     setTitleColor(defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
-  }, [defaultSeries, defaultSubtitle, defaultTitle, defaultTitleColor, source.id]);
+    setTitleFont(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial);
+  }, [defaultSeries, defaultSubtitle, defaultTitle, defaultTitleColor, defaultTitleFont, source.id]);
 
-  const changeTreatment = (next: Treatment) => { setTreatment(next); setTitleColor(TREATMENT_DEFAULT_COLOR[next]); };
+  const changeTreatment = (next: Treatment) => { setTreatment(next); setTitleColor(TREATMENT_DEFAULT_COLOR[next]); setTitleFont(TREATMENT_DEFAULT_FONT[next]); };
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const image = imageRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !image) return;
+    const fontFamily = FONT_FAMILY[titleFont];
 
     ctx.clearRect(0, 0, W, H);
     const scale = Math.max(W / image.width, H / image.height);
@@ -127,13 +143,13 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       let size = 72;
       let lines: string[] = [];
       do {
-        ctx.font = `700 ${size}px "Cormorant Garamond", Georgia, serif`;
+        ctx.font = `700 ${size}px ${fontFamily}`;
         lines = wrapText(ctx, title, 500, 3);
         size -= lines.length > 3 || lines.some(line => ctx.measureText(line).width > 500) ? 4 : 0;
       } while (size > 44 && lines.some(line => ctx.measureText(line).width > 500));
       lines.forEach((line, index) => ctx.fillText(line, 952, 105 + index * size * 0.92));
       if (subtitle.trim()) {
-        ctx.font = 'italic 30px "Cormorant Garamond", Georgia, serif';
+        ctx.font = `italic 30px ${fontFamily}`;
         ctx.fillStyle = titleColor;
         ctx.fillText(subtitle, 952, 135 + lines.length * size * 0.92);
       }
@@ -150,14 +166,14 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       let size = 94;
       let lines: string[] = [];
       while (size >= 54) {
-        ctx.font = `400 ${size}px "Bebas Neue", Impact, sans-serif`;
+        ctx.font = `700 ${size}px ${fontFamily}`;
         lines = wrapText(ctx, title.toUpperCase(), 650, 3);
         if (lines.every(line => ctx.measureText(line).width <= 650)) break;
         size -= 4;
       }
       lines.forEach((line, index) => ctx.fillText(line, 66, 112 + index * size * 0.91));
       if (subtitle.trim()) {
-        ctx.font = '700 30px Inter, Arial, sans-serif';
+        ctx.font = `700 30px ${fontFamily}`;
         ctx.fillStyle = titleColor;
         ctx.fillText(subtitle.toUpperCase(), 70, 145 + lines.length * size * 0.91);
       }
@@ -169,11 +185,11 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       ctx.fillRect(0, H * 0.42, W, H * 0.58);
       ctx.fillStyle = titleColor;
       ctx.textAlign = 'left';
-      ctx.font = '400 82px "Abril Fatface", Georgia, serif';
+      ctx.font = `700 82px ${fontFamily}`;
       const lines = wrapText(ctx, title, 830, 3);
       lines.forEach((line, index) => ctx.fillText(line, 70, 700 + index * 84));
       if (subtitle.trim()) {
-        ctx.font = 'italic 31px "Cormorant Garamond", Georgia, serif';
+        ctx.font = `italic 31px ${fontFamily}`;
         ctx.fillStyle = titleColor;
         ctx.fillText(subtitle, 74, 700 - 54);
       }
@@ -187,7 +203,7 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     drawLetterspaced(ctx, (series.trim() || 'Rekkrd After Dark').toUpperCase(), W / 2, H - 36, 5, 'center');
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
-  }, [series, subtitle, title, titleColor, treatment, vintageBorder]);
+  }, [series, subtitle, title, titleColor, titleFont, treatment, vintageBorder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,7 +238,7 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     setSaved(false);
     setError(null);
     try {
-      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor });
+      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont });
       setSaved(true);
       onSaved(concept);
       window.setTimeout(() => setSaved(false), 3500);
@@ -236,21 +252,15 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
   return <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
     <div className="flex items-start gap-3"><Type className="mt-0.5 text-amber-700" size={18} /><div><p className="text-xs font-black uppercase tracking-widest text-amber-800">Finish the cover typography</p><p className="mt-1 text-xs text-amber-900">The photograph stays clean; Trellis adds real, correctly spelled type. Save this version before approving the cover.</p></div></div>
     <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="relative">
-        <canvas ref={canvasRef} width={W} height={H} className="aspect-square w-full rounded-xl border border-amber-200 bg-slate-900" />
-        {showCropGuide && <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-          <div className="absolute inset-x-0 top-0 flex items-start justify-center bg-black/55 pt-1" style={{ height: `${VIDEO_CROP_FRACTION * 100}%` }}><span className="text-[9px] font-black uppercase tracking-widest text-white/85">Cropped in the 16:9 video</span></div>
-          <div className="absolute inset-x-0 bottom-0 flex items-end justify-center bg-black/55 pb-1" style={{ height: `${VIDEO_CROP_FRACTION * 100}%` }}><span className="text-[9px] font-black uppercase tracking-widest text-white/85">Cropped in the 16:9 video</span></div>
-        </div>}
-      </div>
+      <canvas ref={canvasRef} width={W} height={H} className="aspect-square w-full rounded-xl border border-amber-200 bg-slate-900" />
       <div className="space-y-3">
         <label className="block text-xs font-bold text-slate-700">Typography style<select value={treatment} onChange={event => changeTreatment(event.target.value as Treatment)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{TREATMENTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <label className="block text-xs font-bold text-slate-700">Font<select value={titleFont} onChange={event => setTitleFont(event.target.value as FontId)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{FONT_OPTIONS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label className="block text-xs font-bold text-slate-700">Text color<input type="color" value={titleColor} onChange={event => setTitleColor(event.target.value)} className="mt-1.5 h-10 w-full cursor-pointer rounded-xl border border-amber-200 bg-white p-1" /></label>
         <label className="block text-xs font-bold text-slate-700">Album title<textarea value={title} onChange={event => setTitle(event.target.value)} className="mt-1.5 min-h-20 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" /></label>
         <label className="block text-xs font-bold text-slate-700">Release subtitle<input value={subtitle} onChange={event => setSubtitle(event.target.value)} placeholder="Optional" className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" /></label>
         <label className="block text-xs font-bold text-slate-700">Bottom imprint<input value={series} onChange={event => setSeries(event.target.value)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm" /></label>
         <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700"><input type="checkbox" checked={vintageBorder} onChange={event => setVintageBorder(event.target.checked)} className="h-4 w-4 accent-amber-700" /> Vintage postcard border</label>
-        <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700"><input type="checkbox" checked={showCropGuide} onChange={event => setShowCropGuide(event.target.checked)} className="h-4 w-4 accent-amber-700" /> Show 16:9 video crop guide</label>
         <button type="button" onClick={save} disabled={saving || !source.image_url || !title.trim()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{saving ? <Loader2 className="animate-spin" size={16} /> : saved ? <CheckCircle2 size={16} /> : <Save size={16} />}{saved ? 'Titled cover saved' : 'Save titled cover'}</button>
         {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
       </div>

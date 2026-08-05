@@ -12,6 +12,7 @@ const VIDEO_RENDER_WEBHOOK = Deno.env.get("STUDIO_VIDEO_RENDER_WEBHOOK") || Deno
 const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-studio-album-publish";
 const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
 const IMAGE_EDIT_MODEL = Deno.env.get("IMAGE_EDIT_MODEL") || "gemini-3.1-flash-image";
+const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat"]);
 
 const cleanText = (value: unknown, limit: number) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -157,6 +158,10 @@ async function clearCoverSelections(db: any, albumId: string) {
   await Promise.all(selected.map((asset: any) => db.from("studio_assets").update({ metadata_json: { ...(asset.metadata_json || {}), selection_status: "unselected" } }).eq("id", asset.id)));
 }
 
+function buildCoverPrompt(aspectLabel: string, params: { stylePrompt: string; styleSetting: string; customDirection: string; subjectConstraint: string; locationConstraint: string; genreLabel: string; moodLabel: string }) {
+  return `${aspectLabel} IMAGE-ONLY album artwork plate for an original music release. Typography will be added later with real fonts.\nSTYLE / MEDIUM: ${params.stylePrompt}\nSCENE SETTING: ${params.styleSetting || "an evocative, geographically specific setting"}.\nUSER DIRECTION — HIGHEST PRIORITY: ${params.customDirection || "Create one elegant focal subject and a restrained editorial composition"}.\n${params.subjectConstraint}\n${params.locationConstraint}\nALBUM CONTEXT: Genre ${params.genreLabel}; mood ${params.moodLabel}.\nABSOLUTE EXCLUSIONS: no title, no words, no letters, no numbers, no signage, no labels, no logos, no watermark, no signature, no readable writing, no real artists, and no copyrighted characters. Do not invent extra people, vehicles, or narrative props that conflict with the user direction.`;
+}
+
 async function generateStudioCover(db: any, album: any, input: any) {
   if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before generating cover concepts.");
   const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
@@ -176,7 +181,9 @@ async function generateStudioCover(db: any, album: any, input: any) {
   const locationConstraint = rivieraRequested
     ? "HARD LOCATION CONSTRAINT: This is the real French Riviera / Côte d’Azur: deep blue Mediterranean water, yachts, palms, a curved developed coastline, limestone terrace or balustrade, and recognizable Belle Époque resort architecture. No tropical jungle, waterfall, volcano, fantasy island, or generic Caribbean setting."
     : "LOCATION CONSTRAINT: Make the stated setting geographically and architecturally specific rather than generic.";
-  const prompt = `Square IMAGE-ONLY album artwork plate for an original music release. Typography will be added later with real fonts.\nSTYLE / MEDIUM: ${stylePrompt}\nSCENE SETTING: ${styleSetting || album.theme || "an evocative, geographically specific setting"}.\nUSER DIRECTION — HIGHEST PRIORITY: ${customDirection || "Create one elegant focal subject and a restrained editorial composition"}.\n${subjectConstraint}\n${locationConstraint}\nALBUM CONTEXT: Genre ${album.subgenre || album.genre || "instrumental"}; mood ${album.mood || "cinematic"}.\nABSOLUTE EXCLUSIONS: no title, no words, no letters, no numbers, no signage, no labels, no logos, no watermark, no signature, no readable writing, no real artists, and no copyrighted characters. Do not invent extra people, vehicles, or narrative props that conflict with the user direction.`;
+  const genreLabel = album.subgenre || album.genre || "instrumental";
+  const moodLabel = album.mood || "cinematic";
+  const prompt = buildCoverPrompt("Square", { stylePrompt, styleSetting: styleSetting || album.theme, customDirection, subjectConstraint, locationConstraint, genreLabel, moodLabel });
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "1:1" } }) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Cover concept generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
@@ -188,10 +195,52 @@ async function generateStudioCover(db: any, album: any, input: any) {
   const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}.png`;
   const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
   if (uploadError) throw new Error(`Could not store cover concept: ${uploadError.message}`);
-  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "cover_concept", selection_status: "unselected", prompt, style_id: styleId, style_setting: styleSetting, custom_direction: customDirection, hard_constraints: { single_woman: singleWomanRequested, french_riviera: rivieraRequested }, model: IMAGE_MODEL } }).select("*").single();
+  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "cover_art", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1024, height: 1024, version, status: "active", metadata_json: { role: "cover_concept", selection_status: "unselected", prompt, style_id: styleId, style_prompt: stylePrompt, style_setting: styleSetting, custom_direction: customDirection, hard_constraints: { single_woman: singleWomanRequested, french_riviera: rivieraRequested }, model: IMAGE_MODEL } }).select("*").single();
   if (error || !asset) throw new Error(error?.message || "Could not register cover concept.");
   await db.from("studio_albums").update({ artwork_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
   return coverWithUrl(db, asset);
+}
+
+// Native 16:9 companion to the approved square cover — same scene, same style,
+// generated text-free directly at video aspect (never an AI outpaint/edit of the
+// square image). Mirrors how Episodes' cover_art has always been generated: at
+// the aspect ratio it'll actually render at, so the video worker never needs to
+// crop away meaningful content or letterbox around it.
+async function generateStudioVideoSource(db: any, album: any, sourceConcept: any) {
+  const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
+  const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
+  if (!key) throw new Error("Image generation is not configured.");
+  const meta = sourceConcept.metadata_json || {};
+  const hardConstraints = meta.hard_constraints || {};
+  const subjectConstraint = hardConstraints.single_woman
+    ? "HARD SUBJECT CONSTRAINT: Exactly one adult woman is the only human figure anywhere in the image. No second person, no men, no crowd, no background people, no reflections or portraits containing other people."
+    : "SUBJECT CONSTRAINT: Use one clear focal subject. Do not add a group, entourage, or crowd unless the user explicitly requests one.";
+  const locationConstraint = hardConstraints.french_riviera
+    ? "HARD LOCATION CONSTRAINT: This is the real French Riviera / Côte d’Azur: deep blue Mediterranean water, yachts, palms, a curved developed coastline, limestone terrace or balustrade, and recognizable Belle Époque resort architecture. No tropical jungle, waterfall, volcano, fantasy island, or generic Caribbean setting."
+    : "LOCATION CONSTRAINT: Make the stated setting geographically and architecturally specific rather than generic.";
+  const prompt = buildCoverPrompt("Widescreen 16:9", {
+    stylePrompt: meta.style_prompt || "Premium editorial album artwork with a strong single visual idea.",
+    styleSetting: meta.style_setting || "",
+    customDirection: meta.custom_direction || "",
+    subjectConstraint,
+    locationConstraint,
+    genreLabel: album.subgenre || album.genre || "instrumental",
+    moodLabel: album.mood || "cinematic",
+  });
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "16:9" } }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Video source generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
+  const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
+  if (!b64) throw new Error("The image provider returned no video source image.");
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const { data: prior } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
+  const version = Number(prior?.version || 0) + 1;
+  const path = `studio/${ORG_ID}/albums/${album.id}/video-source/scene-v${version}.png`;
+  const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
+  if (uploadError) throw new Error(`Could not store the video source image: ${uploadError.message}`);
+  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "video_source", source_asset_id: sourceConcept.id, aspect_ratio: "16:9", prompt, model: IMAGE_MODEL } }).select("*").single();
+  if (error || !asset) throw new Error(error?.message || "Could not register the video source image.");
+  return asset;
 }
 
 async function masterWithAsset(db: any, albumId: string, fallback: any = {}) {
@@ -235,7 +284,7 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
   if (existing?.status === "submitting") throw new Error("This album is already being submitted.");
   const { data: video } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "final_video").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
   if (!video) throw new Error("The approved video asset is unavailable.");
-  const { data: cover } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
+  const { data: cover } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
   const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("track_number,title,duration_seconds").eq("album_id", album.id).eq("review_status", "approved").order("track_number");
   if (tracksError) throw new Error(tracksError.message);
   let elapsed = 0;
@@ -578,6 +627,7 @@ Deno.serve(async (req) => {
         treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial",
         vintage_border: body.typography?.vintage_border !== false,
         title_color: /^#[0-9a-fA-F]{6}$/.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
+        title_font: VALID_COVER_FONTS.has(String(body.typography?.title_font || "")) ? body.typography.title_font : undefined,
       };
       if (!typography.title) throw new Error("Add the album title before saving the cover.");
       await clearCoverSelections(db, album.id);
@@ -664,22 +714,28 @@ Deno.serve(async (req) => {
       if (album.master_status !== "approved") throw new Error("Approve the master before preparing Visual Production.");
       const motion = String(body.motion || "ken_burns").slice(0, 80);
       const direction = String(body.direction || "Subtle cinematic movement that preserves the approved cover composition.").trim().slice(0, 500);
-      // The approved cover renders straight into the video — no separate
-      // artwork-approval step. full_bleed_16x9 crops the square cover to fill
-      // the frame edge to edge (sharp, no blurred pillarboxing).
-      const { data: approvedCover } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
-      const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
+      const { data: approvedCover } = await db.from("studio_assets").select("id, metadata_json").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
       if (!approvedCover) throw new Error("Approve the cover before rendering the final video.");
+      const sourceConceptId = approvedCover.metadata_json?.source_asset_id || approvedCover.id;
+      const { data: sourceConcept } = await db.from("studio_assets").select("*").eq("id", sourceConceptId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+      if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
+      // The video never derives from the square typography'd cover — it renders
+      // a native 16:9, text-free companion photo generated from the same scene
+      // (same pattern as the Episodes pipeline: born the right shape, so the
+      // worker never has to crop away or letterbox around anything meaningful).
+      let videoSource = (await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "scene_image").eq("status", "active").contains("metadata_json", { role: "video_source", source_asset_id: sourceConcept.id }).maybeSingle()).data;
+      if (!videoSource) videoSource = await generateStudioVideoSource(db, album, sourceConcept);
+      const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!master) throw new Error("The approved master is required before preparing Visual Production.");
       const { data: activeJob } = await db.from("studio_jobs").select("id").eq("album_id", album.id).eq("job_type", "video_render").in("status", ["queued", "processing"]).maybeSingle();
       if (activeJob) throw new Error("A video render is already in progress.");
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "final_video").order("version", { ascending: false }).limit(1).maybeSingle();
       const version = Number(previous?.version || 0) + 1;
       const storagePath = `studio/${ORG_ID}/albums/${album.id}/video/final-v${version}.mp4`;
-      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, master_asset_id: master.id, artwork_layout: "full_bleed_16x9", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
+      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, video_source_asset_id: videoSource.id, master_asset_id: master.id, artwork_layout: "full_bleed_16x9", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
       const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "final_video", storage_bucket: "studio-assets", storage_path: storagePath, mime_type: "video/mp4", version, status: "pending", metadata_json: metadata }).select("*").single();
       if (assetError || !asset) throw new Error(assetError?.message || "Could not create the video asset.");
-      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, cover_asset_id: approvedCover.id, master_asset_id: master.id, motion, direction, artwork_layout: "full_bleed_16x9", storage_path: storagePath } }).select("*").single();
+      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, video_source_asset_id: videoSource.id, master_asset_id: master.id, motion, direction, artwork_layout: "full_bleed_16x9", storage_path: storagePath } }).select("*").single();
       if (jobError || !job) {
         await db.from("studio_assets").update({ status: "failed", error_message: jobError?.message || "Could not register the video render job.", updated_at: new Date().toISOString() }).eq("id", asset.id);
         throw new Error(jobError?.message || "Could not register the video render job.");
@@ -693,7 +749,7 @@ Deno.serve(async (req) => {
         ]);
       };
       const [{ data: signedCover, error: coverSignError }, { data: signedMaster, error: masterSignError }] = await Promise.all([
-        db.storage.from(approvedCover.storage_bucket).createSignedUrl(approvedCover.storage_path, 60 * 60),
+        db.storage.from(videoSource.storage_bucket).createSignedUrl(videoSource.storage_path, 60 * 60),
         db.storage.from(master.storage_bucket).createSignedUrl(master.storage_path, 60 * 60),
       ]);
       if (coverSignError || masterSignError || !signedCover?.signedUrl || !signedMaster?.signedUrl) {
