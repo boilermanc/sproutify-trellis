@@ -549,6 +549,24 @@ Deno.serve(async (req) => {
       }
       return json({ deleted_track_id: track.id });
     }
+    if (body.action === "reorder_tracks") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      // The stitched master bakes in the running order, so reordering is only
+      // free before it's built. After that, the order changes on the next rebuild.
+      if (!["not_started", "failed"].includes(album.master_status)) throw new Error("Rebuild the master to change the running order — the current master already uses it.");
+      const orderedIds = Array.isArray(body.track_ids) ? body.track_ids.map((id: unknown) => String(id)) : [];
+      const { data: existing, error } = await db.from("studio_tracks").select("id, review_status").eq("album_id", album.id);
+      if (error) throw new Error(error.message);
+      const existingIds = (existing || []).map((track: any) => track.id);
+      if (orderedIds.length !== existingIds.length || !existingIds.every((id: string) => orderedIds.includes(id))) throw new Error("The reordered list must include every track exactly once.");
+      if ((existing || []).some((track: any) => track.review_status === "regenerating")) throw new Error("Wait for tracks to finish generating before reordering.");
+      // Two-phase renumber: park at high temp numbers first so the
+      // UNIQUE(album_id, track_number) constraint never trips mid-swap.
+      await Promise.all(orderedIds.map((id: string, index: number) => db.from("studio_tracks").update({ track_number: 100000 + index + 1, updated_at: new Date().toISOString() }).eq("id", id).eq("album_id", album.id)));
+      await Promise.all(orderedIds.map((id: string, index: number) => db.from("studio_tracks").update({ track_number: index + 1, updated_at: new Date().toISOString() }).eq("id", id).eq("album_id", album.id)));
+      const { data: tracks } = await db.from("studio_tracks").select("*").eq("album_id", album.id).order("track_number");
+      return json({ tracks: await Promise.all((tracks || []).map((track: any) => trackWithAsset(db, track.id))) });
+    }
     if (body.action === "approve_planned_track") {
       const { data: studioTrack, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
       if (error || !studioTrack) throw new Error("Track not found.");

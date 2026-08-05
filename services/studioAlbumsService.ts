@@ -85,6 +85,10 @@ export async function deletePlannedStudioTrack(trackId: string): Promise<void> {
   await callStudio('delete_planned_track', { track_id: trackId });
 }
 
+export async function reorderStudioTracks(albumId: string, trackIds: string[]): Promise<StudioTrack[]> {
+  return (await callStudio('reorder_tracks', { album_id: albumId, track_ids: trackIds })).tracks as StudioTrack[];
+}
+
 export async function generatePlannedStudioTrack(trackId: string): Promise<StudioTrack> {
   return (await callStudio('generate_planned_track', { track_id: trackId })).track as StudioTrack;
 }

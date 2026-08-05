@@ -367,3 +367,21 @@ test('publishing metadata is AI-written in the rich YouTube format', async () =>
   assert.match(fn, /tags: publication\.tags, chapters: \[\] \} \}\) \}\);/);
   assert.match(panel, /Regenerate/);
 });
+
+test('tracks can be reordered before the master is built', async () => {
+  // The stitched master bakes in the running order, so reordering is offered
+  // only while the master is not_started/failed, and renumbers in two phases to
+  // respect the UNIQUE(album_id, track_number) constraint.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(fn, /body\.action === "reorder_tracks"/);
+  assert.match(fn, /Rebuild the master to change the running order/);
+  assert.match(fn, /track_number: 100000 \+ index \+ 1/);
+  assert.match(fn, /The reordered list must include every track exactly once/);
+  assert.match(service, /reorderStudioTracks/);
+  assert.match(page, /const reorderAllowed =/);
+  assert.match(page, /\['not_started', 'failed'\]\.includes\(selected\.master_status\)/);
+  assert.match(page, /moveTrack\(trackIndex, 'up'\)/);
+  assert.match(page, /moveTrack\(trackIndex, 'down'\)/);
+});
