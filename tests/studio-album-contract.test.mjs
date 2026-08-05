@@ -49,7 +49,7 @@ test('Studio surfaces Edge Function messages and only retries safe reads', async
   const service = await read('services/studioAlbumsService.ts');
   assert.match(service, /FunctionsHttpError/);
   assert.match(service, /error\.context\.clone\(\)\.json\(\)/);
-  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts'\]\)/);
+  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'list_video_artwork'\]\)/);
   assert.match(service, /details\.status === 503/);
 });
 
@@ -181,17 +181,27 @@ test('unsupported publishing promises remain visibly disabled', async () => {
   assert.match(workflow, /Scheduling and custom-thumbnail upload are intentionally disabled/);
 });
 
-test('Studio video keeps the complete square cover inside the YouTube frame', async () => {
+test('Studio video requires approved native 16:9 artwork and renders it full bleed', async () => {
   const worker = await read('workers/video_worker.py');
   const page = await read('pages/StudioAlbums.tsx');
-  assert.match(worker, /keeps the entire approved square cover visible/);
-  assert.match(worker, /force_original_aspect_ratio=decrease/);
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const composer = await read('components/StudioVideoArtworkComposer.tsx');
+  assert.match(fn, /generate_video_artwork/);
+  assert.match(fn, /save_video_artwork_composite/);
+  assert.match(fn, /approve_video_artwork/);
+  assert.match(fn, /aspectRatio: "16:9"/);
+  assert.match(fn, /artwork_layout: "full_bleed_16x9"/);
+  assert.match(fn, /Generate, title, and approve the 16:9 video artwork/);
+  assert.match(worker, /artwork_layout == "full_bleed_16x9"/);
+  assert.match(worker, /force_original_aspect_ratio=increase/);
   assert.match(worker, /framed_cover = os\.path\.join\(tmp, "framed-cover\.png"\)/);
-  assert.match(worker, /gblur=sigma=20/);
-  assert.match(worker, /overlay=\(W-w\)\/2:\(H-h\)\/2/);
-  assert.match(worker, /RENDER_PROFILE = "studio-safe-fit-v2"/);
+  assert.match(worker, /RENDER_PROFILE = "studio-landscape-v1"/);
   assert.match(worker, /"render_profile": RENDER_PROFILE/);
-  assert.match(worker, /"-vf", vf/);
-  assert.doesNotMatch(worker, /"-loop", "1", "-i", cover/);
-  assert.match(page, /Re-render with safe fit/);
+  assert.match(page, /Step 6a · YouTube artwork/);
+  assert.match(page, /Generate 16:9 artwork/);
+  assert.match(page, /Approve 16:9 artwork/);
+  assert.match(page, /video\.artwork_layout !== 'full_bleed_16x9'/);
+  assert.match(composer, /const W = 1280/);
+  assert.match(composer, /const H = 720/);
+  assert.match(composer, /Rekkrd After Dark/);
 });

@@ -42,7 +42,7 @@ VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "12"))
 VIDEO_CRF = os.environ.get("VIDEO_CRF", "32").strip()
 VIDEO_AUDIO_BITRATE = os.environ.get("VIDEO_AUDIO_BITRATE", "96k").strip()
 MAX_STANDARD_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_STANDARD_UPLOAD_MB", "48"))
-RENDER_PROFILE = "studio-safe-fit-v2"
+RENDER_PROFILE = "studio-landscape-v1"
 
 app = Flask(__name__)
 
@@ -200,8 +200,8 @@ def _run_ffmpeg(cmd: list[str], asset_id: str, duration_s: float, pipeline: str 
 
 
 def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: str | None, motion: str = "ken_burns",
-            pipeline: str = "episode", job_id: str | None = None, storage_bucket: str | None = None,
-            storage_path: str | None = None):
+             pipeline: str = "episode", job_id: str | None = None, storage_bucket: str | None = None,
+             storage_path: str | None = None, artwork_layout: str | None = None):
     try:
         table = "studio_assets" if pipeline == "studio" else "trellis_episode_assets"
         _patch(table, asset_id, {"status": "processing", "updated_at": _now()})
@@ -224,23 +224,28 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             still = str(motion).lower() in ("none", "static", "off", "still")
             _heartbeat(asset_id, "probing-audio", 8, "Reading master duration", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
             dur = _duration(audio) or 180.0
-            # Build the blurred 16:9 composition once. Applying blur + overlay on
-            # every frame of an hour-long video can consume several GB of memory.
-            # The prepared frame keeps the entire approved square cover visible;
-            # the inexpensive render pass below only loops/zooms that flat image.
+            # Build the final 16:9 frame once. Studio's approved landscape artwork
+            # is rendered full bleed. Legacy square assets keep the safe-fit path.
+            # The inexpensive render pass below only loops/zooms the flat frame.
             framed_cover = os.path.join(tmp, "framed-cover.png")
-            foreground_h = max(2, VIDEO_HEIGHT - max(80, VIDEO_HEIGHT // 8))
-            foreground_filter = (
-                f"scale={VIDEO_WIDTH}:{foreground_h}:force_original_aspect_ratio=decrease:"
-                "force_divisible_by=2,setsar=1"
-            )
-            frame_filter = (
-                "[0:v]split=2[bgsrc][fgsrc];"
-                f"[bgsrc]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
-                f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},gblur=sigma=20,eq=brightness=-0.08,setsar=1[bg];"
-                f"[fgsrc]{foreground_filter}[fg];"
-                "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=rgb24[v]"
-            )
+            if pipeline == "studio" and artwork_layout == "full_bleed_16x9":
+                frame_filter = (
+                    f"[0:v]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
+                    f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},setsar=1,format=rgb24[v]"
+                )
+            else:
+                foreground_h = max(2, VIDEO_HEIGHT - max(80, VIDEO_HEIGHT // 8))
+                foreground_filter = (
+                    f"scale={VIDEO_WIDTH}:{foreground_h}:force_original_aspect_ratio=decrease:"
+                    "force_divisible_by=2,setsar=1"
+                )
+                frame_filter = (
+                    "[0:v]split=2[bgsrc][fgsrc];"
+                    f"[bgsrc]scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
+                    f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},gblur=sigma=20,eq=brightness=-0.08,setsar=1[bg];"
+                    f"[fgsrc]{foreground_filter}[fg];"
+                    "[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,format=rgb24[v]"
+                )
             _heartbeat(asset_id, "preparing-frame", 9, "Preparing memory-safe widescreen artwork", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
             subprocess.run([
                 "ffmpeg", "-y", "-loglevel", "error", "-i", cover,
@@ -337,6 +342,8 @@ def video():
         return jsonify({"error": "asset_id, project id, and master_audio_url required"}), 400
     if pipeline == "studio" and (not b.get("job_id") or b.get("storage_bucket") != "studio-assets" or not str(b.get("storage_path", "")).startswith("studio/")):
         return jsonify({"error": "Studio jobs require job_id and a studio-assets path under studio/"}), 400
+    if pipeline == "studio" and b.get("artwork_layout") != "full_bleed_16x9":
+        return jsonify({"error": "Studio jobs require approved full_bleed_16x9 artwork"}), 400
     if pipeline == "studio":
         expected_prefix = f"studio/{b.get('organization_id')}/albums/{project_id}/video/"
         asset = _get_row("studio_assets", b["asset_id"], "album_id,asset_type,status,storage_bucket,storage_path")
@@ -358,10 +365,11 @@ def video():
             and job.get("status") in ("queued", "processing")
             and job_input.get("asset_id") == b["asset_id"]
             and job_input.get("storage_path") == b.get("storage_path")
+            and job_input.get("artwork_layout") == b.get("artwork_layout")
         )
         if not valid_asset or not valid_job:
             return jsonify({"error": "Studio asset and job linkage could not be verified"}), 409
-    threading.Thread(target=_render, args=(b["asset_id"], project_id, b["master_audio_url"], b.get("cover_image_url"), b.get("motion", "ken_burns"), pipeline, b.get("job_id"), b.get("storage_bucket"), b.get("storage_path")), daemon=True).start()
+    threading.Thread(target=_render, args=(b["asset_id"], project_id, b["master_audio_url"], b.get("cover_image_url"), b.get("motion", "ken_burns"), pipeline, b.get("job_id"), b.get("storage_bucket"), b.get("storage_path"), b.get("artwork_layout")), daemon=True).start()
     return jsonify({"accepted": True, "asset_id": b["asset_id"]}), 202
 
 
