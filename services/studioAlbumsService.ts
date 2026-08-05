@@ -6,7 +6,7 @@ export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'gen
 export interface StudioBatchGenerationResult { tracks: StudioTrack[]; failures: Array<{ track_id: string; title: string; error: string }>; }
 export interface StudioBulkApprovalResult { tracks: StudioTrack[]; remaining_review_count: number; }
 
-const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'get_thumbnail']);
+const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'list_video_sources', 'get_thumbnail']);
 
 async function studioFunctionError(error: unknown): Promise<{ message: string; status?: number }> {
   if (error instanceof FunctionsHttpError) {
@@ -142,7 +142,10 @@ export async function deleteStudioCoverConcept(assetId: string): Promise<void> {
 export async function selectStudioCoverConcept(assetId: string): Promise<StudioCoverConcept> { return (await callStudio('select_cover_concept', { asset_id: assetId })).concept as StudioCoverConcept; }
 export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
 export async function getStudioVideoSource(albumId: string): Promise<StudioCoverConcept | null> { return (await callStudio('get_video_source', { album_id: albumId })).concept as StudioCoverConcept | null; }
+export async function getStudioVideoSources(albumId: string): Promise<StudioCoverConcept[]> { return (await callStudio('list_video_sources', { album_id: albumId })).concepts as StudioCoverConcept[]; }
 export async function regenerateStudioVideoSource(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('generate_video_source', { album_id: albumId })).concept as StudioCoverConcept; }
+export async function selectStudioVideoSource(assetId: string, albumId: string): Promise<StudioCoverConcept> { return (await callStudio('select_video_source', { album_id: albumId, asset_id: assetId })).concept as StudioCoverConcept; }
+export async function deleteStudioVideoSource(assetId: string, albumId: string): Promise<void> { await callStudio('delete_video_source', { album_id: albumId, asset_id: assetId }); }
 export interface StudioThumbnailTypography { title: string; subtitle: string; title_color?: string; title_font?: string; text_v?: string; text_h?: string; }
 export async function getStudioThumbnail(albumId: string): Promise<StudioCoverConcept | null> { return (await callStudio('get_thumbnail', { album_id: albumId })).concept as StudioCoverConcept | null; }
 export async function saveStudioThumbnailComposite(albumId: string, imageBase64: string, typography: StudioThumbnailTypography): Promise<StudioCoverConcept> { return (await callStudio('save_thumbnail_composite', { album_id: albumId, image_base64: imageBase64, typography })).concept as StudioCoverConcept; }
