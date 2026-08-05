@@ -49,7 +49,7 @@ test('Studio surfaces Edge Function messages and only retries safe reads', async
   const service = await read('services/studioAlbumsService.ts');
   assert.match(service, /FunctionsHttpError/);
   assert.match(service, /error\.context\.clone\(\)\.json\(\)/);
-  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'list_video_sources', 'get_thumbnail'\]\)/);
+  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'list_video_sources', 'get_thumbnail', 'list_publications'\]\)/);
   assert.match(service, /details\.status === 503/);
 });
 
@@ -303,7 +303,7 @@ test('the widescreen video image is a pick-from-many gallery, not a crop of the 
   assert.match(service, /getStudioVideoSources/);
   assert.match(service, /selectStudioVideoSource/);
   assert.match(service, /deleteStudioVideoSource/);
-  assert.match(service, /'get_video_source', 'list_video_sources', 'get_thumbnail'\]\)/);
+  assert.match(service, /'get_video_source', 'list_video_sources', 'get_thumbnail', 'list_publications'\]\)/);
   assert.match(page, /Choose your widescreen video image/);
   assert.match(page, /Fresh take/);
   assert.match(page, /chooseVideoImage/);
@@ -443,4 +443,22 @@ test('the app tracks the YouTube release: polls while submitting, shows live/fai
   assert.match(fn, /!\["ready", "failed"\]\.includes\(publication\.status\)/);
   // The failure node no longer mislabels the album description as the error.
   assert.doesNotMatch(workflow, /e\.message \|\| e\.error\?\.message \|\| e\.description/);
+});
+
+test('live releases are listed and the album title is editable', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  // Releases listing.
+  assert.match(fn, /body\.action === "list_publications"/);
+  assert.match(fn, /\.eq\("status", "live"\)\.order\("published_at"/);
+  assert.match(service, /getStudioReleases/);
+  assert.match(page, /Live on YouTube/);
+  assert.match(page, /img\.youtube\.com\/vi\/\$\{release\.external_id\}/);
+  // Editable album title.
+  assert.match(fn, /body\.action === "rename_album"/);
+  assert.match(fn, /The album title cannot be empty/);
+  assert.match(service, /renameStudioAlbum/);
+  assert.match(page, /const saveTitle = async/);
+  assert.match(page, /Edit album title/);
 });

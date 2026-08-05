@@ -6,7 +6,7 @@ export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'gen
 export interface StudioBatchGenerationResult { tracks: StudioTrack[]; failures: Array<{ track_id: string; title: string; error: string }>; }
 export interface StudioBulkApprovalResult { tracks: StudioTrack[]; remaining_review_count: number; }
 
-const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'list_video_sources', 'get_thumbnail']);
+const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'list_video_sources', 'get_thumbnail', 'list_publications']);
 
 async function studioFunctionError(error: unknown): Promise<{ message: string; status?: number }> {
   if (error instanceof FunctionsHttpError) {
@@ -42,6 +42,15 @@ async function callStudio(action: string, payload: Record<string, unknown> = {})
 
 export async function getStudioAlbums(): Promise<StudioAlbum[]> {
   return (await callStudio('list')).albums as StudioAlbum[];
+}
+
+export interface StudioRelease { id: string; album_id: string; status: string; title: string; external_id: string | null; external_url: string | null; published_at: string | null; album_title: string; artist_name: string; }
+export async function getStudioReleases(): Promise<StudioRelease[]> {
+  return (await callStudio('list_publications')).releases as StudioRelease[];
+}
+
+export async function renameStudioAlbum(albumId: string, title: string): Promise<StudioAlbum> {
+  return (await callStudio('rename_album', { album_id: albumId, title })).album as StudioAlbum;
 }
 
 export async function createStudioAlbum(album: CreateStudioAlbum): Promise<StudioAlbum> {

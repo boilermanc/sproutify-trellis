@@ -225,6 +225,59 @@ export async function launchCampaignDraft(
 }
 
 /**
+ * Delete a DRAFT campaign. Restricted to status='draft' so sent campaigns (and their
+ * engagement history) can never be removed here.
+ */
+export async function deleteCampaign(id: string): Promise<{ ok: boolean; error: string | null }> {
+  const { error } = await supabase.from('campaigns').delete().eq('id', id).eq('status', 'draft');
+  if (error) {
+    console.error('Error deleting campaign:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, error: null };
+}
+
+/**
+ * Duplicate any campaign into a fresh DRAFT copy. Carries the editable definition
+ * (name/subject/template/branches/segments + the builder_state in metadata) and drops
+ * ALL send state + scheduling, so the copy is a clean new draft ready to edit and send.
+ */
+export async function duplicateCampaign(id: string): Promise<{ campaign: Campaign | null; error: string | null }> {
+  const { data: src, error: fErr } = await supabase.from('campaigns').select('*').eq('id', id).maybeSingle();
+  if (fErr || !src) return { campaign: null, error: fErr?.message || 'Campaign not found' };
+
+  const payload = {
+    name: `${src.name || 'Campaign'} (copy)`,
+    subject: src.subject,
+    template: src.template,
+    trigger_type: src.trigger_type,
+    campaign_type: src.campaign_type ?? 'standard',
+    segments: src.segments,
+    tags: src.tags,
+    branches: src.branches,
+    audience_size: src.audience_size,
+    metadata: src.metadata,
+    created_by: 'app',
+    status: 'draft',
+    scheduled_at: null,
+    launched_at: null,
+    dispatch: null,
+    send_status: null,
+    send_error: null,
+    retry_count: 0,
+    last_attempt_at: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase.from('campaigns').insert(payload).select('*').single();
+  if (error) {
+    console.error('Error duplicating campaign:', error);
+    return { campaign: null, error: error.message };
+  }
+  return { campaign: mapCampaignRow(data), error: null };
+}
+
+/**
  * Snapshot recipients into the durable outbox (campaign_recipients).
  * Called at launch time so the exact audience is saved BEFORE any send —
  * a bombed send can then be retried from what's stored, nothing re-derived.

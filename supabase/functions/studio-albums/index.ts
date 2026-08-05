@@ -522,6 +522,24 @@ Deno.serve(async (req) => {
     return error ? json({ error: error.message }, 500) : json({ album: data }, 201);
   }
   try {
+    if (body.action === "list_publications") {
+      const { data: owned } = await db.from("studio_albums").select("id, title, artist_name").eq("organization_id", ORG_ID).eq("created_by", user.id);
+      const byId = new Map<string, any>((owned || []).map((a: any) => [a.id, a]));
+      const ids = Array.from(byId.keys());
+      if (!ids.length) return json({ releases: [] });
+      const { data: pubs, error } = await db.from("studio_publications").select("id, album_id, status, title, external_id, external_url, published_at, updated_at").in("album_id", ids).eq("status", "live").order("published_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      const releases = (pubs || []).map((p: any) => ({ ...p, album_title: byId.get(p.album_id)?.title || "", artist_name: byId.get(p.album_id)?.artist_name || "" }));
+      return json({ releases });
+    }
+    if (body.action === "rename_album") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const title = String(body.title || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      if (!title) throw new Error("The album title cannot be empty.");
+      const { data, error } = await db.from("studio_albums").update({ title, updated_at: new Date().toISOString() }).eq("id", album.id).select("*").single();
+      if (error || !data) throw new Error(error?.message || "Could not rename the album.");
+      return json({ album: data });
+    }
     if (body.action === "tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const { data, error } = await db.from("studio_tracks").select("*").eq("album_id", body.album_id).order("track_number");
