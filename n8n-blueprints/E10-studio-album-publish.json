@@ -129,7 +129,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const y = $json || {}; let id = typeof y.id === 'object' ? y.id?.videoId : y.id; id = id || y?.snippet?.resourceId?.videoId || y.videoId; if (!id) throw new Error('YouTube upload returned no video id'); return { json: { video_id: id, youtube_url: 'https://youtu.be/' + id } };"
+        "jsCode": "const y = $json || {}; let id = typeof y.id === 'object' ? y.id?.videoId : y.id; id = id || y?.snippet?.resourceId?.videoId || y.videoId || y.uploadId; if (!/^[A-Za-z0-9_-]{11}$/.test(String(id || ''))) throw new Error('YouTube upload returned no usable video id: ' + JSON.stringify(y).slice(0, 200)); return { json: { video_id: id, youtube_url: 'https://youtu.be/' + id } };"
       },
       "name": "Extract Studio Video ID",
       "type": "n8n-nodes-base.code",
