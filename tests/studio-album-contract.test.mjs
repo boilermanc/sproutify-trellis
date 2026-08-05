@@ -196,9 +196,10 @@ test('Studio video renders straight from the approved cover, matching the Episod
   // Regression: an earlier design required a separate "16:9 video artwork"
   // asset (an AI outpaint call, or a compose-and-approve step) before a video
   // could render at all. Episodes never had this — buildVideo() just fires
-  // whatever cover URL is approved straight at the worker, and the worker's
-  // blur-letterbox compositing fits any aspect ratio into 16:9 on its own.
-  // Studio Albums now matches that: no separate artwork asset, no extra click.
+  // whatever cover URL is approved straight at the worker, which already knew
+  // how to turn a square cover into a proper 16:9 frame. Studio Albums now
+  // matches that: no separate artwork asset, no extra click — the worker
+  // crops the approved cover edge to edge (full_bleed_16x9).
   const worker = await read('workers/video_worker.py');
   const page = await read('pages/StudioAlbums.tsx');
   const fn = await read('supabase/functions/studio-albums/index.ts');
@@ -207,7 +208,7 @@ test('Studio video renders straight from the approved cover, matching the Episod
   assert.doesNotMatch(fn, /save_video_artwork_composite/);
   assert.doesNotMatch(fn, /approve_video_artwork/);
   assert.doesNotMatch(fn, /list_video_artwork/);
-  assert.match(fn, /artwork_layout: "cover_safe_fit"/);
+  assert.match(fn, /artwork_layout: "full_bleed_16x9"/);
   assert.match(fn, /eq\("asset_type", "cover_art"\)\.eq\("status", "active"\)\.contains\("metadata_json", \{ selection_status: "approved" \}\)/);
   assert.match(fn, /Approve the cover before rendering the final video\./);
   assert.match(fn, /This render predates artwork layout tracking\. Render again before approving\./);

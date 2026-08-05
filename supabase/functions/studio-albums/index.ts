@@ -663,9 +663,9 @@ Deno.serve(async (req) => {
       if (album.master_status !== "approved") throw new Error("Approve the master before preparing Visual Production.");
       const motion = String(body.motion || "ken_burns").slice(0, 80);
       const direction = String(body.direction || "Subtle cinematic movement that preserves the approved cover composition.").trim().slice(0, 500);
-      // The approved cover renders straight into the video, same as the Episodes
-      // pipeline — the worker's blur-letterbox compositing fits any aspect ratio
-      // into 16:9 with no separate artwork-approval step required.
+      // The approved cover renders straight into the video — no separate
+      // artwork-approval step. full_bleed_16x9 crops the square cover to fill
+      // the frame edge to edge (sharp, no blurred pillarboxing).
       const { data: approvedCover } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
       const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!approvedCover) throw new Error("Approve the cover before rendering the final video.");
@@ -675,10 +675,10 @@ Deno.serve(async (req) => {
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "final_video").order("version", { ascending: false }).limit(1).maybeSingle();
       const version = Number(previous?.version || 0) + 1;
       const storagePath = `studio/${ORG_ID}/albums/${album.id}/video/final-v${version}.mp4`;
-      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, master_asset_id: master.id, artwork_layout: "cover_safe_fit", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
+      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, master_asset_id: master.id, artwork_layout: "full_bleed_16x9", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
       const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "final_video", storage_bucket: "studio-assets", storage_path: storagePath, mime_type: "video/mp4", version, status: "pending", metadata_json: metadata }).select("*").single();
       if (assetError || !asset) throw new Error(assetError?.message || "Could not create the video asset.");
-      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, cover_asset_id: approvedCover.id, master_asset_id: master.id, motion, direction, artwork_layout: "cover_safe_fit", storage_path: storagePath } }).select("*").single();
+      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, cover_asset_id: approvedCover.id, master_asset_id: master.id, motion, direction, artwork_layout: "full_bleed_16x9", storage_path: storagePath } }).select("*").single();
       if (jobError || !job) {
         await db.from("studio_assets").update({ status: "failed", error_message: jobError?.message || "Could not register the video render job.", updated_at: new Date().toISOString() }).eq("id", asset.id);
         throw new Error(jobError?.message || "Could not register the video render job.");
@@ -708,7 +708,7 @@ Deno.serve(async (req) => {
       }
       let response: Response;
       try {
-        response = await fetch(VIDEO_RENDER_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", asset_id: asset.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, master_audio_url: signedMaster.signedUrl, cover_image_url: signedCover.signedUrl, artwork_layout: "cover_safe_fit", storage_bucket: "studio-assets", storage_path: storagePath, motion }) });
+        response = await fetch(VIDEO_RENDER_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", asset_id: asset.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, master_audio_url: signedMaster.signedUrl, cover_image_url: signedCover.signedUrl, artwork_layout: "full_bleed_16x9", storage_bucket: "studio-assets", storage_path: storagePath, motion }) });
       } catch (dispatchError) {
         const message = `Could not reach the video worker: ${dispatchError instanceof Error ? dispatchError.message : "network error"}`;
         await failQueuedVideo(message);

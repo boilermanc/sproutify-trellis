@@ -224,11 +224,11 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             still = str(motion).lower() in ("none", "static", "off", "still")
             _heartbeat(asset_id, "probing-audio", 8, "Reading master duration", pipeline=pipeline, job_id=job_id, album_id=project_id if pipeline == "studio" else None)
             dur = _duration(audio) or 180.0
-            # Build the final 16:9 frame once. The default cover_safe_fit path
-            # (same as Episodes) blurs a cover-fill background and centers the
-            # whole source image on top, so any aspect ratio fits losslessly.
-            # full_bleed_16x9 (legacy, native landscape source) crops to fill.
-            # The inexpensive render pass below only loops/zooms the flat frame.
+            # Build the final 16:9 frame once. Studio's approved cover renders
+            # full_bleed_16x9 (edge-to-edge crop, no blur pillarboxing). Episode
+            # payloads (no artwork_layout set) keep the blurred cover_safe_fit
+            # letterbox. The inexpensive render pass below only loops/zooms
+            # the flat frame.
             framed_cover = os.path.join(tmp, "framed-cover.png")
             if pipeline == "studio" and artwork_layout == "full_bleed_16x9":
                 frame_filter = (
