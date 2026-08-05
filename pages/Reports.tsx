@@ -1,26 +1,29 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport, ApiKeyConfig, PostHogAnalyticsResult } from '../types';
+import React, { useState, useMemo } from 'react';
+import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, TrellisReport } from '../types';
 import { Article } from '../src/data/helpContent';
-import { generateText } from '../services/aiService';
 import EmailPerformancePanel from '../components/EmailPerformancePanel';
-import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
 import PostHogAnalyticsPanel from '../components/PostHogAnalyticsPanel';
+import YouTubePerformancePanel from '../components/YouTubePerformancePanel';
 import {
-  BarChart3, Users, DollarSign, Tag, Sparkles, Send, RefreshCw,
-  Activity, ShieldCheck, AlertTriangle, Crown,
+  BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity,
+  ShieldCheck, AlertTriangle, Crown,
   Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe
 } from 'lucide-react';
+
+type ReportsTab = 'audience' | 'email' | 'youtube' | 'product' | 'blueprints';
+const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
+  { id: 'audience', label: 'Audience', icon: Users },
+  { id: 'email', label: 'Email', icon: Mail },
+  { id: 'youtube', label: 'YouTube', icon: Youtube },
+  { id: 'product', label: 'Product', icon: Activity },
+  { id: 'blueprints', label: 'Blueprints', icon: FileText },
+];
 
 // ═══════════════════════════════════════════════════════════════
 // STATIC DATA (outside component to avoid re-creation per render)
 // ═══════════════════════════════════════════════════════════════
 
-// Metric lists here are a promise to the user about what Sage can actually answer.
-// Only list metrics backed by real data reaching statsSummary below — email open/click/bounce
-// rates are live (campaign_email_stats), but conversion rate, channel ROI, cross-channel
-// attribution and social engagement are NOT: there is no order<->campaign linkage and no
-// social metrics pipeline feeding this page, so they must not be advertised as deliverable.
 const REPORT_BLUEPRINTS: TrellisReport[] = [
   { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'] },
   { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'] },
@@ -28,20 +31,6 @@ const REPORT_BLUEPRINTS: TrellisReport[] = [
   { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
   { id: 'rep_5', name: 'Product Adoption & Retention', type: 'system', metrics: ['DAU / WAU / MAU', 'Lifecycle Funnel', '7-Day Retention', '30-Day Retention', 'Feature Milestones'], spokes: ['PostHog-Connected Branches'] },
 ];
-
-const DEFAULT_KEYS: ApiKeyConfig = {
-  active_llm: 'gemini',
-  gemini_api_key: '',
-  openai_api_key: '',
-  anthropic_api_key: '',
-  n8n_webhooks: { chat: '', workflow: '' },
-  woo_consumer_key: '',
-  woo_consumer_secret: '',
-  resend_token: '',
-  resend_from_address: '',
-  twilio_sid: '',
-  twilio_token: '',
-};
 
 // Extracted outside the component to prevent unmount/remount on every render
 const PercentBar = ({ value, max, color }: { value: number; max: number; color: string }) => {
@@ -61,47 +50,11 @@ interface ReportsProps {
   spokeConnections: SpokeConnection[];
   branchStats: BranchStatsResult;
   branchContext?: BranchContext;
-  apiKeys?: ApiKeyConfig;
   onOpenArticle?: (article: Article) => void;
 }
 
-interface SageMessage {
-  role: 'user' | 'sage';
-  content: string;
-}
-
-const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext, apiKeys, onOpenArticle }) => {
-  const [sageQuery, setSageQuery] = useState('');
-  const [sageLoading, setSageLoading] = useState(false);
-  const [sageHistory, setSageHistory] = useState<SageMessage[]>([]);
-  const [auditingReport, setAuditingReport] = useState<string | null>(null);
-  const [emailStats, setEmailStats] = useState<CampaignEmailStat[]>([]);
-  const [emailStatsLoading, setEmailStatsLoading] = useState(true);
-  const [posthogResults, setPosthogResults] = useState<PostHogAnalyticsResult[]>([]);
-
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll chat to bottom when new messages arrive or loading changes
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [sageHistory, sageLoading]);
-
-  // Live per-campaign email engagement (same source EmailPerformancePanel renders from) so
-  // Sage's prompts carry the real numbers instead of describing them as unavailable.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setEmailStatsLoading(true);
-      const stats = await fetchCampaignEmailStats();
-      if (!cancelled) {
-        setEmailStats(stats);
-        setEmailStatsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const activeKeys = apiKeys || DEFAULT_KEYS;
+const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branchContext }) => {
+  const [activeTab, setActiveTab] = useState<ReportsTab>('audience');
 
   // Use shared branchStats data, filtered by active branch context
   const isFederating = branchStats.isLoading;
@@ -253,192 +206,6 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
     return { topProducts, spokeBreakdown, totalProducts, avgProductsPerBuyer };
   }, [profiles]);
 
-  // ═══════════════════════════════════════════════════════════════
-  // EMAIL ENGAGEMENT (real, live from campaign_email_stats — same source
-  // EmailPerformancePanel renders from). Gives the AI actual open/click/bounce
-  // numbers per campaign instead of no channel-level data at all.
-  // ═══════════════════════════════════════════════════════════════
-  const emailEngagementData = useMemo(() => {
-    const totals = emailStats.reduce(
-      (acc, r) => {
-        acc.sent += r.sent; acc.delivered += r.delivered; acc.opened += r.opened;
-        acc.clicked += r.clicked; acc.bounced += r.bounced; acc.complained += r.complained;
-        return acc;
-      },
-      { sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0 },
-    );
-    const openDenom = totals.delivered || totals.sent;
-    const bounceDenom = totals.sent || totals.delivered;
-    const openRate = openDenom > 0 ? (totals.opened / openDenom) * 100 : 0;
-    const clickRate = openDenom > 0 ? (totals.clicked / openDenom) * 100 : 0;
-    const bounceRate = bounceDenom > 0 ? (totals.bounced / bounceDenom) * 100 : 0;
-
-    const recentCampaigns = emailStats.slice(0, 10).map(r => {
-      const denom = r.delivered || r.sent;
-      return {
-        subject: r.campaign_subject,
-        sent: r.sent,
-        delivered: r.delivered,
-        open_rate_pct: denom > 0 ? Number(((r.opened / denom) * 100).toFixed(1)) : 0,
-        click_rate_pct: denom > 0 ? Number(((r.clicked / denom) * 100).toFixed(1)) : 0,
-        bounced: r.bounced,
-        last_event_at: r.last_event_at,
-      };
-    });
-
-    return { totalCampaigns: emailStats.length, totals, openRate, clickRate, bounceRate, recentCampaigns };
-  }, [emailStats]);
-
-  // ═══════════════════════════════════════════════════════════════
-  // SHARED STATS SUMMARY
-  // The single factual basis for every AI answer on this page. Both "Ask Sage"
-  // and the blueprint audits send THIS, so answers cite real numbers.
-  // ═══════════════════════════════════════════════════════════════
-  const statsSummary = useMemo(() => {
-    const getLtv = (p: EnrichedProfile) => p.order_stats?.ltv || 0;
-    const sortedLtvs = [...profiles].map(getLtv).sort((a, b) => a - b);
-    return {
-      total_profiles: profiles.length,
-      subscribed: subscriptionData.subscribed,
-      unsubscribed: subscriptionData.unsubscribed,
-      subscription_unknown: subscriptionData.unknown,
-      avg_ltv: profiles.length > 0
-        ? (profiles.reduce((s, p) => s + getLtv(p), 0) / profiles.length).toFixed(2)
-        : '0.00',
-      median_ltv: sortedLtvs.length > 0 ? sortedLtvs[Math.floor(sortedLtvs.length / 2)] : 0,
-      ltv_tiers: ltvData.tiers,
-      order_activity: {
-        with_orders: subscriptionData.withOrders,
-        without_orders: subscriptionData.withoutOrders,
-        repeat_buyers: subscriptionData.repeatBuyers,
-        one_time_buyers: subscriptionData.oneTimeBuyers,
-        recently_active_90d: subscriptionData.recentlyActive,
-        dormant: subscriptionData.dormant,
-      },
-      top_products: productData.topProducts.slice(0, 10).map(([name, stats]) => ({ name, ...stats })),
-      spoke_distribution: audienceData.topSources.map(([spoke, count]) => ({ spoke, count })),
-      gender_distribution: audienceData.genderCounts,
-      email_engagement: emailStatsLoading
-        ? { status: 'loading', total_campaigns: 0 }
-        : emailEngagementData.totalCampaigns === 0
-        ? { status: 'no_campaigns_sent_yet', total_campaigns: 0 }
-        : {
-            status: 'live',
-            total_campaigns: emailEngagementData.totalCampaigns,
-            aggregate: emailEngagementData.totals,
-            open_rate_pct: Number(emailEngagementData.openRate.toFixed(1)),
-            click_rate_pct: Number(emailEngagementData.clickRate.toFixed(1)),
-            bounce_rate_pct: Number(emailEngagementData.bounceRate.toFixed(1)),
-            recent_campaigns: emailEngagementData.recentCampaigns,
-          },
-      product_analytics: posthogResults.length === 0
-        ? { status: 'not_connected_or_out_of_scope', branches: [] }
-        : {
-            status: posthogResults.some(result => result.stale) ? 'stale_cache' : 'live_or_hourly_cache',
-            branches: posthogResults.map(result => ({
-              branch: result.branch_name || result.branch_id,
-              fetched_at: result.fetched_at,
-              stale: result.stale,
-              ...result.data,
-            })),
-          },
-    };
-  }, [profiles, subscriptionData, ltvData, productData, audienceData, emailEngagementData, emailStatsLoading, posthogResults]);
-
-  // Guardrail carried by every AI call on this page. The Cross-Channel audit
-  // used to ask the model for "simulated but realistic" metrics, which produced
-  // invented statistics that read exactly like real reporting.
-  const NO_FABRICATION_RULE =
-    'Base every number strictly on the DATA provided. Never invent, estimate, simulate, or illustrate a metric. ' +
-    'If the data needed for a requested metric is not present, say plainly that it is not available yet and what would need to be connected to measure it. ' +
-    'Never present hypothetical or example figures as findings.';
-
-  // Tells the model exactly what it does and does not have, so it stops disclaiming data
-  // that is now present (email engagement) while still refusing to guess at data that
-  // genuinely isn't wired up (social, ad spend, order<->campaign attribution).
-  const DATA_SCOPE_NOTE =
-    'Note on DATA scope: it includes customers, orders, LTV, AND real per-campaign email engagement ' +
-    '(sent/delivered/opened/clicked/bounced counts plus computed open and click rates), sourced live from Resend delivery events via the Email Performance panel. ' +
-    'If email_engagement.status is "no_campaigns_sent_yet", no campaigns have been sent — say that plainly rather than inventing a rate. ' +
-    'If email_engagement.status is "loading", email data has not finished loading yet — say so rather than treating it as zero. ' +
-    'DATA may include branch-scoped PostHog product_analytics: active users, sessions, lifecycle funnel, period retention, and approved milestone adoption. ' +
-    'If product_analytics.status is "stale_cache", state that the figures are cached and include the fetched_at time. ' +
-    'DATA does NOT include social impressions, ad spend, or revenue attribution — there is no linkage between orders and campaigns yet, ' +
-    'so conversion rate, channel ROI, and cross-channel attribution cannot be computed. For any requested metric that falls in that gap, ' +
-    'respond with "not yet tracked" and name what would need to be connected (e.g. order-to-campaign linkage, social API integration) rather than estimating it.';
-
-  // ═══════════════════════════════════════════════════════════════
-  // SAGE AI HANDLER
-  // ═══════════════════════════════════════════════════════════════
-  const handleAiDeepDive = async (report: TrellisReport) => {
-    setAuditingReport(report.id);
-
-    const prompt = `You are auditing the "${report.name}" report for Sproutify Trellis.
-Requested metrics: ${report.metrics.join(', ')}.
-Scope: ${report.spokes.join(', ')}.
-
-DATA (the complete set of figures available to you):
-${JSON.stringify(statsSummary, null, 2)}
-
-${NO_FABRICATION_RULE}
-
-${DATA_SCOPE_NOTE}
-
-Write a concise brief: what the available data actually shows, then up to 2 specific recommendations grounded in those numbers. Under 300 words.`;
-
-    try {
-      const response = await generateText(activeKeys, { prompt, maxTokens: 1024, temperature: 0.4 });
-      const text = response.error ? 'Sage Intelligence offline. Check API configuration.' : (response.text || 'Unable to generate analysis.');
-      setSageHistory(prev => [
-        ...prev,
-        { role: 'user', content: `Sage Audit: ${report.name}` },
-        { role: 'sage', content: text },
-      ]);
-    } catch {
-      setSageHistory(prev => [
-        ...prev,
-        { role: 'user', content: `Sage Audit: ${report.name}` },
-        { role: 'sage', content: 'Sage Intelligence offline. Check API configuration.' },
-      ]);
-    } finally {
-      setAuditingReport(null);
-    }
-  };
-  const handleSageSubmit = async () => {
-    if (!sageQuery.trim() || sageLoading) return;
-
-    const query = sageQuery.trim();
-    setSageQuery('');
-    setSageLoading(true);
-    setSageHistory(prev => [...prev, { role: 'user', content: query }]);
-
-    try {
-      const response = await generateText(activeKeys, {
-        systemPrompt: 'You are Sage, the AI marketing strategist for Sproutify Trellis. You analyze customer data to provide actionable marketing insights.',
-        prompt: `Here is the current customer database summary:\n${JSON.stringify(statsSummary, null, 2)}\n\nThe user's question: "${query}"\n\n${NO_FABRICATION_RULE}\n\n${DATA_SCOPE_NOTE}\n\nProvide a concise, data-driven answer. Reference specific numbers from the data. If suggesting actions, be specific about which segments or profiles to target. Keep response under 300 words.`,
-        maxTokens: 1024,
-        temperature: 0.4,
-      });
-
-      const sageText = response.error
-        ? "Unable to connect to the Sage Intelligence Core. Please check your API configuration."
-        : (response.text || "I couldn't generate an insight. Please try again.");
-      setSageHistory(prev => [...prev, { role: 'sage', content: sageText }]);
-    } catch (error) {
-      const errorMsg = "Unable to connect to the Sage Intelligence Core. Please check your API configuration.";
-      setSageHistory(prev => [...prev, { role: 'sage', content: errorMsg }]);
-    } finally {
-      setSageLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSageSubmit();
-    }
-  };
-
   return (
     <div className="space-y-8 pb-40">
       {/* Section Header */}
@@ -466,39 +233,62 @@ Write a concise brief: what the available data actually shows, then up to 2 spec
         )}
       </div>
 
-      {federationError && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start space-x-3">
-          <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
-          <p className="text-xs font-bold text-amber-700">{federationError}</p>
-        </div>
-      )}
-
-      {isFederating && profiles.length === 0 && (
-        <div className="flex items-center justify-center py-24">
-          <div className="text-center space-y-4">
-            <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto" />
-            <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Fetching data from spokes...</p>
-          </div>
-        </div>
-      )}
+      {/* Tab bar */}
+      <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-fit overflow-x-auto max-w-full">
+        {REPORTS_TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center space-x-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+              activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'
+            }`}
+          >
+            <tab.icon size={14} />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* PRODUCT ANALYTICS (PostHog aggregate query + hourly cache)       */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <PostHogAnalyticsPanel
-        branches={branchContext?.allBranches || []}
-        branchContext={branchContext}
-        onDataChange={setPosthogResults}
-      />
+      {activeTab === 'product' && (
+        <PostHogAnalyticsPanel
+          branches={branchContext?.allBranches || []}
+          branchContext={branchContext}
+        />
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* LIVE EMAIL PERFORMANCE (Resend delivery events + suppression)    */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <EmailPerformancePanel />
+      {activeTab === 'email' && <EmailPerformancePanel />}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* PREBUILT ANALYTICS CARDS - 2x2 Grid */}
+      {/* YOUTUBE PERFORMANCE (Episodes + Studio Albums, E9 sync)          */}
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'youtube' && <YouTubePerformancePanel />}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* AUDIENCE — federated profile KPIs (2x2 grid)                     */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'audience' && (
+        <>
+          {federationError && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start space-x-3">
+              <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-xs font-bold text-amber-700">{federationError}</p>
+            </div>
+          )}
+
+          {isFederating && profiles.length === 0 ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="text-center space-y-4">
+                <Loader2 size={32} className="animate-spin text-indigo-500 mx-auto" />
+                <p className="text-sm font-black text-slate-400 uppercase tracking-widest">Fetching data from spokes...</p>
+              </div>
+            </div>
+          ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
         {/* Card 1: Audience Composition */}
@@ -735,10 +525,14 @@ Write a concise brief: what the available data actually shows, then up to 2 spec
           </div>
         </div>
       </div>
+          )}
+        </>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* SYSTEM REPORT BLUEPRINTS */}
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'blueprints' && (
       <div className="space-y-6">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center">
@@ -746,7 +540,7 @@ Write a concise brief: what the available data actually shows, then up to 2 spec
           </div>
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">System Blueprints</p>
-            <p className="text-xs text-slate-500">Pre-built report templates with Sage audit</p>
+            <p className="text-xs text-slate-500">Pre-built report templates</p>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -760,131 +554,15 @@ Write a concise brief: what the available data actually shows, then up to 2 spec
                   <span key={m} className="px-2 py-0.5 bg-slate-50 text-slate-500 rounded text-[9px] font-bold">{m}</span>
                 ))}
               </div>
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                <div className="flex items-center gap-1">
-                  <Globe size={12} className="text-slate-400" />
-                  <span className="text-[9px] font-bold text-slate-400">{report.spokes.join(', ')}</span>
-                </div>
-                <button
-                  onClick={() => handleAiDeepDive(report)}
-                  disabled={auditingReport === report.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black hover:bg-emerald-600 transition disabled:opacity-50"
-                >
-                  {auditingReport === report.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                  <span>Sage Audit</span>
-                </button>
+              <div className="flex items-center gap-1 pt-3 border-t border-slate-100">
+                <Globe size={12} className="text-slate-400" />
+                <span className="text-[9px] font-bold text-slate-400">{report.spokes.join(', ')}</span>
               </div>
             </div>
           ))}
         </div>
       </div>
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* ASK SAGE — AI Analysis Panel */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center space-x-4 mb-6 pb-6 border-b border-slate-800">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg">
-            <Sparkles size={24} className="text-white" />
-          </div>
-          <div>
-            <h3 className="text-lg font-black text-white uppercase tracking-tight">Ask Sage</h3>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ad Hoc AI Analysis</p>
-          </div>
-        </div>
-
-        {/* Chat History */}
-        <div className="min-h-[200px] max-h-[400px] overflow-y-auto space-y-4 mb-6">
-          {sageHistory.length === 0 ? (
-            <div className="text-center py-16 opacity-30">
-              <Activity size={48} className="mx-auto text-slate-500 mb-4" />
-              <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Sage Intelligence Dormant</p>
-              <p className="text-xs text-slate-600 mt-2">Ask a question about your customer data to activate</p>
-            </div>
-          ) : (
-            sageHistory.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-4 rounded-2xl ${
-                  msg.role === 'user'
-                    ? 'bg-emerald-600 text-white rounded-br-sm'
-                    : 'bg-slate-800 text-slate-200 rounded-bl-sm'
-                }`}>
-                  {msg.role === 'sage' && (
-                    <div className="flex items-center space-x-2 mb-2">
-                      <Sparkles size={12} className="text-emerald-400" />
-                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Sage</span>
-                    </div>
-                  )}
-                  <p className={`text-sm leading-relaxed ${msg.role === 'sage' ? 'italic' : ''}`}>
-                    {msg.content}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Loading State */}
-          {sageLoading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-800 p-4 rounded-2xl rounded-bl-sm">
-                <div className="flex items-center space-x-3">
-                  <RefreshCw size={16} className="text-emerald-400 animate-spin" />
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest animate-pulse">
-                    Sage is analyzing your ecosystem...
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Scroll anchor */}
-          <div ref={chatEndRef} />
-        </div>
-
-        {/* Input */}
-        <div className="flex items-center space-x-4">
-          <input
-            type="text"
-            value={sageQuery}
-            onChange={(e) => setSageQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask Sage about your customer data..."
-            className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-6 py-4 text-white text-sm font-medium placeholder:text-slate-500 outline-none focus:border-emerald-500 transition"
-            disabled={sageLoading}
-          />
-          <button
-            onClick={handleSageSubmit}
-            disabled={sageLoading || !sageQuery.trim()}
-            className="w-14 h-14 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-2xl flex items-center justify-center transition shadow-lg"
-          >
-            {sageLoading ? (
-              <RefreshCw size={20} className="animate-spin" />
-            ) : (
-              <Send size={20} />
-            )}
-          </button>
-        </div>
-
-        {/* Quick Prompts */}
-        <div className="flex flex-wrap gap-2 mt-4">
-          {[
-            'Who are my highest value customers?',
-            'Which segments are at risk of churning?',
-            'How can I improve subscription rates?',
-            'What marketing campaigns should I run?',
-          ].map(prompt => (
-            <button
-              key={prompt}
-              onClick={() => setSageQuery(prompt)}
-              disabled={sageLoading}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 };
