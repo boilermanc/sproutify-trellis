@@ -276,7 +276,6 @@ test('video renders from a native 16:9 text-free companion photo, not a crop of 
   assert.match(fn, /buildCoverPrompt\("Widescreen 16:9"/);
   assert.match(fn, /aspectRatio: "16:9"/);
   assert.match(fn, /no title, no words/);
-  assert.doesNotMatch(fn, /Recompose and outpaint/);
   assert.match(fn, /role: "video_source", selection_status: "selected", source_asset_id: sourceConcept\.id, aspect_ratio: "16:9"/);
   assert.match(fn, /const sourceConceptId = approvedCover\.metadata_json\?\.source_asset_id \|\| approvedCover\.id/);
   assert.match(fn, /The clean source photo behind the approved cover is unavailable\./);
@@ -300,14 +299,14 @@ test('the widescreen video image is a pick-from-many gallery, not a crop of the 
   assert.match(fn, /body\.action === "delete_video_source"/);
   assert.match(fn, /async function selectedVideoSource/);
   assert.match(fn, /async function deselectVideoSources/);
-  assert.match(fn, /New takes join a gallery rather than replacing prior ones/);
+  assert.match(fn, /store PNG bytes as a new video_source take that joins the gallery/);
   assert.match(fn, /selection_status: "selected"/);
   assert.match(service, /getStudioVideoSources/);
   assert.match(service, /selectStudioVideoSource/);
   assert.match(service, /deleteStudioVideoSource/);
   assert.match(service, /'get_video_source', 'list_video_sources', 'get_thumbnail'\]\)/);
   assert.match(page, /Choose your widescreen video image/);
-  assert.match(page, /Generate another/);
+  assert.match(page, /Fresh take/);
   assert.match(page, /chooseVideoImage/);
   assert.match(page, /requestDeleteVideoImage/);
   assert.match(page, /Selected · in the video/);
@@ -384,4 +383,21 @@ test('tracks can be reordered before the master is built', async () => {
   assert.match(page, /\['not_started', 'failed'\]\.includes\(selected\.master_status\)/);
   assert.match(page, /moveTrack\(trackIndex, 'up'\)/);
   assert.match(page, /moveTrack\(trackIndex, 'down'\)/);
+});
+
+test('the approved cover can be extended to 16:9 as a video image take', async () => {
+  // For users who want the video image to BE their cover (not a different
+  // same-scene photo), outpaint the actual approved cover into 16:9 — kept as an
+  // opt-in alongside the default fresh-take generation, joining the same gallery.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(fn, /async function extendCoverToVideoSource/);
+  assert.match(fn, /body\.action === "extend_cover_video_source"/);
+  assert.match(fn, /Recompose and outpaint the supplied square/);
+  assert.match(fn, /method: "cover_extend"/);
+  assert.match(fn, /async function storeVideoSource/);
+  assert.match(service, /extendCoverToStudioVideoSource/);
+  assert.match(page, /Extend the cover/);
+  assert.match(page, /extendCoverForVideoImage/);
 });

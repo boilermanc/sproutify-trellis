@@ -201,23 +201,38 @@ async function generateStudioCover(db: any, album: any, input: any) {
   return coverWithUrl(db, asset);
 }
 
-// Native 16:9 companion to the approved square cover — same scene, same style,
-// generated text-free directly at video aspect (never an AI outpaint/edit of the
-// square image). Mirrors how Episodes' cover_art has always been generated: at
-// the aspect ratio it'll actually render at, so the video worker never needs to
-// crop away meaningful content or letterbox around it.
-async function generateStudioVideoSource(db: any, album: any, sourceConcept: any) {
-  const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
-  const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
-  if (!key) throw new Error("Image generation is not configured.");
-  const meta = sourceConcept.metadata_json || {};
-  const hardConstraints = meta.hard_constraints || {};
+function videoSourceConstraints(sourceConcept: any) {
+  const hardConstraints = sourceConcept.metadata_json?.hard_constraints || {};
   const subjectConstraint = hardConstraints.single_woman
     ? "HARD SUBJECT CONSTRAINT: Exactly one adult woman is the only human figure anywhere in the image. No second person, no men, no crowd, no background people, no reflections or portraits containing other people."
     : "SUBJECT CONSTRAINT: Use one clear focal subject. Do not add a group, entourage, or crowd unless the user explicitly requests one.";
   const locationConstraint = hardConstraints.french_riviera
     ? "HARD LOCATION CONSTRAINT: This is the real French Riviera / Côte d’Azur: deep blue Mediterranean water, yachts, palms, a curved developed coastline, limestone terrace or balustrade, and recognizable Belle Époque resort architecture. No tropical jungle, waterfall, volcano, fantasy island, or generic Caribbean setting."
     : "LOCATION CONSTRAINT: Make the stated setting geographically and architecturally specific rather than generic.";
+  return { subjectConstraint, locationConstraint };
+}
+
+// Shared tail: store PNG bytes as a new video_source take that joins the gallery.
+// The newest is auto-selected (deselect the others) so preview and render agree.
+async function storeVideoSource(db: any, album: any, sourceConcept: any, bytes: Uint8Array, extraMeta: Record<string, unknown>) {
+  const { data: prior } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
+  const version = Number(prior?.version || 0) + 1;
+  const path = `studio/${ORG_ID}/albums/${album.id}/video-source/scene-v${version}.png`;
+  const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
+  if (uploadError) throw new Error(`Could not store the video source image: ${uploadError.message}`);
+  await deselectVideoSources(db, album.id);
+  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "video_source", selection_status: "selected", source_asset_id: sourceConcept.id, aspect_ratio: "16:9", ...extraMeta } }).select("*").single();
+  if (error || !asset) throw new Error(error?.message || "Could not register the video source image.");
+  return asset;
+}
+
+// Fresh native 16:9 take of the same scene (a new photograph, not the cover).
+async function generateStudioVideoSource(db: any, album: any, sourceConcept: any) {
+  const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
+  const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
+  if (!key) throw new Error("Image generation is not configured.");
+  const meta = sourceConcept.metadata_json || {};
+  const { subjectConstraint, locationConstraint } = videoSourceConstraints(sourceConcept);
   const prompt = buildCoverPrompt("Widescreen 16:9", {
     stylePrompt: meta.style_prompt || "Premium editorial album artwork with a strong single visual idea.",
     styleSetting: meta.style_setting || "",
@@ -233,18 +248,31 @@ async function generateStudioVideoSource(db: any, album: any, sourceConcept: any
   const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
   if (!b64) throw new Error("The image provider returned no video source image.");
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const { data: prior } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
-  const version = Number(prior?.version || 0) + 1;
-  const path = `studio/${ORG_ID}/albums/${album.id}/video-source/scene-v${version}.png`;
-  const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
-  if (uploadError) throw new Error(`Could not store the video source image: ${uploadError.message}`);
-  // New takes join a gallery rather than replacing prior ones. The newest is
-  // auto-selected (deselect the others) so the preview and render always agree;
-  // the rest stay available to switch to.
-  await deselectVideoSources(db, album.id);
-  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "video_source", selection_status: "selected", source_asset_id: sourceConcept.id, aspect_ratio: "16:9", prompt, model: IMAGE_MODEL } }).select("*").single();
-  if (error || !asset) throw new Error(error?.message || "Could not register the video source image.");
-  return asset;
+  return storeVideoSource(db, album, sourceConcept, bytes, { prompt, model: IMAGE_MODEL, method: "fresh_scene" });
+}
+
+// Extend the APPROVED cover photo itself into 16:9 — keeps the exact subject and
+// composition, outpainting believable scenery left/right so the video image
+// matches the cover instead of being a different photograph.
+async function extendCoverToVideoSource(db: any, album: any, sourceConcept: any) {
+  const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
+  const key = Deno.env.get("GEMINI_API_KEY") || secret?.gemini_api_key;
+  if (!key) throw new Error("Image generation is not configured.");
+  const { data: sourceBlob, error: downloadError } = await db.storage.from(sourceConcept.storage_bucket).download(sourceConcept.storage_path);
+  if (downloadError || !sourceBlob) throw new Error(downloadError?.message || "Could not load the approved cover source.");
+  const sourceBytes = new Uint8Array(await sourceBlob.arrayBuffer());
+  const { subjectConstraint, locationConstraint } = videoSourceConstraints(sourceConcept);
+  const subject = subjectConstraint.replace(/^HARD SUBJECT CONSTRAINT: |^SUBJECT CONSTRAINT: /, "");
+  const location = locationConstraint.replace(/^HARD LOCATION CONSTRAINT: |^LOCATION CONSTRAINT: /, "");
+  const prompt = `Recompose and outpaint the supplied square, image-only album photograph into a native cinematic 16:9 landscape frame for a long-form music video. This must look like one intentional full-width photograph, never a square placed over a blurred background. Preserve the exact source subject, pose, period, wardrobe, palette, lighting, photographic medium, and atmosphere from the supplied image. Extend believable scenery to the left and right and keep the important subject inside the center safe area. ${subject} ${location} Return image-only artwork with no title, words, letters, numbers, labels, logos, watermark, signature, border, or frame.`;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_EDIT_MODEL}:generateContent`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ inlineData: { mimeType: sourceConcept.mime_type || "image/png", data: bytesToBase64(sourceBytes) } }, { text: prompt }] }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "16:9" } } }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Cover extension failed: ${JSON.stringify(payload).slice(0, 240)}`);
+  const imagePart = payload?.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data || part.inline_data?.data);
+  const encoded = imagePart?.inlineData?.data || imagePart?.inline_data?.data;
+  if (!encoded) throw new Error("The image editor returned no extended artwork.");
+  const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+  return storeVideoSource(db, album, sourceConcept, bytes, { prompt, model: IMAGE_EDIT_MODEL, method: "cover_extend" });
 }
 
 async function deselectVideoSources(db: any, albumId: string) {
@@ -836,6 +864,14 @@ Deno.serve(async (req) => {
       const { sourceConcept } = await approvedCoverSource(db, album);
       if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
       const asset = await generateStudioVideoSource(db, album, sourceConcept);
+      return json({ concept: await coverWithUrl(db, asset) }, 201);
+    }
+    if (body.action === "extend_cover_video_source") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.artwork_status !== "approved") throw new Error("Approve the cover before creating the video image.");
+      const { sourceConcept } = await approvedCoverSource(db, album);
+      if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
+      const asset = await extendCoverToVideoSource(db, album, sourceConcept);
       return json({ concept: await coverWithUrl(db, asset) }, 201);
     }
     if (body.action === "select_video_source") {

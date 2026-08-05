@@ -148,6 +148,7 @@ export async function approveStudioCover(albumId: string): Promise<StudioAlbum> 
 export async function getStudioVideoSource(albumId: string): Promise<StudioCoverConcept | null> { return (await callStudio('get_video_source', { album_id: albumId })).concept as StudioCoverConcept | null; }
 export async function getStudioVideoSources(albumId: string): Promise<StudioCoverConcept[]> { return (await callStudio('list_video_sources', { album_id: albumId })).concepts as StudioCoverConcept[]; }
 export async function regenerateStudioVideoSource(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('generate_video_source', { album_id: albumId })).concept as StudioCoverConcept; }
+export async function extendCoverToStudioVideoSource(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('extend_cover_video_source', { album_id: albumId })).concept as StudioCoverConcept; }
 export async function selectStudioVideoSource(assetId: string, albumId: string): Promise<StudioCoverConcept> { return (await callStudio('select_video_source', { album_id: albumId, asset_id: assetId })).concept as StudioCoverConcept; }
 export async function deleteStudioVideoSource(assetId: string, albumId: string): Promise<void> { await callStudio('delete_video_source', { album_id: albumId, asset_id: assetId }); }
 export interface StudioThumbnailTypography { title: string; subtitle: string; title_color?: string; title_font?: string; text_v?: string; text_h?: string; }
