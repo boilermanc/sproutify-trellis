@@ -300,6 +300,9 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
   if (existing?.status === "submitting") throw new Error("This album is already being submitted.");
   const { data: video } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "final_video").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
   if (!video) throw new Error("The approved video asset is unavailable.");
+  // Prefer the dedicated 16:9 thumbnail (title text, YouTube-shaped); fall back
+  // to the approved square cover only if no thumbnail was designed.
+  const { data: thumbnail } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
   const { data: cover } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
   const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("track_number,title,duration_seconds").eq("album_id", album.id).eq("review_status", "approved").order("track_number");
   if (tracksError) throw new Error(tracksError.message);
@@ -315,7 +318,7 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
     album_id: album.id, created_by: userId, platform: "youtube", status: "draft",
     title: cleanText(`${album.artist_name} — ${album.title}`, 95) || "Untitled Album",
     description, tags, chapters, visibility: existing?.visibility || "private", made_for_kids: false,
-    scheduled_for: existing?.scheduled_for || null, video_asset_id: video.id, thumbnail_asset_id: cover?.id || null,
+    scheduled_for: existing?.scheduled_for || null, video_asset_id: video.id, thumbnail_asset_id: thumbnail?.id || cover?.id || null,
     external_id: null, external_url: null, error_message: null, response_json: {}, submitted_at: null, published_at: null,
     updated_at: new Date().toISOString(),
   };
@@ -737,6 +740,38 @@ Deno.serve(async (req) => {
       const { sourceConcept } = await approvedCoverSource(db, album);
       if (!sourceConcept) throw new Error("The clean source photo behind the approved cover is unavailable.");
       const asset = await generateStudioVideoSource(db, album, sourceConcept);
+      return json({ concept: await coverWithUrl(db, asset) }, 201);
+    }
+    if (body.action === "get_thumbnail") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      const { data: existing } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
+      return json({ concept: existing ? await coverWithUrl(db, existing) : null });
+    }
+    if (body.action === "save_thumbnail_composite") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      if (album.artwork_status !== "approved") throw new Error("Approve the cover before saving a thumbnail.");
+      const match = String(body.image_base64 || "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) throw new Error("The thumbnail must be a PNG image.");
+      const binary = atob(match[1]);
+      if (binary.length > 15 * 1024 * 1024) throw new Error("The thumbnail is larger than 15 MB.");
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      if (bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error("The thumbnail PNG is invalid.");
+      const typography = {
+        title: cleanText(body.typography?.title, 200),
+        subtitle: cleanText(body.typography?.subtitle, 160),
+        title_color: /^#[0-9a-fA-F]{6}$/.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
+        title_font: VALID_COVER_FONTS.has(String(body.typography?.title_font || "")) ? body.typography.title_font : undefined,
+      };
+      if (!typography.title) throw new Error("Add the title before saving the thumbnail.");
+      const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "thumbnail").order("version", { ascending: false }).limit(1).maybeSingle();
+      const version = Number(previous?.version || 0) + 1;
+      const path = `studio/${ORG_ID}/albums/${album.id}/thumbnail/thumb-v${version}.png`;
+      const { error: uploadError } = await db.storage.from("studio-assets").upload(path, bytes, { contentType: "image/png", upsert: false });
+      if (uploadError) throw new Error(`Could not store the thumbnail: ${uploadError.message}`);
+      // Only one thumbnail stays active — it's what publishing sends to YouTube.
+      await db.from("studio_assets").update({ status: "archived", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active");
+      const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "thumbnail", storage_bucket: "studio-assets", storage_path: path, mime_type: "image/png", file_size: bytes.byteLength, width: 1280, height: 720, version, status: "active", metadata_json: { role: "thumbnail", typography } }).select("*").single();
+      if (error || !asset) throw new Error(error?.message || "Could not register the thumbnail.");
       return json({ concept: await coverWithUrl(db, asset) }, 201);
     }
     if (body.action === "prepare_visual_production") {

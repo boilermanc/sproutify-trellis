@@ -4,8 +4,9 @@ import { StudioAlbum, StudioCoverConcept, StudioMaster, StudioPublication, Studi
 import StudioPublishingPanel from '../components/StudioPublishingPanel';
 import ConfirmationModal from '../components/ConfirmationModal';
 import StudioCoverComposer from '../components/StudioCoverComposer';
+import StudioThumbnailComposer from '../components/StudioThumbnailComposer';
 import { EPISODE_ART_STYLES } from '../constants';
-import { approveAllGeneratedStudioTracks, approveAllPlannedStudioTracks, approvePlannedStudioTrack, approveStudioCover, approveStudioMaster, approveStudioReleaseIdentity, approveStudioVideo, buildStudioMaster, createPlannedStudioTrack, createStudioAlbum, deletePlannedStudioTrack, deleteStudioCoverConcept, enhanceStudioCoverConcept, generateAllApprovedStudioTracks, generatePlannedStudioTrack, generateStudioCoverConcept, getStudioAlbumWorkspace, getStudioAlbums, getStudioCoverConcepts, getStudioVideoSource, planStudioAlbum, planStudioTrack, prepareStudioVisualProduction, regenerateStudioVideoSource, reopenStudioTrackReview, reviewStudioTrack, saveStudioReleaseIdentity, selectStudioCoverConcept, StudioTrackDraft, updatePlannedStudioTrack } from '../services/studioAlbumsService';
+import { approveAllGeneratedStudioTracks, approveAllPlannedStudioTracks, approvePlannedStudioTrack, approveStudioCover, approveStudioMaster, approveStudioReleaseIdentity, approveStudioVideo, buildStudioMaster, createPlannedStudioTrack, createStudioAlbum, deletePlannedStudioTrack, deleteStudioCoverConcept, enhanceStudioCoverConcept, generateAllApprovedStudioTracks, generatePlannedStudioTrack, generateStudioCoverConcept, getStudioAlbumWorkspace, getStudioAlbums, getStudioCoverConcepts, getStudioThumbnail, getStudioVideoSource, planStudioAlbum, planStudioTrack, prepareStudioVisualProduction, regenerateStudioVideoSource, reopenStudioTrackReview, reviewStudioTrack, saveStudioReleaseIdentity, selectStudioCoverConcept, StudioTrackDraft, updatePlannedStudioTrack } from '../services/studioAlbumsService';
 import { getStudioStylePreset, planStudioRuntime, STUDIO_MAX_ALBUM_MINUTES, STUDIO_MIN_TRACK_SECONDS, STUDIO_STYLE_PRESETS } from '../services/studioAlbumPlanning';
 
 interface Props { addToast: (message: string, type?: 'success' | 'error' | 'info') => void; }
@@ -121,6 +122,7 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   const [videoSource, setVideoSource] = useState<StudioCoverConcept | null>(null);
   const [videoSourceLoading, setVideoSourceLoading] = useState(false);
   const [regeneratingVideoSource, setRegeneratingVideoSource] = useState(false);
+  const [thumbnail, setThumbnail] = useState<StudioCoverConcept | null>(null);
   const [planningTrack, setPlanningTrack] = useState(false);
   const [batchTrackCount, setBatchTrackCount] = useState(1);
   const [planningAlbum, setPlanningAlbum] = useState(false);
@@ -189,7 +191,7 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   // the album reaches the video step; generate it on first arrival if missing.
   const readyForVideoImage = !!selected && masterApproved && selected.artwork_status === 'approved';
   useEffect(() => {
-    if (!selected || !readyForVideoImage) { setVideoSource(null); return; }
+    if (!selected || !readyForVideoImage) { setVideoSource(null); setThumbnail(null); return; }
     let cancelled = false;
     (async () => {
       setVideoSourceLoading(true);
@@ -197,6 +199,7 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
         let source = await getStudioVideoSource(selected.id);
         if (!source && !cancelled) source = await regenerateStudioVideoSource(selected.id);
         if (!cancelled) setVideoSource(source);
+        if (!cancelled) { try { setThumbnail(await getStudioThumbnail(selected.id)); } catch { /* thumbnail is optional */ } }
       } catch (error) {
         if (!cancelled) { setVideoSource(null); addToast(error instanceof Error ? error.message : 'Could not prepare the widescreen video image.', 'error'); }
       } finally {
@@ -318,6 +321,7 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   const enhanceCover = async (source: StudioCoverConcept) => { if (!selected) return; setEnhancingCover(true); try { const concept = await enhanceStudioCoverConcept(selected.id, source.id, coverDirection); setCoverConcepts(current => [concept, ...current.map(item => ({ ...item, metadata_json: { ...item.metadata_json, selection_status: 'unselected' as const } }))]); addToast('Enhanced concept created and selected. The original is still available.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not enhance the cover concept.', 'error'); } finally { setEnhancingCover(false); } };
   const requestDeleteCover = (concept: StudioCoverConcept) => setConfirmation({ title: `Archive cover concept v${concept.version}?`, message: 'This removes the unused concept from the album library but keeps its file recoverable. A concept used by the approved cover cannot be archived.', confirmLabel: 'Archive concept', tone: 'danger', action: async () => { await deleteStudioCoverConcept(concept.id); setCoverConcepts(current => current.filter(item => item.id !== concept.id)); addToast(`Cover concept v${concept.version} archived.`, 'success'); } });
   const regenerateVideoImage = async () => { if (!selected) return; setRegeneratingVideoSource(true); try { const source = await regenerateStudioVideoSource(selected.id); setVideoSource(source); addToast('A new widescreen video image is ready.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not regenerate the video image.', 'error'); } finally { setRegeneratingVideoSource(false); } };
+  const saveThumbnail = (concept: StudioCoverConcept) => { setThumbnail(concept); addToast('YouTube thumbnail saved. It will be used when you publish.', 'success'); };
   const prepareVisuals = async () => { if (!selected) return; setPreparingVisuals(true); try { const album = await prepareStudioVisualProduction(selected.id, visualMotion, visualDirection); setSelected(album); setAlbums(current => current.map(item => item.id === album.id ? album : item)); setVideo({ status: 'queued', progress: 0, stage: 'queued', message: 'Waiting for the video worker' }); addToast('Video render queued. Progress will update here automatically.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not start Visual Production.', 'error'); } finally { setPreparingVisuals(false); } };
   const approveVideo = async () => { if (!selected) return; setApprovingVideo(true); try { const album = await approveStudioVideo(selected.id); setSelected(album); setAlbums(current => current.map(item => item.id === album.id ? album : item)); setVideo(current => current ? { ...current, status: 'approved' } : current); addToast('Final video approved. Publishing metadata is next.', 'success'); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not approve the video.', 'error'); } finally { setApprovingVideo(false); } };
   const saveTrack = async () => {
@@ -386,6 +390,8 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
           <button type="button" onClick={regenerateVideoImage} disabled={regeneratingVideoSource || videoSourceLoading} className="inline-flex items-center gap-1.5 rounded-xl border border-sky-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-sky-800 disabled:opacity-50">{regeneratingVideoSource ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} {videoSource ? 'Regenerate' : 'Generate'}</button>
         </div>
         {videoSourceLoading || regeneratingVideoSource ? <div className="mt-4 flex aspect-video w-full max-w-md items-center justify-center rounded-2xl border border-sky-200 bg-slate-900 text-slate-400"><Loader2 className="animate-spin" size={22} /></div> : videoSource?.image_url ? <img src={videoSource.image_url} alt="Widescreen video image" className="mt-4 aspect-video w-full max-w-md rounded-2xl border border-sky-200 object-cover" /> : <p className="mt-4 text-xs font-bold text-amber-700">The widescreen video image could not be created. Use Generate to try again.</p>}
+        {videoSource?.image_url && <StudioThumbnailComposer key={videoSource.id} albumId={selected.id} sourceImageUrl={videoSource.image_url} defaultTitle={thumbnail?.metadata_json?.typography?.title || selected.title} defaultSubtitle={thumbnail?.metadata_json?.typography?.subtitle || selected.series_name || ''} defaultTitleColor={thumbnail?.metadata_json?.typography?.title_color} defaultTitleFont={thumbnail?.metadata_json?.typography?.title_font} onSaved={saveThumbnail} />}
+        {thumbnail?.image_url && <div className="mt-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-700"><Check size={13} /> Thumbnail saved · used at publish</div>}
       </div>
       <div className="mt-5 border-t border-emerald-200 pt-5"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Final video</p><p className="mt-1 text-xs text-emerald-800">Master audio and the widescreen image above render into one long-form video.</p></div>
       <div className="flex flex-wrap items-center gap-4">

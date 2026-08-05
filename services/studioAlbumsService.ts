@@ -6,7 +6,7 @@ export type CreateStudioAlbum = Pick<StudioAlbum, 'title' | 'artist_name' | 'gen
 export interface StudioBatchGenerationResult { tracks: StudioTrack[]; failures: Array<{ track_id: string; title: string; error: string }>; }
 export interface StudioBulkApprovalResult { tracks: StudioTrack[]; remaining_review_count: number; }
 
-const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'get_video_source']);
+const RETRYABLE_STUDIO_READS = new Set(['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'get_thumbnail']);
 
 async function studioFunctionError(error: unknown): Promise<{ message: string; status?: number }> {
   if (error instanceof FunctionsHttpError) {
@@ -143,6 +143,9 @@ export async function selectStudioCoverConcept(assetId: string): Promise<StudioC
 export async function approveStudioCover(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_cover', { album_id: albumId })).album as StudioAlbum; }
 export async function getStudioVideoSource(albumId: string): Promise<StudioCoverConcept | null> { return (await callStudio('get_video_source', { album_id: albumId })).concept as StudioCoverConcept | null; }
 export async function regenerateStudioVideoSource(albumId: string): Promise<StudioCoverConcept> { return (await callStudio('generate_video_source', { album_id: albumId })).concept as StudioCoverConcept; }
+export interface StudioThumbnailTypography { title: string; subtitle: string; title_color?: string; title_font?: string; }
+export async function getStudioThumbnail(albumId: string): Promise<StudioCoverConcept | null> { return (await callStudio('get_thumbnail', { album_id: albumId })).concept as StudioCoverConcept | null; }
+export async function saveStudioThumbnailComposite(albumId: string, imageBase64: string, typography: StudioThumbnailTypography): Promise<StudioCoverConcept> { return (await callStudio('save_thumbnail_composite', { album_id: albumId, image_base64: imageBase64, typography })).concept as StudioCoverConcept; }
 export async function prepareStudioVisualProduction(albumId: string, motion: string, direction: string): Promise<StudioAlbum> { return (await callStudio('prepare_visual_production', { album_id: albumId, motion, direction })).album as StudioAlbum; }
 export async function approveStudioVideo(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_video', { album_id: albumId })).album as StudioAlbum; }
 export async function prepareStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('prepare_publication', { album_id: albumId })).publication as StudioPublication; }

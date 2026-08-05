@@ -49,7 +49,7 @@ test('Studio surfaces Edge Function messages and only retries safe reads', async
   const service = await read('services/studioAlbumsService.ts');
   assert.match(service, /FunctionsHttpError/);
   assert.match(service, /error\.context\.clone\(\)\.json\(\)/);
-  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'get_video_source'\]\)/);
+  assert.match(service, /RETRYABLE_STUDIO_READS = new Set\(\['list', 'tracks', 'list_cover_concepts', 'get_video_source', 'get_thumbnail'\]\)/);
   assert.match(service, /details\.status === 503/);
 });
 
@@ -192,13 +192,43 @@ test('publishing draft picks the approved cover as the thumbnail, not just the n
   assert.match(fn, /const \{ data: cover \} = await db\.from\("studio_assets"\)\.select\("id"\)\.eq\("album_id", album\.id\)\.eq\("asset_type", "cover_art"\)\.eq\("status", "active"\)\.contains\("metadata_json", \{ selection_status: "approved" \}\)\.maybeSingle\(\);/);
 });
 
-test('unsupported publishing promises remain visibly disabled', async () => {
+test('scheduling stays disabled even though thumbnail upload is now wired', async () => {
   const fn = await read('supabase/functions/studio-albums/index.ts');
   const panel = await read('components/StudioPublishingPanel.tsx');
   const workflow = await read('n8n-blueprints/E10-studio-album-publish.json');
   assert.match(fn, /Scheduled YouTube publishing is not enabled yet/);
   assert.match(panel, /Scheduling stays disabled/);
-  assert.match(workflow, /Scheduling and custom-thumbnail upload are intentionally disabled/);
+  assert.match(workflow, /Scheduling stays disabled until verified end to end/);
+});
+
+test('a dedicated 16:9 thumbnail can be composed and is pushed to YouTube at publish', async () => {
+  // YouTube's clickable thumbnail is a separate 16:9 image (title text, unlike
+  // the clean video frame), set via a distinct thumbnails.set API call. It is
+  // independent of both the video image and the square album cover.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  const composer = await read('components/StudioThumbnailComposer.tsx');
+  const workflow = JSON.parse(await read('n8n-blueprints/E10-studio-album-publish.json'));
+  assert.match(fn, /body\.action === "save_thumbnail_composite"/);
+  assert.match(fn, /body\.action === "get_thumbnail"/);
+  assert.match(fn, /asset_type: "thumbnail"/);
+  assert.match(fn, /thumbnail_asset_id: thumbnail\?\.id \|\| cover\?\.id \|\| null/);
+  assert.match(service, /saveStudioThumbnailComposite/);
+  assert.match(service, /getStudioThumbnail/);
+  assert.match(page, /StudioThumbnailComposer/);
+  assert.match(composer, /const W = 1280/);
+  assert.match(composer, /const H = 720/);
+  // The publish workflow downloads the thumbnail and pushes it via thumbnails.set,
+  // and never blocks the release if it is missing.
+  const download = workflow.nodes.find(n => n.name === 'Download Studio Thumbnail');
+  const set = workflow.nodes.find(n => n.name === 'Set Studio Thumbnail');
+  assert.ok(download && set, 'thumbnail nodes exist');
+  assert.match(set.parameters.url, /thumbnails\/set\?videoId=/);
+  assert.equal(download.onError, 'continueRegularOutput');
+  assert.equal(set.onError, 'continueRegularOutput');
+  assert.equal(workflow.connections['Extract Studio Video ID'].main[0][0].node, 'Download Studio Thumbnail');
+  assert.equal(workflow.connections['Set Studio Thumbnail'].main[0][0].node, 'Mark Studio Publication Live');
 });
 
 test('Studio video renders with no separate artwork-approval step', async () => {
@@ -263,7 +293,7 @@ test('the widescreen video image is generated, previewed, and can be regenerated
   assert.match(fn, /Only one video-source stays active at a time/);
   assert.match(service, /getStudioVideoSource/);
   assert.match(service, /regenerateStudioVideoSource/);
-  assert.match(service, /'get_video_source'\]\)/);
+  assert.match(service, /'get_video_source', 'get_thumbnail'\]\)/);
   assert.match(page, /Your widescreen video image/);
   assert.match(page, /Nothing is cropped/);
   assert.match(page, /regenerateVideoImage/);
