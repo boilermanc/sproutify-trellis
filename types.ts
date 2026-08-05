@@ -614,7 +614,7 @@ export interface StudioReleaseIdentity {
   catalog_number: string;
 }
 
-export interface StudioCoverConcept { id: string; version: number; image_url?: string | null; metadata_json?: { selection_status?: 'unselected' | 'selected' | 'approved'; direction?: string; role?: string; source_asset_id?: string; approved_cover_asset_id?: string; aspect_ratio?: string; enhancement_direction?: string; typography?: { title?: string; subtitle?: string; series?: string; treatment?: string; vintage_border?: boolean } }; }
+export interface StudioCoverConcept { id: string; version: number; image_url?: string | null; metadata_json?: { selection_status?: 'unselected' | 'selected' | 'approved'; direction?: string; role?: string; source_asset_id?: string; approved_cover_asset_id?: string; aspect_ratio?: string; enhancement_direction?: string; typography?: { title?: string; subtitle?: string; series?: string; treatment?: string; vintage_border?: boolean; title_color?: string } }; }
 
 export interface TrellisReport {
   id: string;

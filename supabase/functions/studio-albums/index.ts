@@ -577,6 +577,7 @@ Deno.serve(async (req) => {
         series: cleanText(body.typography?.series, 120) || "Rekkrd After Dark",
         treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial",
         vintage_border: body.typography?.vintage_border !== false,
+        title_color: /^#[0-9a-fA-F]{6}$/.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
       };
       if (!typography.title) throw new Error("Add the album title before saving the cover.");
       await clearCoverSelections(db, album.id);

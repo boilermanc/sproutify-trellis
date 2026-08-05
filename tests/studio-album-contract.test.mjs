@@ -220,3 +220,17 @@ test('Studio video renders straight from the approved cover, matching the Episod
   assert.match(page, /The approved cover fills the YouTube frame/);
   assert.match(page, /Render final video/);
 });
+
+test('cover typography lets you pick a text color and shows the 16:9 video crop guide', async () => {
+  const composer = await read('components/StudioCoverComposer.tsx');
+  const service = await read('services/studioAlbumsService.ts');
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(composer, /type="color"/);
+  assert.match(composer, /TREATMENT_DEFAULT_COLOR/);
+  assert.match(composer, /Show 16:9 video crop guide/);
+  assert.match(composer, /VIDEO_CROP_FRACTION = \(1 - 9 \/ 16\) \/ 2/);
+  assert.match(service, /title_color\?: string/);
+  assert.match(fn, /title_color: \/\^#\[0-9a-fA-F\]\{6\}\$\/\.test/);
+  assert.match(page, /defaultTitleColor=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_color\}/);
+});
