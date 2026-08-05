@@ -307,6 +307,48 @@ async function publicationForAlbum(db: any, albumId: string) {
   return data || null;
 }
 
+// AI-writes the rich, YouTube-style description parts (genre line, evocative
+// paragraphs, "ideal for" phrases, hashtags) from the album's brief. Returns
+// null on any failure so publishing falls back to the plain description.
+async function generateAlbumMetadata(db: any, album: any, tracks: any[]) {
+  const key = Deno.env.get("GEMINI_API_KEY") || (await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle()).data?.gemini_api_key;
+  if (!key) return null;
+  const trackTitles = (tracks || []).map((t: any) => t.title).filter(Boolean).slice(0, 24).join(", ");
+  const prompt = `Write YouTube metadata for a long-form instrumental music mix. Return ONLY JSON with keys genre_summary, description, ideal_for, hashtags.
+Album: ${album.title}
+Fictional artist: ${album.artist_name}
+Genre: ${album.subgenre || album.genre || "instrumental"}
+Mood: ${album.mood || "cinematic"}
+Era: ${album.era || ""}
+Setting / theme: ${album.theme || ""}
+Tracks: ${trackTitles}
+Rules:
+- genre_summary: ONE line, 6-12 comma-separated evocative descriptors (e.g. "Mediterranean jazz house, chill-out lounge, Italian summer vibes, sunset relaxation").
+- description: 2-3 short evocative paragraphs separated by blank lines, about the mood, instrumentation, and ideal listening moments. No track list, no hashtags, no headings, no emoji.
+- ideal_for: array of 5-7 short phrases (2-4 words each), listening situations.
+- hashtags: array of 8-12 single-token hashtags each starting with # and no spaces.
+- No real artists, brands, songs, or copyrighted names.`;
+  try {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const raw = payload?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const parsed = JSON.parse(raw);
+    return {
+      genre_summary: cleanText(parsed.genre_summary, 300),
+      description: String(parsed.description || "").replace(/\r/g, "").trim().slice(0, 2600),
+      ideal_for: Array.isArray(parsed.ideal_for) ? parsed.ideal_for.map((v: unknown) => cleanText(v, 60)).filter(Boolean).slice(0, 8) : [],
+      hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags.map((v: unknown) => cleanText(v, 40).replace(/\s+/g, "")).filter((h: string) => /^#\w{2,}$/.test(h)).slice(0, 15) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function preparePublicationDraft(db: any, album: any, userId: string) {
   if (album.video_status !== "approved") throw new Error("Approve the final video before preparing publishing metadata.");
   const existing = await publicationForAlbum(db, album.id);
@@ -326,8 +368,23 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
     elapsed += Math.max(0, Number(track.duration_seconds) || 0);
     return chapter;
   });
-  const description = [album.short_description, album.credits && `Credits\n${album.credits}`, album.ai_disclosure && `Disclosure\n${album.ai_disclosure}`, album.copyright_note].filter(Boolean).join("\n\n").slice(0, 4900);
-  const tags = publicationTags([album.artist_name, album.genre, album.subgenre, album.mood, album.series_name, "instrumental music", "full album"]);
+  const chaptersBlock = chapters.map((c: any) => `${c.time} — ${c.title}`).join("\n");
+  const meta = await generateAlbumMetadata(db, album, tracks || []);
+  const idealBlock = meta?.ideal_for?.length ? `☀️ Ideal for:\n${meta.ideal_for.map((b: string) => `• ${b}`).join("\n")}` : "";
+  const hashtagLine = meta?.hashtags?.length ? meta.hashtags.join(" ") : "";
+  // Chapters are baked into the description (with 0:00 first, so YouTube builds
+  // chapter markers) rather than appended by n8n, so the layout matches the
+  // reference format. publish_album sends chapters:[] to avoid duplication.
+  const description = [
+    meta?.genre_summary || null,
+    meta?.description || album.short_description,
+    chaptersBlock,
+    idealBlock,
+    album.ai_disclosure,
+    album.copyright_note,
+    hashtagLine,
+  ].filter(Boolean).join("\n\n").slice(0, 4900);
+  const tags = publicationTags([album.artist_name, album.genre, album.subgenre, album.mood, album.series_name, ...(meta?.hashtags || []).map((h: string) => h.replace(/^#/, "")), "instrumental music", "full album"]);
   const draft = {
     album_id: album.id, created_by: userId, platform: "youtube", status: "draft",
     title: cleanText(`${album.artist_name} — ${album.title}`, 95) || "Untitled Album",
@@ -835,6 +892,15 @@ Deno.serve(async (req) => {
       // worker never has to crop away or letterbox around anything meaningful).
       let videoSource = await selectedVideoSource(db, album.id, sourceConcept.id);
       if (!videoSource) videoSource = await generateStudioVideoSource(db, album, sourceConcept);
+      // Optionally burn the title onto the video too: render from the titled
+      // thumbnail (1280x720, exact 16:9) instead of the clean image. Falls back
+      // to the clean image if the option is off or no thumbnail was designed.
+      let renderSource = videoSource;
+      let showTitleOnVideo = false;
+      if (body.use_thumbnail === true) {
+        const { data: thumb } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
+        if (thumb) { renderSource = thumb; showTitleOnVideo = true; }
+      }
       const { data: master } = await db.from("studio_assets").select("id, storage_path, storage_bucket").eq("album_id", album.id).eq("asset_type", "master_mp3").is("track_id", null).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (!master) throw new Error("The approved master is required before preparing Visual Production.");
       const { data: activeJob } = await db.from("studio_jobs").select("id").eq("album_id", album.id).eq("job_type", "video_render").in("status", ["queued", "processing"]).maybeSingle();
@@ -842,10 +908,10 @@ Deno.serve(async (req) => {
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "final_video").order("version", { ascending: false }).limit(1).maybeSingle();
       const version = Number(previous?.version || 0) + 1;
       const storagePath = `studio/${ORG_ID}/albums/${album.id}/video/final-v${version}.mp4`;
-      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, video_source_asset_id: videoSource.id, master_asset_id: master.id, artwork_layout: "full_bleed_16x9", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
+      const metadata = { role: "visual_production", motion, direction, cover_asset_id: approvedCover.id, video_source_asset_id: videoSource.id, render_source_asset_id: renderSource.id, show_title_on_video: showTitleOnVideo, master_asset_id: master.id, artwork_layout: "full_bleed_16x9", worker: { stage: "queued", progress: 0, message: "Waiting for the video worker" } };
       const { data: asset, error: assetError } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "final_video", storage_bucket: "studio-assets", storage_path: storagePath, mime_type: "video/mp4", version, status: "pending", metadata_json: metadata }).select("*").single();
       if (assetError || !asset) throw new Error(assetError?.message || "Could not create the video asset.");
-      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, video_source_asset_id: videoSource.id, master_asset_id: master.id, motion, direction, artwork_layout: "full_bleed_16x9", storage_path: storagePath } }).select("*").single();
+      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "video_render", status: "queued", progress: 0, provider: "ffmpeg_video_worker", attempt_count: 1, input_json: { asset_id: asset.id, render_source_asset_id: renderSource.id, master_asset_id: master.id, motion, direction, artwork_layout: "full_bleed_16x9", storage_path: storagePath } }).select("*").single();
       if (jobError || !job) {
         await db.from("studio_assets").update({ status: "failed", error_message: jobError?.message || "Could not register the video render job.", updated_at: new Date().toISOString() }).eq("id", asset.id);
         throw new Error(jobError?.message || "Could not register the video render job.");
@@ -859,7 +925,7 @@ Deno.serve(async (req) => {
         ]);
       };
       const [{ data: signedCover, error: coverSignError }, { data: signedMaster, error: masterSignError }] = await Promise.all([
-        db.storage.from(videoSource.storage_bucket).createSignedUrl(videoSource.storage_path, 60 * 60),
+        db.storage.from(renderSource.storage_bucket).createSignedUrl(renderSource.storage_path, 60 * 60),
         db.storage.from(master.storage_bucket).createSignedUrl(master.storage_path, 60 * 60),
       ]);
       if (coverSignError || masterSignError || !signedCover?.signedUrl || !signedMaster?.signedUrl) {
@@ -952,7 +1018,7 @@ Deno.serve(async (req) => {
       await db.from("studio_albums").update({ publishing_status: "submitted", status: "publishing", updated_at: now }).eq("id", album.id);
       let response: Response;
       try {
-        response = await fetch(STUDIO_PUBLISH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", publication_id: publication.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, platform: "youtube", video_url: signedVideo.signedUrl, thumbnail_url: thumbnailUrl, visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for, metadata: { title: publication.title, description: publication.description, tags: publication.tags, chapters: publication.chapters } }) });
+        response = await fetch(STUDIO_PUBLISH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", publication_id: publication.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, platform: "youtube", video_url: signedVideo.signedUrl, thumbnail_url: thumbnailUrl, visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for, metadata: { title: publication.title, description: publication.description, tags: publication.tags, chapters: [] } }) });
       } catch (dispatchError) {
         const message = `Could not reach the publishing workflow: ${dispatchError instanceof Error ? dispatchError.message : "network error"}`;
         await Promise.all([db.from("studio_publications").update({ status: "failed", error_message: message, updated_at: new Date().toISOString() }).eq("id", publication.id), db.from("studio_jobs").update({ status: "failed", error_message: message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id), db.from("studio_albums").update({ publishing_status: "failed", status: "ready_to_publish", updated_at: new Date().toISOString() }).eq("id", album.id)]);

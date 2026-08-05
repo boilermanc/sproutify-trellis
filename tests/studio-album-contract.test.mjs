@@ -335,3 +335,35 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(page, /defaultTitleFont=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_font\}/);
   assert.match(html, /Playfair\+Display/);
 });
+
+test('the title can optionally be burned onto the video by rendering from the thumbnail', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(fn, /if \(body\.use_thumbnail === true\)/);
+  assert.match(fn, /let renderSource = videoSource/);
+  assert.match(fn, /show_title_on_video: showTitleOnVideo/);
+  assert.match(fn, /createSignedUrl\(renderSource\.storage_path/);
+  assert.match(service, /useThumbnail = false/);
+  assert.match(service, /use_thumbnail: useThumbnail/);
+  assert.match(page, /Show the title on the video too/);
+  assert.match(page, /showTitleOnVideo && !!thumbnail/);
+});
+
+test('publishing metadata is AI-written in the rich YouTube format', async () => {
+  // A genre summary line, evocative paragraphs, the auto chapters (baked into
+  // the description with a 0:00 first marker so YouTube builds chapters), an
+  // "Ideal for" bullet list, and a hashtag block — falling back to the plain
+  // description if the AI call is unavailable.
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const panel = await read('components/StudioPublishingPanel.tsx');
+  assert.match(fn, /async function generateAlbumMetadata/);
+  assert.match(fn, /genre_summary/);
+  assert.match(fn, /☀️ Ideal for:/);
+  assert.match(fn, /const hashtagLine = meta\?\.hashtags\?\.length/);
+  assert.match(fn, /const meta = await generateAlbumMetadata\(db, album, tracks \|\| \[\]\)/);
+  assert.match(fn, /meta\?\.description \|\| album\.short_description/);
+  // Chapters go in the description, so the publish webhook must not re-append them.
+  assert.match(fn, /tags: publication\.tags, chapters: \[\] \} \}\) \}\);/);
+  assert.match(panel, /Regenerate/);
+});
