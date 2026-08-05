@@ -4,27 +4,30 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const page = (title: string, msg: string) =>
-  `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
-  `<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}` +
-  `.card{background:#fff;max-width:460px;margin:16px;padding:44px 40px;border-radius:24px;box-shadow:0 10px 40px rgba(0,0,0,.08);text-align:center}` +
-  `.h{color:#059669;font-weight:800;font-size:22px;margin:0 0 14px;letter-spacing:-.3px}.p{color:#475569;font-size:15px;line-height:1.65;margin:0}</style>` +
-  `</head><body><div class="card"><p class="h">${title}</p><p class="p">${msg}</p></div></body></html>`;
+// The human-facing confirmation lives on the app domain, NOT here. Supabase's
+// functions gateway forces `Content-Type: text/plain` + a `sandbox` CSP on every
+// response from *.supabase.co/functions/v1, so a styled HTML page can never render
+// from this endpoint (the browser shows raw source). So we record the suppression
+// and 302 to the static /unsubscribed.html page, which the app server serves as
+// real text/html. Only a brand DISPLAY name (or slug) is passed in the URL — never
+// the email address (no PII in URLs).
+const APP_URL = "https://trellis.sproutify.app";
 
-const html = (body: string, status: number) =>
-  new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+const redirect = (query: string) =>
+  new Response(null, {
+    status: 302,
+    headers: { Location: `${APP_URL}/unsubscribed.html${query}`, "cache-control": "no-store" },
+  });
 
 Deno.serve(async (req: Request) => {
+  const isPost = req.method === "POST"; // RFC 8058 one-click (List-Unsubscribe-Post)
   const url = new URL(req.url);
   let email = url.searchParams.get("email") || "";
-  // `scope` decides how far the unsubscribe reaches:
-  //   'global'        -> removed from ALL Sproutify marketing (every branch)
-  //   '<branch slug>' -> removed from that one brand only (per-branch unsubscribe)
-  // Fall back to the legacy `source` param so links already in inboxes keep working.
+  // `scope`: 'global' = removed from ALL Sproutify marketing; '<branch slug>' = one
+  // brand only. Legacy `source` param still honored for links already in inboxes.
   let scope = url.searchParams.get("scope") || url.searchParams.get("source") || "global";
 
-  // RFC 8058 one-click unsubscribe (List-Unsubscribe-Post) arrives as POST
-  if (req.method === "POST") {
+  if (isPost) {
     try {
       const ct = req.headers.get("content-type") || "";
       if (ct.includes("application/json")) {
@@ -40,14 +43,16 @@ Deno.serve(async (req: Request) => {
 
   email = email.trim().toLowerCase();
   scope = (scope || "global").trim().toLowerCase();
+
   if (!email || !email.includes("@")) {
-    return html(page("Invalid link", "This unsubscribe link is missing a valid email address. Please contact support if you keep receiving mail."), 400);
+    // Mail servers (one-click POST) get a status code; humans get the styled page.
+    return isPost ? new Response("invalid email", { status: 400 }) : redirect("?status=invalid");
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-  // Resolve a friendly brand name for the confirmation page (branch scopes only).
-  let brandName = "Sproutify";
+  // Friendly brand name for the confirmation page (branch scopes only).
+  let brandName = "";
   if (scope !== "global") {
     const { data: b } = await supabase.from("branches").select("name").eq("slug", scope).maybeSingle();
     if (b?.name) brandName = b.name;
@@ -60,12 +65,13 @@ Deno.serve(async (req: Request) => {
 
   if (error) {
     console.error("unsubscribe upsert failed:", error.message);
-    return html(page("Something went wrong", "We couldn't process your request right now. Please try again in a moment."), 500);
+    return isPost ? new Response("error", { status: 500 }) : redirect("?status=error");
   }
 
-  const scopeMsg = scope === "global"
-    ? `<b>${email}</b> has been removed from Sproutify marketing emails. You won't receive further campaigns from any of our brands.`
-    : `<b>${email}</b> has been removed from <b>${brandName}</b> marketing emails. You'll still receive emails from other Sproutify brands you signed up for.`;
-
-  return html(page("You're unsubscribed", `${scopeMsg} Changed your mind? Just reply to any past email and we'll help you re-subscribe.`), 200);
+  if (isPost) return new Response("ok", { status: 200 });
+  // Global unsubscribe → no brand param (page shows the all-brands message).
+  // Branch unsubscribe → brand name (falls back to the slug if the name lookup missed),
+  // so the page never falsely claims "all brands" for a single-brand opt-out.
+  if (scope === "global") return redirect("");
+  return redirect(`?brand=${encodeURIComponent(brandName || scope)}`);
 });
