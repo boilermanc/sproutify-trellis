@@ -99,5 +99,14 @@ test('creative variants can generate, preview, and attach assets without leaving
   assert.match(directions, /Listening Room/);
   assert.match(directions, /Collection Detail/);
   assert.match(directions, /Connected Collection/);
+  assert.match(directions, /Joy Worth Noticing/);
+  assert.match(directions, /Curious About Scripture/);
+  assert.match(directions, /Everyday Wisdom/);
+  assert.match(directions, /Growing in Faith/);
+  assert.match(directions, /Peace for Today/);
+  assert.match(directions, /When Life Feels Heavy/);
+  assert.match(directions, /Avoid defaulting to sadness/);
+  assert.match(cardStudio, /Standard Card Studio/);
+  assert.match(cardStudio, /including verified scripture cards/);
   assert.match(directions, /Do not add product claims/);
 });

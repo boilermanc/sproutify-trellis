@@ -7,8 +7,11 @@ export interface BrandCreativeDirection {
   branchSlug: string;
   label: string;
   description: string;
+  wordmark: string;
+  wordmarkSubtitle: string;
   photoBrief: string;
   styleNotes: string;
+  scrimStrength?: number;
   safeOverlay: {
     heading: string;
     footer: string;
@@ -23,12 +26,23 @@ const REKKRD_STYLE_NOTES = [
   'Authentic and tactile rather than glossy generic technology advertising.',
 ].join(' ');
 
+const REJOICE_STYLE_NOTES = [
+  'Warm, hopeful editorial lifestyle photography with natural light and gentle human emotion.',
+  'Use a light, welcoming family of cream, soft violet, warm amber, and sage rather than dark crisis imagery.',
+  'Keep the subject weighted to the RIGHT side and the LEFT half calm and uncluttered for typography.',
+  'Show everyday life with dignity and emotional range; Rejoice is for joy, curiosity, wisdom, growth, peace, and hard days.',
+  'No embedded words, logos, watermarks, fabricated scripture, visible Bible text, or exaggerated spiritual transformation.',
+  'Avoid defaulting to sadness, bowed heads, tears, loneliness, or gloomy blue lighting.',
+].join(' ');
+
 export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
   {
     id: 'vinyl-ritual',
     branchSlug: 'rekkrd',
     label: 'Vinyl Ritual',
     description: 'A close, tactile moment of putting a record on a turntable.',
+    wordmark: 'Rekkrd',
+    wordmarkSubtitle: 'Collection Management',
     photoBrief: 'Close-up of a record collector carefully lowering a vinyl record onto a beautiful turntable, fingertips and record texture visible, intimate evening listening ritual, warm practical light, deep shadows, subject on the right.',
     styleNotes: REKKRD_STYLE_NOTES,
     safeOverlay: { heading: 'Keep Discogs. Try Rekkrd.', footer: 'Explore your collection another way' },
@@ -38,6 +52,8 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     branchSlug: 'rekkrd',
     label: 'Listening Room',
     description: 'A collector enjoying music in a warm, design-led listening space.',
+    wordmark: 'Rekkrd',
+    wordmarkSubtitle: 'Collection Management',
     photoBrief: 'Stylish record collector listening in a warm home listening room, shelves of vinyl softly out of focus, relaxed human moment, amber lamp light, premium editorial composition, person and shelves on the right.',
     styleNotes: REKKRD_STYLE_NOTES,
     safeOverlay: { heading: 'Your collection. Your way.', footer: 'Meet Rekkrd' },
@@ -47,6 +63,8 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     branchSlug: 'rekkrd',
     label: 'Collection Detail',
     description: 'Hands browsing a record collection with texture and depth.',
+    wordmark: 'Rekkrd',
+    wordmarkSubtitle: 'Collection Management',
     photoBrief: 'Hands browsing a carefully organized vinyl record crate, tactile paper sleeves with abstract unbranded artwork, shallow depth of field, rich wood and paper textures, cinematic side light, action concentrated on the right.',
     styleNotes: REKKRD_STYLE_NOTES,
     safeOverlay: { heading: 'See your collection differently.', footer: 'Explore Rekkrd' },
@@ -56,9 +74,83 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     branchSlug: 'rekkrd',
     label: 'Connected Collection',
     description: 'A stylized still life expressing one collection working across two tools.',
+    wordmark: 'Rekkrd',
+    wordmarkSubtitle: 'Collection Management',
     photoBrief: 'Conceptual overhead still life of a vinyl record collection arranged in two connected zones, one shared record visually bridging them, subtle orange line motif suggesting two-way movement, dark premium surface, no interface screens or logos, composition weighted right.',
     styleNotes: REKKRD_STYLE_NOTES,
     safeOverlay: { heading: 'One collection. Two-way sync.', footer: 'See how Rekkrd works with Discogs' },
+  },
+  {
+    id: 'joy-worth-noticing',
+    branchSlug: 'rejoice',
+    label: 'Joy Worth Noticing',
+    description: 'Celebration, gratitude, music, friendship, and ordinary moments of delight.',
+    wordmark: 'Rejoice',
+    wordmarkSubtitle: 'Bible Study for How You Feel',
+    photoBrief: 'A genuinely joyful everyday moment among friends in warm late-afternoon sunlight, relaxed laughter and connection, subtle sense of gratitude, candid rather than posed, people grouped on the right with calm negative space on the left.',
+    styleNotes: REJOICE_STYLE_NOTES,
+    scrimStrength: 0.42,
+    safeOverlay: { heading: 'Make room for joy.', footer: 'Explore joy in scripture' },
+  },
+  {
+    id: 'curious-about-scripture',
+    branchSlug: 'rejoice',
+    label: 'Curious About Scripture',
+    description: 'Questions, discovery, learning, and the pleasure of going deeper.',
+    wordmark: 'Rejoice',
+    wordmarkSubtitle: 'Bible Study for How You Feel',
+    photoBrief: 'An inviting study table with an open Bible whose printed words are not legible, a notebook with blank-looking pages, warm tea, pencils, and soft morning window light, thoughtful person studying on the right, curious and energized rather than solemn.',
+    styleNotes: REJOICE_STYLE_NOTES,
+    scrimStrength: 0.46,
+    safeOverlay: { heading: 'Bring your questions.', footer: 'Explore scripture with Rejoice' },
+  },
+  {
+    id: 'everyday-wisdom',
+    branchSlug: 'rejoice',
+    label: 'Everyday Wisdom',
+    description: 'Faith applied to relationships, work, choices, patience, and ordinary life.',
+    wordmark: 'Rejoice',
+    wordmarkSubtitle: 'Bible Study for How You Feel',
+    photoBrief: 'A calm kitchen-table reflection in an active, lived-in home, a person pausing with a journal before beginning the day, warm natural light, subtle signs of ordinary responsibilities, grounded and practical, person on the right.',
+    styleNotes: REJOICE_STYLE_NOTES,
+    scrimStrength: 0.44,
+    safeOverlay: { heading: 'Faith for ordinary days.', footer: 'Study. Reflect. Grow.' },
+  },
+  {
+    id: 'growing-in-faith',
+    branchSlug: 'rejoice',
+    label: 'Growing in Faith',
+    description: 'Habits, deeper study, reflection, purpose, and steady spiritual growth.',
+    wordmark: 'Rejoice',
+    wordmarkSubtitle: 'Bible Study for How You Feel',
+    photoBrief: 'A hopeful morning walk through a sunlit garden path with a person moving forward on the right, fresh green growth, warm light, peaceful energy, visual metaphor for steady growth without dramatic transformation imagery.',
+    styleNotes: REJOICE_STYLE_NOTES,
+    scrimStrength: 0.4,
+    safeOverlay: { heading: 'Keep growing.', footer: 'Start where you are' },
+  },
+  {
+    id: 'peace-for-today',
+    branchSlug: 'rejoice',
+    label: 'Peace for Today',
+    description: 'Rest, presence, breathing room, and reflection without implying crisis.',
+    wordmark: 'Rejoice',
+    wordmarkSubtitle: 'Bible Study for How You Feel',
+    photoBrief: 'A peaceful light-filled reading corner in late morning, a comfortable chair, soft blanket, plant, tea, and an open book with no legible text, calm but not lonely, warm cream and sage palette, visual interest on the right.',
+    styleNotes: REJOICE_STYLE_NOTES,
+    scrimStrength: 0.4,
+    safeOverlay: { heading: 'A quiet place to begin.', footer: 'Open Rejoice' },
+  },
+  {
+    id: 'when-life-feels-heavy',
+    branchSlug: 'rejoice',
+    label: 'When Life Feels Heavy',
+    description: 'Gentle support for difficult moments, included as one part of a much wider emotional range.',
+    wordmark: 'Rejoice',
+    wordmarkSubtitle: 'Bible Study for How You Feel',
+    photoBrief: 'A compassionate everyday scene of one friend quietly present with another, warm lamplight, supportive body language, dignity and connection, no tears or melodrama, people on the right with hopeful warm light entering the space.',
+    styleNotes: REJOICE_STYLE_NOTES,
+    scrimStrength: 0.48,
+    safeOverlay: { heading: "You don't have to have the words.", footer: 'Start with how you feel' },
   },
 ];
 
@@ -105,14 +197,14 @@ export function applyBrandCreativeDirection(
     ...concept,
     template: 'editorial',
     creativeDirectionId: direction.id,
-    wordmark: 'Rekkrd',
-    wordmarkSubtitle: 'Collection Management',
+    wordmark: direction.wordmark,
+    wordmarkSubtitle: direction.wordmarkSubtitle,
     heading: direction.safeOverlay.heading,
     bullets: [],
     footer: direction.safeOverlay.footer,
     photo_brief: direction.photoBrief,
     backgroundUrl: undefined,
-    scrimStrength: 0.58,
+    scrimStrength: direction.scrimStrength ?? 0.58,
     rationale: `${direction.label}: ${direction.description}`,
   };
 }

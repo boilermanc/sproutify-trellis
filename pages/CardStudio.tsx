@@ -278,7 +278,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   );
 
   useEffect(() => {
-    setCreativeDirectionId('variety');
+    setCreativeDirectionId(selectedBranch?.slug === 'rekkrd' ? 'variety' : 'standard');
   }, [selectedBranch?.slug]);
 
   // (The Generate button's blockers are now surfaced in the UI next to the
@@ -500,10 +500,12 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     setDraftRestoredAt(null);
     try {
       console.log('[CardStudio] Calling Gemini…');
-      const selectedDirection = creativeDirectionId === 'variety'
+      const selectedDirection = creativeDirectionId === 'variety' || creativeDirectionId === 'standard'
         ? undefined
         : getBrandCreativeDirection(selectedBranch.slug, creativeDirectionId);
-      const requestedDirections = selectedDirection ? [selectedDirection] : brandCreativeDirections;
+      const requestedDirections = creativeDirectionId === 'standard'
+        ? []
+        : selectedDirection ? [selectedDirection] : brandCreativeDirections;
       const directedBrief = requestedDirections.length > 0
         ? creativeDirectionId === 'variety'
           ? [
@@ -587,7 +589,9 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       const augmentedBrief = `${brief}\n\nAdditional instruction: generate ONE replacement concept only. It is replacing a discarded option alongside concepts that are being KEPT — make this new one visually and thematically DIFFERENT from all of them (different template where reasonable, different palette, different angle):\n${othersSummary || '(none — this will be the only concept)'}`;
 
       const currentConcept = cards.find(card => card.concept.id === id)?.concept;
-      const direction = getBrandCreativeDirection(selectedBranch.slug, currentConcept?.creativeDirectionId || (creativeDirectionId === 'variety' ? undefined : creativeDirectionId));
+      const requestedDirectionId = currentConcept?.creativeDirectionId
+        || (creativeDirectionId === 'variety' || creativeDirectionId === 'standard' ? undefined : creativeDirectionId);
+      const direction = requestedDirectionId ? getBrandCreativeDirection(selectedBranch.slug, requestedDirectionId) : undefined;
       const replacementBrief = direction ? buildCreativeDirectionBrief(direction, 'instagram', augmentedBrief) : augmentedBrief;
       const baseCardStyle = getBrandCardStyle(selectedBranch.slug);
       const replacementCardStyle = direction && baseCardStyle
@@ -961,15 +965,18 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
                 onChange={(e) => setCreativeDirectionId(e.target.value)}
                 className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
               >
+                <option value="standard">Standard Card Studio</option>
                 <option value="variety">Variety pack</option>
                 {brandCreativeDirections.map(direction => (
                   <option key={direction.id} value={direction.id}>{direction.label}</option>
                 ))}
               </select>
               <span className="text-[10px] text-slate-400">
-                {creativeDirectionId === 'variety'
-                  ? 'Cycles through the shared brand directions.'
-                  : getBrandCreativeDirection(selectedBranch?.slug || '', creativeDirectionId)?.description}
+                {creativeDirectionId === 'standard'
+                  ? 'Keeps the full template range, including verified scripture cards.'
+                  : creativeDirectionId === 'variety'
+                    ? 'Cycles through the shared brand directions.'
+                    : getBrandCreativeDirection(selectedBranch?.slug || '', creativeDirectionId)?.description}
               </span>
             </div>
           )}
