@@ -170,7 +170,7 @@ test('Studio publishing requires review and has a durable failure path', async (
   const panel = await read('components/StudioPublishingPanel.tsx');
   const workflow = JSON.parse(await read('n8n-blueprints/E10-studio-album-publish.json'));
   assert.match(fn, /approve_publication/);
-  assert.match(fn, /publication\.status !== "ready"/);
+  assert.match(fn, /!\["ready", "failed"\]\.includes\(publication\.status\)/);
   assert.match(panel, /Submit .* to YouTube with/);
   assert.match(panel, /New releases default to private/);
   assert.ok(workflow.nodes.some(node => node.name === 'Build Studio Failure'));
@@ -424,4 +424,23 @@ test('publishing resolves the CURRENT active video and thumbnail, not stale draf
   assert.match(fn, /Resolve the CURRENT active video and thumbnail, not the ids captured/);
   assert.match(fn, /const \{ data: video \} = await db\.from\("studio_assets"\)\.select\("\*"\)\.eq\("album_id", album\.id\)\.eq\("asset_type", "final_video"\)\.eq\("status", "active"\)\.order\("version", \{ ascending: false \}\)\.limit\(1\)\.maybeSingle\(\)/);
   assert.doesNotMatch(fn, /\.eq\("id", publication\.video_asset_id\)/);
+});
+
+test('the app tracks the YouTube release: polls while submitting, shows live/failed, retries', async () => {
+  const page = await read('pages/StudioAlbums.tsx');
+  const panel = await read('components/StudioPublishingPanel.tsx');
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const workflow = await read('n8n-blueprints/E10-studio-album-publish.json');
+  // Poll while a submission is in flight so live/failed lands without a reload.
+  assert.match(page, /const hasActivePublish = publication\?\.status === 'submitting'/);
+  assert.match(page, /!hasActiveVideo && !hasActivePublish/);
+  // Surface the live release (link) and the in-flight state.
+  assert.match(panel, /Live on YouTube/);
+  assert.match(panel, /Watch on YouTube/);
+  assert.match(panel, /Publishing to YouTube/);
+  // A failed publication can be retried.
+  assert.match(panel, /Retry submit to YouTube/);
+  assert.match(fn, /!\["ready", "failed"\]\.includes\(publication\.status\)/);
+  // The failure node no longer mislabels the album description as the error.
+  assert.doesNotMatch(workflow, /e\.message \|\| e\.error\?\.message \|\| e\.description/);
 });

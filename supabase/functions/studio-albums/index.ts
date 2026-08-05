@@ -1069,7 +1069,7 @@ Deno.serve(async (req) => {
     if (body.action === "publish_album") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const publication = await publicationForAlbum(db, album.id);
-      if (!publication || publication.status !== "ready" || album.metadata_status !== "approved" || album.video_status !== "approved") throw new Error("Approve the video and publishing metadata before submission.");
+      if (!publication || !["ready", "failed"].includes(publication.status) || album.metadata_status !== "approved" || album.video_status !== "approved") throw new Error("Approve the video and publishing metadata before submission.");
       // Resolve the CURRENT active video and thumbnail, not the ids captured when
       // the draft was prepared — re-rendering after prepare archives the old ones,
       // and the stored reference would otherwise point at an archived asset.

@@ -344,7 +344,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const b = $('Studio Publish Webhook').item.json.body || {}; const e = $json || {}; const message = String(e.message || e.error?.message || e.description || 'Studio publishing workflow failed').slice(0, 500); return { json: { publication_id: b.publication_id, album_id: b.album_id, job_id: b.job_id, message } };"
+        "jsCode": "const b = $('Studio Publish Webhook').item.json.body || {}; const e = $json || {}; const err = e.error || {}; const reason = Array.isArray(err.errors) && err.errors[0] ? (err.errors[0].reason || err.errors[0].message) : ''; const message = String(err.message || err.description || reason || (typeof e.error === 'string' ? e.error : '') || 'Studio publishing workflow failed').replace(/\\s+/g, ' ').trim().slice(0, 500); return { json: { publication_id: b.publication_id, album_id: b.album_id, job_id: b.job_id, message } };"
       },
       "name": "Build Studio Failure",
       "type": "n8n-nodes-base.code",

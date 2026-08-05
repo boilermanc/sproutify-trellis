@@ -160,11 +160,12 @@ const StudioAlbums: React.FC<Props> = ({ addToast }) => {
   const hasActiveTrack = tracks.some(track => track.review_status === 'regenerating');
   const hasActiveMaster = master?.status === 'queued' || master?.status === 'processing';
   const hasActiveVideo = video?.status === 'queued' || video?.status === 'processing';
+  const hasActivePublish = publication?.status === 'submitting';
   useEffect(() => {
-    if (!selected || (!hasActiveTrack && !hasActiveMaster && !hasActiveVideo)) return;
+    if (!selected || (!hasActiveTrack && !hasActiveMaster && !hasActiveVideo && !hasActivePublish)) return;
     const poll = window.setInterval(() => loadTracks(selected.id), 5000);
     return () => clearInterval(poll);
-  }, [selected?.id, hasActiveTrack, hasActiveMaster, hasActiveVideo, loadTracks]);
+  }, [selected?.id, hasActiveTrack, hasActiveMaster, hasActiveVideo, hasActivePublish, loadTracks]);
 
   const totalTrackSeconds = useMemo(() => tracks.reduce((total, track) => total + (track.duration_seconds || 0), 0), [tracks]);
   const targetSeconds = selected?.target_duration_seconds || 0;
