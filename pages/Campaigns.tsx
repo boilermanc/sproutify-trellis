@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
+import { CampaignRecipientsModal } from '../components/CampaignRecipientsModal';
 import { BranchContext } from '../types';
 
 interface CampaignsProps {
@@ -290,6 +291,7 @@ const CampaignDetailDrawer: React.FC<{
 }> = ({ campaign: c, stat: s, onClose, addToast, onChanged }) => {
   const [rstats, setRstats] = useState<CampaignRecipientStats | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [showRecipients, setShowRecipients] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -400,6 +402,16 @@ const CampaignDetailDrawer: React.FC<{
                 </div>
               ))}
             </div>
+            {hasEvents && (
+              <button
+                type="button"
+                onClick={() => setShowRecipients(true)}
+                className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition"
+              >
+                <Users className="w-4 h-4" />
+                See who opened, clicked & complained
+              </button>
+            )}
           </div>
 
           {/* Audience */}
@@ -445,6 +457,10 @@ const CampaignDetailDrawer: React.FC<{
           </p>
         </div>
       </div>
+
+      {showRecipients && c.subject && (
+        <CampaignRecipientsModal campaignSubject={c.subject} onClose={() => setShowRecipients(false)} />
+      )}
     </>
   );
 };
