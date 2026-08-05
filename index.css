@@ -99,6 +99,18 @@
 .queue-check-pop { animation: queueCheckPop 360ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 .queue-dismissing { animation: queueDismiss 260ms ease-in forwards; overflow: hidden; pointer-events: none; }
 
+/* Page-header "what is this?" tooltip (PageInfoTooltip.tsx) */
+@keyframes pageInfoPopIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pageInfoPopOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+.page-info-pop-in { animation: pageInfoPopIn 160ms ease-out; transform-origin: top left; }
+.page-info-pop-out { animation: pageInfoPopOut 160ms ease-in forwards; transform-origin: top left; pointer-events: none; }
+
 /* Shared field treatment for the Reddit Ads campaign workspace. Tailwind is
    loaded at runtime, so these small composed controls stay in plain CSS. */
 .form-label {

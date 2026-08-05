@@ -2,8 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, User, Brand, Profile, BranchContext, ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
+import { PAGE_INFO } from '../src/data/pageInfo';
 import SageChat from './SageChat';
 import ContextAwareHelp from './ContextAwareHelp';
+import PageInfoTooltip from './PageInfoTooltip';
 import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
@@ -296,6 +298,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
             <h2 className="text-lg lg:text-xl font-semibold text-slate-800 capitalize truncate">
               {pageTitle}
             </h2>
+            {PAGE_INFO[activeView] && (
+              <PageInfoTooltip title={pageTitle} description={PAGE_INFO[activeView]} />
+            )}
           </div>
           <div className="flex items-center space-x-2 lg:space-x-4 shrink-0">
              {/* Branch Scope Picker */}
