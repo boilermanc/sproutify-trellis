@@ -198,10 +198,24 @@ test('Studio video requires approved native 16:9 artwork and renders it full ble
   assert.match(worker, /RENDER_PROFILE = "studio-landscape-v1"/);
   assert.match(worker, /"render_profile": RENDER_PROFILE/);
   assert.match(page, /Step 6a · YouTube artwork/);
-  assert.match(page, /Generate 16:9 artwork/);
+  assert.match(page, /Generate AI landscape scene/);
   assert.match(page, /Approve 16:9 artwork/);
   assert.match(page, /video\.artwork_layout !== 'full_bleed_16x9'/);
   assert.match(composer, /const W = 1280/);
   assert.match(composer, /const H = 720/);
   assert.match(composer, /Rekkrd After Dark/);
+});
+
+test('Studio video artwork can reuse the approved cover instantly, no AI call required', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  const service = await read('services/studioAlbumsService.ts');
+  const composer = await read('components/StudioVideoArtworkComposer.tsx');
+  assert.match(fn, /use_cover_as_video_artwork/);
+  assert.match(fn, /model: "direct_cover_reuse"/);
+  assert.match(service, /useCoverAsStudioVideoArtwork/);
+  assert.match(page, /Use approved cover/);
+  assert.match(page, /useCoverAsStudioVideoArtwork/);
+  assert.match(composer, /safe_fit/);
+  assert.match(composer, /Show full image/);
 });

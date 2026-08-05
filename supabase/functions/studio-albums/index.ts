@@ -200,6 +200,23 @@ async function generateStudioVideoArtwork(db: any, album: any) {
   return coverWithUrl(db, asset);
 }
 
+async function useCoverAsStudioVideoArtwork(db: any, album: any) {
+  if (album.artwork_status !== "approved") throw new Error("Approve the titled album cover before creating video artwork.");
+  const { data: approvedCover } = await db.from("studio_assets").select("*").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
+  if (!approvedCover) throw new Error("The approved album cover is unavailable.");
+  const sourceId = approvedCover.metadata_json?.source_asset_id || approvedCover.id;
+  const { data: source } = await db.from("studio_assets").select("*").eq("id", sourceId).eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").maybeSingle();
+  if (!source) throw new Error("The clean source image for the approved cover is unavailable.");
+  const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "scene_image").order("version", { ascending: false }).limit(1).maybeSingle();
+  const version = Number(previous?.version || 0) + 1;
+  await clearVideoArtworkSelections(db, album.id);
+  // Reuses the approved cover's own file — no image-generation call, no extra
+  // storage copy. The composer's canvas crop/letterbox does the sizing work.
+  const { data: asset, error } = await db.from("studio_assets").insert({ album_id: album.id, asset_type: "scene_image", storage_bucket: source.storage_bucket, storage_path: source.storage_path, mime_type: source.mime_type, file_size: source.file_size, width: source.width, height: source.height, version, status: "active", metadata_json: { role: "video_artwork_source", selection_status: "selected", source_asset_id: source.id, approved_cover_asset_id: approvedCover.id, aspect_ratio: source.width && source.height ? `${source.width}:${source.height}` : "1:1", model: "direct_cover_reuse" } }).select("*").single();
+  if (error || !asset) throw new Error(error?.message || "Could not register the video artwork.");
+  return coverWithUrl(db, asset);
+}
+
 async function generateStudioCover(db: any, album: any, input: any) {
   if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before generating cover concepts.");
   const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
@@ -700,6 +717,10 @@ Deno.serve(async (req) => {
     if (body.action === "generate_video_artwork") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       return json({ concept: await generateStudioVideoArtwork(db, album) }, 201);
+    }
+    if (body.action === "use_cover_as_video_artwork") {
+      const album = await getOwnedAlbum(db, body.album_id, user.id);
+      return json({ concept: await useCoverAsStudioVideoArtwork(db, album) }, 201);
     }
     if (body.action === "save_video_artwork_composite") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);

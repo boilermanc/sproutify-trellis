@@ -20,6 +20,11 @@ const TREATMENTS: Array<{ id: Treatment; label: string }> = [
   { id: 'travel_poster', label: 'Travel Poster' },
   { id: 'after_dark', label: 'After Dark' },
 ];
+type FitStyle = 'cover' | 'safe_fit';
+const FIT_STYLES: Array<{ id: FitStyle; label: string; hint: string }> = [
+  { id: 'safe_fit', label: 'Show full image', hint: 'Blurred padding, nothing cropped' },
+  { id: 'cover', label: 'Fill frame', hint: 'Crops the edges to remove padding' },
+];
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines = 3) {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -44,6 +49,7 @@ export const StudioVideoArtworkComposer: React.FC<Props> = ({ albumId, source, d
   const [subtitle, setSubtitle] = useState(defaultSubtitle);
   const [series, setSeries] = useState(defaultSeries || 'Rekkrd After Dark');
   const [treatment, setTreatment] = useState<Treatment>('riviera_editorial');
+  const [fitStyle, setFitStyle] = useState<FitStyle>(source.metadata_json?.aspect_ratio === '16:9' ? 'cover' : 'safe_fit');
   const [vintageBorder, setVintageBorder] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -55,10 +61,26 @@ export const StudioVideoArtworkComposer: React.FC<Props> = ({ albumId, source, d
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx || !image) return;
     ctx.clearRect(0, 0, W, H);
-    const scale = Math.max(W / image.width, H / image.height);
-    const dw = image.width * scale;
-    const dh = image.height * scale;
-    ctx.drawImage(image, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    if (fitStyle === 'safe_fit') {
+      // Blurred cover-fill backdrop keeps the frame full while the sharp
+      // contain-fit copy on top preserves the entire source image—no crop.
+      const bgScale = Math.max(W / image.width, H / image.height);
+      const bgW = image.width * bgScale;
+      const bgH = image.height * bgScale;
+      ctx.save();
+      ctx.filter = 'blur(28px) brightness(0.72)';
+      ctx.drawImage(image, (W - bgW) / 2 - 20, (H - bgH) / 2 - 20, bgW + 40, bgH + 40);
+      ctx.restore();
+      const fgScale = Math.min(W / image.width, H / image.height);
+      const fgW = image.width * fgScale;
+      const fgH = image.height * fgScale;
+      ctx.drawImage(image, (W - fgW) / 2, (H - fgH) / 2, fgW, fgH);
+    } else {
+      const scale = Math.max(W / image.width, H / image.height);
+      const dw = image.width * scale;
+      const dh = image.height * scale;
+      ctx.drawImage(image, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    }
 
     if (vintageBorder) {
       ctx.strokeStyle = '#f1e3c3';
@@ -126,7 +148,7 @@ export const StudioVideoArtworkComposer: React.FC<Props> = ({ albumId, source, d
     ctx.shadowBlur = 8;
     ctx.fillText((series.trim() || 'Rekkrd After Dark').toUpperCase(), W / 2, H - 28);
     ctx.shadowBlur = 0;
-  }, [series, subtitle, title, treatment, vintageBorder]);
+  }, [fitStyle, series, subtitle, title, treatment, vintageBorder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +183,7 @@ export const StudioVideoArtworkComposer: React.FC<Props> = ({ albumId, source, d
     <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <canvas ref={canvasRef} width={W} height={H} className="aspect-video w-full rounded-xl border border-sky-200 bg-slate-900" />
       <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">{FIT_STYLES.map(item => <button type="button" key={item.id} onClick={() => setFitStyle(item.id)} className={`rounded-xl border px-2.5 py-2 text-left text-xs font-bold ${fitStyle === item.id ? 'border-sky-600 bg-sky-100 text-sky-900' : 'border-sky-200 bg-white text-slate-600'}`}>{item.label}<span className="mt-0.5 block text-[10px] font-medium normal-case text-slate-400">{item.hint}</span></button>)}</div>
         <label className="block text-xs font-bold text-slate-700">Typography style<select value={treatment} onChange={event => setTreatment(event.target.value as Treatment)} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm">{TREATMENTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label className="block text-xs font-bold text-slate-700">Album title<textarea value={title} onChange={event => setTitle(event.target.value)} className="mt-1.5 min-h-20 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm" /></label>
         <label className="block text-xs font-bold text-slate-700">Release subtitle<input value={subtitle} onChange={event => setSubtitle(event.target.value)} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm" /></label>
