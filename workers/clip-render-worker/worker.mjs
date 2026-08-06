@@ -131,6 +131,7 @@ async function renderBeat(job) {
 async function assemble(job) {
   const urls = job.payload?.clip_urls || [];
   if (!urls.length) throw new Error('assemble job has no clip_urls');
+  const audioUrl = job.payload?.audio_url || null;
 
   const tmp = mkdtempSync(path.join(tmpdir(), 'clipfinal-'));
   try {
@@ -143,9 +144,25 @@ async function assemble(job) {
     const list = path.join(tmp, 'list.txt');
     writeFileSync(list, files.map(f => `file '${f.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`).join('\n'));
     const out = path.join(tmp, 'final.mp4');
-    const ff = spawnSync('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', list,
-      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-an', out], { encoding: 'utf8' });
-    if (ff.status !== 0) throw new Error(`ffmpeg concat failed: ${(ff.stderr || '').slice(-800)}`);
+
+    // With an audio bed: mux the track over the concatenated (silent) video.
+    // apad + -shortest pads a short track with silence and trims a long one, so
+    // the output always runs exactly the video's length.
+    let args;
+    if (audioUrl) {
+      const extMatch = audioUrl.match(/\.(mp3|m4a|aac|wav|ogg)(?:\?|$)/i);
+      const audioFile = path.join(tmp, `bed.${extMatch ? extMatch[1].toLowerCase() : 'mp3'}`);
+      await download(audioUrl, audioFile);
+      args = ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-i', audioFile,
+        '-map', '0:v:0', '-map', '1:a:0',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', String(FPS),
+        '-c:a', 'aac', '-b:a', '192k', '-filter:a', 'apad', '-shortest', out];
+    } else {
+      args = ['-y', '-f', 'concat', '-safe', '0', '-i', list,
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-an', out];
+    }
+    const ff = spawnSync('ffmpeg', args, { encoding: 'utf8' });
+    if (ff.status !== 0) throw new Error(`ffmpeg ${audioUrl ? 'mux' : 'concat'} failed: ${(ff.stderr || '').slice(-800)}`);
 
     const data = readFileSync(out);
     const storagePath = `${job.project_id}/final.mp4`;
@@ -154,10 +171,14 @@ async function assemble(job) {
     await patch('trellis_clip_render_jobs', job.id, {
       status: 'completed', output_url: url, storage_path: storagePath,
       duration_seconds: probe.duration, width: probe.width ?? 1080, height: probe.height ?? 1920,
-      qa: { stitch: `passed (${urls.length} clips)`, ...(probe.ok ? { ffprobe: `${probe.width}x${probe.height} · ${probe.duration?.toFixed(1)}s` } : {}) },
+      qa: {
+        stitch: `passed (${urls.length} clips)`,
+        audio: audioUrl ? 'music bed muxed' : 'silent',
+        ...(probe.ok ? { ffprobe: `${probe.width}x${probe.height} · ${probe.duration?.toFixed(1)}s` } : {}),
+      },
     });
     await patch('trellis_clip_projects', job.project_id, { final_video_url: url, status: 'production' });
-    console.log(`[assemble] ${urls.length} clips -> ${url}`);
+    console.log(`[assemble] ${urls.length} clips${audioUrl ? ' + music' : ''} -> ${url}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

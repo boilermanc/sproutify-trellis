@@ -2,12 +2,13 @@ import { GoogleGenAI } from '@google/genai';
 import {
   ClipProject, ClipSource, ClipGeneration, ClipScriptBeat, ClipProjectStatus,
   CreateClipConfig, ClipBrollBeat, ClipBeatType, ClipTriage, ClipRenderJob,
-  ClipPublication, ClipTemplateParams,
+  ClipPublication, ClipTemplateParams, ClipAudioConfig, MusicGeneration,
 } from '../types';
 import { CLIP_PUBLISH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 import { sanitizePII } from './aiService';
 import { resolveClipBrand, ClipBrand } from './clipBrand';
+import { submitMusicJob, pollMusicJob } from './musicService';
 
 // ─── Clip Studio Service ────────────────────────────────────────────
 // A clip project is script-first: sources → AI cut sheet (with fact
@@ -504,13 +505,64 @@ export async function queueAllRenders(beats: ClipBrollBeat[]): Promise<number> {
   return rows.length;
 }
 
+// ═══ Audio bed (Phase A: a music track under the stitched video) ══════
+// Reuses the existing Lyria path (submitMusicJob → n8n → music_generations).
+// The clip carries the direction and, once the job finishes, the track URL —
+// which the assemble step muxes onto the silent B-roll.
+
+export async function generateClipMusic(project: ClipProject, config: ClipAudioConfig, createdBy?: string | null): Promise<string> {
+  const parts = [
+    config.prompt?.trim(),
+    project.hook_line ? `It scores a short about: ${project.hook_line}.` : '',
+    `Background music bed for a ${project.target_seconds}-second vertical short — no abrupt ending.`,
+  ].filter(Boolean);
+  const { job_id } = await submitMusicJob({
+    branch: project.branch || 'trellis',
+    title: `Clip bed — ${project.title || 'untitled'}`.slice(0, 120),
+    prompt: parts.join(' '),
+    genre: config.genre,
+    mood: config.mood,
+    vocal_style: config.vocal_style,
+    duration_seconds: project.target_seconds,
+  }, createdBy);
+
+  // Track the job and clear any prior resolved URL until the new one lands.
+  await supabase.from('trellis_clip_projects').update({
+    music_job_id: job_id, audio_config: config, audio_url: null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', project.id);
+  return job_id;
+}
+
+// Poll the backing music job; when it completes, persist the track URL onto the
+// clip so assembly can mux it. Returns the current job (or null if none).
+export async function pollClipMusic(project: ClipProject): Promise<MusicGeneration | null> {
+  if (!project.music_job_id) return null;
+  const job = await pollMusicJob(project.music_job_id);
+  if (job?.status === 'completed' && job.audio_url && job.audio_url !== project.audio_url) {
+    await supabase.from('trellis_clip_projects').update({
+      audio_url: job.audio_url, updated_at: new Date().toISOString(),
+    }).eq('id', project.id);
+  }
+  return job;
+}
+
+export async function clearClipMusic(project: ClipProject): Promise<void> {
+  await supabase.from('trellis_clip_projects').update({
+    music_job_id: null, audio_url: null, audio_config: null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', project.id);
+}
+
 // ═══ Phase C4: assembly + publish ═════════════════════════════════════
 
 export async function queueAssemble(project: ClipProject, clipUrls: string[]): Promise<ClipRenderJob> {
   if (clipUrls.length < 1) throw new Error('No rendered clips to assemble');
   const { data, error } = await supabase.from('trellis_clip_render_jobs').insert({
     project_id: project.id, beat_id: null, job_type: 'assemble', status: 'queued',
-    payload: { clip_urls: clipUrls },
+    // audio_url (when set) tells the worker to mux the music bed instead of
+    // stitching silently.
+    payload: { clip_urls: clipUrls, audio_url: project.audio_url ?? null },
   }).select('*').single();
   if (error || !data) throw new Error(`Could not queue assembly: ${error?.message}`);
   return data as ClipRenderJob;

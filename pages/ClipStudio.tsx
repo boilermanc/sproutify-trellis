@@ -3,12 +3,14 @@ import {
   Film, Loader2, RefreshCw, Plus, ArrowLeft, Archive, Star, Wand2, CheckCircle2,
   FileText, Upload, MonitorPlay, X, Play, Pause, ScrollText, ShieldAlert,
   Quote, History, Lightbulb, MessageSquarePlus, Clapperboard, ThumbsUp, ThumbsDown,
-  Trophy, Pencil, Download, Send, ExternalLink, Layers, Video,
+  Trophy, Pencil, Download, Send, ExternalLink, Layers, Video, Music,
 } from 'lucide-react';
 import {
   ClipProject, ClipSource, ClipGeneration, ClipFormat, CreateClipConfig,
   ClipBrollBeat, ClipRenderJob, ClipPublication, ClipTriage,
+  ClipAudioConfig, MusicGeneration,
 } from '../types';
+import { MUSIC_GENRES, MUSIC_MOODS, MUSIC_VOCALS } from '../constants';
 import {
   createClipProject, getClipProjects, getClipSources, getClipGenerations,
   generateScript, approveScript, archiveClipProject, setClipRating,
@@ -16,6 +18,7 @@ import {
   getBrollBeats, generateBrollPlan, updateBrollBeat, setBeatTriage, regenerateBeat,
   getRenderJobs, queueBeatRender, queueAllRenders,
   queueAssemble, getClipPublications, generateClipMetadata, publishClip, setClipStatus,
+  generateClipMusic, pollClipMusic, clearClipMusic,
 } from '../services/clipService';
 
 interface Props {
@@ -83,6 +86,12 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [brollFilter, setBrollFilter] = useState<'all' | 'rendered' | 'kept' | 'undecided' | 'failed'>('all');
   const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
   const [pubMeta, setPubMeta] = useState<{ title: string; description: string; tags: string[]; hashtags: string[] } | null>(null);
+  // Audio bed direction (Phase A: music)
+  const [musicJob, setMusicJob] = useState<MusicGeneration | null>(null);
+  const [audioPrompt, setAudioPrompt] = useState('');
+  const [audioGenre, setAudioGenre] = useState<string>(MUSIC_GENRES[4]); // Lo-fi — safe default bed
+  const [audioMood, setAudioMood] = useState<string>(MUSIC_MOODS[1]);    // Smooth
+  const [audioVocals, setAudioVocals] = useState<string>(MUSIC_VOCALS[0]); // Instrumental only
 
   // Create form
   const [branch, setBranch] = useState(branches[0]?.slug || '');
@@ -107,6 +116,14 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
   const openProject = useCallback(async (p: ClipProject) => {
     setSelected(p); setMode('project'); setTab('script'); setFeedback(''); setPubMeta(null); setPromptDrafts({});
+    // Rehydrate the audio panel from the project's stored direction.
+    setMusicJob(null);
+    if (p.audio_config) {
+      if (p.audio_config.prompt !== undefined) setAudioPrompt(p.audio_config.prompt || '');
+      if (p.audio_config.genre) setAudioGenre(p.audio_config.genre);
+      if (p.audio_config.mood) setAudioMood(p.audio_config.mood);
+      if (p.audio_config.vocal_style) setAudioVocals(p.audio_config.vocal_style);
+    }
     try {
       const [s, g, b, j, pubs] = await Promise.all([
         getClipSources(p.id), getClipGenerations(p.id), getBrollBeats(p.id),
@@ -141,10 +158,12 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
   // Poll while renders or publications are in flight
   const pollRef = useRef<number | null>(null);
+  const musicInFlight = !!selected?.music_job_id && !selected?.audio_url && musicJob?.status !== 'failed';
   const pollActive = useMemo(() =>
     renderJobs.some(j => j.status === 'queued' || j.status === 'running') ||
-    publications.some(p => ['pending', 'uploading', 'processing'].includes(p.status)),
-  [renderJobs, publications]);
+    publications.some(p => ['pending', 'uploading', 'processing'].includes(p.status)) ||
+    musicInFlight,
+  [renderJobs, publications, musicInFlight]);
   useEffect(() => {
     if (!selected || !pollActive) { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } return; }
     const id = selected.id;
@@ -154,6 +173,10 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
         setRenderJobs(j); setPublications(pubs); setProjects(list);
         const p = list.find(x => x.id === id);
         if (p) {
+          // Music job finished → persist its track URL onto the clip.
+          if (p.music_job_id && !p.audio_url) {
+            try { setMusicJob(await pollClipMusic(p)); } catch { /* transient */ }
+          }
           // A publication went live → advance the project to published (once)
           if (pubs.some(x => x.status === 'live') && p.status === 'publishing') {
             setClipStatus(id, 'published').catch(() => {});
@@ -773,6 +796,73 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
         {/* ─── PUBLISH TAB ─── */}
         {tab === 'publish' && (
           <div className="space-y-5">
+            {/* Audio bed */}
+            <div className={card}>
+              <h4 className={panelHead}><Music size={15} className="text-fuchsia-500" /> Audio bed</h4>
+              <p className="text-[10px] text-slate-400 mt-1.5">Generate a music track to lay under the stitched short. It's muxed in when you stitch below.</p>
+              {/* Type selector — music now; voiceover/both arrive in later phases */}
+              <div className="flex gap-1.5 mt-3">
+                <span className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-1"><Music size={11} /> Music</span>
+                <span className="px-3 py-1.5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest" title="Coming soon">Voiceover · soon</span>
+                <span className="px-3 py-1.5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest" title="Coming soon">Both · soon</span>
+              </div>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className={labelCls}>Direction <span className="normal-case font-medium text-slate-400">— describe the vibe</span></label>
+                  <textarea className={`${inputCls} h-16 resize-none text-xs`} value={audioPrompt}
+                    onChange={e => setAudioPrompt(e.target.value)}
+                    placeholder="e.g. warm lo-fi with a soft beat, hopeful but understated" />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div><label className={labelCls}>Genre</label>
+                    <select className={inputCls} value={audioGenre} onChange={e => setAudioGenre(e.target.value)}>
+                      {MUSIC_GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select></div>
+                  <div><label className={labelCls}>Mood</label>
+                    <select className={inputCls} value={audioMood} onChange={e => setAudioMood(e.target.value)}>
+                      {MUSIC_MOODS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select></div>
+                  <div><label className={labelCls}>Vocals</label>
+                    <select className={inputCls} value={audioVocals} onChange={e => setAudioVocals(e.target.value)}>
+                      {MUSIC_VOCALS.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select></div>
+                </div>
+                <button type="button" disabled={!!busy || musicInFlight}
+                  onClick={() => run('music', async () => {
+                    const config: ClipAudioConfig = { kind: 'music', prompt: audioPrompt, genre: audioGenre, mood: audioMood, vocal_style: audioVocals };
+                    await generateClipMusic(selected, config, userId);
+                    const fresh = (await getClipProjects()).find(x => x.id === selected.id);
+                    if (fresh) setSelected(fresh);
+                    setMusicJob(null);
+                    addToast('Music queued — the bed lands here when Lyria finishes', 'success');
+                  })}
+                  className="px-4 py-2 bg-fuchsia-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-fuchsia-700 transition disabled:opacity-40 flex items-center gap-1.5">
+                  {musicInFlight ? <Loader2 size={13} className="animate-spin" /> : <Music size={13} />}
+                  {musicInFlight ? 'Generating…' : selected.audio_url ? 'Regenerate music' : 'Generate music'}
+                </button>
+              </div>
+              {musicInFlight && (
+                <p className="text-[10px] text-amber-600 mt-2 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Lyria is generating — this can take a minute.</p>
+              )}
+              {musicJob?.status === 'failed' && (
+                <p className="text-[10px] text-rose-500 mt-2">Music generation failed{musicJob.error_message ? `: ${musicJob.error_message}` : ''}. Try again.</p>
+              )}
+              {selected.audio_url && !musicInFlight && (
+                <div className="mt-3 space-y-2">
+                  <label className={labelCls}>Music bed <span className="normal-case font-medium text-emerald-600">— will be muxed on stitch</span></label>
+                  <audio controls src={selected.audio_url} className="w-full max-w-[320px]" />
+                  <button type="button" disabled={!!busy} onClick={() => run('music-clear', async () => {
+                    await clearClipMusic(selected);
+                    const fresh = (await getClipProjects()).find(x => x.id === selected.id);
+                    if (fresh) setSelected(fresh);
+                    setMusicJob(null);
+                    addToast('Music removed — the next stitch will be silent', 'success');
+                  })}
+                    className="text-[10px] font-black text-slate-400 hover:text-rose-500 uppercase tracking-widest flex items-center gap-1"><X size={12} /> Remove bed</button>
+                </div>
+              )}
+            </div>
+
             {/* Assembly */}
             <div className={card}>
               <h4 className={panelHead}><Layers size={15} className="text-blue-500" /> Assembly</h4>
@@ -800,7 +890,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                       addToast('Assembly queued — the clip worker stitches the final video', 'success');
                     })}
                     className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition disabled:opacity-40 flex items-center gap-1.5">
-                    {assembleJob?.status === 'queued' || assembleJob?.status === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />} Stitch Final Video ({keptClips.length} clips)
+                    {assembleJob?.status === 'queued' || assembleJob?.status === 'running' ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />} Stitch Final Video ({keptClips.length} clips{selected.audio_url ? ' + music' : ''})
                   </button>
                 </>
               )}

@@ -1706,8 +1706,21 @@ export interface ClipProject {
   rating: number | null;
   current_generation_id: string | null;
   final_video_url: string | null;
+  music_job_id: string | null;      // the music_generations job backing the audio bed
+  audio_url: string | null;         // resolved track URL the worker muxes onto the video
+  audio_config: ClipAudioConfig | null;
   created_at: string;
   updated_at: string;
+}
+
+// Direction for a clip's audio bed. Phase A is 'music' (Lyria); 'voiceover' and
+// 'both' are reserved for later phases.
+export interface ClipAudioConfig {
+  kind: 'music' | 'voiceover' | 'both';
+  prompt?: string;
+  genre?: string;
+  mood?: string;
+  vocal_style?: string;
 }
 
 export interface ClipSource {
