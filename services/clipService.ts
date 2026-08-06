@@ -3,6 +3,7 @@ import {
   ClipProject, ClipSource, ClipGeneration, ClipScriptBeat, ClipProjectStatus,
   CreateClipConfig, ClipBrollBeat, ClipBeatType, ClipTriage, ClipRenderJob,
   ClipPublication, ClipTemplateParams, ClipAudioConfig, MusicGeneration,
+  ClipScene, SceneElement,
 } from '../types';
 import { CLIP_PUBLISH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
@@ -416,6 +417,129 @@ export async function generateBrollPlan(project: ClipProject, generation: ClipGe
   return data as ClipBrollBeat[];
 }
 
+// ═══ Freeform: AI-designed scene cards ════════════════════════════════
+// Instead of picking one of 7 fixed templates, the model designs each beat as
+// a "scene" (background + positioned/animated text & shapes). coerceScene keeps
+// it on-brand and safe; the worker's FreeformScene renders it.
+
+const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+// The DSL vocabulary, shared by the plan prompt and the single-beat prompt.
+function sceneDslBlock(brand: ClipBrand): string {
+  return `CANVAS: 1080x1920 portrait. Positions/sizes are PERCENTAGES (0-100); x,y is an element's CENTER.
+
+SCENE = { "background":{"type":"linear|radial|solid","colors":["#..","#.."],"angle":170}, "bokeh":true, "vignette":false, "elements":[ ... ] }
+ELEMENT common: "type","x","y","w","h" (all %), "opacity"(0-1), "rotate"(deg), "enter":{"type":"...","delay":sec,"duration":sec}, "loop":"none|breathe|float|pulse"
+- text: "text","size"(px @1080 width),"weight"(400-900),"color","align":"left|center|right","uppercase","italic","lineHeight","letterSpacing","highlight":["word"],"highlightColor"
+- rect: "fill","stroke","strokeWidth","radius"(px),"glow"(hex)
+- ellipse: "fill","glow","blur"
+- line: "stroke","strokeWidth"
+ENTER types: fade | slideUp | slideDown | slideLeft | slideRight | pop | growWidth | revealWords
+
+BRAND — use ONLY this palette and dark look:
+- Background base ${brand.bg} (very dark) — build backgrounds from it.
+- Accent colors: ${brand.accents.join(', ')} — for highlights, rules, badges, glows.
+- Text is near-white (#ffffff / warm off-white) on the dark background.
+
+DESIGN RULES:
+- Make each card's LAYOUT genuinely different — vary alignment, the hero element, and composition. Never repeat one recipe across beats.
+- Visible text comes only from the script line (plus at most a short brand tag). No invented stats or labels.
+- Legible: 1-2 text blocks per card, big type, generous spacing, 3-8 elements. Stagger enter delays so it animates in sequence.`;
+}
+
+function freeformPrompt(project: ClipProject, generation: ClipGeneration, brand: ClipBrand): string {
+  return `You are an art director designing vertical motion-graphic cards for a YouTube Short${brand.name ? ` for ${brand.name}` : ''}. Design ONE distinct card per script beat.
+
+${sceneDslBlock(brand)}
+
+SCRIPT BEATS:
+${JSON.stringify(generation.script.map((b, i) => ({ index: i, lane: b.lane, text: b.text })))}
+
+Return ONLY raw JSON, no markdown fences: {"scenes":[ <one SCENE per beat, in order> ]}`;
+}
+
+function singleScenePrompt(project: ClipProject, beat: ClipBrollBeat, brand: ClipBrand): string {
+  return `You are an art director refining ONE vertical motion-graphic card for a YouTube Short${brand.name ? ` for ${brand.name}` : ''}. Redesign it as a fresh scene.
+
+${sceneDslBlock(brand)}
+
+SCRIPT LINE this card covers: "${sanitizePII(beat.headline)}"
+${beat.remotion_prompt ? `CREATOR DIRECTION (obey it): ${sanitizePII(beat.remotion_prompt)}` : ''}
+
+Return ONLY raw JSON, no markdown fences: {"scene": <one SCENE> }`;
+}
+
+// Keep a scene on-brand and renderable: force the brand font, ensure an
+// on-brand background and a non-empty set of valid elements. The renderer
+// clamps every individual field, so this only guarantees the essentials.
+function coerceScene(raw: unknown, brand: ClipBrand, scriptText: string): ClipScene {
+  const s = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+  const bgIn = (s.background && typeof s.background === 'object') ? s.background as Record<string, unknown> : {};
+  const bgCols = Array.isArray(bgIn.colors) ? (bgIn.colors as unknown[]).map(String).filter(c => HEX_RE.test(c)) : [];
+  const background = {
+    type: (['solid', 'linear', 'radial'].includes(bgIn.type as string) ? bgIn.type : 'linear') as 'solid' | 'linear' | 'radial',
+    colors: bgCols.length ? bgCols.slice(0, 3) : [brand.bg, '#000000'],
+    angle: typeof bgIn.angle === 'number' ? bgIn.angle : 170,
+  };
+  const valid = ['text', 'rect', 'ellipse', 'line'];
+  let elements: SceneElement[] = Array.isArray(s.elements)
+    ? (s.elements as unknown[]).filter((e): e is SceneElement => !!e && typeof e === 'object' && valid.includes((e as SceneElement).type)).slice(0, 14)
+    : [];
+  // Guarantee at least one legible line of the script text.
+  if (!elements.some(e => e.type === 'text' && String(e.text || '').trim())) {
+    elements = [...elements, {
+      type: 'text', x: 50, y: 50, w: 82, text: scriptText, size: 72, weight: 800,
+      color: '#ffffff', align: 'center', enter: { type: 'slideUp', duration: 0.6 },
+    }];
+  }
+  return { background, bokeh: s.bokeh !== false, vignette: !!s.vignette, font: brand.font, elements };
+}
+
+async function generateScene(project: ClipProject, prompt: string, geminiApiKey: string, pick: (j: Record<string, unknown>) => unknown): Promise<unknown> {
+  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const resp = await ai.models.generateContent({
+    model: SCRIPT_MODEL, contents: prompt,
+    config: { responseMimeType: 'application/json', temperature: 0.95 }, // high — we want design variety
+  });
+  const rawText = (resp.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  let j: Record<string, unknown>;
+  try { j = JSON.parse(rawText); } catch { throw new Error('The model returned an unreadable design — try again'); }
+  return pick(j);
+}
+
+export async function generateFreeformPlan(project: ClipProject, generation: ClipGeneration, geminiApiKey: string): Promise<ClipBrollBeat[]> {
+  if (!geminiApiKey) throw new Error('Gemini API key missing — add it in Settings');
+  const brand = await resolveClipBrand(project.branch);
+  const scenesRaw = await generateScene(project, freeformPrompt(project, generation, brand), geminiApiKey, j => j.scenes);
+  const scenes = Array.isArray(scenesRaw) ? scenesRaw : [];
+  if (!scenes.length) throw new Error('The model returned no scenes — try again');
+
+  const rows = generation.script.map((b, i) => {
+    const scene = coerceScene(scenes[i], brand, b.text);
+    const tStart = i * 6;
+    return {
+      project_id: project.id,
+      generation_id: generation.id,
+      position: i,
+      time_start: tStart,
+      time_end: tStart + 6,
+      beat_type: 'freeform' as ClipBeatType,
+      headline: b.text.slice(0, 300),
+      rationale: null,
+      remotion_prompt: null,
+      template_params: { scene } as ClipTemplateParams,
+      footage_prompts: [] as string[],
+      triage: 'undecided' as ClipTriage,
+    };
+  });
+
+  await supabase.from('trellis_clip_broll_beats').delete().eq('project_id', project.id);
+  const { data, error } = await supabase.from('trellis_clip_broll_beats').insert(rows).select('*');
+  if (error || !data) throw new Error(`Could not save the design plan: ${error?.message}`);
+  await setClipStatus(project.id, 'broll');
+  return data as ClipBrollBeat[];
+}
+
 // ─── Per-beat regenerate ────────────────────────────────────────────
 // Re-derive ONE beat's template_params from its covered script line plus the
 // creator's edited direction, keeping the beat's template. This is what makes
@@ -424,7 +548,7 @@ export async function generateBrollPlan(project: ClipProject, generation: ClipGe
 
 // What each template renders and the exact params it reads — used to scope the
 // prompt to a single beat type instead of listing all seven.
-const BEAT_SPEC: Record<ClipBeatType, { renders: string; fields: string; shape: string }> = {
+const BEAT_SPEC: Record<Exclude<ClipBeatType, 'freeform'>, { renders: string; fields: string; shape: string }> = {
   motion_graphic: { renders: 'a breathing orb over one short phrase', fields: 'headline (a short phrase from the line), subtext (optional secondary line)', shape: '{"headline":"...","subtext":"..."}' },
   kinetic_quote_card: { renders: 'a verbatim quote with a cascading word reveal', fields: 'quote (the exact quote text), highlight_words (2-4 words copied verbatim from the quote to emphasize), attribution (speaker/org, optional)', shape: '{"quote":"...","highlight_words":["..."],"attribution":"..."}' },
   animation: { renders: 'layered shapes under a device outline, with a caption', fields: 'headline (the caption)', shape: '{"headline":"..."}' },
@@ -435,7 +559,7 @@ const BEAT_SPEC: Record<ClipBeatType, { renders: string; fields: string; shape: 
 };
 
 function singleBeatPrompt(project: ClipProject, beat: ClipBrollBeat, brand: ClipBrand): string {
-  const spec = BEAT_SPEC[beat.beat_type];
+  const spec = BEAT_SPEC[beat.beat_type as Exclude<ClipBeatType, 'freeform'>];
   return `You are refining ONE B-roll beat for a vertical (1080x1920) YouTube Short${brand.name ? ` for ${brand.name}` : ''}.
 Keep the beat type "${beat.beat_type}" — it renders ${spec.renders}. Do NOT switch to another treatment.
 
@@ -460,6 +584,19 @@ Return ONLY raw JSON, no markdown fences:
 export async function regenerateBeat(project: ClipProject, beat: ClipBrollBeat, geminiApiKey: string): Promise<ClipBrollBeat> {
   if (!geminiApiKey) throw new Error('Gemini API key missing — add it in Settings');
   const brand = await resolveClipBrand(project.branch);
+
+  // Freeform beats re-derive a whole scene from the script line + direction.
+  if (beat.beat_type === 'freeform') {
+    const sceneRaw = await generateScene(project, singleScenePrompt(project, beat, brand), geminiApiKey, j => j.scene);
+    const scene = coerceScene(sceneRaw, brand, beat.headline);
+    const params = { scene } as ClipTemplateParams;
+    const { error } = await supabase.from('trellis_clip_broll_beats')
+      .update({ template_params: params, triage: 'undecided', updated_at: new Date().toISOString() })
+      .eq('id', beat.id);
+    if (error) throw new Error(`Could not save beat: ${error.message}`);
+    return { ...beat, template_params: params, triage: 'undecided' };
+  }
+
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
   const resp = await ai.models.generateContent({
     model: SCRIPT_MODEL,

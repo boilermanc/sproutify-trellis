@@ -1788,7 +1788,47 @@ export interface CreateClipConfig {
 // ─── Clip Studio: B-roll, rendering, publish (Phases C2–C4) ──────────
 export type ClipBeatType =
   | 'motion_graphic' | 'kinetic_quote_card' | 'animation' | 'ui_callout'
-  | 'timeline' | 'source_receipt_card' | 'text_highlight';
+  | 'timeline' | 'source_receipt_card' | 'text_highlight'
+  | 'freeform';  // AI-designed via a scene spec (see ClipScene)
+
+// ─── Freeform scene DSL (mirrors workers/clip-render-worker FreeformScene) ─
+// The AI designs a card by emitting a ClipScene: a background plus positioned,
+// styled, animated text/shapes in percentage coordinates. The render worker's
+// FreeformScene interprets it. Kept loose (optional fields) so validation lives
+// in one place (coerceScene) and the renderer clamps whatever it gets.
+export type SceneAnimType =
+  | 'fade' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight'
+  | 'pop' | 'growWidth' | 'revealWords' | 'none';
+export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse';
+
+export interface SceneAnim { type?: SceneAnimType; delay?: number; duration?: number }
+
+export interface SceneBackground {
+  type?: 'solid' | 'linear' | 'radial';
+  colors?: string[];
+  angle?: number;
+}
+
+export interface SceneElement {
+  type: 'text' | 'rect' | 'ellipse' | 'line';
+  x?: number; y?: number; w?: number; h?: number;   // % of canvas; x,y = center
+  rotate?: number; opacity?: number;
+  enter?: SceneAnim; loop?: SceneLoop;
+  // text
+  text?: string; size?: number; weight?: number; color?: string;
+  align?: 'left' | 'center' | 'right'; italic?: boolean; uppercase?: boolean;
+  lineHeight?: number; letterSpacing?: number; highlight?: string[]; highlightColor?: string;
+  // shape
+  fill?: string; stroke?: string; strokeWidth?: number; radius?: number; glow?: string; blur?: number;
+}
+
+export interface ClipScene {
+  background?: SceneBackground;
+  bokeh?: boolean;
+  vignette?: boolean;
+  font?: string;
+  elements?: SceneElement[];
+}
 export type ClipTriage = 'undecided' | 'kept' | 'rejected' | 'winner' | 'edited';
 export type ClipRenderJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -1804,6 +1844,7 @@ export interface ClipTemplateParams {
   font?: string;              // CSS font-family stack from the brand
   items?: Array<{ label: string; sublabel?: string }>;
   highlight_words?: string[];
+  scene?: ClipScene;          // freeform beats: the AI-authored scene spec
 }
 
 export interface ClipBrollBeat {

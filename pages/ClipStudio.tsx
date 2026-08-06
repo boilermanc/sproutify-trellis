@@ -15,7 +15,7 @@ import {
   createClipProject, getClipProjects, getClipSources, getClipGenerations,
   generateScript, approveScript, archiveClipProject, setClipRating,
   setCurrentGeneration, fetchUrlSourceText,
-  getBrollBeats, generateBrollPlan, updateBrollBeat, setBeatTriage, regenerateBeat,
+  getBrollBeats, generateBrollPlan, generateFreeformPlan, updateBrollBeat, setBeatTriage, regenerateBeat,
   getRenderJobs, queueBeatRender, queueAllRenders,
   queueAssemble, getClipPublications, generateClipMetadata, publishClip, setClipStatus,
   generateClipMusic, pollClipMusic, clearClipMusic,
@@ -56,6 +56,7 @@ const BEAT_TYPE_LABEL: Record<string, string> = {
   timeline: 'Timeline',
   source_receipt_card: 'Source Receipt Card',
   text_highlight: 'Text Highlight',
+  freeform: 'AI Design',
 };
 
 const TRIAGE_META: Record<ClipTriage, { label: string; cls: string }> = {
@@ -84,6 +85,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [feedback, setFeedback] = useState('');
   const [prompterOpen, setPrompterOpen] = useState(false);
   const [brollFilter, setBrollFilter] = useState<'all' | 'rendered' | 'kept' | 'undecided' | 'failed'>('all');
+  const [designMode, setDesignMode] = useState<'freeform' | 'template'>('freeform');
   const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
   const [pubMeta, setPubMeta] = useState<{ title: string; description: string; tags: string[]; hashtags: string[] } | null>(null);
   // Audio bed direction (Phase A: music)
@@ -257,10 +259,12 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const handleGeneratePlan = () => {
     if (!selected || !current || !geminiApiKey) { addToast('Approve a script first (and set the Gemini key)', 'error'); return; }
     run('broll-plan', async () => {
-      const beats = await generateBrollPlan(selected, current, geminiApiKey);
+      const beats = designMode === 'freeform'
+        ? await generateFreeformPlan(selected, current, geminiApiKey)
+        : await generateBrollPlan(selected, current, geminiApiKey);
       setBrollBeats(beats); setRenderJobs(await getRenderJobs(selected.id));
       await refreshProject(selected.id);
-      addToast(`${beats.length} B-roll beats planned`, 'success');
+      addToast(`${beats.length} ${designMode === 'freeform' ? 'cards designed' : 'B-roll beats planned'}`, 'success');
     });
   };
 
@@ -601,11 +605,23 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
               ) : (
                 <>
                   <p className="text-sm font-bold text-slate-600">No B-roll plan yet</p>
-                  <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">Each script beat gets a Remotion direction, template params, and complementary real-footage prompts.</p>
-                  <button type="button" disabled={!!busy} onClick={handleGeneratePlan}
-                    className="mt-4 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 mx-auto hover:bg-violet-700 transition disabled:opacity-40">
-                    {busy === 'broll-plan' ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} Generate B-roll Plan
-                  </button>
+                  <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                    {designMode === 'freeform'
+                      ? 'AI Design draws a unique card per beat from your brand + script — every layout different.'
+                      : 'Templates map each beat to one of 7 fixed motion-graphic layouts.'}
+                  </p>
+                  <div className="inline-flex rounded-xl overflow-hidden border border-slate-200 mt-4">
+                    {([['freeform', 'AI Design'], ['template', 'Templates']] as const).map(([m, label]) => (
+                      <button key={m} type="button" disabled={!!busy} onClick={() => setDesignMode(m)}
+                        className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition ${designMode === m ? 'bg-violet-600 text-white' : 'bg-white text-slate-500 hover:text-slate-700'}`}>{label}</button>
+                    ))}
+                  </div>
+                  <div>
+                    <button type="button" disabled={!!busy} onClick={handleGeneratePlan}
+                      className="mt-3 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 mx-auto hover:bg-violet-700 transition disabled:opacity-40">
+                      {busy === 'broll-plan' ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} {designMode === 'freeform' ? 'Design the Cards' : 'Generate B-roll Plan'}
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -620,9 +636,15 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                   ))}
                 </div>
                 <div className="flex gap-2 flex-wrap">
+                  <div className="inline-flex rounded-xl overflow-hidden border border-slate-200">
+                    {([['freeform', 'AI Design'], ['template', 'Templates']] as const).map(([m, label]) => (
+                      <button key={m} type="button" disabled={!!busy} onClick={() => setDesignMode(m)}
+                        className={`px-2.5 py-2 text-[10px] font-black uppercase tracking-widest transition ${designMode === m ? 'bg-violet-600 text-white' : 'bg-white text-slate-500 hover:text-slate-700'}`}>{label}</button>
+                    ))}
+                  </div>
                   <button type="button" disabled={!!busy} onClick={handleGeneratePlan}
                     className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:border-violet-400 transition flex items-center gap-1 disabled:opacity-40">
-                    {busy === 'broll-plan' ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} Regenerate Plan
+                    {busy === 'broll-plan' ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />} {designMode === 'freeform' ? 'Redesign All' : 'Regenerate Plan'}
                   </button>
                   <button type="button" disabled={!!busy} onClick={() => run('render-all', async () => {
                     const n = await queueAllRenders(brollBeats);
