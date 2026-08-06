@@ -13,7 +13,7 @@ import {
   createClipProject, getClipProjects, getClipSources, getClipGenerations,
   generateScript, approveScript, archiveClipProject, setClipRating,
   setCurrentGeneration, fetchUrlSourceText,
-  getBrollBeats, generateBrollPlan, updateBrollBeat, setBeatTriage,
+  getBrollBeats, generateBrollPlan, updateBrollBeat, setBeatTriage, regenerateBeat,
   getRenderJobs, queueBeatRender, queueAllRenders,
   queueAssemble, getClipPublications, generateClipMetadata, publishClip, setClipStatus,
 } from '../services/clipService';
@@ -676,18 +676,37 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
                       {/* Prompt + footage */}
                       <div>
-                        <label className={labelCls}>Remotion direction</label>
+                        <label className={labelCls}>Remotion direction <span className="normal-case font-medium text-slate-400">— edit, then regenerate to redraw this beat</span></label>
                         <textarea className={`${inputCls} h-28 resize-none text-xs`} value={draft ?? beat.remotion_prompt ?? ''}
                           onChange={e => setPromptDrafts(prev => ({ ...prev, [beat.id]: e.target.value }))} />
-                        {dirty && (
-                          <button type="button" disabled={!!busy} onClick={() => run(`save-${beat.id}`, async () => {
-                            await updateBrollBeat(beat.id, { remotion_prompt: draft });
-                            setBrollBeats(prev => prev.map(b => b.id === beat.id ? { ...b, remotion_prompt: draft } : b));
-                            setPromptDrafts(prev => { const n = { ...prev }; delete n[beat.id]; return n; });
-                            addToast('Direction saved', 'success');
+                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          {dirty && (
+                            <button type="button" disabled={!!busy} onClick={() => run(`save-${beat.id}`, async () => {
+                              await updateBrollBeat(beat.id, { remotion_prompt: draft });
+                              setBrollBeats(prev => prev.map(b => b.id === beat.id ? { ...b, remotion_prompt: draft } : b));
+                              setPromptDrafts(prev => { const n = { ...prev }; delete n[beat.id]; return n; });
+                              addToast('Direction saved', 'success');
+                            })}
+                              className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition">Save Direction</button>
+                          )}
+                          <button type="button" disabled={!!busy} onClick={() => run(`reprompt-${beat.id}`, async () => {
+                            if (!selected) return;
+                            if (!geminiApiKey) { addToast('Gemini API key missing — add it in Settings', 'error'); return; }
+                            // Persist any unsaved direction edit first, so the model regenerates from it.
+                            let current = beat;
+                            if (dirty && draft !== undefined) {
+                              await updateBrollBeat(beat.id, { remotion_prompt: draft });
+                              current = { ...beat, remotion_prompt: draft };
+                              setPromptDrafts(prev => { const n = { ...prev }; delete n[beat.id]; return n; });
+                            }
+                            const updated = await regenerateBeat(selected, current, geminiApiKey);
+                            setBrollBeats(prev => prev.map(b => b.id === beat.id ? updated : b));
+                            addToast('Beat regenerated from your direction', 'success');
                           })}
-                            className="mt-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition">Save Direction</button>
-                        )}
+                            className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-violet-700 transition flex items-center gap-1 disabled:opacity-40">
+                            {busy === `reprompt-${beat.id}` ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} Reprompt + Generate
+                          </button>
+                        </div>
                         {beat.footage_prompts?.length > 0 && (
                           <div className="mt-3">
                             <label className={labelCls}>Complementary footage prompts <span className="normal-case font-medium">(Seedance / Veo — footage lane, not motion graphics)</span></label>

@@ -415,6 +415,70 @@ export async function generateBrollPlan(project: ClipProject, generation: ClipGe
   return data as ClipBrollBeat[];
 }
 
+// ─── Per-beat regenerate ────────────────────────────────────────────
+// Re-derive ONE beat's template_params from its covered script line plus the
+// creator's edited direction, keeping the beat's template. This is what makes
+// the "Remotion direction" field do real work: editing it and regenerating
+// actually changes what renders, instead of the direction being a dead note.
+
+// What each template renders and the exact params it reads — used to scope the
+// prompt to a single beat type instead of listing all seven.
+const BEAT_SPEC: Record<ClipBeatType, { renders: string; fields: string; shape: string }> = {
+  motion_graphic: { renders: 'a breathing orb over one short phrase', fields: 'headline (a short phrase from the line), subtext (optional secondary line)', shape: '{"headline":"...","subtext":"..."}' },
+  kinetic_quote_card: { renders: 'a verbatim quote with a cascading word reveal', fields: 'quote (the exact quote text), highlight_words (2-4 words copied verbatim from the quote to emphasize), attribution (speaker/org, optional)', shape: '{"quote":"...","highlight_words":["..."],"attribution":"..."}' },
+  animation: { renders: 'layered shapes under a device outline, with a caption', fields: 'headline (the caption)', shape: '{"headline":"..."}' },
+  ui_callout: { renders: 'a phone notification mock', fields: 'headline (the message text), subtext (sender/app label, optional)', shape: '{"headline":"...","subtext":"..."}' },
+  timeline: { renders: 'a horizontal progression of steps or eras', fields: 'headline (the title), items (3-6 of {label, sublabel})', shape: '{"headline":"...","items":[{"label":"...","sublabel":"..."}]}' },
+  source_receipt_card: { renders: 'a document-style receipt proving a claim', fields: 'headline (the claim, optional), quote (the verbatim source line), attribution (the source name)', shape: '{"headline":"...","quote":"...","attribution":"..."}' },
+  text_highlight: { renders: 'a sentence with key words highlighted', fields: 'headline (the sentence), highlight_words (2-4 words copied verbatim from the sentence)', shape: '{"headline":"...","highlight_words":["..."]}' },
+};
+
+function singleBeatPrompt(project: ClipProject, beat: ClipBrollBeat, brand: ClipBrand): string {
+  const spec = BEAT_SPEC[beat.beat_type];
+  return `You are refining ONE B-roll beat for a vertical (1080x1920) YouTube Short${brand.name ? ` for ${brand.name}` : ''}.
+Keep the beat type "${beat.beat_type}" — it renders ${spec.renders}. Do NOT switch to another treatment.
+
+SCRIPT LINE this beat covers: "${sanitizePII(beat.headline)}"
+${beat.remotion_prompt ? `CREATOR DIRECTION (obey it): ${sanitizePII(beat.remotion_prompt)}` : ''}
+
+RULES:
+- Fill ONLY these fields: ${spec.fields}.
+- Visible text must come from the script line — no invented labels, stats, or captions.
+- Do not set colors or fonts; the brand's are applied automatically.
+
+Return ONLY raw JSON, no markdown fences:
+{"template_params":${spec.shape}}`;
+}
+
+/**
+ * Regenerate a single beat's params from its edited direction, keeping its
+ * template. Persists the new template_params (and beat_type, in the rare case
+ * the model can't fill the template and it safely downgrades). The creator's
+ * remotion_prompt text is left untouched — it is the instruction, not output.
+ */
+export async function regenerateBeat(project: ClipProject, beat: ClipBrollBeat, geminiApiKey: string): Promise<ClipBrollBeat> {
+  if (!geminiApiKey) throw new Error('Gemini API key missing — add it in Settings');
+  const brand = await resolveClipBrand(project.branch);
+  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const resp = await ai.models.generateContent({
+    model: SCRIPT_MODEL,
+    contents: singleBeatPrompt(project, beat, brand),
+    config: { responseMimeType: 'application/json', temperature: 0.85 },
+  });
+  const raw = (resp.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  let j: { template_params?: unknown };
+  try { j = JSON.parse(raw); } catch { throw new Error('The model returned an unreadable beat — try again'); }
+  // Accept either {template_params:{...}} or a bare params object.
+  const rawParams = (j.template_params && typeof j.template_params === 'object') ? j.template_params : j;
+  const { beatType, params } = coerceBeatParams(beat.beat_type, rawParams, beat.headline, brand, beat.position);
+
+  const { error } = await supabase.from('trellis_clip_broll_beats')
+    .update({ beat_type: beatType, template_params: params, triage: 'undecided', updated_at: new Date().toISOString() })
+    .eq('id', beat.id);
+  if (error) throw new Error(`Could not save beat: ${error.message}`);
+  return { ...beat, beat_type: beatType, template_params: params, triage: 'undecided' };
+}
+
 // ═══ Phase C3: render queue (consumed by workers/clip-render-worker) ═
 
 export async function getRenderJobs(projectId: string): Promise<ClipRenderJob[]> {
