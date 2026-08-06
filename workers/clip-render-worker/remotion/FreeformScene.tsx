@@ -165,7 +165,9 @@ const TextEl: React.FC<{ el: TextElement; font: string }> = ({ el, font }) => {
   const raw = String(el.text ?? '');
   const text = el.uppercase ? raw.toUpperCase() : raw;
   const lineHeight = clamp(num(el.lineHeight, 1.25), 0.9, 2);
-  const maxSize = clamp(num(el.size, 64), 12, 220);
+  // Ceiling is high so a hero word / giant number can truly dominate the frame;
+  // fitText still shrinks it to fit the element's width box, so it never overflows.
+  const maxSize = clamp(num(el.size, 64), 12, 560);
   // Shrink to fit the width box so long lines never overflow the design.
   const { fontSize } = React.useMemo(() => fitText({
     text, maxWidth: boxW, maxHeight: H,
@@ -208,8 +210,10 @@ const ShapeEl: React.FC<{ el: ShapeElement }> = ({ el }) => {
   const enter = useEnter(el.enter);
   const loop = useLoop(el.loop);
   const isLine = el.type === 'line';
-  const wPct = clamp(num(el.w, 20), 0, 100);
-  const hPct = clamp(num(el.h, isLine ? 0.4 : 10), 0, 100);
+  // Shapes may run large and bleed past the edges — that's a deliberate design
+  // move, so their size/position ranges are wider than text's.
+  const wPct = clamp(num(el.w, 20), 0, 160);
+  const hPct = clamp(num(el.h, isLine ? 0.4 : 10), 0, 160);
   const growing = el.enter?.type === 'growWidth';
   const wPx = pctX(wPct) * (growing ? enter.opacity : 1);
   const hPx = pctY(hPct);
@@ -219,7 +223,7 @@ const ShapeEl: React.FC<{ el: ShapeElement }> = ({ el }) => {
   const glow = el.glow && HEX.test(el.glow) ? el.glow : null;
   return (
     <div style={{
-      position: 'absolute', left: pctX(clamp(num(el.x, 50), 0, 100)), top: pctY(clamp(num(el.y, 50), 0, 100)),
+      position: 'absolute', left: pctX(clamp(num(el.x, 50), -30, 130)), top: pctY(clamp(num(el.y, 50), -30, 130)),
       width: wPx, height: isLine ? Math.max(2, hPx) : hPx,
       transform: `translate(-50%, -50%) translate(${enter.tx}px, ${enter.ty + loop.ty}px) rotate(${num(el.rotate, 0)}deg) scale(${enter.scale * loop.scale})`,
       opacity: clamp(num(el.opacity, 1), 0, 1) * (growing ? 1 : enter.opacity),

@@ -437,14 +437,21 @@ ELEMENT common: "type","x","y","w","h" (all %), "opacity"(0-1), "rotate"(deg), "
 ENTER types: fade | slideUp | slideDown | slideLeft | slideRight | pop | growWidth | revealWords
 
 BRAND — use ONLY this palette and dark look:
-- Background base ${brand.bg} (very dark) — build backgrounds from it.
-- Accent colors: ${brand.accents.join(', ')} — for highlights, rules, badges, glows.
+- Background base ${brand.bg} (very dark) — build backgrounds from it (prefer a subtle linear/radial gradient over a flat fill).
+- Accent colors: ${brand.accents.join(', ')} — for the hero, highlights, rules, badges, glows, and color blocks.
 - Text is near-white (#ffffff / warm off-white) on the dark background.
 
-DESIGN RULES:
-- Make each card's LAYOUT genuinely different — vary alignment, the hero element, and composition. Never repeat one recipe across beats.
-- Visible text comes only from the script line (plus at most a short brand tag). No invented stats or labels.
-- Legible: 1-2 text blocks per card, big type, generous spacing, 3-8 elements. Stagger enter delays so it animates in sequence.`;
+DESIGN FOR IMPACT — these are bold, scroll-stopping motion cards, NOT slides. Give every card real pizazz:
+- ONE dominant focal element: an oversized headline word (size 150-280), a giant number/stat (size 320-520), or a big accent shape. Give big type a wide box (w 75-95) so it isn't shrunk. Everything else is much smaller and supporting.
+- Use accent SHAPES as design, not decoration: a full-width color BAR, a color-block PANEL behind text, a thick underline, a badge (rect + label), or an oversized soft accent circle. Shapes may be large and BLEED off the edges (x/y from -25 to 125, w/h up to 150) — that reads as designed.
+- Fill the WHOLE 1080x1920 frame with intentional rhythm — NO big empty bands. Favor off-center, asymmetric, diagonal (use rotate), and split compositions over a centered stack.
+- Strong hierarchy & contrast: pair the huge hero with a SMALL tracked ALL-CAPS label (letterSpacing 6-14) and a short brand tag. Highlight 1-3 key words in an accent color.
+- Depth: layer a large soft blurred accent ellipse (low opacity, big blur) or a glow behind the hero; a gradient background beats a flat one.
+
+VARY THE ARCHETYPE beat to beat — rotate through looks and NEVER repeat one twice in a row:
+- hero-word (one giant word fills the frame) · giant-number (a number/stat dominates) · quote-frame (text inside a bordered or filled panel) · badge-callout (a pill/tag + rule) · diagonal-accent (a rotated accent bar/block behind text) · split (top color block vs bottom) · stacked-tags (a column of tracked labels).
+
+- 4-8 elements per card. Stagger enter delays 0.1-0.3s apart so it animates in sequence. Visible text only from the script line plus a short brand tag — no invented stats or labels.`;
 }
 
 function freeformPrompt(project: ClipProject, generation: ClipGeneration, brand: ClipBrand): string {

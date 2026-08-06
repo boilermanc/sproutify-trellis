@@ -722,8 +722,9 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
                       {/* Prompt + footage */}
                       <div>
-                        <label className={labelCls}>Remotion direction <span className="normal-case font-medium text-slate-400">— edit, then regenerate to redraw this beat</span></label>
+                        <label className={labelCls}>{beat.beat_type === 'freeform' ? 'Design direction' : 'Remotion direction'} <span className="normal-case font-medium text-slate-400">— {beat.beat_type === 'freeform' ? 'optional — describe a change, then redesign this card' : 'edit, then regenerate to redraw this beat'}</span></label>
                         <textarea className={`${inputCls} h-28 resize-none text-xs`} value={draft ?? beat.remotion_prompt ?? ''}
+                          placeholder={beat.beat_type === 'freeform' ? 'e.g. bolder, left-aligned, make the number huge, add a color block behind the headline' : undefined}
                           onChange={e => setPromptDrafts(prev => ({ ...prev, [beat.id]: e.target.value }))} />
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                           {dirty && (
