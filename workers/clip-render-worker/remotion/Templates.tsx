@@ -16,6 +16,7 @@ export interface TemplateParams {
   attribution?: string;
   accent?: string;
   bg?: string;
+  font?: string;   // brand font-family stack; falls back to FONT
   items?: Array<{ label: string; sublabel?: string }>;
   highlight_words?: string[];
 }
@@ -32,6 +33,7 @@ const SERIF = `Georgia, 'Times New Roman', serif`;
 const defaults = (p: TemplateParams) => ({
   accent: p.accent || '#22d3ee',
   bg: p.bg || '#080D12',
+  font: p.font || FONT,
 });
 
 // Drifting bokeh dots used as depth on several templates.
@@ -63,7 +65,7 @@ const wordSpring = (frame: number, fps: number, index: number, stagger = 3) =>
 const KineticQuoteCard: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const quoteText = params.quote || params.headline || '';
   const words = quoteText.split(/\s+/).filter(Boolean);
   const hi = new Set((params.highlight_words || []).map(w => w.toLowerCase().replace(/[^\w']/g, '')));
@@ -71,11 +73,11 @@ const KineticQuoteCard: React.FC<BeatProps> = ({ params }) => {
   const drift = interpolate(frame, [0, durationInFrames], [1, 1.02]);
   const { fontSize } = React.useMemo(() => fitText({
     text: quoteText, maxWidth: 880, maxHeight: params.attribution ? 1180 : 1320,
-    maxFontSize: 74, minFontSize: 40, fontFamily: FONT, fontWeight: 800,
+    maxFontSize: 74, minFontSize: 40, fontFamily: font, fontWeight: 800,
     lineHeight: 1.25, letterSpacingPx: -1, wordGapPx: 18,
   }), [quoteText, params.attribution]);
   return (
-    <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: bg, fontFamily: font }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: '0 100px', transform: `scale(${drift})` }}>
         <div style={{ fontSize, fontWeight: 800, lineHeight: 1.25, color: '#fff', letterSpacing: -1 }}>
@@ -106,18 +108,18 @@ const KineticQuoteCard: React.FC<BeatProps> = ({ params }) => {
 const MotionGraphic: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const breathe = 1 + Math.sin(frame / 18) * 0.05;
   const orbIn = spring({ frame, fps, config: { damping: 200 } });
   const textIn = interpolate(frame, [durationInFrames * 0.35, durationInFrames * 0.5], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const headline = params.headline || '';
   const { fontSize } = React.useMemo(() => fitText({
     text: headline, maxWidth: 860, maxHeight: 520,
-    maxFontSize: 64, minFontSize: 38, fontFamily: FONT, fontWeight: 800,
+    maxFontSize: 64, minFontSize: 38, fontFamily: font, fontWeight: 800,
     lineHeight: 1.25, letterSpacingPx: -1,
   }), [headline]);
   return (
-    <AbsoluteFill style={{ background: `radial-gradient(circle at 50% 42%, ${bg} 0%, #000 100%)`, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: `radial-gradient(circle at 50% 42%, ${bg} 0%, #000 100%)`, fontFamily: font }}>
       <Bokeh accent={accent} />
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
         <div style={{
@@ -143,15 +145,15 @@ const MotionGraphic: React.FC<BeatProps> = ({ params }) => {
 const AnimationT: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const textIn = interpolate(frame, [durationInFrames * 0.5, durationInFrames * 0.65], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const headline = params.headline || '';
   const { fontSize } = React.useMemo(() => fitText({
     text: headline, maxWidth: 860, maxHeight: 380,
-    maxFontSize: 54, minFontSize: 34, fontFamily: FONT, fontWeight: 700, lineHeight: 1.3,
+    maxFontSize: 54, minFontSize: 34, fontFamily: font, fontWeight: 700, lineHeight: 1.3,
   }), [headline]);
   return (
-    <AbsoluteFill style={{ background: `linear-gradient(180deg, ${bg} 0%, #060810 100%)`, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: `linear-gradient(180deg, ${bg} 0%, #060810 100%)`, fontFamily: font }}>
       <Bokeh accent={accent} count={10} />
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
         {/* device outline */}
@@ -187,15 +189,15 @@ const AnimationT: React.FC<BeatProps> = ({ params }) => {
 const UiCallout: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const cardIn = spring({ frame: frame - 10, fps, config: { damping: 14, stiffness: 110 } });
   const message = params.headline || '';
   const { fontSize } = React.useMemo(() => fitText({
     text: message, maxWidth: 492, maxHeight: 760,
-    maxFontSize: 40, minFontSize: 28, fontFamily: FONT, fontWeight: 600, lineHeight: 1.4,
+    maxFontSize: 40, minFontSize: 28, fontFamily: font, fontWeight: 600, lineHeight: 1.4,
   }), [message]);
   return (
-    <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: bg, fontFamily: font }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
         <div style={{
@@ -226,18 +228,18 @@ const UiCallout: React.FC<BeatProps> = ({ params }) => {
 const TimelineT: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const items = (params.items || []).slice(0, 6);
   const lineW = interpolate(frame, [8, durationInFrames * 0.5], [0, 100], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const headIn = spring({ frame, fps, config: { damping: 200 } });
   const headline = params.headline || '';
   const { fontSize } = React.useMemo(() => fitText({
     text: headline, maxWidth: 900, maxHeight: 360,
-    maxFontSize: 56, minFontSize: 34, fontFamily: FONT, fontWeight: 800,
+    maxFontSize: 56, minFontSize: 34, fontFamily: font, fontWeight: 800,
     lineHeight: 1.25, letterSpacingPx: -1,
   }), [headline]);
   return (
-    <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: bg, fontFamily: font }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: '0 90px' }}>
         <div style={{ fontSize, fontWeight: 800, color: '#fff', lineHeight: 1.25, marginBottom: 100, opacity: headIn, letterSpacing: -1 }}>
@@ -267,14 +269,14 @@ const TimelineT: React.FC<BeatProps> = ({ params }) => {
 const SourceReceiptCard: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const cardIn = spring({ frame: frame - 6, fps, config: { damping: 16, stiffness: 90 } });
   const claimIn = interpolate(frame, [durationInFrames * 0.5, durationInFrames * 0.62], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const claim = params.headline || '';
   const quote = params.quote || '';
   const claimFit = React.useMemo(() => fitText({
     text: claim, maxWidth: 920, maxHeight: 300,
-    maxFontSize: 52, minFontSize: 32, fontFamily: FONT, fontWeight: 800,
+    maxFontSize: 52, minFontSize: 32, fontFamily: font, fontWeight: 800,
     lineHeight: 1.3, letterSpacingPx: -1,
   }), [claim]);
   const quoteFit = React.useMemo(() => fitText({
@@ -282,7 +284,7 @@ const SourceReceiptCard: React.FC<BeatProps> = ({ params }) => {
     maxFontSize: 44, minFontSize: 26, fontFamily: SERIF, fontWeight: 400, lineHeight: 1.5,
   }), [quote]);
   return (
-    <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: bg, fontFamily: font }}>
       <Bokeh accent={accent} count={6} />
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', padding: '0 80px' }}>
         {params.headline && (
@@ -312,7 +314,7 @@ const SourceReceiptCard: React.FC<BeatProps> = ({ params }) => {
 const TextHighlight: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const { accent, bg } = defaults(params);
+  const { accent, bg, font } = defaults(params);
   const sentence = params.headline || '';
   const words = sentence.split(/\s+/).filter(Boolean);
   const hi = new Set((params.highlight_words || []).map(w => w.toLowerCase().replace(/[^\w']/g, '')));
@@ -320,11 +322,11 @@ const TextHighlight: React.FC<BeatProps> = ({ params }) => {
   let hiIndex = 0;
   const { fontSize } = React.useMemo(() => fitText({
     text: sentence, maxWidth: 880, maxHeight: 1320,
-    maxFontSize: 78, minFontSize: 42, fontFamily: FONT, fontWeight: 800,
+    maxFontSize: 78, minFontSize: 42, fontFamily: font, fontWeight: 800,
     lineHeight: 1.35, letterSpacingPx: -1, wordGapPx: 20,
   }), [sentence]);
   return (
-    <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: bg, fontFamily: font }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: '0 100px' }}>
         <div style={{ fontSize, fontWeight: 800, lineHeight: 1.35, color: '#fff', letterSpacing: -1 }}>

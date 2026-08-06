@@ -7,6 +7,7 @@ import {
 import { CLIP_PUBLISH_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
 import { sanitizePII } from './aiService';
+import { resolveClipBrand, ClipBrand } from './clipBrand';
 
 // ─── Clip Studio Service ────────────────────────────────────────────
 // A clip project is script-first: sources → AI cut sheet (with fact
@@ -99,15 +100,26 @@ function countWords(beats: ClipScriptBeat[]): number {
   return beats.reduce((n, b) => n + b.text.trim().split(/\s+/).filter(Boolean).length, 0);
 }
 
-function buildPrompt(project: ClipProject, sources: ClipSource[], feedback?: string, prior?: ClipGeneration): string {
+function buildPrompt(project: ClipProject, sources: ClipSource[], brand: ClipBrand, feedback?: string, prior?: ClipGeneration): string {
   const srcBlock = sources.map(s =>
     `--- SOURCE ${s.label} (${s.kind}${s.filename ? `: ${s.filename}` : s.url ? `: ${s.url}` : ''}) ---\n${sanitizePII((s.raw_text || '').slice(0, SOURCE_CHAR_CAP))}`
   ).join('\n\n');
 
+  // Ground the script in the brand's own identity so the voice, and the CTA,
+  // come out as this brand rather than a generic creator.
+  const brandLines = [
+    brand.name ? `- This short is for ${brand.name}${brand.tagline ? ` — "${brand.tagline}"` : ''}. Write in its voice, as the brand, not a neutral narrator.` : '',
+    brand.tone ? `- Brand tone: ${brand.tone}. Keep every A-roll line consistent with it.` : '',
+    brand.cta ? `- When the closing CTA is needed, use or naturally adapt the brand's own: "${brand.cta}".` : '',
+  ].filter(Boolean).join('\n');
+
   const fmt = project.format?.kinds || [];
+  // Promotion leans on the brand identity first, falling back to the manual
+  // sponsor field only when there is no brand to speak for.
+  const sponsorName = project.format?.sponsor || brand.name || '';
   const formatLines = [
     fmt.includes('interview') ? '- Interview format: interleave the creator\'s A-roll lines with VERBATIM quotes (SOT) from the source speakers. Never paraphrase inside a SOT beat.' : '',
-    fmt.includes('promotion') ? `- Promotion format: naturally weave in the sponsor "${project.format?.sponsor || ''}". Talking points: ${project.format?.talking_points || 'n/a'}. Keep it one short, honest beat — not an ad read.` : '',
+    fmt.includes('promotion') ? `- Promotion format: naturally weave in ${sponsorName ? `"${sponsorName}"` : 'the sponsor'}. Talking points: ${project.format?.talking_points || (brand.tagline ? brand.tagline : 'n/a')}. Keep it one short, honest beat — not an ad read.` : '',
   ].filter(Boolean).join('\n');
 
   const revision = feedback && prior ? `
@@ -120,6 +132,7 @@ PREVIOUS SCRIPT: ${JSON.stringify(prior.script)}
 
 TARGET: ~${project.target_seconds} seconds spoken (~${Math.round(project.target_seconds * WORDS_PER_SECOND)} words total across all beats).
 ${project.steering ? `ANGLE / STEERING: ${sanitizePII(project.steering)}` : ''}
+${brandLines ? `BRAND:\n${brandLines}` : ''}
 ${formatLines}
 ${revision}
 STRUCTURAL FORMULA (follow it, then summarize how you applied it in "formula"):
@@ -152,8 +165,15 @@ export async function generateScript(
   if (!geminiApiKey) throw new Error('Gemini API key missing — add it in Settings');
   if (!sources.length) throw new Error('This project has no sources');
 
+  const brand = await resolveClipBrand(project.branch);
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-  const resp = await ai.models.generateContent({ model: SCRIPT_MODEL, contents: buildPrompt(project, sources, feedback, prior) });
+  const resp = await ai.models.generateContent({
+    model: SCRIPT_MODEL,
+    contents: buildPrompt(project, sources, brand, feedback, prior),
+    // Higher temperature so repeat generations explore genuinely different
+    // hooks and cuts instead of converging on one safe shape.
+    config: { responseMimeType: 'application/json', temperature: 0.9 },
+  });
   const raw = (resp.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
   let j: {
     title?: string; hook_line?: string; formula?: string;
@@ -233,8 +253,8 @@ export async function setBeatTriage(id: string, triage: ClipTriage): Promise<voi
   await updateBrollBeat(id, { triage });
 }
 
-function brollPrompt(project: ClipProject, generation: ClipGeneration): string {
-  return `You are a motion-design director planning B-roll for a vertical (1080x1920) YouTube Short. For each script beat below, design ONE B-roll visual rendered by a fixed library of Remotion templates.
+function brollPrompt(project: ClipProject, generation: ClipGeneration, brand: ClipBrand): string {
+  return `You are a motion-design director planning B-roll for a vertical (1080x1920) YouTube Short${brand.name ? ` for ${brand.name}` : ''}. For each script beat below, design ONE B-roll visual rendered by a fixed library of Remotion templates.
 
 TEMPLATE LIBRARY (pick beat_type per beat, fill template_params — only the fields that template uses):
 - motion_graphic: bold abstract visual with a phrase. params: headline (short phrase from the script), subtext (optional), accent, bg.
@@ -247,42 +267,145 @@ TEMPLATE LIBRARY (pick beat_type per beat, fill template_params — only the fie
 
 RULES:
 - One beat per script beat, in order. time_start/time_end in seconds, contiguous, total ≈ ${project.target_seconds}s. Each beat 3-8 seconds.
-- SOT script beats (verbatim quotes) usually want kinetic_quote_card or source_receipt_card.
-- Colors: dark editorial backgrounds (#080D12, #0A0E27, #1a1033 range), one vivid accent per beat (#22d3ee, #34d399, #f59e0b, #a78bfa range). Vary across beats.
-- remotion_prompt: 2-4 sentence human-readable direction describing composition, motion and timing (like a brief to a motion designer).
+- Match the treatment to the content — vary beat_type across the sequence, don't repeat one template. SOT script beats (verbatim quotes) usually want kinetic_quote_card or source_receipt_card; a progression of steps/eras wants timeline; a single punchy line wants motion_graphic or text_highlight.
+- Colors are the brand's — the background is ${brand.bg} on every beat. Pick each beat's accent from this brand palette: ${brand.accents.join(', ')}. Vary the accent across beats using only these colors; never invent other colors.
+- remotion_prompt: 2-4 sentence human-readable direction describing composition, motion and timing (like a brief to a motion designer). Make each one specific to THIS beat's content — no boilerplate.
 - footage_prompts: 1-2 prompts for REAL footage (Seedance/Veo lane) only where motion graphics can't fake it (real places, hands, products, reactions); else [].
-- Visible text only from the script — no invented labels, stats or captions.
+- Fill EVERY field the chosen beat_type needs (quote for kinetic_quote_card and source_receipt_card; items for timeline; highlight_words drawn verbatim from the text for kinetic_quote_card and text_highlight). Visible text only from the script — no invented labels, stats or captions.
 
 SCRIPT BEATS:
 ${JSON.stringify(generation.script.map((b, i) => ({ index: i, lane: b.lane, speaker: b.speaker, text: b.text })))}
 
 Return ONLY raw JSON, no markdown fences:
-{"beats":[{"position":0,"time_start":0,"time_end":6,"beat_type":"motion_graphic","headline":"exact script phrase this covers","rationale":"why this treatment","remotion_prompt":"...","template_params":{"headline":"...","accent":"#22d3ee","bg":"#080D12"},"footage_prompts":["..."]}]}`;
+{"beats":[{"position":0,"time_start":0,"time_end":6,"beat_type":"motion_graphic","headline":"exact script phrase this covers","rationale":"why this treatment","remotion_prompt":"...","template_params":{"headline":"...","accent":"${brand.accents[0]}","bg":"${brand.bg}"},"footage_prompts":["..."]}]}`;
+}
+
+// Normalize a word the same way the templates do when matching highlights, so
+// a highlight word only survives if it will actually light up on screen.
+function normWord(w: string): string {
+  return w.toLowerCase().replace(/[^\w']/g, '');
+}
+
+// Keep only highlight words that literally appear in `text` — the templates
+// highlight per-rendered-word, so a word not present just renders as nothing.
+function validHighlights(text: string, words: unknown): string[] {
+  if (!Array.isArray(words)) return [];
+  const present = new Set(text.split(/\s+/).map(normWord).filter(Boolean));
+  const out: string[] = [];
+  for (const w of words) {
+    for (const part of String(w ?? '').split(/\s+/)) {
+      const n = normWord(part);
+      if (n && present.has(n) && !out.includes(part)) out.push(part);
+    }
+  }
+  return out;
+}
+
+// Force a beat's params into a shape the chosen template can actually render:
+// fill the fields that template reads (falling back to the covered script
+// line), drop fields it ignores, and downgrade to motion_graphic when a
+// template's must-have content (a quote, timeline items) is missing so a beat
+// never renders blank. Brand color/font are stamped last, so the brand always
+// wins regardless of what the model returned.
+function coerceBeatParams(
+  beatType: ClipBeatType,
+  raw: unknown,
+  scriptText: string,
+  brand: ClipBrand,
+  position: number,
+): { beatType: ClipBeatType; params: ClipTemplateParams } {
+  const r = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+  const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const headline = str(r.headline) || scriptText.trim();
+  const quote = str(r.quote) || scriptText.trim();
+  const attribution = str(r.attribution);
+  const subtext = str(r.subtext);
+
+  let type: ClipBeatType = BEAT_TYPES.includes(beatType) ? beatType : 'motion_graphic';
+  let params: ClipTemplateParams;
+
+  switch (type) {
+    case 'kinetic_quote_card':
+      if (!quote) { type = 'motion_graphic'; params = { headline }; break; }
+      params = { quote, highlight_words: validHighlights(quote, r.highlight_words) };
+      if (attribution) params.attribution = attribution;
+      break;
+    case 'source_receipt_card':
+      if (!quote) { type = 'motion_graphic'; params = { headline }; break; }
+      params = { quote };
+      if (headline) params.headline = headline;
+      if (attribution) params.attribution = attribution;
+      break;
+    case 'timeline': {
+      const items = Array.isArray(r.items)
+        ? (r.items as unknown[]).map(it => {
+            const o = (it && typeof it === 'object') ? it as Record<string, unknown> : {};
+            const label = str(o.label);
+            const sublabel = str(o.sublabel);
+            return sublabel ? { label, sublabel } : { label };
+          }).filter(it => it.label)
+        : [];
+      if (items.length < 2) { type = 'motion_graphic'; params = { headline }; break; }
+      params = { headline, items: items.slice(0, 6) };
+      break;
+    }
+    case 'ui_callout':
+      params = subtext ? { headline, subtext } : { headline };
+      break;
+    case 'text_highlight':
+      params = { headline, highlight_words: validHighlights(headline, r.highlight_words) };
+      break;
+    case 'animation':
+      params = { headline };
+      break;
+    case 'motion_graphic':
+    default:
+      params = subtext ? { headline, subtext } : { headline };
+      break;
+  }
+
+  const accent = brand.accents[position % brand.accents.length] || brand.accents[0];
+  return { beatType: type, params: { ...params, accent, bg: brand.bg, font: brand.font } };
 }
 
 export async function generateBrollPlan(project: ClipProject, generation: ClipGeneration, geminiApiKey: string): Promise<ClipBrollBeat[]> {
   if (!geminiApiKey) throw new Error('Gemini API key missing — add it in Settings');
+  const brand = await resolveClipBrand(project.branch);
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-  const resp = await ai.models.generateContent({ model: SCRIPT_MODEL, contents: brollPrompt(project, generation) });
+  const resp = await ai.models.generateContent({
+    model: SCRIPT_MODEL,
+    contents: brollPrompt(project, generation, brand),
+    // Some sampling variety so the treatments differ beat-to-beat, but lower
+    // than the script call since structure matters more than surprise here.
+    config: { responseMimeType: 'application/json', temperature: 0.8 },
+  });
   const raw = (resp.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
   let j: { beats?: Array<Record<string, unknown>> };
   try { j = JSON.parse(raw); } catch { throw new Error('The model returned an unreadable B-roll plan — try again'); }
   if (!Array.isArray(j.beats) || !j.beats.length) throw new Error('The model returned no beats — try again');
 
-  const rows = j.beats.map((b, i) => ({
-    project_id: project.id,
-    generation_id: generation.id,
-    position: typeof b.position === 'number' ? b.position : i,
-    time_start: Number(b.time_start) || 0,
-    time_end: Number(b.time_end) || (Number(b.time_start) || 0) + 6,
-    beat_type: BEAT_TYPES.includes(b.beat_type as ClipBeatType) ? b.beat_type as ClipBeatType : 'motion_graphic',
-    headline: String(b.headline || ''),
-    rationale: b.rationale ? String(b.rationale) : null,
-    remotion_prompt: b.remotion_prompt ? String(b.remotion_prompt) : null,
-    template_params: (b.template_params && typeof b.template_params === 'object') ? b.template_params as ClipTemplateParams : {},
-    footage_prompts: Array.isArray(b.footage_prompts) ? b.footage_prompts.map(String) : [],
-    triage: 'undecided' as ClipTriage,
-  }));
+  const rows = j.beats.map((b, i) => {
+    const position = typeof b.position === 'number' ? b.position : i;
+    const rawType = BEAT_TYPES.includes(b.beat_type as ClipBeatType) ? b.beat_type as ClipBeatType : 'motion_graphic';
+    // Fall back to the script line this beat covers when the model omits text.
+    const scriptText = generation.script[position]?.text || String(b.headline || '');
+    const { beatType, params } = coerceBeatParams(rawType, b.template_params, scriptText, brand, position);
+    const tStart = Number(b.time_start) || 0;
+    return {
+      project_id: project.id,
+      generation_id: generation.id,
+      position,
+      time_start: tStart,
+      time_end: Number(b.time_end) || tStart + 6,
+      beat_type: beatType,
+      headline: String(b.headline || params.headline || ''),
+      rationale: b.rationale ? String(b.rationale) : null,
+      remotion_prompt: b.remotion_prompt ? String(b.remotion_prompt) : null,
+      template_params: params,
+      footage_prompts: Array.isArray(b.footage_prompts) ? b.footage_prompts.map(String) : [],
+      triage: 'undecided' as ClipTriage,
+    };
+  });
 
   // Regenerating the plan replaces the old one (render jobs cascade away with their beats).
   await supabase.from('trellis_clip_broll_beats').delete().eq('project_id', project.id);

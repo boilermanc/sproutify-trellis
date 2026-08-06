@@ -1786,8 +1786,9 @@ export interface ClipTemplateParams {
   subtext?: string;
   quote?: string;
   attribution?: string;
-  accent?: string;            // hex
-  bg?: string;                // hex
+  accent?: string;            // hex — brand color, cycled across beats
+  bg?: string;                // hex — brand-tinted near-black background
+  font?: string;              // CSS font-family stack from the brand
   items?: Array<{ label: string; sublabel?: string }>;
   highlight_words?: string[];
 }
