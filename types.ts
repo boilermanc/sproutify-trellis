@@ -1798,8 +1798,9 @@ export type ClipBeatType =
 // in one place (coerceScene) and the renderer clamps whatever it gets.
 export type SceneAnimType =
   | 'fade' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight'
-  | 'pop' | 'growWidth' | 'revealWords' | 'none';
-export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse';
+  | 'pop' | 'growWidth' | 'revealWords' | 'blurIn' | 'none';
+export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse' | 'spin' | 'sway';
+export type SceneMotion = 'push' | 'pull' | 'driftLeft' | 'driftRight' | 'none';
 
 export interface SceneAnim { type?: SceneAnimType; delay?: number; duration?: number }
 
@@ -1810,7 +1811,7 @@ export interface SceneBackground {
 }
 
 export interface SceneElement {
-  type: 'text' | 'rect' | 'ellipse' | 'line';
+  type: 'text' | 'rect' | 'ellipse' | 'line' | 'disc';  // 'disc' = spinning vinyl record motif
   x?: number; y?: number; w?: number; h?: number;   // % of canvas; x,y = center
   rotate?: number; opacity?: number;
   enter?: SceneAnim; loop?: SceneLoop;
@@ -1818,6 +1819,7 @@ export interface SceneElement {
   text?: string; size?: number; weight?: number; color?: string;
   align?: 'left' | 'center' | 'right'; italic?: boolean; uppercase?: boolean;
   lineHeight?: number; letterSpacing?: number; highlight?: string[]; highlightColor?: string;
+  countUp?: boolean;                                 // number text counts 0 -> value
   // shape
   fill?: string; stroke?: string; strokeWidth?: number; radius?: number; glow?: string; blur?: number;
 }
@@ -1827,6 +1829,7 @@ export interface ClipScene {
   bokeh?: boolean;
   vignette?: boolean;
   font?: string;
+  motion?: SceneMotion;   // whole-scene camera move
   elements?: SceneElement[];
 }
 export type ClipTriage = 'undecided' | 'kept' | 'rejected' | 'winner' | 'edited';

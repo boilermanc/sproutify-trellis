@@ -428,13 +428,16 @@ const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 function sceneDslBlock(brand: ClipBrand): string {
   return `CANVAS: 1080x1920 portrait. Positions/sizes are PERCENTAGES (0-100); x,y is an element's CENTER.
 
-SCENE = { "background":{"type":"linear|radial|solid","colors":["#..","#.."],"angle":170}, "bokeh":true, "vignette":false, "elements":[ ... ] }
-ELEMENT common: "type","x","y","w","h" (all %), "opacity"(0-1), "rotate"(deg), "enter":{"type":"...","delay":sec,"duration":sec}, "loop":"none|breathe|float|pulse"
-- text: "text","size"(px @1080 width),"weight"(400-900),"color","align":"left|center|right","uppercase","italic","lineHeight","letterSpacing","highlight":["word"],"highlightColor"
+SCENE = { "background":{"type":"linear|radial|solid","colors":["#..","#.."],"angle":170}, "motion":"push", "bokeh":true, "vignette":false, "elements":[ ... ] }
+"motion" = a slow whole-card camera move that keeps it alive: push (slow zoom in) | pull (zoom out) | driftLeft | driftRight | none. Pick one per card (usually "push").
+ELEMENT common: "type","x","y","w","h" (all %), "opacity"(0-1), "rotate"(deg), "enter":{"type":"...","delay":sec,"duration":sec}, "loop":"none|breathe|float|pulse|spin|sway"
+- text: "text","size"(px @1080 width),"weight"(400-900),"color","align":"left|center|right","uppercase","italic","lineHeight","letterSpacing","highlight":["word"],"highlightColor","countUp"(true = a number counts up 0->value)
 - rect: "fill","stroke","strokeWidth","radius"(px),"glow"(hex)
 - ellipse: "fill","glow","blur"
 - line: "stroke","strokeWidth"
-ENTER types: fade | slideUp | slideDown | slideLeft | slideRight | pop | growWidth | revealWords
+- disc: a VINYL RECORD motif (grooved black disc + accent center label + spindle). "fill"=label color (accent), "stroke"=disc color (near-black), "glow"(hex), "w"=diameter %. Use loop:"spin" so it turns. Great as a big hero behind/around a number or word for a music/vinyl brand.
+ENTER types: fade | slideUp | slideDown | slideLeft | slideRight | pop | growWidth | revealWords | blurIn (focus-pull)
+LOOPS (continuous life): breathe | float | pulse | spin (rotates — for disc) | sway (gentle rock)
 
 BRAND — use ONLY this palette and dark look:
 - Background base ${brand.bg} (very dark) — build backgrounds from it (prefer a subtle linear/radial gradient over a flat fill).
@@ -448,8 +451,14 @@ DESIGN FOR IMPACT — these are bold, scroll-stopping motion cards, NOT slides. 
 - Strong hierarchy & contrast: pair the huge hero with a SMALL tracked ALL-CAPS label (letterSpacing 6-14) and a short brand tag. Highlight 1-3 key words in an accent color.
 - Depth: layer a large soft blurred accent ellipse (low opacity, big blur) or a glow behind the hero; a gradient background beats a flat one.
 
+MAKE IT JAZZY — every card should MOVE, not just fade in and sit still:
+- Set a "motion" on the card (usually "push") so the whole frame breathes.
+- Give the hero a loop: a big word can "sway" or "breathe"; a number can "pop" in and "pulse". Use "blurIn" (focus-pull) on a hero for premium feel.
+- Use "countUp":true on any number so it counts up on screen.
+- Add ONE thematic motif that fits the story${brand.name ? ` for ${brand.name}` : ''}: e.g. a spinning "disc" (vinyl record) as a hero or backdrop for a music/records brand — big (w 55-75), loop:"spin", with a number or short word centered on it. Reach for a motif whenever it fits; don't force it when it doesn't.
+
 VARY THE ARCHETYPE beat to beat — rotate through looks and NEVER repeat one twice in a row:
-- hero-word (one giant word fills the frame) · giant-number (a number/stat dominates) · quote-frame (text inside a bordered or filled panel) · badge-callout (a pill/tag + rule) · diagonal-accent (a rotated accent bar/block behind text) · split (top color block vs bottom) · stacked-tags (a column of tracked labels).
+- hero-word · giant-number · spinning-disc (record motif) · quote-frame · badge-callout · diagonal-accent · split · stacked-tags.
 
 - 4-8 elements per card. Stagger enter delays 0.1-0.3s apart so it animates in sequence. Visible text only from the script line plus a short brand tag — no invented stats or labels.`;
 }
@@ -488,7 +497,7 @@ function coerceScene(raw: unknown, brand: ClipBrand, scriptText: string): ClipSc
     colors: bgCols.length ? bgCols.slice(0, 3) : [brand.bg, '#000000'],
     angle: typeof bgIn.angle === 'number' ? bgIn.angle : 170,
   };
-  const valid = ['text', 'rect', 'ellipse', 'line'];
+  const valid = ['text', 'rect', 'ellipse', 'line', 'disc'];
   let elements: SceneElement[] = Array.isArray(s.elements)
     ? (s.elements as unknown[]).filter((e): e is SceneElement => !!e && typeof e === 'object' && valid.includes((e as SceneElement).type)).slice(0, 14)
     : [];
@@ -499,7 +508,9 @@ function coerceScene(raw: unknown, brand: ClipBrand, scriptText: string): ClipSc
       color: '#ffffff', align: 'center', enter: { type: 'slideUp', duration: 0.6 },
     }];
   }
-  return { background, bokeh: s.bokeh !== false, vignette: !!s.vignette, font: brand.font, elements };
+  const motions = ['push', 'pull', 'driftLeft', 'driftRight', 'none'];
+  const motion = motions.includes(s.motion as string) ? s.motion as ClipScene['motion'] : 'push';
+  return { background, motion, bokeh: s.bokeh !== false, vignette: !!s.vignette, font: brand.font, elements };
 }
 
 async function generateScene(project: ClipProject, prompt: string, geminiApiKey: string, pick: (j: Record<string, unknown>) => unknown): Promise<unknown> {

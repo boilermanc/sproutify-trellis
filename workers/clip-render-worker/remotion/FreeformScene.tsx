@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, interpolate, interpolateColors, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { fitText } from './fitText';
 
 // ─── Freeform scene renderer ─────────────────────────────────────────
@@ -22,8 +22,10 @@ const MAX_ELEMENTS = 14;
 // ─── DSL ─────────────────────────────────────────────────────────────
 export type SceneAnimType =
   | 'fade' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight'
-  | 'pop' | 'growWidth' | 'revealWords' | 'none';
-export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse';
+  | 'pop' | 'growWidth' | 'revealWords' | 'blurIn' | 'none';
+export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse' | 'spin' | 'sway';
+// Whole-scene camera move — keeps the card alive after elements land.
+export type SceneMotion = 'push' | 'pull' | 'driftLeft' | 'driftRight' | 'none';
 
 export interface SceneAnim { type?: SceneAnimType; delay?: number; duration?: number }
 
@@ -55,10 +57,11 @@ export interface TextElement extends ElementBase {
   letterSpacing?: number;
   highlight?: string[];        // words to color with highlightColor/accent
   highlightColor?: string;
+  countUp?: boolean;           // if text is a number, animate 0 -> value
 }
 
 export interface ShapeElement extends ElementBase {
-  type: 'rect' | 'ellipse' | 'line';
+  type: 'rect' | 'ellipse' | 'line' | 'disc';
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
@@ -74,6 +77,7 @@ export interface ClipScene {
   bokeh?: boolean;
   vignette?: boolean;
   font?: string;               // brand font stack
+  motion?: SceneMotion;        // whole-scene camera move (default: subtle push)
   elements?: SceneElement[];
 }
 
@@ -121,8 +125,8 @@ const Bokeh: React.FC<{ accent: string; count?: number }> = ({ accent, count = 1
   );
 };
 
-// Entrance transform + opacity for an element at the current frame.
-function useEnter(enter: SceneAnim | undefined): { opacity: number; tx: number; ty: number; scale: number } {
+// Entrance transform + opacity + blur for an element at the current frame.
+function useEnter(enter: SceneAnim | undefined): { opacity: number; tx: number; ty: number; scale: number; blur: number } {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const type = enter?.type || 'fade';
@@ -132,23 +136,42 @@ function useEnter(enter: SceneAnim | undefined): { opacity: number; tx: number; 
   const s = spring({ frame: frame - delay, fps, config: { damping: 200 }, durationInFrames: Math.round(dur) });
   const eased = interpolate(t, [0, 1], [0, 1]);
   switch (type) {
-    case 'none': return { opacity: 1, tx: 0, ty: 0, scale: 1 };
-    case 'slideUp': return { opacity: eased, tx: 0, ty: (1 - s) * 80, scale: 1 };
-    case 'slideDown': return { opacity: eased, tx: 0, ty: (1 - s) * -80, scale: 1 };
-    case 'slideLeft': return { opacity: eased, tx: (1 - s) * 80, ty: 0, scale: 1 };
-    case 'slideRight': return { opacity: eased, tx: (1 - s) * -80, ty: 0, scale: 1 };
-    case 'pop': return { opacity: eased, tx: 0, ty: 0, scale: 0.6 + s * 0.4 };
-    default: return { opacity: eased, tx: 0, ty: 0, scale: 1 };
+    case 'none': return { opacity: 1, tx: 0, ty: 0, scale: 1, blur: 0 };
+    case 'slideUp': return { opacity: eased, tx: 0, ty: (1 - s) * 80, scale: 1, blur: 0 };
+    case 'slideDown': return { opacity: eased, tx: 0, ty: (1 - s) * -80, scale: 1, blur: 0 };
+    case 'slideLeft': return { opacity: eased, tx: (1 - s) * 80, ty: 0, scale: 1, blur: 0 };
+    case 'slideRight': return { opacity: eased, tx: (1 - s) * -80, ty: 0, scale: 1, blur: 0 };
+    case 'pop': return { opacity: eased, tx: 0, ty: 0, scale: 0.6 + s * 0.4, blur: 0 };
+    case 'blurIn': return { opacity: eased, tx: 0, ty: (1 - s) * 20, scale: 0.98 + s * 0.02, blur: (1 - eased) * 22 };
+    default: return { opacity: eased, tx: 0, ty: 0, scale: 1, blur: 0 };
   }
 }
 
-function useLoop(loop: SceneLoop | undefined): { scale: number; ty: number } {
+// Whole-scene camera move — a slow, continuous transform applied to all
+// elements so the card keeps breathing after everything has landed.
+function useCamera(motion: SceneMotion | undefined): string {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const p = interpolate(frame, [0, durationInFrames], [0, 1], { extrapolateRight: 'clamp' });
+  switch (motion) {
+    case 'none': return 'none';
+    case 'pull': return `scale(${1.10 - p * 0.10})`;
+    case 'driftLeft': return `scale(1.06) translateX(${p * -60}px)`;
+    case 'driftRight': return `scale(1.06) translateX(${p * 60}px)`;
+    case 'push':
+    default: return `scale(${1 + p * 0.09})`; // subtle default push-in
+  }
+}
+
+function useLoop(loop: SceneLoop | undefined): { scale: number; ty: number; rotate: number } {
   const frame = useCurrentFrame();
   switch (loop) {
-    case 'breathe': return { scale: 1 + Math.sin(frame / 18) * 0.03, ty: 0 };
-    case 'float': return { scale: 1, ty: Math.sin(frame / 24) * 10 };
-    case 'pulse': return { scale: 1 + Math.sin(frame / 8) * 0.02, ty: 0 };
-    default: return { scale: 1, ty: 0 };
+    case 'breathe': return { scale: 1 + Math.sin(frame / 18) * 0.03, ty: 0, rotate: 0 };
+    case 'float': return { scale: 1, ty: Math.sin(frame / 24) * 10, rotate: 0 };
+    case 'pulse': return { scale: 1 + Math.sin(frame / 8) * 0.02, ty: 0, rotate: 0 };
+    case 'spin': return { scale: 1, ty: 0, rotate: frame * 1.6 };        // continuous rotation (records, discs)
+    case 'sway': return { scale: 1, ty: 0, rotate: Math.sin(frame / 22) * 5 };
+    default: return { scale: 1, ty: 0, rotate: 0 };
   }
 }
 
@@ -163,42 +186,66 @@ const TextEl: React.FC<{ el: TextElement; font: string }> = ({ el, font }) => {
   const weight = clamp(num(el.weight, 700), 100, 900);
   const align = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
   const raw = String(el.text ?? '');
-  const text = el.uppercase ? raw.toUpperCase() : raw;
+  const uppercased = el.uppercase ? raw.toUpperCase() : raw;
   const lineHeight = clamp(num(el.lineHeight, 1.25), 0.9, 2);
+  const delayF = num(el.enter?.delay, 0) * fps;
+
+  // Count-up: animate a numeric value from 0 to its target after the entrance.
+  const numMatch = el.countUp ? raw.match(/^(\D*)(\d[\d,]*)(.*)$/) : null;
+  const settled = numMatch
+    ? `${numMatch[1]}${(parseInt(numMatch[2].replace(/,/g, ''), 10) || 0).toLocaleString()}${numMatch[3]}`
+    : uppercased;
+  let text = uppercased;
+  if (numMatch) {
+    const target = parseInt(numMatch[2].replace(/,/g, ''), 10) || 0;
+    const prog = clamp((frame - delayF) / (0.9 * fps), 0, 1);
+    text = `${numMatch[1]}${Math.round(target * prog).toLocaleString()}${numMatch[3]}`;
+  }
+
   // Ceiling is high so a hero word / giant number can truly dominate the frame;
   // fitText still shrinks it to fit the element's width box, so it never overflows.
   const maxSize = clamp(num(el.size, 64), 12, 560);
-  // Shrink to fit the width box so long lines never overflow the design.
+  // Fit on the SETTLED text so a counting number's size doesn't jump per frame.
   const { fontSize } = React.useMemo(() => fitText({
-    text, maxWidth: boxW, maxHeight: H,
+    text: settled, maxWidth: boxW, maxHeight: H,
     maxFontSize: maxSize, minFontSize: Math.min(maxSize, 20),
     fontFamily: font, fontWeight: weight, lineHeight,
     letterSpacingPx: num(el.letterSpacing, 0),
-  }), [text, boxW, maxSize, weight, lineHeight, font]);
+  }), [settled, boxW, maxSize, weight, lineHeight, font]);
 
   const hi = new Set((el.highlight || []).map(w => w.toLowerCase().replace(/[^\w']/g, '')));
   const hiColor = color(el.highlightColor, '#22d3ee');
   const base = color(el.color, '#ffffff');
   const words = text.split(/\s+/).filter(Boolean);
   const revealing = el.enter?.type === 'revealWords';
+  const enterDurF = clamp(num(el.enter?.duration, 0.5), 0.1, 4) * fps;
+  let hiIdx = 0;
 
   return (
     <div style={{
       position: 'absolute', left: pctX(clamp(num(el.x, 50), 0, 100)), top: pctY(clamp(num(el.y, 50), 0, 100)),
-      width: boxW, transform: `translate(-50%, -50%) translate(${enter.tx}px, ${enter.ty + loop.ty}px) rotate(${num(el.rotate, 0)}deg)`,
+      width: boxW, transform: `translate(-50%, -50%) translate(${enter.tx}px, ${enter.ty + loop.ty}px) rotate(${num(el.rotate, 0) + loop.rotate}deg)`,
       opacity: clamp(num(el.opacity, 1), 0, 1) * (revealing ? 1 : enter.opacity),
       textAlign: align as React.CSSProperties['textAlign'],
       fontFamily: font, fontSize, fontWeight: weight, lineHeight, color: base,
       fontStyle: el.italic ? 'italic' : 'normal', letterSpacing: num(el.letterSpacing, 0),
+      filter: enter.blur ? `blur(${enter.blur}px)` : 'none',
     }}>
       {words.map((wd, i) => {
         const isHi = hi.has(wd.toLowerCase().replace(/[^\w']/g, ''));
-        const s = revealing ? spring({ frame: frame - (num(el.enter?.delay, 0) * fps) - i * 3, fps, config: { damping: 200, stiffness: 120 } }) : 1;
+        const s = revealing ? spring({ frame: frame - delayF - i * 3, fps, config: { damping: 200, stiffness: 120 } }) : 1;
+        // Highlight sweep: key words ignite into the accent a beat after landing.
+        let wordColor = base;
+        if (isHi) {
+          const sweepStart = delayF + enterDurF + hiIdx * 6;
+          wordColor = interpolateColors(frame, [sweepStart, sweepStart + 9], [base, hiColor]);
+          hiIdx += 1;
+        }
         return (
           <span key={i} style={{
             display: 'inline-block', marginRight: fontSize * 0.28,
             opacity: revealing ? s : 1, transform: revealing ? `translateY(${(1 - s) * 24}px)` : 'none',
-            color: isHi ? hiColor : base,
+            color: wordColor,
           }}>{wd}</span>
         );
       })}
@@ -225,14 +272,51 @@ const ShapeEl: React.FC<{ el: ShapeElement }> = ({ el }) => {
     <div style={{
       position: 'absolute', left: pctX(clamp(num(el.x, 50), -30, 130)), top: pctY(clamp(num(el.y, 50), -30, 130)),
       width: wPx, height: isLine ? Math.max(2, hPx) : hPx,
-      transform: `translate(-50%, -50%) translate(${enter.tx}px, ${enter.ty + loop.ty}px) rotate(${num(el.rotate, 0)}deg) scale(${enter.scale * loop.scale})`,
+      transform: `translate(-50%, -50%) translate(${enter.tx}px, ${enter.ty + loop.ty}px) rotate(${num(el.rotate, 0) + loop.rotate}deg) scale(${enter.scale * loop.scale})`,
       opacity: clamp(num(el.opacity, 1), 0, 1) * (growing ? 1 : enter.opacity),
       background: fill,
       border: strokeWidth ? `${strokeWidth}px solid ${stroke}` : 'none',
       borderRadius: el.type === 'ellipse' ? '50%' : clamp(num(el.radius, 0), 0, 400),
       boxShadow: glow ? `0 0 ${clamp(num(el.blur, 60), 0, 300)}px ${glow}` : 'none',
-      filter: el.blur && el.type !== 'rect' ? `blur(${clamp(num(el.blur, 0), 0, 60)}px)` : 'none',
+      filter: [enter.blur ? `blur(${enter.blur}px)` : '', (el.blur && el.type !== 'rect') ? `blur(${clamp(num(el.blur, 0), 0, 60)}px)` : ''].filter(Boolean).join(' ') || 'none',
     }} />
+  );
+};
+
+// ─── Disc: a vinyl record motif (concentric grooves + accent label + spindle) ─
+// Spins by default — the signature "jazzy" motif for a music brand. Built from
+// nested radial gradients so it stays crisp at any size and needs no assets.
+const Disc: React.FC<{ el: ShapeElement }> = ({ el }) => {
+  const frame = useCurrentFrame();
+  const enter = useEnter(el.enter);
+  const spin = el.loop === 'none' ? 0 : frame * (el.loop === 'sway' ? 0 : 1.2); // spins unless loop:'none'
+  const d = pctX(clamp(num(el.w, 40), 5, 160));
+  const labelColor = color(el.fill, '#e8621a');          // accent label
+  const disc = color(el.stroke, '#0b0b0d');              // vinyl body
+  return (
+    <div style={{
+      position: 'absolute', left: pctX(clamp(num(el.x, 50), -30, 130)), top: pctY(clamp(num(el.y, 50), -30, 130)),
+      width: d, height: d, borderRadius: '50%',
+      transform: `translate(-50%, -50%) translate(${enter.tx}px, ${enter.ty}px) scale(${enter.scale}) rotate(${num(el.rotate, 0) + spin}deg)`,
+      opacity: clamp(num(el.opacity, 1), 0, 1) * enter.opacity,
+      // grooves: alternating dark rings; a subtle sheen; the whole disc in one bg
+      background: `
+        repeating-radial-gradient(circle at 50% 50%, ${disc} 0 6px, #17171a 6px 9px),
+        radial-gradient(circle at 38% 32%, rgba(255,255,255,0.10) 0%, transparent 40%)`,
+      boxShadow: `0 30px 90px rgba(0,0,0,0.6)${el.glow && HEX.test(el.glow) ? `, 0 0 80px ${el.glow}55` : ''}`,
+    }}>
+      {/* center label */}
+      <div style={{
+        position: 'absolute', left: '50%', top: '50%', width: d * 0.34, height: d * 0.34,
+        transform: 'translate(-50%, -50%)', borderRadius: '50%', background: labelColor,
+        boxShadow: 'inset 0 0 20px rgba(0,0,0,0.25)',
+      }} />
+      {/* spindle hole */}
+      <div style={{
+        position: 'absolute', left: '50%', top: '50%', width: d * 0.045, height: d * 0.045,
+        transform: 'translate(-50%, -50%)', borderRadius: '50%', background: '#0b0b0d',
+      }} />
+    </div>
   );
 };
 
@@ -243,15 +327,20 @@ export const FreeformScene: React.FC<{ scene?: ClipScene }> = ({ scene }) => {
   const bgCols = (s.background?.colors || []).filter(c => HEX.test(c));
   const accent = bgCols[1] || bgCols[0] || '#22d3ee';
   const elements = Array.isArray(s.elements) ? s.elements.slice(0, MAX_ELEMENTS) : [];
+  const camera = useCamera(s.motion);
   return (
     <AbsoluteFill style={{ background: background(s.background), fontFamily: font }}>
       {s.bokeh !== false && <Bokeh accent={accent} count={8} />}
-      {elements.map((el, i) => {
-        if (!el || typeof el !== 'object') return null;
-        if (el.type === 'text') return <TextEl key={i} el={el as TextElement} font={font} />;
-        if (el.type === 'rect' || el.type === 'ellipse' || el.type === 'line') return <ShapeEl key={i} el={el as ShapeElement} />;
-        return null;
-      })}
+      {/* Elements ride the slow camera move so the card keeps living after entrance. */}
+      <AbsoluteFill style={{ transform: camera === 'none' ? undefined : camera, transformOrigin: '50% 50%' }}>
+        {elements.map((el, i) => {
+          if (!el || typeof el !== 'object') return null;
+          if (el.type === 'text') return <TextEl key={i} el={el as TextElement} font={font} />;
+          if (el.type === 'disc') return <Disc key={i} el={el as ShapeElement} />;
+          if (el.type === 'rect' || el.type === 'ellipse' || el.type === 'line') return <ShapeEl key={i} el={el as ShapeElement} />;
+          return null;
+        })}
+      </AbsoluteFill>
       {s.vignette && (
         <AbsoluteFill style={{ background: 'radial-gradient(circle at 50% 45%, transparent 45%, rgba(0,0,0,0.55) 100%)', pointerEvents: 'none' }} />
       )}
