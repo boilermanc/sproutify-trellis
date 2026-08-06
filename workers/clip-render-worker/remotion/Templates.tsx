@@ -2,6 +2,7 @@ import React from 'react';
 import {
   AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig,
 } from 'remotion';
+import { fitText } from './fitText';
 
 // ─── Trellis Clip Studio: the 7 B-roll beat templates ────────────────
 // Every template is driven by the same flexible param bag filled by the
@@ -63,15 +64,21 @@ const KineticQuoteCard: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const { accent, bg } = defaults(params);
-  const words = (params.quote || params.headline || '').split(/\s+/).filter(Boolean);
+  const quoteText = params.quote || params.headline || '';
+  const words = quoteText.split(/\s+/).filter(Boolean);
   const hi = new Set((params.highlight_words || []).map(w => w.toLowerCase().replace(/[^\w']/g, '')));
   const attrIn = interpolate(frame, [durationInFrames * 0.55, durationInFrames * 0.7], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const drift = interpolate(frame, [0, durationInFrames], [1, 1.02]);
+  const { fontSize } = React.useMemo(() => fitText({
+    text: quoteText, maxWidth: 880, maxHeight: params.attribution ? 1180 : 1320,
+    maxFontSize: 74, minFontSize: 40, fontFamily: FONT, fontWeight: 800,
+    lineHeight: 1.25, letterSpacingPx: -1, wordGapPx: 18,
+  }), [quoteText, params.attribution]);
   return (
     <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: '0 100px', transform: `scale(${drift})` }}>
-        <div style={{ fontSize: 74, fontWeight: 800, lineHeight: 1.25, color: '#fff', letterSpacing: -1 }}>
+        <div style={{ fontSize, fontWeight: 800, lineHeight: 1.25, color: '#fff', letterSpacing: -1 }}>
           {words.map((w, i) => {
             const s = wordSpring(frame, fps, i);
             const isHi = hi.has(w.toLowerCase().replace(/[^\w']/g, ''));
@@ -103,6 +110,12 @@ const MotionGraphic: React.FC<BeatProps> = ({ params }) => {
   const breathe = 1 + Math.sin(frame / 18) * 0.05;
   const orbIn = spring({ frame, fps, config: { damping: 200 } });
   const textIn = interpolate(frame, [durationInFrames * 0.35, durationInFrames * 0.5], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const headline = params.headline || '';
+  const { fontSize } = React.useMemo(() => fitText({
+    text: headline, maxWidth: 860, maxHeight: 520,
+    maxFontSize: 64, minFontSize: 38, fontFamily: FONT, fontWeight: 800,
+    lineHeight: 1.25, letterSpacingPx: -1,
+  }), [headline]);
   return (
     <AbsoluteFill style={{ background: `radial-gradient(circle at 50% 42%, ${bg} 0%, #000 100%)`, fontFamily: FONT }}>
       <Bokeh accent={accent} />
@@ -115,9 +128,9 @@ const MotionGraphic: React.FC<BeatProps> = ({ params }) => {
         }} />
         <div style={{
           marginTop: 110, padding: '0 110px', textAlign: 'center',
-          fontSize: 64, fontWeight: 800, letterSpacing: -1, lineHeight: 1.25, color: '#fff',
+          fontSize, fontWeight: 800, letterSpacing: -1, lineHeight: 1.25, color: '#fff',
           opacity: textIn, transform: `translateY(${(1 - textIn) * 30}px)`,
-        }}>{params.headline || ''}</div>
+        }}>{headline}</div>
         {params.subtext && (
           <div style={{ marginTop: 30, fontSize: 32, fontWeight: 500, color: 'rgba(255,255,255,0.55)', opacity: textIn }}>{params.subtext}</div>
         )}
@@ -132,6 +145,11 @@ const AnimationT: React.FC<BeatProps> = ({ params }) => {
   const { fps, durationInFrames } = useVideoConfig();
   const { accent, bg } = defaults(params);
   const textIn = interpolate(frame, [durationInFrames * 0.5, durationInFrames * 0.65], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const headline = params.headline || '';
+  const { fontSize } = React.useMemo(() => fitText({
+    text: headline, maxWidth: 860, maxHeight: 380,
+    maxFontSize: 54, minFontSize: 34, fontFamily: FONT, fontWeight: 700, lineHeight: 1.3,
+  }), [headline]);
   return (
     <AbsoluteFill style={{ background: `linear-gradient(180deg, ${bg} 0%, #060810 100%)`, fontFamily: FONT }}>
       <Bokeh accent={accent} count={10} />
@@ -157,9 +175,9 @@ const AnimationT: React.FC<BeatProps> = ({ params }) => {
         </div>
         <div style={{
           marginTop: 80, padding: '0 110px', textAlign: 'center',
-          fontSize: 54, fontWeight: 700, lineHeight: 1.3, color: '#fff',
+          fontSize, fontWeight: 700, lineHeight: 1.3, color: '#fff',
           opacity: textIn, transform: `translateY(${(1 - textIn) * 24}px)`,
-        }}>{params.headline || ''}</div>
+        }}>{headline}</div>
       </AbsoluteFill>
     </AbsoluteFill>
   );
@@ -171,6 +189,11 @@ const UiCallout: React.FC<BeatProps> = ({ params }) => {
   const { fps } = useVideoConfig();
   const { accent, bg } = defaults(params);
   const cardIn = spring({ frame: frame - 10, fps, config: { damping: 14, stiffness: 110 } });
+  const message = params.headline || '';
+  const { fontSize } = React.useMemo(() => fitText({
+    text: message, maxWidth: 492, maxHeight: 760,
+    maxFontSize: 40, minFontSize: 28, fontFamily: FONT, fontWeight: 600, lineHeight: 1.4,
+  }), [message]);
   return (
     <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
       <Bokeh accent={accent} count={8} />
@@ -189,9 +212,9 @@ const UiCallout: React.FC<BeatProps> = ({ params }) => {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
               <div style={{ width: 44, height: 44, borderRadius: 12, background: accent }} />
-              <div style={{ fontSize: 24, fontWeight: 700, color: '#334', textTransform: 'uppercase', letterSpacing: 1 }}>{params.subtext || 'Agent'}</div>
+              <div style={{ fontSize: 30, fontWeight: 700, color: '#334', textTransform: 'uppercase', letterSpacing: 1 }}>{params.subtext || 'Agent'}</div>
             </div>
-            <div style={{ fontSize: 32, fontWeight: 600, lineHeight: 1.4, color: '#0f172a' }}>{params.headline || ''}</div>
+            <div style={{ fontSize, fontWeight: 600, lineHeight: 1.4, color: '#0f172a' }}>{message}</div>
           </div>
         </div>
       </AbsoluteFill>
@@ -207,12 +230,18 @@ const TimelineT: React.FC<BeatProps> = ({ params }) => {
   const items = (params.items || []).slice(0, 6);
   const lineW = interpolate(frame, [8, durationInFrames * 0.5], [0, 100], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const headIn = spring({ frame, fps, config: { damping: 200 } });
+  const headline = params.headline || '';
+  const { fontSize } = React.useMemo(() => fitText({
+    text: headline, maxWidth: 900, maxHeight: 360,
+    maxFontSize: 56, minFontSize: 34, fontFamily: FONT, fontWeight: 800,
+    lineHeight: 1.25, letterSpacingPx: -1,
+  }), [headline]);
   return (
     <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: '0 90px' }}>
-        <div style={{ fontSize: 56, fontWeight: 800, color: '#fff', lineHeight: 1.25, marginBottom: 100, opacity: headIn, letterSpacing: -1 }}>
-          {params.headline || ''}
+        <div style={{ fontSize, fontWeight: 800, color: '#fff', lineHeight: 1.25, marginBottom: 100, opacity: headIn, letterSpacing: -1 }}>
+          {headline}
         </div>
         <div style={{ position: 'relative', height: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 3 }}>
           <div style={{ position: 'absolute', inset: 0, width: `${lineW}%`, background: accent, borderRadius: 3 }} />
@@ -224,7 +253,7 @@ const TimelineT: React.FC<BeatProps> = ({ params }) => {
               <div key={i} style={{ flex: 1, textAlign: 'center', opacity: s, transform: `translateY(${(1 - s) * 40}px)` }}>
                 <div style={{ width: 22, height: 22, borderRadius: '50%', background: accent, margin: '0 auto 18px', boxShadow: `0 0 26px ${accent}88` }} />
                 <div style={{ fontSize: 34, fontWeight: 800, color: '#fff' }}>{it.label}</div>
-                {it.sublabel && <div style={{ fontSize: 22, fontWeight: 500, color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>{it.sublabel}</div>}
+                {it.sublabel && <div style={{ fontSize: 28, fontWeight: 500, color: 'rgba(255,255,255,0.5)', marginTop: 8 }}>{it.sublabel}</div>}
               </div>
             );
           })}
@@ -241,13 +270,24 @@ const SourceReceiptCard: React.FC<BeatProps> = ({ params }) => {
   const { accent, bg } = defaults(params);
   const cardIn = spring({ frame: frame - 6, fps, config: { damping: 16, stiffness: 90 } });
   const claimIn = interpolate(frame, [durationInFrames * 0.5, durationInFrames * 0.62], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const claim = params.headline || '';
+  const quote = params.quote || '';
+  const claimFit = React.useMemo(() => fitText({
+    text: claim, maxWidth: 920, maxHeight: 300,
+    maxFontSize: 52, minFontSize: 32, fontFamily: FONT, fontWeight: 800,
+    lineHeight: 1.3, letterSpacingPx: -1,
+  }), [claim]);
+  const quoteFit = React.useMemo(() => fitText({
+    text: quote, maxWidth: 800, maxHeight: 700,
+    maxFontSize: 44, minFontSize: 26, fontFamily: SERIF, fontWeight: 400, lineHeight: 1.5,
+  }), [quote]);
   return (
     <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
       <Bokeh accent={accent} count={6} />
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', padding: '0 80px' }}>
         {params.headline && (
-          <div style={{ fontSize: 52, fontWeight: 800, color: '#fff', textAlign: 'center', lineHeight: 1.3, marginBottom: 70, opacity: claimIn, letterSpacing: -1 }}>
-            {params.headline}
+          <div style={{ fontSize: claimFit.fontSize, fontWeight: 800, color: '#fff', textAlign: 'center', lineHeight: 1.3, marginBottom: 70, opacity: claimIn, letterSpacing: -1 }}>
+            {claim}
           </div>
         )}
         <div style={{
@@ -257,10 +297,10 @@ const SourceReceiptCard: React.FC<BeatProps> = ({ params }) => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 30 }}>
             <div style={{ padding: '6px 16px', borderRadius: 8, background: accent, color: '#04121a', fontSize: 22, fontWeight: 900, letterSpacing: 1 }}>SOURCE</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: '#57534e', textTransform: 'uppercase', letterSpacing: 1 }}>{params.attribution || ''}</div>
+            <div style={{ fontSize: 30, fontWeight: 700, color: '#57534e', textTransform: 'uppercase', letterSpacing: 1 }}>{params.attribution || ''}</div>
           </div>
-          <div style={{ fontFamily: SERIF, fontSize: 40, fontStyle: 'italic', lineHeight: 1.5, color: '#1c1917' }}>
-            “{params.quote || ''}”
+          <div style={{ fontFamily: SERIF, fontSize: quoteFit.fontSize, fontStyle: 'italic', lineHeight: 1.5, color: '#1c1917' }}>
+            “{quote}”
           </div>
         </div>
       </AbsoluteFill>
@@ -273,15 +313,21 @@ const TextHighlight: React.FC<BeatProps> = ({ params }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const { accent, bg } = defaults(params);
-  const words = (params.headline || '').split(/\s+/).filter(Boolean);
+  const sentence = params.headline || '';
+  const words = sentence.split(/\s+/).filter(Boolean);
   const hi = new Set((params.highlight_words || []).map(w => w.toLowerCase().replace(/[^\w']/g, '')));
   const sweepStart = durationInFrames * 0.4;
   let hiIndex = 0;
+  const { fontSize } = React.useMemo(() => fitText({
+    text: sentence, maxWidth: 880, maxHeight: 1320,
+    maxFontSize: 78, minFontSize: 42, fontFamily: FONT, fontWeight: 800,
+    lineHeight: 1.35, letterSpacingPx: -1, wordGapPx: 20,
+  }), [sentence]);
   return (
     <AbsoluteFill style={{ background: bg, fontFamily: FONT }}>
       <Bokeh accent={accent} count={8} />
       <AbsoluteFill style={{ justifyContent: 'center', padding: '0 100px' }}>
-        <div style={{ fontSize: 78, fontWeight: 800, lineHeight: 1.35, color: '#fff', letterSpacing: -1 }}>
+        <div style={{ fontSize, fontWeight: 800, lineHeight: 1.35, color: '#fff', letterSpacing: -1 }}>
           {words.map((w, i) => {
             const s = wordSpring(frame, fps, i, 2);
             const isHi = hi.has(w.toLowerCase().replace(/[^\w']/g, ''));
