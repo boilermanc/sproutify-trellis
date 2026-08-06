@@ -77,6 +77,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [tab, setTab] = useState<'script' | 'broll' | 'runs' | 'publish'>('script');
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [videoOnly, setVideoOnly] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [prompterOpen, setPrompterOpen] = useState(false);
   const [brollFilter, setBrollFilter] = useState<'all' | 'rendered' | 'kept' | 'undecided' | 'failed'>('all');
@@ -871,6 +872,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const visible = projects.filter(p => {
     const archived = p.status === 'archived';
     if (showArchived !== archived) return false;
+    if (videoOnly && !p.final_video_url) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return p.title.toLowerCase().includes(q) || (p.hook_line || '').toLowerCase().includes(q) || p.status.includes(q);
@@ -880,6 +882,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
     active: projects.filter(p => p.status !== 'archived').length,
     production: projects.filter(p => ['production', 'publishing', 'published'].includes(p.status)).length,
     archived: projects.filter(p => p.status === 'archived').length,
+    withVideo: projects.filter(p => !!p.final_video_url && p.status !== 'archived').length,
   };
 
   return (
@@ -908,6 +911,12 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
       <div className="flex items-center gap-2">
         <input className={inputCls} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, hook, or status" />
+        {!showArchived && (
+          <button type="button" onClick={() => setVideoOnly(v => !v)}
+            className={`shrink-0 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition flex items-center gap-1.5 ${videoOnly ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+            <Video size={13} /> With video{kpis.withVideo ? ` ${kpis.withVideo}` : ''}
+          </button>
+        )}
         <button type="button" onClick={loadProjects} className="p-2.5 text-slate-400 hover:text-emerald-600 transition shrink-0"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
       </div>
 
@@ -923,17 +932,35 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
             const pm = STATUS_META[p.status] || STATUS_META.draft;
             return (
               <div key={p.id} className={`${card} flex items-center justify-between gap-4 flex-wrap`}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${pm.cls}`}>{pm.label}</span>
-                    {(p.format?.kinds || []).map(k => <span key={k} className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">{k}</span>)}
+                <div className="flex items-center gap-4 min-w-0 flex-1">
+                  {p.final_video_url && (
+                    <button type="button" onClick={() => openProject(p)}
+                      title="Open — play in the Publish tab"
+                      className="relative shrink-0 w-16 aspect-[9/16] rounded-lg overflow-hidden bg-black group">
+                      {/* #t seeks to a frame so the poster isn't a black first frame */}
+                      <video src={`${p.final_video_url}#t=0.5`} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition">
+                        <Play size={18} className="text-white fill-white/90" />
+                      </span>
+                    </button>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${pm.cls}`}>{pm.label}</span>
+                      {p.final_video_url && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 flex items-center gap-1"><Video size={10} /> Video</span>}
+                      {(p.format?.kinds || []).map(k => <span key={k} className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">{k}</span>)}
+                    </div>
+                    <h3 className="font-black text-slate-800 mt-1.5 truncate">{p.title}</h3>
+                    {p.hook_line && <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{p.hook_line}</p>}
+                    <p className="text-[10px] text-slate-400 font-medium mt-1">target {p.target_seconds}s · {p.branch || 'no branch'} · updated {new Date(p.updated_at).toLocaleDateString()}</p>
                   </div>
-                  <h3 className="font-black text-slate-800 mt-1.5 truncate">{p.title}</h3>
-                  {p.hook_line && <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{p.hook_line}</p>}
-                  <p className="text-[10px] text-slate-400 font-medium mt-1">target {p.target_seconds}s · {p.branch || 'no branch'} · updated {new Date(p.updated_at).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map(n => <Star key={n} size={12} className={p.rating && p.rating >= n ? 'text-amber-400 fill-amber-400' : 'text-slate-200'} />)}</div>
+                  {p.final_video_url && (
+                    <a href={p.final_video_url} download title="Download MP4"
+                      className="p-2 text-slate-300 hover:text-emerald-600 transition"><Download size={15} /></a>
+                  )}
                   <button type="button" onClick={() => openProject(p)}
                     className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition">Open</button>
                   {p.status !== 'archived' && (
