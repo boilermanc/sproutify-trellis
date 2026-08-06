@@ -22,7 +22,7 @@ const MAX_ELEMENTS = 14;
 // ─── DSL ─────────────────────────────────────────────────────────────
 export type SceneAnimType =
   | 'fade' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight'
-  | 'pop' | 'growWidth' | 'revealWords' | 'blurIn' | 'none';
+  | 'pop' | 'bounce' | 'growWidth' | 'revealWords' | 'blurIn' | 'none';
 export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse' | 'spin' | 'sway';
 // Whole-scene camera move — keeps the card alive after elements land.
 export type SceneMotion = 'push' | 'pull' | 'driftLeft' | 'driftRight' | 'none';
@@ -133,7 +133,11 @@ function useEnter(enter: SceneAnim | undefined): { opacity: number; tx: number; 
   const delay = clamp(num(enter?.delay, 0), 0, 20) * fps;
   const dur = clamp(num(enter?.duration, 0.5), 0.1, 4) * fps;
   const t = clamp((frame - delay) / dur, 0, 1);
+  // Smooth driver for slides/fades (no overshoot).
   const s = spring({ frame: frame - delay, fps, config: { damping: 200 }, durationInFrames: Math.round(dur) });
+  // Springy driver — light + underdamped so it overshoots and settles, giving
+  // pops and bounces real energy (the "jazzy" feel).
+  const sb = spring({ frame: frame - delay, fps, config: { mass: 0.7, stiffness: 120, damping: 11 } });
   const eased = interpolate(t, [0, 1], [0, 1]);
   switch (type) {
     case 'none': return { opacity: 1, tx: 0, ty: 0, scale: 1, blur: 0 };
@@ -141,7 +145,8 @@ function useEnter(enter: SceneAnim | undefined): { opacity: number; tx: number; 
     case 'slideDown': return { opacity: eased, tx: 0, ty: (1 - s) * -80, scale: 1, blur: 0 };
     case 'slideLeft': return { opacity: eased, tx: (1 - s) * 80, ty: 0, scale: 1, blur: 0 };
     case 'slideRight': return { opacity: eased, tx: (1 - s) * -80, ty: 0, scale: 1, blur: 0 };
-    case 'pop': return { opacity: eased, tx: 0, ty: 0, scale: 0.6 + s * 0.4, blur: 0 };
+    case 'pop': return { opacity: eased, tx: 0, ty: 0, scale: interpolate(sb, [0, 1], [0.55, 1]), blur: 0 };
+    case 'bounce': return { opacity: eased, tx: 0, ty: (1 - sb) * 90, scale: 1, blur: 0 };
     case 'blurIn': return { opacity: eased, tx: 0, ty: (1 - s) * 20, scale: 0.98 + s * 0.02, blur: (1 - eased) * 22 };
     default: return { opacity: eased, tx: 0, ty: 0, scale: 1, blur: 0 };
   }

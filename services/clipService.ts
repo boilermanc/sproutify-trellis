@@ -436,7 +436,7 @@ ELEMENT common: "type","x","y","w","h" (all %), "opacity"(0-1), "rotate"(deg), "
 - ellipse: "fill","glow","blur"
 - line: "stroke","strokeWidth"
 - disc: a VINYL RECORD motif (grooved black disc + accent center label + spindle). "fill"=label color (accent), "stroke"=disc color (near-black), "glow"(hex), "w"=diameter %. Use loop:"spin" so it turns. Great as a big hero behind/around a number or word for a music/vinyl brand.
-ENTER types: fade | slideUp | slideDown | slideLeft | slideRight | pop | growWidth | revealWords | blurIn (focus-pull)
+ENTER types: fade | slideUp | slideDown | slideLeft | slideRight | pop (springy) | bounce (drops in with overshoot) | growWidth | revealWords | blurIn (focus-pull). Prefer pop/bounce on heroes for energy.
 LOOPS (continuous life): breathe | float | pulse | spin (rotates — for disc) | sway (gentle rock)
 
 BRAND — use ONLY this palette and dark look:

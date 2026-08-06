@@ -1798,7 +1798,7 @@ export type ClipBeatType =
 // in one place (coerceScene) and the renderer clamps whatever it gets.
 export type SceneAnimType =
   | 'fade' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight'
-  | 'pop' | 'growWidth' | 'revealWords' | 'blurIn' | 'none';
+  | 'pop' | 'bounce' | 'growWidth' | 'revealWords' | 'blurIn' | 'none';
 export type SceneLoop = 'none' | 'breathe' | 'float' | 'pulse' | 'spin' | 'sway';
 export type SceneMotion = 'push' | 'pull' | 'driftLeft' | 'driftRight' | 'none';
 
