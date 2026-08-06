@@ -3,6 +3,7 @@ import {
   AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig,
 } from 'remotion';
 import { fitText } from './fitText';
+import { FreeformScene, ClipScene } from './FreeformScene';
 
 // ─── Trellis Clip Studio: the 7 B-roll beat templates ────────────────
 // Every template is driven by the same flexible param bag filled by the
@@ -19,6 +20,7 @@ export interface TemplateParams {
   font?: string;   // brand font-family stack; falls back to FONT
   items?: Array<{ label: string; sublabel?: string }>;
   highlight_words?: string[];
+  scene?: ClipScene;  // freeform beat: an AI-authored scene spec (see FreeformScene)
 }
 
 export interface BeatProps {
@@ -350,6 +352,10 @@ const TextHighlight: React.FC<BeatProps> = ({ params }) => {
 
 // ─── Dispatcher ───────────────────────────────────────────────────────
 export const ClipBeat: React.FC<BeatProps> = (props) => {
+  // Freeform beats carry an AI-authored scene spec instead of template params.
+  if (props.beatType === 'freeform' && props.params?.scene) {
+    return <FreeformScene scene={props.params.scene} />;
+  }
   switch (props.beatType) {
     case 'kinetic_quote_card': return <KineticQuoteCard {...props} />;
     case 'animation': return <AnimationT {...props} />;
