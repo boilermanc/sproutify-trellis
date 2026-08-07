@@ -192,16 +192,19 @@ const evaluateArrayContains = (profile: EnrichedProfile, rule: SegmentRule, nega
   return negate ? !found : found;
 };
 
-// Evaluate a rule, with special handling for array contains
+// Evaluate a rule, with special handling for array contains. Applies to any
+// array-typed field (products_purchased, customer_tags, …) — evaluateArrayContains
+// matches both string members (tag names) and object members by product_name.
 const evaluateRuleWithArrays = (
   profile: EnrichedProfile,
   rule: SegmentRule,
   engagementByEmail?: Map<string, EngagementSummary>
 ): boolean => {
-  if (rule.operator === 'contains' && rule.field === 'products_purchased') {
+  const field = SEGMENT_FIELDS.find(f => f.id === rule.field);
+  if (field?.type === 'array' && rule.operator === 'contains') {
     return evaluateArrayContains(profile, rule, false);
   }
-  if (rule.operator === 'not_contains' && rule.field === 'products_purchased') {
+  if (field?.type === 'array' && rule.operator === 'not_contains') {
     return evaluateArrayContains(profile, rule, true);
   }
   return evaluateRule(profile, rule, engagementByEmail);

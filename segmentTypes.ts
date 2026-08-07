@@ -67,6 +67,9 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   { id: 'created_at', label: 'Customer Since', type: 'date', category: 'profile', path: 'created_at' },
   { id: 'spoke', label: 'Source/Spoke', type: 'string', category: 'profile', path: '_spoke_name' },
   { id: 'referral_source', label: 'Referral Source', type: 'string', category: 'profile', path: 'referral_source' },
+  // Classification tags carried from the spoke's customer_tags (ATL). Use the
+  // 'includes'/'does not include' operators with a tag name, e.g. "School Partner".
+  { id: 'customer_tags', label: 'Customer Tag', type: 'array', category: 'profile', path: 'tags' },
 
   // Order fields
   { id: 'ltv', label: 'Lifetime Value ($)', type: 'number', category: 'orders', path: 'order_stats.ltv' },
@@ -149,7 +152,7 @@ export const getOperatorsForType = (type: SegmentFieldType): { value: SegmentOpe
       ];
     case 'array':
       return [
-        { value: 'contains', label: 'includes product' },
+        { value: 'contains', label: 'includes' },
         { value: 'not_contains', label: 'does not include' },
         { value: 'is_empty', label: 'is empty' },
         { value: 'is_not_empty', label: 'has items' },
@@ -270,6 +273,33 @@ export const PRESET_SEGMENTS: Omit<Segment, 'id' | 'created_at' | 'updated_at'>[
       id: 'male-group',
       join: 'AND',
       rules: [{ id: 'male-rule', field: 'predicted_gender', operator: 'is', value: 'male' }]
+    }]
+  },
+  // School outreach segments — driven by ATL's hand-curated customer_tags.
+  // NOTE: appended at the END so existing presets keep their preset-<index> ids
+  // (the Segments → CampaignBuilder "Send Campaign" bridge matches on that id).
+  {
+    name: 'School Leads',
+    description: 'Prospects tagged "Potential School Partner" — not yet school customers',
+    icon: 'users',
+    color: 'teal',
+    is_preset: true,
+    rule_groups: [{
+      id: 'school-leads-group',
+      join: 'AND',
+      rules: [{ id: 'school-leads-rule', field: 'customer_tags', operator: 'contains', value: 'Potential School Partner' }]
+    }]
+  },
+  {
+    name: 'School Partners',
+    description: 'Current school customers tagged "School Partner"',
+    icon: 'users',
+    color: 'emerald',
+    is_preset: true,
+    rule_groups: [{
+      id: 'school-partners-group',
+      join: 'AND',
+      rules: [{ id: 'school-partners-rule', field: 'customer_tags', operator: 'contains', value: 'School Partner' }]
     }]
   },
 ];

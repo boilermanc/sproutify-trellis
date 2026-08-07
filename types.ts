@@ -232,6 +232,11 @@ export interface NormalizedSpokeProfile {
   // (e.g. ATL's /functions/v1/newsletter-unsubscribe?token=...). Only present
   // for rows sourced from a spoke's newsletter_subscribers table.
   unsubscribe_token?: string;
+  // Human-readable classification tag names carried from the spoke (e.g. ATL's
+  // customer_tags: "School Partner", "Potential School Partner", "VIP"). Only
+  // present when the connection's customers feed exposes a `tags` column.
+  // Segmentable via the 'customer_tags' field (see segmentTypes.ts).
+  tags?: string[];
   _spoke_id: string;
   _spoke_name: string;
 }

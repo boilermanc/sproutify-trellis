@@ -371,6 +371,12 @@ export async function fetchSpokeProfiles(
         if (mapping.created_at && row[mapping.created_at] !== undefined) {
           profile.created_at = String(row[mapping.created_at]);
         }
+        // Classification tags (e.g. ATL "School Partner"). PostgREST returns a
+        // text[] column as a JSON array; keep only string members, drop nulls.
+        if (mapping.tags && Array.isArray(row[mapping.tags])) {
+          profile.tags = (row[mapping.tags] as unknown[])
+            .filter((v): v is string => typeof v === 'string' && v.length > 0);
+        }
 
         profiles.push(profile);
       }
