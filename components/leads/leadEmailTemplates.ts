@@ -16,9 +16,7 @@ export const LEAD_EMAIL_TEMPLATES: LeadEmailTemplate[] = [
     id: 'new-tower-farm-welcome',
     name: 'New Tower Farm — Welcome',
     subject: 'Welcome to your new Tower Farm — your first 3 months are on us',
-    body: `Hi {{first_name}},
-
-Congratulations on your new Tower Farm! I wanted to personally reach out to introduce Sproutify Farm, the operational software Tower Farm Corp partners with to help new aeroponic farms get up and running successfully.
+    body: `Congratulations on your new Tower Farm! I wanted to personally reach out to introduce Sproutify Farm, the operational software Tower Farm Corp partners with to help new aeroponic farms get up and running successfully.
 
 **What Sproutify does:** We've built farm management software specifically for aeroponic tower operations — tower capacity planning, port management, seed-to-harvest workflows, and task coordination that generic farm tools simply can't handle. Tower Farm gives you great equipment; Sproutify gives you the operational system to run it profitably day-to-day.
 
