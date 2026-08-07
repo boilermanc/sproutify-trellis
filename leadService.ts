@@ -485,14 +485,15 @@ export function leadPlainTextToHtml(body: string): string {
 }
 
 // Render a composed message as professional email HTML. Blank lines separate
-// paragraphs, single newlines become line breaks (so signatures stay tidy), and
-// **double-asterisks** become bold — enough to give section headers weight without
-// asking the operator to write HTML.
+// paragraphs, single newlines become line breaks (so signatures stay tidy),
+// **double-asterisks** become bold, and [label](url) becomes a link — enough
+// formatting to look polished without asking the operator to write HTML.
 export function formatLeadBody(body: string): string {
   const paragraphs = body.replace(/\r\n/g, '\n').trim().split(/\n{2,}/);
   return paragraphs
     .map((block) => {
       const html = escapeHtml(block)
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" style="color:#0891b2">$1</a>')
         .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#0f172a">$1</strong>')
         .replace(/\n/g, '<br>');
       return `<p style="margin:0 0 15px;line-height:1.65">${html}</p>`;
@@ -511,8 +512,10 @@ export const LEAD_TEST_RECIPIENT = 'boilermanc@gmail.com';
 export const LEAD_CC_RECIPIENT = 'bret.bowlin@towerfarms.com';
 const LEAD_CONTACT_EMAIL = 'sheree@sproutify.app';
 const LEAD_MAILING_ADDRESS = '1295 Smithdale Heights Drive, Cumming, GA 30040';
-const LEAD_DEFAULT_BRAND = 'Tower Farm';
-const LEAD_DEFAULT_TAGLINE = 'Manage Your Aeroponic Farm Like a Pro';
+const LEAD_WEBSITE_URL = 'https://farm.sproutify.app/';
+const LEAD_WEBSITE_LABEL = 'farm.sproutify.app';
+const LEAD_DEFAULT_BRAND = 'Sproutify Farm';
+const LEAD_DEFAULT_TAGLINE = 'Manage Your Tower Farm Like a Pro';
 const LEAD_DEFAULT_SCOPE = 'sproutify-farm';
 const HUB_FUNCTIONS_URL = (
   (import.meta as any).env?.VITE_SUPABASE_URL || 'https://horvjqqifgrzxesuxtfm.supabase.co'
@@ -528,9 +531,10 @@ function buildLeadFooter(recipientEmail: string, brandName: string, tagline: str
   const taglineRow = tagline ? `<div style="margin-top:2px">${escapeHtml(tagline)}</div>` : '';
   return `
     <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#64748b">
-      <div style="font-weight:bold;color:#334155">${escapeHtml(brandName)}</div>
+      <div style="font-weight:bold"><a href="${LEAD_WEBSITE_URL}" style="color:#334155;text-decoration:none">${escapeHtml(brandName)}</a></div>
       ${taglineRow}
       <div style="margin-top:6px">Reply to this email or reach us at <a href="mailto:${LEAD_CONTACT_EMAIL}" style="color:#0891b2">${LEAD_CONTACT_EMAIL}</a>.</div>
+      <div style="margin-top:6px">Visit <a href="${LEAD_WEBSITE_URL}" style="color:#0891b2">${LEAD_WEBSITE_LABEL}</a></div>
       <div style="margin-top:6px">${escapeHtml(LEAD_MAILING_ADDRESS)}</div>
       <div style="margin-top:10px"><a href="${unsubscribeUrl}" style="color:#94a3b8;text-decoration:underline">Unsubscribe</a></div>
     </div>`;
