@@ -46,13 +46,12 @@
 .leads-light [class~="text-amber-300"] { color: #d97706 !important; }
 .leads-light [class~="text-rose-300"] { color: #e11d48 !important; }
 
-.leads-light h1[class~="text-white"],
-.leads-light h2[class~="text-white"],
-.leads-light h3[class~="text-white"],
-.leads-light h4[class~="text-white"],
-.leads-light input[class~="text-white"],
-.leads-light select[class~="text-white"],
-.leads-light textarea[class~="text-white"] {
+/* The Leads section is force-lightened (dark bg utilities above are remapped to
+   white), so every `text-white` element ends up on a light background. Remap it to
+   dark ink for ALL elements — not just headings/inputs — otherwise `<p>`/`<span>`
+   text (e.g. the lead's name) renders white-on-white and disappears. `hover:text-white`
+   is a different class token and is handled separately below. */
+.leads-light [class~="text-white"] {
   color: #0f172a !important;
 }
 

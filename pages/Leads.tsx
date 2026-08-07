@@ -932,7 +932,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                     </label>
                                     <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500"><Mail size={13} /> Profile Context</p>
-                                      <p className="break-all text-xs text-slate-300">{lead.profile?.email || 'No email'}</p>
+                                      <p className="text-sm font-black text-white">{profileName(lead)}</p>
+                                      <p className="mt-0.5 break-all text-xs text-slate-300">{lead.profile?.email || 'No email'}</p>
+                                      {lead.profile?.phone && <p className="mt-0.5 text-xs text-slate-300">{lead.profile.phone}</p>}
                                       <div className="mt-3 flex flex-wrap gap-2">
                                         {tags.length > 0 ? tags.map(tag => <span key={tag} className="inline-flex items-center gap-1 rounded-full bg-cyan-400/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-cyan-300"><Tag size={10} />{tag}</span>) : <span className="text-[10px] text-slate-500">Tags are not included in the lead response.</span>}
                                       </div>
