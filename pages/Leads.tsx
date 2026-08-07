@@ -472,6 +472,18 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
         console.error('Email sent but activity logging failed:', activityError);
         addToast('Email sent, but the timeline could not be updated.', 'info');
       }
+      // First outbound contact advances a brand-new lead to "contacted". Leads
+      // already further along the pipeline are left where they are.
+      if (emailLead.stage === 'new') {
+        try {
+          const advanced = await updateLeadStage(emailLead.id, 'contacted');
+          setLeads(current => current.map(item => (
+            item.id === emailLead.id ? { ...advanced, profile: emailLead.profile } : item
+          )));
+        } catch (stageError) {
+          console.error('Email sent but stage auto-advance failed:', stageError);
+        }
+      }
       setEmailLead(null);
     } catch (error) {
       console.error('Failed to send lead email:', error);
