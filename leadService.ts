@@ -484,6 +484,22 @@ export function leadPlainTextToHtml(body: string): string {
   return `<div style="white-space:pre-wrap;font-family:Arial,sans-serif;line-height:1.6">${escapeHtml(body)}</div>`;
 }
 
+// Render a composed message as professional email HTML. Blank lines separate
+// paragraphs, single newlines become line breaks (so signatures stay tidy), and
+// **double-asterisks** become bold — enough to give section headers weight without
+// asking the operator to write HTML.
+export function formatLeadBody(body: string): string {
+  const paragraphs = body.replace(/\r\n/g, '\n').trim().split(/\n{2,}/);
+  return paragraphs
+    .map((block) => {
+      const html = escapeHtml(block)
+        .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#0f172a">$1</strong>')
+        .replace(/\n/g, '<br>');
+      return `<p style="margin:0 0 15px;line-height:1.65">${html}</p>`;
+    })
+    .join('');
+}
+
 // Sender + compliance footer for Sproutify Farm lead correspondence. From uses the
 // verified sproutify.app domain; the mailing address + unsubscribe link keep bulk
 // lead outreach CAN-SPAM compliant. The unsubscribe endpoint is the same one the
@@ -532,7 +548,7 @@ export function buildLeadEmailHtml(input: {
     input.tagline ?? LEAD_DEFAULT_TAGLINE,
     input.scope || LEAD_DEFAULT_SCOPE,
   );
-  return `<div style="font-family:Arial,sans-serif;color:#0f172a">${leadPlainTextToHtml(input.body)}${footer}</div>`;
+  return `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#0f172a">${formatLeadBody(input.body)}${footer}</div>`;
 }
 
 /** Send one inquiry-specific email through the existing server-side Resend RPC. */

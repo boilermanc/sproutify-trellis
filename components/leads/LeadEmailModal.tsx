@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, Mail, Send, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, FileText, Loader2, Mail, Send, ShieldAlert } from 'lucide-react';
 import { Lead, LeadEmailEligibility } from '../../types';
 import CrmModal from './CrmModal';
+import { LEAD_EMAIL_TEMPLATES, applyLeadTemplate } from './leadEmailTemplates';
 
 interface LeadEmailModalProps {
   lead: Lead;
@@ -30,8 +31,18 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
 }) => {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [templateId, setTemplateId] = useState('');
 
-  useEffect(() => { setSubject(''); setBody(''); }, [lead.id]);
+  useEffect(() => { setSubject(''); setBody(''); setTemplateId(''); }, [lead.id]);
+
+  const applyTemplate = (id: string) => {
+    setTemplateId(id);
+    const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === id);
+    if (!template) return;
+    const filled = applyLeadTemplate(template, lead.profile?.first_name);
+    setSubject(filled.subject);
+    setBody(filled.body);
+  };
 
   const busy = pending || testPending;
   const blocked = Boolean(eligibility?.hardBlocked) || Boolean(eligibilityError);
@@ -48,10 +59,22 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
         {eligibilityError && <div className="flex gap-3 rounded-xl border border-rose-400/25 bg-rose-400/[0.06] p-4 text-xs leading-5 text-rose-200"><ShieldAlert className="shrink-0" size={18} /><span><strong className="block text-white">Email eligibility could not be verified</strong>{eligibilityError} Sending is disabled.</span></div>}
         {eligibility?.hardBlocked && <div className="flex gap-3 rounded-xl border border-rose-400/25 bg-rose-400/[0.06] p-4 text-xs leading-5 text-rose-200"><ShieldAlert className="shrink-0" size={18} /><span><strong className="block text-white">Sending blocked</strong>This address has a {eligibility.hardBlockReasons.join(' and ')} suppression. Resolve the suppression outside this screen before contacting it.</span></div>}
         {eligibility?.marketingUnsubscribed && !eligibility.hardBlocked && <div className="flex gap-3 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] p-4 text-xs leading-5 text-amber-200"><AlertTriangle className="shrink-0" size={18} /><span>This contact has unsubscribed from marketing emails; keep this strictly about their inquiry.</span></div>}
+        <label className="block space-y-2 text-xs font-bold text-slate-300">
+          <span className="flex items-center gap-1.5"><FileText size={13} className="text-cyan-300" />Template</span>
+          <select
+            value={templateId}
+            onChange={event => { if (event.target.value) applyTemplate(event.target.value); else setTemplateId(''); }}
+            disabled={blocked}
+            className="w-full appearance-none rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none focus:border-cyan-400/50 disabled:opacity-40"
+          >
+            <option value="">— Start from scratch —</option>
+            {LEAD_EMAIL_TEMPLATES.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+          </select>
+        </label>
         <label className="block space-y-2 text-xs font-bold text-slate-300">To<input value={lead.profile?.email || ''} readOnly className="w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/[0.025] p-3 text-slate-400 outline-none" /></label>
         <label className="block space-y-2 text-xs font-bold text-slate-300">Subject *<input autoFocus value={subject} onChange={event => setSubject(event.target.value)} disabled={blocked} className="w-full rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none focus:border-cyan-400/50 disabled:opacity-40" /></label>
         <label className="block space-y-2 text-xs font-bold text-slate-300">Message *<textarea rows={9} value={body} onChange={event => setBody(event.target.value)} disabled={blocked} className="w-full resize-y rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50 disabled:opacity-40" placeholder="Write a plain-text message about this inquiry…" /></label>
-        <p className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-slate-500">A Sproutify Farm footer (contact info, mailing address, and an unsubscribe link) is added automatically. Use <strong className="text-slate-300">Send test</strong> to preview the full email in your own inbox first.</p>
+        <p className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-slate-500">Formatting: leave a blank line between paragraphs, and wrap text in <strong className="text-slate-300">**double asterisks**</strong> to bold it. A Sproutify Farm footer (contact info, mailing address, unsubscribe link) is added automatically. Use <strong className="text-slate-300">Send test to me</strong> to preview the full email in your own inbox first.</p>
         <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
