@@ -507,6 +507,8 @@ export function formatLeadBody(body: string): string {
 // then honors on future sends).
 export const LEAD_EMAIL_FROM = 'Sheree | Sproutify Farm <sheree@sproutify.app>';
 export const LEAD_TEST_RECIPIENT = 'boilermanc@gmail.com';
+// Tower Farm Corp partner copied on outbound lead correspondence.
+export const LEAD_CC_RECIPIENT = 'bret.bowlin@towerfarms.com';
 const LEAD_CONTACT_EMAIL = 'sheree@sproutify.app';
 const LEAD_MAILING_ADDRESS = '1295 Smithdale Heights Drive, Cumming, GA 30040';
 const LEAD_DEFAULT_BRAND = 'Sproutify Farm';
@@ -557,6 +559,7 @@ export async function sendLeadEmail(input: {
   subject: string;
   body: string;
   from?: string;
+  cc?: string;
   brandName?: string;
   scope?: string;
 }): Promise<{ id: string }> {
@@ -571,6 +574,7 @@ export async function sendLeadEmail(input: {
       scope: input.scope,
     }),
     p_from: input.from || LEAD_EMAIL_FROM,
+    p_cc: input.cc?.trim() || null,
   });
 
   if (error) throw new Error(`Email send failed: ${error.message}`);

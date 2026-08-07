@@ -49,6 +49,7 @@ import {
   parseLeadRows,
   sendLeadEmail,
   LEAD_TEST_RECIPIENT,
+  LEAD_CC_RECIPIENT,
   updateLead,
   updateLeadStage,
 } from '../leadService';
@@ -454,6 +455,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     try {
       await sendLeadEmail({
         to: emailLead.profile.email,
+        cc: LEAD_CC_RECIPIENT,
         brandName: activeBranch?.name,
         scope: activeBranch?.slug,
         ...input,
@@ -1010,6 +1012,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           pending={sendingEmail}
           testPending={sendingTestEmail}
           testRecipient={LEAD_TEST_RECIPIENT}
+          ccRecipient={LEAD_CC_RECIPIENT}
           onClose={() => !sendingEmail && !sendingTestEmail && setEmailLead(null)}
           onSubmit={submitLeadEmail}
           onSendTest={submitLeadTestEmail}

@@ -11,6 +11,7 @@ interface LeadEmailModalProps {
   pending: boolean;
   testPending: boolean;
   testRecipient: string;
+  ccRecipient?: string;
   eligibilityError: string;
   onClose: () => void;
   onSubmit: (input: { subject: string; body: string }) => Promise<void>;
@@ -24,6 +25,7 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
   pending,
   testPending,
   testRecipient,
+  ccRecipient,
   eligibilityError,
   onClose,
   onSubmit,
@@ -72,6 +74,7 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
           </select>
         </label>
         <label className="block space-y-2 text-xs font-bold text-slate-300">To<input value={lead.profile?.email || ''} readOnly className="w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/[0.025] p-3 text-slate-400 outline-none" /></label>
+        {ccRecipient && <label className="block space-y-2 text-xs font-bold text-slate-300">Cc<input value={ccRecipient} readOnly title="Automatically copied on lead sends (not on test sends)" className="w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/[0.025] p-3 text-slate-400 outline-none" /></label>}
         <label className="block space-y-2 text-xs font-bold text-slate-300">Subject *<input autoFocus value={subject} onChange={event => setSubject(event.target.value)} disabled={blocked} className="w-full rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none focus:border-cyan-400/50 disabled:opacity-40" /></label>
         <label className="block space-y-2 text-xs font-bold text-slate-300">Message *<textarea rows={9} value={body} onChange={event => setBody(event.target.value)} disabled={blocked} className="w-full resize-y rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50 disabled:opacity-40" placeholder="Write a plain-text message about this inquiry…" /></label>
         <p className="rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-slate-500">Formatting: leave a blank line between paragraphs, and wrap text in <strong className="text-slate-300">**double asterisks**</strong> to bold it. A Sproutify Farm footer (contact info, mailing address, unsubscribe link) is added automatically. Use <strong className="text-slate-300">Send test to me</strong> to preview the full email in your own inbox first.</p>
