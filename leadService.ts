@@ -471,14 +471,68 @@ export async function fetchLeadEmailEligibility(
   });
 }
 
-export function leadPlainTextToHtml(body: string): string {
-  const escaped = body
+function escapeHtml(value: string): string {
+  return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-  return `<div style="white-space:pre-wrap;font-family:Arial,sans-serif;line-height:1.6">${escaped}</div>`;
+}
+
+export function leadPlainTextToHtml(body: string): string {
+  return `<div style="white-space:pre-wrap;font-family:Arial,sans-serif;line-height:1.6">${escapeHtml(body)}</div>`;
+}
+
+// Sender + compliance footer for Sproutify Farm lead correspondence. From uses the
+// verified sproutify.app domain; the mailing address + unsubscribe link keep bulk
+// lead outreach CAN-SPAM compliant. The unsubscribe endpoint is the same one the
+// campaign sender uses (records an email_suppressions row the lead eligibility check
+// then honors on future sends).
+export const LEAD_EMAIL_FROM = 'Sheree | Sproutify Farm <sheree@sproutify.app>';
+export const LEAD_TEST_RECIPIENT = 'boilermanc@gmail.com';
+const LEAD_CONTACT_EMAIL = 'sheree@sproutify.app';
+const LEAD_MAILING_ADDRESS = '1295 Smithdale Heights Drive, Cumming, GA 30040';
+const LEAD_DEFAULT_BRAND = 'Sproutify Farm';
+const LEAD_DEFAULT_TAGLINE = 'Manage Your Aeroponic Farm Like a Pro';
+const LEAD_DEFAULT_SCOPE = 'sproutify-farm';
+const HUB_FUNCTIONS_URL = (
+  (import.meta as any).env?.VITE_SUPABASE_URL || 'https://horvjqqifgrzxesuxtfm.supabase.co'
+).replace(/\/$/, '');
+
+function buildLeadUnsubscribeUrl(email: string, scope: string): string {
+  return `${HUB_FUNCTIONS_URL}/functions/v1/unsubscribe`
+    + `?email=${encodeURIComponent(email)}&scope=${encodeURIComponent(scope)}`;
+}
+
+function buildLeadFooter(recipientEmail: string, brandName: string, tagline: string, scope: string): string {
+  const unsubscribeUrl = buildLeadUnsubscribeUrl(recipientEmail, scope);
+  const taglineRow = tagline ? `<div style="margin-top:2px">${escapeHtml(tagline)}</div>` : '';
+  return `
+    <div style="margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#64748b">
+      <div style="font-weight:bold;color:#334155">${escapeHtml(brandName)}</div>
+      ${taglineRow}
+      <div style="margin-top:6px">Reply to this email or reach us at <a href="mailto:${LEAD_CONTACT_EMAIL}" style="color:#0891b2">${LEAD_CONTACT_EMAIL}</a>.</div>
+      <div style="margin-top:6px">${escapeHtml(LEAD_MAILING_ADDRESS)}</div>
+      <div style="margin-top:10px"><a href="${unsubscribeUrl}" style="color:#94a3b8;text-decoration:underline">Unsubscribe</a></div>
+    </div>`;
+}
+
+/** Compose the full lead email HTML: escaped body + branded compliance footer. */
+export function buildLeadEmailHtml(input: {
+  body: string;
+  recipientEmail: string;
+  brandName?: string;
+  tagline?: string;
+  scope?: string;
+}): string {
+  const footer = buildLeadFooter(
+    input.recipientEmail,
+    input.brandName || LEAD_DEFAULT_BRAND,
+    input.tagline ?? LEAD_DEFAULT_TAGLINE,
+    input.scope || LEAD_DEFAULT_SCOPE,
+  );
+  return `<div style="font-family:Arial,sans-serif;color:#0f172a">${leadPlainTextToHtml(input.body)}${footer}</div>`;
 }
 
 /** Send one inquiry-specific email through the existing server-side Resend RPC. */
@@ -486,11 +540,21 @@ export async function sendLeadEmail(input: {
   to: string;
   subject: string;
   body: string;
+  from?: string;
+  brandName?: string;
+  scope?: string;
 }): Promise<{ id: string }> {
+  const to = input.to.trim().toLowerCase();
   const { data, error } = await supabase.rpc('send_resend_email', {
-    p_to: input.to.trim().toLowerCase(),
+    p_to: to,
     p_subject: input.subject.trim(),
-    p_html: leadPlainTextToHtml(input.body),
+    p_html: buildLeadEmailHtml({
+      body: input.body,
+      recipientEmail: to,
+      brandName: input.brandName,
+      scope: input.scope,
+    }),
+    p_from: input.from || LEAD_EMAIL_FROM,
   });
 
   if (error) throw new Error(`Email send failed: ${error.message}`);

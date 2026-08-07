@@ -48,6 +48,7 @@ import {
   parseLeadPaste,
   parseLeadRows,
   sendLeadEmail,
+  LEAD_TEST_RECIPIENT,
   updateLead,
   updateLeadStage,
 } from '../leadService';
@@ -139,6 +140,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [checkingEmailEligibility, setCheckingEmailEligibility] = useState(false);
   const [emailEligibilityError, setEmailEligibilityError] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [quoteLead, setQuoteLead] = useState<Lead | null>(null);
   const [savingQuote, setSavingQuote] = useState(false);
   const [acceptedQuoteLogged, setAcceptedQuoteLogged] = useState(false);
@@ -450,7 +452,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     if (!emailLead?.profile?.email || emailEligibility?.hardBlocked || emailEligibilityError) return;
     setSendingEmail(true);
     try {
-      await sendLeadEmail({ to: emailLead.profile.email, ...input });
+      await sendLeadEmail({
+        to: emailLead.profile.email,
+        brandName: activeBranch?.name,
+        scope: activeBranch?.slug,
+        ...input,
+      });
       try {
         await logLeadActivity({
           leadId: emailLead.id,
@@ -470,6 +477,29 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       addToast(error instanceof Error ? error.message : 'Could not send email.', 'error');
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  // Test send: same From address, footer, and branding as the real send, but always
+  // to the operator's own inbox. It never logs a timeline activity and is not gated
+  // by the lead's consent/suppression status (nothing reaches the lead).
+  const submitLeadTestEmail = async (input: { subject: string; body: string }) => {
+    if (!emailLead) return;
+    setSendingTestEmail(true);
+    try {
+      await sendLeadEmail({
+        to: LEAD_TEST_RECIPIENT,
+        subject: `[TEST] ${input.subject}`,
+        body: input.body,
+        brandName: activeBranch?.name,
+        scope: activeBranch?.slug,
+      });
+      addToast(`Test email sent to ${LEAD_TEST_RECIPIENT}.`, 'success');
+    } catch (error) {
+      console.error('Failed to send test lead email:', error);
+      addToast(error instanceof Error ? error.message : 'Could not send test email.', 'error');
+    } finally {
+      setSendingTestEmail(false);
     }
   };
 
@@ -976,8 +1006,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           checkingEligibility={checkingEmailEligibility}
           eligibilityError={emailEligibilityError}
           pending={sendingEmail}
-          onClose={() => !sendingEmail && setEmailLead(null)}
+          testPending={sendingTestEmail}
+          testRecipient={LEAD_TEST_RECIPIENT}
+          onClose={() => !sendingEmail && !sendingTestEmail && setEmailLead(null)}
           onSubmit={submitLeadEmail}
+          onSendTest={submitLeadTestEmail}
         />
       )}
 
