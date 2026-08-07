@@ -456,7 +456,6 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       await sendLeadEmail({
         to: emailLead.profile.email,
         cc: LEAD_CC_RECIPIENT,
-        brandName: activeBranch?.name,
         scope: activeBranch?.slug,
         ...input,
       });
@@ -493,7 +492,6 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
         to: LEAD_TEST_RECIPIENT,
         subject: `[TEST] ${input.subject}`,
         body: input.body,
-        brandName: activeBranch?.name,
         scope: activeBranch?.slug,
       });
       addToast(`Test email sent to ${LEAD_TEST_RECIPIENT}.`, 'success');
