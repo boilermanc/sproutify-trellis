@@ -90,6 +90,48 @@ Deno.serve(async (req: Request) => {
   // 23505 = duplicate (webhook retry) — safe to ignore
   if (insErr && insErr.code !== "23505") console.error("event insert failed:", insErr.message);
 
+  // Treat a click on an unsubscribe link as an unsubscribe. Brand newsletters
+  // (e.g. ATL) route opt-outs to their OWN spoke endpoint, so those clicks never
+  // reach our /unsubscribe function and would otherwise never land in
+  // email_suppressions — leaving Trellis reporting under-counting unsubscribes and
+  // (worse) still able to re-email people who opted out. We derive the suppression
+  // straight from the tracked click event instead. Idempotent via (email,scope).
+  if (type === "clicked") {
+    const clicked = String(data?.click?.link || "");
+    if (/unsubscribe/i.test(clicked)) {
+      // Prefer an explicit scope carried in the link (our own Hub links do this);
+      // otherwise scope to the campaign's single brand, matching campaign-sender's
+      // rule (branches.length === 1 ? branch : 'global'). Falls back to global.
+      let scope = "";
+      try {
+        const u = new URL(clicked);
+        scope = (u.searchParams.get("scope") || u.searchParams.get("source") || "").trim().toLowerCase();
+      } catch { /* link isn't a parseable URL */ }
+      if (!scope) {
+        if (campaignId) {
+          const { data: camp } = await supabase.from("campaigns").select("branches").eq("id", campaignId).maybeSingle();
+          const branches = Array.isArray(camp?.branches) ? camp!.branches : [];
+          scope = branches.length === 1 ? String(branches[0]).trim().toLowerCase() : "global";
+        } else {
+          scope = "global";
+        }
+      }
+      const { error: unsubErr } = await supabase.from("email_suppressions").upsert(
+        {
+          email,
+          scope,
+          reason: "unsubscribe",
+          source: "unsubscribe-click",
+          campaign_subject: data.subject || mappedSubject || null,
+          detail: data,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: "email,scope" },
+      );
+      if (unsubErr) console.error("unsubscribe-click suppress failed:", unsubErr.message);
+    }
+  }
+
   // Auto-suppress on complaint or hard bounce
   if (type === "complained" || type === "bounced") {
     const bounceType = String(data?.bounce?.type || data?.type || "").toLowerCase();

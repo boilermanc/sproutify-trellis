@@ -148,10 +148,6 @@ export function renderCampaignHtml(params: {
       </td>
     </tr>
   </table>
-  <p style="text-align:center; font-size:11px; color:#999; margin-top:40px;">
-    You're receiving this because you subscribed to ATL Urban Farms updates.<br>
-    <a href="{{unsubscribe_url}}" style="color:#999;">Unsubscribe</a>
-  </p>
 </body>
 </html>`;
 }
