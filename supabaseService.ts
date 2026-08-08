@@ -344,6 +344,133 @@ export async function retryCampaign(campaignId: string): Promise<{ ok: boolean; 
 }
 
 /**
+ * Recipients who were SENT the original campaign but never opened it — the audience
+ * for a follow-up "reminder" resend. Built from the durable outbox snapshot
+ * (campaign_recipients, status='sent') minus anyone who opened, bounced, or
+ * complained per the campaign_recipient_status view (keyed by subject line).
+ * Returns full recipient rows (email + first_name + unsubscribe_token) so the
+ * follow-up can be enqueued without re-deriving the audience. Email matching is
+ * case-insensitive because the events view lowercases addresses.
+ */
+export async function fetchNonOpeners(
+  campaignId: string,
+  campaignSubject: string,
+): Promise<{ recipients: Array<{ email: string; first_name: string; unsubscribe_token: string }>; error: string | null }> {
+  const PAGE = 1000;
+  try {
+    // Emails to EXCLUDE: opened OR bounced OR complained on the original subject.
+    const exclude = new Set<string>();
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('campaign_recipient_status')
+        .select('email,opened,bounced,complained')
+        .eq('campaign_subject', campaignSubject)
+        .range(from, from + PAGE - 1);
+      if (error) return { recipients: [], error: error.message };
+      for (const r of data || []) {
+        if (r.opened || r.bounced || r.complained) exclude.add((r.email || '').toLowerCase());
+      }
+      if (!data || data.length < PAGE) break;
+    }
+
+    // Candidates: everyone the worker actually sent the original to.
+    const seen = new Set<string>();
+    const recipients: Array<{ email: string; first_name: string; unsubscribe_token: string }> = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('campaign_recipients')
+        .select('email,first_name,unsubscribe_token')
+        .eq('campaign_id', campaignId)
+        .eq('status', 'sent')
+        .range(from, from + PAGE - 1);
+      if (error) return { recipients: [], error: error.message };
+      for (const r of data || []) {
+        const key = (r.email || '').toLowerCase();
+        if (!key || exclude.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        recipients.push({
+          email: r.email,
+          first_name: r.first_name || '',
+          unsubscribe_token: r.unsubscribe_token || '',
+        });
+      }
+      if (!data || data.length < PAGE) break;
+    }
+
+    return { recipients, error: null };
+  } catch (e: any) {
+    console.error('fetchNonOpeners failed:', e);
+    return { recipients: [], error: e?.message || 'Failed to compute non-openers' };
+  }
+}
+
+/**
+ * Create a follow-up campaign that re-sends the original's email to the given
+ * recipients (its non-openers), reusing the saved dispatch with a NEW subject
+ * line. A distinct subject keeps the reminder's opens from merging with the
+ * original in the subject-keyed reporting views. Snapshots recipients and kicks
+ * the worker so it sends immediately.
+ */
+export async function resendToNonOpeners(
+  campaignId: string,
+  newSubject: string,
+  recipients: Array<{ email: string; first_name?: string; unsubscribe_token?: string }>,
+): Promise<{ campaign: Campaign | null; error: string | null }> {
+  if (!recipients.length) return { campaign: null, error: 'No non-openers to send to.' };
+
+  const { data: src, error: fErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).maybeSingle();
+  if (fErr || !src) return { campaign: null, error: fErr?.message || 'Campaign not found' };
+  if (!src.dispatch) return { campaign: null, error: 'This campaign has no saved email to resend.' };
+
+  const now = new Date().toISOString();
+  const subject = newSubject.trim() || src.subject;
+  const dispatch = { ...src.dispatch, subject };
+
+  const payload = {
+    name: `${src.name || 'Campaign'} — Reminder`,
+    subject,
+    template: src.template,
+    trigger_type: 'immediate',
+    campaign_type: src.campaign_type ?? 'standard',
+    segments: src.segments,
+    tags: src.tags,
+    branches: src.branches,
+    audience_size: recipients.length,
+    metadata: { ...(src.metadata || {}), resend_of: campaignId, resend_kind: 'non_openers' },
+    created_by: 'app',
+    status: 'active',
+    scheduled_at: null,
+    launched_at: now,
+    dispatch,
+    send_status: 'queued',
+    send_error: null,
+    retry_count: 0,
+    last_attempt_at: null,
+    updated_at: now,
+  };
+
+  const { data, error } = await supabase.from('campaigns').insert(payload).select('*').single();
+  if (error) {
+    console.error('Error creating resend campaign:', error);
+    return { campaign: null, error: error.message };
+  }
+
+  const { error: enqErr } = await enqueueCampaignRecipients(data.id, recipients);
+  if (enqErr) {
+    // Park the campaign so a half-populated one never fires (the worker only
+    // claims 'queued' rows). Leaves a visible failure to retry from.
+    await supabase
+      .from('campaigns')
+      .update({ send_status: 'failed', send_error: `Enqueue failed: ${enqErr}` })
+      .eq('id', data.id);
+    return { campaign: null, error: enqErr };
+  }
+
+  await pingCampaignSender();
+  return { campaign: mapCampaignRow(data), error: null };
+}
+
+/**
  * Per-status recipient counts for a campaign (for the send-status UI/drawer).
  */
 export async function fetchCampaignRecipientStats(campaignId: string): Promise<CampaignRecipientStats> {

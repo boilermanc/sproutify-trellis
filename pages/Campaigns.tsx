@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, RefreshCw, Loader2, X, Calendar, Users, Mail, MailCheck, Eye,
   MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch, Pencil,
-  Copy, Trash2,
+  Copy, Trash2, MailPlus,
 } from 'lucide-react';
-import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign } from '../supabaseService';
+import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign, fetchNonOpeners, resendToNonOpeners } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
 import { CampaignRecipientsModal } from '../components/CampaignRecipientsModal';
 import { BranchContext } from '../types';
@@ -44,6 +44,10 @@ const SEND_STATUS_LABEL: Record<string, string> = {
   queued: 'Queued', sending: 'Sending', sent: 'Sent', partial: 'Partial send', failed: 'Failed',
 };
 
+// A campaign can be resent to its non-openers once the worker has actually sent
+// it (so we have delivery/open events + a saved dispatch to reuse).
+const canResend = (c: Campaign) => c.send_status === 'sent' || c.send_status === 'partial';
+
 // Stats are aggregated by subject on the Hub, so we match a campaign to its stats by subject line.
 const emptyStat = (subject: string): CampaignEmailStat => ({
   campaign_subject: subject, sent: 0, delivered: 0, opened: 0, clicked: 0,
@@ -55,6 +59,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Campaign | null>(null);
+  const [resendTarget, setResendTarget] = useState<Campaign | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Honor the global Branch Scope picker (top bar). A campaign's `branches` are
@@ -237,8 +242,19 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
                     )}
                   </div>
 
-                  {/* Row actions — duplicate any campaign; delete drafts only */}
+                  {/* Row actions — resend to non-openers + duplicate any campaign; delete drafts only */}
                   <div className="flex items-center gap-1 shrink-0">
+                    {canResend(c) && (
+                      <button
+                        type="button"
+                        title="Resend to people who didn't open"
+                        disabled={busyId === c.id}
+                        onClick={(e) => { e.stopPropagation(); setResendTarget(c); }}
+                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition disabled:opacity-40"
+                      >
+                        <MailPlus className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       title="Duplicate as a new draft"
@@ -275,6 +291,16 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
           onClose={() => setSelected(null)}
           addToast={addToast}
           onChanged={load}
+          onResend={(c) => { setSelected(null); setResendTarget(c); }}
+        />
+      )}
+
+      {resendTarget && (
+        <ResendModal
+          campaign={resendTarget}
+          onClose={() => setResendTarget(null)}
+          addToast={addToast}
+          onDone={load}
         />
       )}
     </div>
@@ -288,7 +314,8 @@ const CampaignDetailDrawer: React.FC<{
   onClose: () => void;
   addToast?: (m: string, t?: 'success' | 'error' | 'info') => void;
   onChanged: () => void;
-}> = ({ campaign: c, stat: s, onClose, addToast, onChanged }) => {
+  onResend: (c: Campaign) => void;
+}> = ({ campaign: c, stat: s, onClose, addToast, onChanged, onResend }) => {
   const [rstats, setRstats] = useState<CampaignRecipientStats | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
@@ -412,6 +439,16 @@ const CampaignDetailDrawer: React.FC<{
                 See who opened, clicked & complained
               </button>
             )}
+            {canResend(c) && (
+              <button
+                type="button"
+                onClick={() => onResend(c)}
+                className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition"
+              >
+                <MailPlus className="w-4 h-4" />
+                Resend to non-openers
+              </button>
+            )}
           </div>
 
           {/* Audience */}
@@ -461,6 +498,127 @@ const CampaignDetailDrawer: React.FC<{
       {showRecipients && c.subject && (
         <CampaignRecipientsModal campaignSubject={c.subject} onClose={() => setShowRecipients(false)} />
       )}
+    </>
+  );
+};
+
+// ── Resend-to-non-openers modal ──────────────────────────────────────────────
+// Computes who was sent the original but never opened it, then launches a
+// follow-up campaign (same email, new subject) to exactly that audience.
+const ResendModal: React.FC<{
+  campaign: Campaign;
+  onClose: () => void;
+  addToast?: (m: string, t?: 'success' | 'error' | 'info') => void;
+  onDone: () => void;
+}> = ({ campaign: c, onClose, addToast, onDone }) => {
+  const [loading, setLoading] = useState(true);
+  const [recipients, setRecipients] = useState<Array<{ email: string; first_name: string; unsubscribe_token: string }>>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [subject, setSubject] = useState(`Reminder: ${c.subject || ''}`.trim());
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchNonOpeners(c.id, c.subject).then(({ recipients, error }) => {
+      if (!alive) return;
+      if (error) setLoadError(error);
+      setRecipients(recipients);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [c.id, c.subject]);
+
+  const handleSend = async () => {
+    if (!recipients.length || !subject.trim()) return;
+    setSending(true);
+    const { campaign, error } = await resendToNonOpeners(c.id, subject, recipients);
+    setSending(false);
+    if (campaign) {
+      addToast?.(`Reminder queued to ${recipients.length.toLocaleString()} non-opener(s) — sending now.`, 'success');
+      onDone();
+      onClose();
+    } else {
+      addToast?.(`Couldn't send reminder: ${error}`, 'error');
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-[60]" onClick={onClose} />
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-none">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl pointer-events-auto overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
+              <MailPlus className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-black text-slate-800">Resend to non-openers</h2>
+              <p className="text-xs text-slate-400 truncate">{c.name}</p>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-5">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 text-slate-400 py-8">
+                <Loader2 className="w-5 h-5 animate-spin" /> Finding who didn't open…
+              </div>
+            ) : (
+              <>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-center">
+                  <div className="text-3xl font-black text-slate-800">{recipients.length.toLocaleString()}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
+                    recipients who didn't open
+                  </div>
+                </div>
+                {loadError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{loadError}</p>
+                )}
+                {recipients.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center">
+                    Everyone who was sent this campaign has already opened it — or bounced/unsubscribed. Nothing to resend.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">New subject line</label>
+                    <input
+                      type="text"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      placeholder="Subject line"
+                    />
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Same email, fresh subject. A different subject keeps this reminder's opens
+                      separate from the original in your reports (and usually lifts opens).
+                      Unsubscribes and bounces are re-checked at send time.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={loading || sending || recipients.length === 0 || !subject.trim()}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition disabled:opacity-40"
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Send reminder
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   );
 };
