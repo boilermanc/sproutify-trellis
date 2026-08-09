@@ -66,6 +66,8 @@ function toConfig(row: Record<string, any> | null) {
     woo_consumer_secret: r.woo_consumer_secret || "",
     meta_app_id: r.meta_app_id || "",
     meta_app_secret: r.meta_app_secret || "",
+    manus_api_key: r.manus_api_key || "",
+    manus_model: r.manus_model || "manus-1.6",
   };
 }
 
@@ -76,6 +78,7 @@ const WRITABLE = [
   "n8n_webhook_chat", "n8n_webhook_workflow", "slack_webhook",
   "resend_token", "resend_from_address", "twilio_sid", "twilio_token",
   "woo_consumer_key", "woo_consumer_secret", "meta_app_id", "meta_app_secret",
+  "manus_api_key", "manus_model",
 ] as const;
 
 Deno.serve(async (req: Request) => {

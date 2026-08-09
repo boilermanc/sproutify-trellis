@@ -320,6 +320,8 @@ export interface ApiKeyConfig {
   twilio_token: string;
   meta_app_id?: string;
   meta_app_secret?: string;
+  manus_api_key?: string;
+  manus_model?: string;
 }
 
 export type TicketStatus = 'open' | 'pending' | 'resolved' | 'closed';

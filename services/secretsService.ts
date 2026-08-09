@@ -25,6 +25,8 @@ const DEFAULT_SECRETS: ApiKeyConfig = {
   twilio_token: '',
   woo_consumer_key: '',
   woo_consumer_secret: '',
+  manus_api_key: '',
+  manus_model: 'manus-1.6',
 };
 
 export async function fetchSecrets(_organizationId?: string): Promise<ApiKeyConfig> {
