@@ -184,6 +184,10 @@ export interface PostHogAnalyticsSummary {
     activated: number;
     signup_to_onboarding_pct: number;
     onboarding_to_activation_pct: number;
+    // Server-provided display labels for the funnel steps + conversions. Optional so
+    // the panel keeps working against older cached snapshots (falls back to defaults).
+    labels?: { signed_up: string; onboarded: string; activated: string };
+    conversion_labels?: { signup_to_onboarding: string; onboarding_to_activation: string };
   };
   retention: {
     day_7_pct: number;
