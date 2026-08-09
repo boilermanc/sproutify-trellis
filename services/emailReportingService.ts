@@ -134,6 +134,9 @@ export interface CampaignRecipient {
   clicked: boolean;
   bounced: boolean;
   complained: boolean;
+  // Unsubscribed — sourced from email_suppressions (reason='unsubscribe'), NOT a
+  // Resend event, so it's joined in by email (campaign_recipient_status can't carry it).
+  unsubscribed: boolean;
   // Every distinct link this recipient clicked, in click order.
   linkUrls: string[];
   lastEventAt: string;
@@ -160,6 +163,23 @@ export async function fetchCampaignRecipients(
       onProgress,
     );
 
+    // Unsubscribes aren't Resend events — they live in email_suppressions. Pull the
+    // unsubscribe rows once (the do-not-email list is small) and join by email.
+    const unsubscribedSet = new Set<string>();
+    try {
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: sup, error: supErr } = await supabase
+          .from('email_suppressions')
+          .select('email')
+          .eq('reason', 'unsubscribe')
+          .range(from, from + PAGE - 1);
+        if (supErr) break;
+        for (const s of sup || []) unsubscribedSet.add((s.email || '').toLowerCase());
+        if (!sup || sup.length < PAGE) break;
+      }
+    } catch { /* non-fatal — unsubscribed flags just stay false */ }
+
     return data
       .map((r) => ({
         email: r.email,
@@ -168,6 +188,7 @@ export async function fetchCampaignRecipients(
         clicked: r.clicked,
         bounced: r.bounced,
         complained: r.complained,
+        unsubscribed: unsubscribedSet.has((r.email || '').toLowerCase()),
         linkUrls: r.link_urls || [],
         lastEventAt: r.last_event_at,
       }))

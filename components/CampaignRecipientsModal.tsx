@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  X, Loader2, Search, MailCheck, Eye, MousePointerClick, MailX, AlertTriangle, Users,
+  X, Loader2, Search, MailCheck, Eye, MousePointerClick, MailX, AlertTriangle, Users, Ban,
 } from 'lucide-react';
 import { fetchCampaignRecipients, CampaignRecipient } from '../services/emailReportingService';
 
-type Filter = 'all' | 'opened' | 'clicked' | 'bounced' | 'complained';
+type Filter = 'all' | 'opened' | 'clicked' | 'bounced' | 'complained' | 'unsubscribed';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -12,6 +12,7 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'clicked', label: 'Clicked' },
   { key: 'bounced', label: 'Bounced' },
   { key: 'complained', label: 'Complained' },
+  { key: 'unsubscribed', label: 'Unsubscribed' },
 ];
 
 const fmtWhen = (iso: string): string => {
@@ -55,6 +56,7 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onCl
       if (filter === 'clicked') return r.clicked;
       if (filter === 'bounced') return r.bounced;
       if (filter === 'complained') return r.complained;
+      if (filter === 'unsubscribed') return r.unsubscribed;
       return true;
     });
   }, [recipients, filter, search]);
@@ -64,6 +66,7 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onCl
     clicked: recipients.filter((r) => r.clicked).length,
     bounced: recipients.filter((r) => r.bounced).length,
     complained: recipients.filter((r) => r.complained).length,
+    unsubscribed: recipients.filter((r) => r.unsubscribed).length,
   }), [recipients]);
 
   return (
@@ -155,6 +158,9 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onCl
                       )}
                       {r.complained && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-widest"><AlertTriangle size={10} /> Complained</span>
+                      )}
+                      {r.unsubscribed && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[9px] font-black uppercase tracking-widest"><Ban size={10} /> Unsubscribed</span>
                       )}
                     </div>
                     {r.linkUrls.length > 0 && (
