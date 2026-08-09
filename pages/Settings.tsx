@@ -193,6 +193,87 @@ const Settings: React.FC<SettingsProps> = ({
 
               <PostHogConnectionsPanel branches={branches} />
 
+              {/* Manus Deep Research */}
+              <div className="border-2 border-slate-100 rounded-3xl p-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
+                      <Sparkles size={22} className="text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-800 text-sm">Manus Deep Research</h4>
+                      <p className="text-xs text-slate-500">AI deep-dive research on leads, saved to Trellis</p>
+                    </div>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${manusConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {manusConnected ? 'Connected' : 'Not connected'}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">API Key</label>
+                    <div className="relative">
+                      <input
+                        type={visibleKeys['manus'] ? 'text' : 'password'}
+                        placeholder="Paste your Manus API key"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                        value={localApiKeys.manus_api_key || ''}
+                        onChange={e => { setLocalApiKeys({ ...localApiKeys, manus_api_key: e.target.value }); setManusTestResult(null); }}
+                      />
+                      <button onClick={() => setVisibleKeys(prev => ({ ...prev, manus: !prev['manus'] }))} className="absolute right-4 top-3.5 text-slate-400 hover:text-slate-900 transition-colors">
+                        {visibleKeys['manus'] ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 ml-1">Create one in Manus &rarr; Settings &rarr; API Integration. It is shown only once.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Research Model</label>
+                    <select
+                      value={localApiKeys.manus_model || 'manus-1.6'}
+                      onChange={e => setLocalApiKeys({ ...localApiKeys, manus_model: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    >
+                      <option value="manus-1.6">manus-1.6 (balanced)</option>
+                      <option value="manus-1.6-max">manus-1.6-max (deepest, higher cost)</option>
+                      <option value="manus-1.6-lite">manus-1.6-lite (fastest, cheapest)</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-start space-x-3">
+                    <Lock size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-slate-500 leading-relaxed">Stored server-side in your Trellis vault and never exposed in the browser. Save the key after entering it.</p>
+                  </div>
+
+                  {manusTestResult && (
+                    <div className={`rounded-xl p-3 text-xs font-bold flex items-center space-x-2 ${manusTestResult.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                      {manusTestResult.ok ? <CheckCheck size={14} className="flex-shrink-0" /> : <AlertCircle size={14} className="flex-shrink-0" />}
+                      <span>{manusTestResult.ok ? 'Connection verified — your Manus API key works.' : (manusTestResult.error || 'Connection failed.')}</span>
+                    </div>
+                  )}
+
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={handleManusSave}
+                      disabled={manusSaving}
+                      className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {manusSaving ? <RefreshCw size={14} className="animate-spin" /> : <Lock size={14} />}
+                      <span>{manusSaving ? 'Saving...' : 'Save Key'}</span>
+                    </button>
+                    <button
+                      onClick={handleManusTest}
+                      disabled={manusTesting || !localApiKeys.manus_api_key}
+                      className="flex-1 py-3 border border-slate-200 rounded-xl font-black text-xs uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {manusTesting ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
+                      <span>{manusTesting ? 'Testing...' : 'Test Connection'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center gap-3 pt-2">
                 <div className="h-px flex-1 bg-slate-100" />
                 <span className="text-[9px] font-black uppercase tracking-widest text-slate-300">Other integrations</span>
@@ -759,87 +840,6 @@ const Settings: React.FC<SettingsProps> = ({
                       </button>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Manus Deep Research */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 space-y-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
-                      <Sparkles size={22} className="text-white" />
-                    </div>
-                    <div>
-                      <h4 className="font-black text-slate-800 text-sm">Manus Deep Research</h4>
-                      <p className="text-xs text-slate-500">AI deep-dive research on leads, saved to Trellis</p>
-                    </div>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${manusConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                    {manusConnected ? 'Connected' : 'Not connected'}
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">API Key</label>
-                    <div className="relative">
-                      <input
-                        type={visibleKeys['manus'] ? 'text' : 'password'}
-                        placeholder="Paste your Manus API key"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                        value={localApiKeys.manus_api_key || ''}
-                        onChange={e => { setLocalApiKeys({ ...localApiKeys, manus_api_key: e.target.value }); setManusTestResult(null); }}
-                      />
-                      <button onClick={() => setVisibleKeys(prev => ({ ...prev, manus: !prev['manus'] }))} className="absolute right-4 top-3.5 text-slate-400 hover:text-slate-900 transition-colors">
-                        {visibleKeys['manus'] ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-slate-400 ml-1">Create one in Manus &rarr; Settings &rarr; API Integration. It is shown only once.</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Research Model</label>
-                    <select
-                      value={localApiKeys.manus_model || 'manus-1.6'}
-                      onChange={e => setLocalApiKeys({ ...localApiKeys, manus_model: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                    >
-                      <option value="manus-1.6">manus-1.6 (balanced)</option>
-                      <option value="manus-1.6-max">manus-1.6-max (deepest, higher cost)</option>
-                      <option value="manus-1.6-lite">manus-1.6-lite (fastest, cheapest)</option>
-                    </select>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex items-start space-x-3">
-                    <Lock size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-slate-500 leading-relaxed">Stored server-side in your Trellis vault and never exposed in the browser. Save the key after entering it.</p>
-                  </div>
-
-                  {manusTestResult && (
-                    <div className={`rounded-xl p-3 text-xs font-bold flex items-center space-x-2 ${manusTestResult.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-                      {manusTestResult.ok ? <CheckCheck size={14} className="flex-shrink-0" /> : <AlertCircle size={14} className="flex-shrink-0" />}
-                      <span>{manusTestResult.ok ? 'Connection verified — your Manus API key works.' : (manusTestResult.error || 'Connection failed.')}</span>
-                    </div>
-                  )}
-
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={handleManusSave}
-                      disabled={manusSaving}
-                      className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {manusSaving ? <RefreshCw size={14} className="animate-spin" /> : <Lock size={14} />}
-                      <span>{manusSaving ? 'Saving...' : 'Save Key'}</span>
-                    </button>
-                    <button
-                      onClick={handleManusTest}
-                      disabled={manusTesting || !localApiKeys.manus_api_key}
-                      className="flex-1 py-3 border border-slate-200 rounded-xl font-black text-xs uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {manusTesting ? <RefreshCw size={14} className="animate-spin" /> : <Zap size={14} />}
-                      <span>{manusTesting ? 'Testing...' : 'Test Connection'}</span>
-                    </button>
-                  </div>
                 </div>
               </div>
 
