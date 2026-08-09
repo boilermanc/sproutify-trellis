@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Download, ExternalLink, Loader2, RefreshCw, Telescope } from 'lucide-react';
 import { Lead } from '../../types';
-import { LeadResearch, fetchLeadResearch, startDeepDive } from '../../services/manusService';
+import { LeadResearch, LeadResearchStatus, fetchLeadResearch, startDeepDive } from '../../services/manusService';
 import { renderMarkdown } from '../../utils/miniMarkdown';
 
 interface LeadDeepDiveProps {
   lead: Lead;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  /** Notifies the parent list so its row badge stays in sync. */
+  onStatusChange?: (leadId: string, status: LeadResearchStatus | undefined) => void;
 }
 
 const leadDisplayName = (lead: Lead): string => {
@@ -20,7 +22,7 @@ const formatWhen = (value?: string | null): string => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 
-const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast }) => {
+const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast, onStatusChange }) => {
   const [items, setItems] = useState<LeadResearch[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -43,6 +45,11 @@ const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast }) => {
   // Poll while the latest run is in flight, then stop.
   const latest = items[0];
   const isRunning = latest?.status === 'running' || latest?.status === 'queued';
+
+  // Keep the parent list row's badge in sync with this panel.
+  useEffect(() => {
+    onStatusChange?.(lead.id, latest?.status);
+  }, [latest?.status, lead.id, onStatusChange]);
   useEffect(() => {
     if (isRunning && !pollRef.current) {
       pollRef.current = setInterval(() => { void load(); }, 15000);

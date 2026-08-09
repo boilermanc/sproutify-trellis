@@ -53,6 +53,33 @@ export async function startDeepDive(leadId: string): Promise<StartDeepDiveResult
   }
 }
 
+/** Latest deep-dive status per lead id, for at-a-glance list badges. */
+export async function fetchResearchStatusByLead(
+  leadIds: string[],
+): Promise<Record<string, LeadResearchStatus>> {
+  const ids = [...new Set(leadIds.filter(Boolean))];
+  if (ids.length === 0) return {};
+  const map: Record<string, LeadResearchStatus> = {};
+  const batchSize = 200;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const slice = ids.slice(i, i + batchSize);
+    const { data, error } = await supabase
+      .from('lead_research')
+      .select('lead_id, status, created_at')
+      .in('lead_id', slice)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[manus] fetchResearchStatusByLead failed:', error.message);
+      continue;
+    }
+    // Rows are newest-first, so the first row seen for a lead is its latest status.
+    for (const row of data || []) {
+      if (!map[row.lead_id]) map[row.lead_id] = row.status as LeadResearchStatus;
+    }
+  }
+  return map;
+}
+
 /** Fetch all deep-dive research rows for a lead, newest first. */
 export async function fetchLeadResearch(leadId: string): Promise<LeadResearch[]> {
   const { data, error } = await supabase

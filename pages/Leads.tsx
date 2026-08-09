@@ -18,6 +18,7 @@ import {
   Search,
   Tag,
   Target,
+  Telescope,
   Upload,
   UserPlus,
   X,
@@ -30,6 +31,7 @@ import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal'
 import { followUpState, getFollowUpWindow, leadMatchesSearch, paginateItems, sortFollowUps } from '../components/leads/leadViewUtils';
 import LeadBoard from '../components/leads/LeadBoard';
 import LeadDeepDive from '../components/leads/LeadDeepDive';
+import { fetchResearchStatusByLead, LeadResearchStatus } from '../services/manusService';
 import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
 import LeadBulkBar from '../components/leads/LeadBulkBar';
@@ -118,6 +120,20 @@ const profileTags = (lead: Lead): string[] => {
 
 const dateInputValue = (value?: string | null): string => value ? value.slice(0, 10) : '';
 
+// At-a-glance deep-dive indicator for the list row.
+const renderDeepDiveBadge = (status?: LeadResearchStatus) => {
+  if (status === 'complete') {
+    return <span title="Deep dive ready" className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-300"><Telescope size={10} />Deep Dive</span>;
+  }
+  if (status === 'running' || status === 'queued') {
+    return <span title="Researching this lead…" className="inline-flex items-center gap-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-cyan-300"><Loader2 size={10} className="animate-spin" />Researching</span>;
+  }
+  if (status === 'failed') {
+    return <span title="Deep dive failed — run it again" className="inline-flex items-center gap-1 rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-300"><Telescope size={10} />Failed</span>;
+  }
+  return <span title="No deep dive yet" className="inline-flex items-center text-slate-400"><Telescope size={12} /></span>;
+};
+
 const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [pipelines, setPipelines] = useState<LeadPipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState('');
@@ -149,6 +165,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
   const [stageDates, setStageDates] = useState<Record<string, string>>({});
+  const [researchStatus, setResearchStatus] = useState<Record<string, LeadResearchStatus>>({});
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [bulkStage, setBulkStage] = useState('new');
   const [bulkPending, setBulkPending] = useState(false);
@@ -230,6 +247,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
         console.error('Failed to load lead stage dates:', stageDateError);
         setStageDates({});
       }
+      try {
+        setResearchStatus(await fetchResearchStatusByLead(data.map(lead => lead.id)));
+      } catch (researchError) {
+        console.error('Failed to load deep dive statuses:', researchError);
+      }
     } catch (error) {
       console.error('Failed to load leads:', error);
       addToast('Failed to load leads.', 'error');
@@ -239,6 +261,22 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   }, [activeBranch, addToast, selectedPipeline]);
 
   useEffect(() => { void loadLeads(); }, [loadLeads, refreshNonce]);
+
+  // Keep the list's deep-dive badges live while any research is in flight.
+  const hasRunningResearch = Object.values(researchStatus).some(s => s === 'running' || s === 'queued');
+  useEffect(() => {
+    if (!hasRunningResearch || leads.length === 0) return;
+    const interval = setInterval(() => {
+      fetchResearchStatusByLead(leads.map(lead => lead.id))
+        .then(setResearchStatus)
+        .catch(() => { /* transient; next tick retries */ });
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [hasRunningResearch, leads]);
+
+  const handleResearchStatusChange = useCallback((leadId: string, status?: LeadResearchStatus) => {
+    setResearchStatus(prev => (prev[leadId] === status ? prev : { ...prev, [leadId]: status as LeadResearchStatus }));
+  }, []);
 
   const filteredLeads = useMemo(() => {
     const matched = leads.filter(lead => {
@@ -864,7 +902,10 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                 </div>
                                 <div>
                                   <p className="font-black text-white">{profileName(lead)}</p>
-                                  <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[lead.status] || STATUS_STYLES.open}`}>{lead.status}</span>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[lead.status] || STATUS_STYLES.open}`}>{lead.status}</span>
+                                    {renderDeepDiveBadge(researchStatus[lead.id])}
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -899,7 +940,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <button type="button" onClick={() => void openEmailModal(lead)} className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 hover:bg-rose-400/10">Send Email</button>
                                       <button type="button" onClick={() => { setQuoteLead(lead); setAcceptedQuoteLogged(false); }} className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300 hover:bg-amber-400/10">Log Quote</button>
                                     </div>
-                                    <LeadDeepDive lead={lead} addToast={addToast} />
+                                    <LeadDeepDive lead={lead} addToast={addToast} onStatusChange={handleResearchStatusChange} />
                                     <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
                                       <p className="text-sm leading-6 text-slate-200">{lead.inquiry_text || 'No inquiry text provided.'}</p>
