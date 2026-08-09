@@ -29,6 +29,7 @@ import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
 import { followUpState, getFollowUpWindow, leadMatchesSearch, paginateItems, sortFollowUps } from '../components/leads/leadViewUtils';
 import LeadBoard from '../components/leads/LeadBoard';
+import LeadDeepDive from '../components/leads/LeadDeepDive';
 import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
 import LeadBulkBar from '../components/leads/LeadBulkBar';
@@ -898,6 +899,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <button type="button" onClick={() => void openEmailModal(lead)} className="rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 hover:bg-rose-400/10">Send Email</button>
                                       <button type="button" onClick={() => { setQuoteLead(lead); setAcceptedQuoteLogged(false); }} className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-amber-300 hover:bg-amber-400/10">Log Quote</button>
                                     </div>
+                                    <LeadDeepDive lead={lead} addToast={addToast} />
                                     <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
                                       <p className="text-sm leading-6 text-slate-200">{lead.inquiry_text || 'No inquiry text provided.'}</p>
