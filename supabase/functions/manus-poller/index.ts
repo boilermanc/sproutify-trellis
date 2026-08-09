@@ -28,43 +28,48 @@ const json = (b: unknown, status = 200) =>
 
 // Walk an arbitrary object/array and collect (a) assistant/agent text and
 // (b) file attachments, tolerating several possible Manus response shapes.
-function extractFromMessages(payload: any): { md: string; attachments: any[] } {
-  const messages: any[] = Array.isArray(payload)
-    ? payload
-    : payload?.messages || payload?.data || payload?.events || payload?.result?.messages || [];
+function filenameFromUrl(url: string): string {
+  try {
+    const path = decodeURIComponent(url.split("?")[0]);
+    const last = path.split("/").pop() || "attachment";
+    return last || "attachment";
+  } catch { return "attachment"; }
+}
+
+// Manus listMessages shape: { messages: [ { type, assistant_message: { content, attachments:[{url,...}] } }, ... ] }.
+// The deep-dive dossier is typically delivered as an attached .md file; the inline
+// assistant content is just a short pointer. So we return both the inline text and
+// the attachments, and the caller downloads the .md for the full dossier.
+function extractFromMessages(payload: any): { inlineMd: string; attachments: { name: string; url: string; size: number | null }[] } {
+  const messages: any[] = payload?.messages || (Array.isArray(payload) ? payload : []);
   const texts: string[] = [];
-  const attachments: any[] = [];
+  const attachments: { name: string; url: string; size: number | null }[] = [];
 
   const pushText = (t: unknown) => { if (typeof t === "string" && t.trim()) texts.push(t.trim()); };
   const pushAttachment = (a: any) => {
     if (!a) return;
     const url = a.url || a.file_url || a.download_url;
-    if (url) attachments.push({ name: a.filename || a.name || a.file_name || "attachment", url, size: a.size ?? null });
+    if (url) attachments.push({ name: a.filename || a.name || a.file_name || filenameFromUrl(url), url, size: a.size ?? null });
   };
 
   for (const m of messages) {
     if (!m || typeof m !== "object") continue;
-    const role = m.role || m.author || m.sender || m.type;
-    const isAgent = !role || ["assistant", "agent", "ai", "manus", "bot"].includes(String(role).toLowerCase());
-    const content = m.content ?? m.text ?? m.message ?? m.body;
-
-    if (isAgent) {
-      if (typeof content === "string") pushText(content);
-      else if (Array.isArray(content)) {
-        for (const c of content) {
-          if (typeof c === "string") pushText(c);
-          else if (c && typeof c === "object") {
-            if (c.type === "text" || c.text) pushText(c.text);
-            if (c.type === "file" || c.file_url || c.url) pushAttachment(c);
-          }
-        }
+    if (m.type === "status_update") continue;
+    // Manus nests the payload under a key named after the message type.
+    const am = m.assistant_message || m.agent_message || (m.type === "assistant_message" ? m : null);
+    const content = am?.content ?? m.content ?? m.text ?? m.message;
+    if (typeof content === "string") pushText(content);
+    else if (Array.isArray(content)) {
+      for (const c of content) {
+        if (typeof c === "string") pushText(c);
+        else if (c && typeof c === "object") { if (c.text) pushText(c.text); if (c.url || c.file_url) pushAttachment(c); }
       }
     }
-    const atts = m.attachments || m.files;
+    const atts = am?.attachments || m.attachments || m.files;
     if (Array.isArray(atts)) atts.forEach(pushAttachment);
   }
 
-  return { md: texts.join("\n\n").trim(), attachments };
+  return { inlineMd: texts.join("\n\n").trim(), attachments };
 }
 
 function readStatus(detail: any): string {
@@ -104,24 +109,49 @@ Deno.serve(async () => {
   for (const row of rows || []) {
     if (!row.manus_task_id) continue;
     try {
-      const detail = await manusGet(`/v2/task.detail?taskId=${encodeURIComponent(row.manus_task_id)}`, key);
+      const detail = await manusGet(`/v2/task.detail?task_id=${encodeURIComponent(row.manus_task_id)}`, key);
+      // A transient API error must NOT finalize the row — leave it running so the
+      // next tick retries.
+      if (!detail.ok) {
+        results.push({ id: row.id, apiError: detail.body?.error?.message || `HTTP ${detail.status}` });
+        continue;
+      }
       const status = readStatus(detail.body);
-      if (detail.ok && status && IN_PROGRESS.has(status)) {
+      if (status && IN_PROGRESS.has(status)) {
         results.push({ id: row.id, status });
         continue; // still working
       }
 
       // Terminal (or unknown) — try to pull the final output.
-      const msgs = await manusGet(`/v2/task.listMessages?taskId=${encodeURIComponent(row.manus_task_id)}`, key);
-      const { md, attachments } = extractFromMessages(msgs.body);
+      const msgs = await manusGet(`/v2/task.listMessages?task_id=${encodeURIComponent(row.manus_task_id)}`, key);
+      const { inlineMd, attachments } = extractFromMessages(msgs.body);
       const now = new Date().toISOString();
+
+      // The full dossier is usually the attached .md file; the inline text is a
+      // short pointer. Prefer the attachment content, fall back to inline. The
+      // attachment URLs are signed/expiring, so we persist the downloaded text.
+      let md = inlineMd;
+      const primary = attachments.find(a => /\.(md|markdown|txt)(\?|$)/i.test(a.url) || /\.(md|markdown|txt)$/i.test(a.name))
+        || attachments[0];
+      if (primary?.url) {
+        try {
+          const fr = await fetch(primary.url);
+          if (fr.ok) {
+            const text = await fr.text();
+            if (text && text.trim()) md = text.trim();
+          }
+        } catch (e) {
+          console.error("attachment download failed:", (e as Error).message);
+        }
+      }
+      const creditUsage = detail.body?.task?.credit_usage ?? detail.body?.credit_usage ?? null;
 
       if (md) {
         await db.from("lead_research").update({
           status: "complete",
           result_md: md,
           attachments,
-          credit_usage: detail.body?.credit_usage ?? detail.body?.data?.credit_usage ?? null,
+          credit_usage: creditUsage,
           raw: { detail: detail.body, messages: msgs.body },
           completed_at: now,
           updated_at: now,
