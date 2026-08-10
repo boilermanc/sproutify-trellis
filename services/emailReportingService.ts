@@ -199,6 +199,49 @@ export async function fetchCampaignRecipients(
   }
 }
 
+// Unsubscribe count for one campaign. Unsubscribes aren't Resend events (they
+// live in email_suppressions), so campaign_email_stats can't report them. We
+// intersect this campaign's recipients (campaign_recipient_status, by subject)
+// with the unsubscribe suppression list — the SAME definition the recipients
+// modal uses, so the drawer metric and the modal's Unsubscribed chip agree.
+export async function fetchCampaignUnsubscribedCount(campaignSubject: string): Promise<number> {
+  if (!campaignSubject) return 0;
+  try {
+    // The unsubscribe list is small (the do-not-email list) — pull it once.
+    const emails: string[] = [];
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('email_suppressions')
+        .select('email')
+        .eq('reason', 'unsubscribe')
+        .range(from, from + PAGE - 1);
+      if (error) return 0;
+      for (const r of data || []) if (r.email) emails.push(r.email.toLowerCase());
+      if (!data || data.length < PAGE) break;
+    }
+    if (emails.length === 0) return 0;
+
+    // Count how many are recipients of this campaign. Chunk the IN list so the
+    // request URL stays bounded even if the suppression list grows large.
+    let total = 0;
+    const CH = 300;
+    for (let i = 0; i < emails.length; i += CH) {
+      const { count, error } = await supabase
+        .from('campaign_recipient_status')
+        .select('email', { count: 'exact', head: true })
+        .eq('campaign_subject', campaignSubject)
+        .in('email', emails.slice(i, i + CH));
+      if (error) return total;
+      total += count || 0;
+    }
+    return total;
+  } catch (e) {
+    console.error('fetchCampaignUnsubscribedCount failed:', e);
+    return 0;
+  }
+}
+
 // Bulk per-address engagement aggregate, built for segment targeting (see
 // SEGMENT_FIELDS 'engagement' category + segmentEngine.ts). One row per email that
 // has at least one 'opened' or 'clicked' event.

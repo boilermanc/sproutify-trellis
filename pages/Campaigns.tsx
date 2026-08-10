@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Rocket, RefreshCw, Loader2, X, Calendar, Users, Mail, MailCheck, Eye,
   MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch, Pencil,
-  Copy, Trash2, MailPlus,
+  Copy, Trash2, MailPlus, Ban,
 } from 'lucide-react';
 import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign, fetchNonOpeners, resendToNonOpeners } from '../supabaseService';
-import { fetchCampaignEmailStats, CampaignEmailStat } from '../services/emailReportingService';
+import { fetchCampaignEmailStats, CampaignEmailStat, fetchCampaignUnsubscribedCount } from '../services/emailReportingService';
 import { CampaignRecipientsModal } from '../components/CampaignRecipientsModal';
 import { BranchContext } from '../types';
 
@@ -317,6 +317,7 @@ const CampaignDetailDrawer: React.FC<{
   onResend: (c: Campaign) => void;
 }> = ({ campaign: c, stat: s, onClose, addToast, onChanged, onResend }) => {
   const [rstats, setRstats] = useState<CampaignRecipientStats | null>(null);
+  const [unsubCount, setUnsubCount] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
 
@@ -327,6 +328,14 @@ const CampaignDetailDrawer: React.FC<{
     }
     return () => { alive = false; };
   }, [c.id, c.send_status]);
+
+  useEffect(() => {
+    let alive = true;
+    if (c.subject) {
+      fetchCampaignUnsubscribedCount(c.subject).then((n) => { if (alive) setUnsubCount(n); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [c.subject]);
 
   const canRetry = c.send_status === 'failed' || c.send_status === 'partial' || (!!rstats && rstats.failed > 0);
   const handleRetry = async () => {
@@ -344,6 +353,7 @@ const CampaignDetailDrawer: React.FC<{
     { label: 'Clicked', value: s.clicked, sub: `${pct(s.clicked, s.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600', bg: 'bg-violet-100' },
     { label: 'Bounced', value: s.bounced, icon: MailX, color: 'text-red-600', bg: 'bg-red-100' },
     { label: 'Complained', value: s.complained, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-100' },
+    { label: 'Unsubscribed', value: unsubCount ?? 0, sub: s.delivered ? `${pct(unsubCount ?? 0, s.delivered)}%` : undefined, icon: Ban, color: 'text-slate-600', bg: 'bg-slate-200' },
   ];
   const hasEvents = s.sent + s.delivered + s.opened + s.clicked + s.bounced + s.complained > 0;
 
