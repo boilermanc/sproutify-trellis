@@ -7,6 +7,39 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Svix signature verification. If unset, events are accepted without verification.
 const SIGNING_SECRET = Deno.env.get("RESEND_WEBHOOK_SECRET") || "";
 
+// ATL spoke write-back (optional). When these are set, Resend engagement events
+// for ATL campaigns are mirrored into ATL's newsletter_subscribers via its
+// record_email_engagement RPC. Unset → the whole mirror is a no-op, so this is
+// safe to ship before the secrets are configured.
+const ATL_SPOKE_URL = Deno.env.get("ATL_SPOKE_URL") || "";
+const ATL_SPOKE_KEY = Deno.env.get("ATL_SPOKE_SERVICE_KEY") || "";
+
+// Event types worth mirroring (the RPC ignores anything else anyway).
+const ATL_ENGAGE_TYPES = new Set(["sent", "delivered", "opened", "clicked", "bounced", "complained"]);
+
+// Fire one engagement event at ATL's RPC. Never throws — the webhook must always
+// return 200 to Resend regardless of whether the spoke is reachable.
+async function notifyAtlEngagement(email: string, eventType: string, occurredAt: string): Promise<void> {
+  if (!ATL_SPOKE_URL || !ATL_SPOKE_KEY) return; // not configured — no-op
+  try {
+    const resp = await fetch(`${ATL_SPOKE_URL}/rest/v1/rpc/record_email_engagement`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: ATL_SPOKE_KEY,
+        Authorization: `Bearer ${ATL_SPOKE_KEY}`,
+      },
+      body: JSON.stringify({ p_email: email, p_event_type: eventType, p_occurred_at: occurredAt }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      console.error(`ATL engagement sync ${resp.status}: ${body.slice(0, 200)}`);
+    }
+  } catch (e) {
+    console.error("ATL engagement sync failed:", (e as Error).message);
+  }
+}
+
 const TYPE_MAP: Record<string, string> = {
   "email.sent": "sent",
   "email.delivered": "delivered",
@@ -77,6 +110,15 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // Resolve the campaign's single-brand scope once — used both to scope an
+  // unsubscribe and to decide whether to mirror engagement to the ATL spoke.
+  let campaignBrand = "";
+  if (campaignId) {
+    const { data: camp } = await supabase.from("campaigns").select("branches").eq("id", campaignId).maybeSingle();
+    const branches = Array.isArray(camp?.branches) ? camp!.branches : [];
+    campaignBrand = branches.length === 1 ? String(branches[0]).trim().toLowerCase() : "";
+  }
+
   const { error: insErr } = await supabase.from("email_events").insert({
     email,
     event_type: type,
@@ -89,6 +131,15 @@ Deno.serve(async (req: Request) => {
   });
   // 23505 = duplicate (webhook retry) — safe to ignore
   if (insErr && insErr.code !== "23505") console.error("event insert failed:", insErr.message);
+
+  const occurredAt = evt?.created_at || new Date().toISOString();
+
+  // Mirror engagement into ATL's own subscriber list (opens/clicks/bounces/
+  // complaints). Only on a FRESH insert (no error) so webhook retries can't
+  // double-count, and only for ATL sends. No-op unless ATL secrets are set.
+  if (!insErr && campaignBrand === "atlurbanfarms" && ATL_ENGAGE_TYPES.has(type)) {
+    await notifyAtlEngagement(email, type, occurredAt);
+  }
 
   // Treat a click on an unsubscribe link as an unsubscribe. Brand newsletters
   // (e.g. ATL) route opt-outs to their OWN spoke endpoint, so those clicks never
@@ -107,15 +158,7 @@ Deno.serve(async (req: Request) => {
         const u = new URL(clicked);
         scope = (u.searchParams.get("scope") || u.searchParams.get("source") || "").trim().toLowerCase();
       } catch { /* link isn't a parseable URL */ }
-      if (!scope) {
-        if (campaignId) {
-          const { data: camp } = await supabase.from("campaigns").select("branches").eq("id", campaignId).maybeSingle();
-          const branches = Array.isArray(camp?.branches) ? camp!.branches : [];
-          scope = branches.length === 1 ? String(branches[0]).trim().toLowerCase() : "global";
-        } else {
-          scope = "global";
-        }
-      }
+      if (!scope) scope = campaignBrand || "global";
       const { error: unsubErr } = await supabase.from("email_suppressions").upsert(
         {
           email,
@@ -129,6 +172,12 @@ Deno.serve(async (req: Request) => {
         { onConflict: "email,scope" },
       );
       if (unsubErr) console.error("unsubscribe-click suppress failed:", unsubErr.message);
+
+      // Reflect the opt-out in ATL's own subscriber list too — Hub-link clicks
+      // never reach ATL's own unsubscribe endpoint on their own.
+      if (campaignBrand === "atlurbanfarms" || scope === "atlurbanfarms") {
+        await notifyAtlEngagement(email, "unsubscribed", occurredAt);
+      }
     }
   }
 
