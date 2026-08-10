@@ -372,7 +372,10 @@ SELECT
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'sent')       AS sent,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'delivered')  AS delivered,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')     AS opened,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked')    AS clicked,
+  COUNT(DISTINCT email) FILTER (
+    WHERE event_type = 'clicked'
+      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+  ) AS clicked,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounced')    AS bounced,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'complained') AS complained,
   MIN(occurred_at) AS first_event_at,
@@ -417,7 +420,10 @@ SELECT
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'sent')       AS sent,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'delivered')  AS delivered,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')     AS opened,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'clicked')    AS clicked,
+  COUNT(DISTINCT email) FILTER (
+    WHERE event_type = 'clicked'
+      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+  ) AS clicked,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounced')    AS bounced,
   COUNT(DISTINCT email) FILTER (WHERE event_type = 'complained') AS complained,
   MIN(occurred_at) AS first_event_at,
@@ -438,10 +444,13 @@ SELECT
   email,
   bool_or(event_type = 'delivered')  AS delivered,
   bool_or(event_type = 'opened')     AS opened,
-  bool_or(event_type = 'clicked')    AS clicked,
+  bool_or(event_type = 'clicked'
+          AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%') AS clicked,
   bool_or(event_type = 'bounced')    AS bounced,
   bool_or(event_type = 'complained') AS complained,
-  array_remove(array_agg(DISTINCT link_url) FILTER (WHERE event_type = 'clicked'), NULL) AS link_urls,
+  array_remove(array_agg(DISTINCT COALESCE(link_url, metadata->'click'->>'link'))
+    FILTER (WHERE event_type = 'clicked'
+      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'), NULL) AS link_urls,
   max(occurred_at) AS last_event_at
 FROM email_events
 WHERE campaign_subject IS NOT NULL
