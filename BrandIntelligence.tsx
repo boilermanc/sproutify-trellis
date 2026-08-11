@@ -130,6 +130,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const [galleryImages, setGalleryImages] = useState<{ url: string; name: string }[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
+  const [isDraggingAsset, setIsDraggingAsset] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // Load brands from Supabase on mount
   useEffect(() => {
@@ -496,12 +498,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     if (activeTab === 'assets' && templateBranchFilter) loadGallery();
   }, [activeTab, templateBranchFilter]);
 
-  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadGalleryFile = async (file: File) => {
     if (!templateBranchFilter) {
       addToast?.('Pick a branch before uploading an image.', 'error');
-      e.target.value = '';
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      addToast?.(`"${file.name}" isn't an image.`, 'error');
       return;
     }
     setGalleryUploading(true);
@@ -523,8 +526,45 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       addToast?.(`Couldn't upload "${file.name}": ${message}`, 'error');
     } finally {
       setGalleryUploading(false);
-      e.target.value = '';
     }
+  };
+
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadGalleryFile(file);
+    e.target.value = '';
+  };
+
+  const handleGalleryDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingAsset(false);
+    const fileList: FileList | null = e.dataTransfer.files;
+    const files: File[] = fileList ? Array.from(fileList).filter(f => f.type.startsWith('image/')) : [];
+    if (files.length === 0) {
+      addToast?.('Drop an image file to upload it.', 'error');
+      return;
+    }
+    for (const file of files) {
+      await uploadGalleryFile(file);
+    }
+  };
+
+  const handleGalleryDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const handleGalleryDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setIsDraggingAsset(true);
+  };
+
+  const handleGalleryDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDraggingAsset(false);
   };
 
   const handleGalleryDeleteImage = async (name: string) => {
@@ -1929,7 +1969,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             </div>
           </div>
 
-          <div className="p-7">
+          <div
+            className="p-7"
+            onDragEnter={handleGalleryDragEnter}
+            onDragOver={handleGalleryDragOver}
+            onDragLeave={handleGalleryDragLeave}
+            onDrop={handleGalleryDrop}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{templateBranchFilter}</p>
@@ -1945,10 +1991,22 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <Loader2 className="w-7 h-7 text-violet-500 animate-spin" />
               </div>
             ) : galleryImages.length === 0 ? (
-              <div className="min-h-64 rounded-[2rem] border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-center p-8">
-                <ImageIcon className="w-12 h-12 text-slate-300 mb-4" />
-                <h3 className="text-base font-black text-slate-700">No brand assets yet</h3>
-                <p className="text-sm text-slate-400 mt-1 mb-5">Upload photography, banners, product images, and approved campaign creative.</p>
+              <div
+                className={`min-h-64 rounded-[2rem] border-2 border-dashed flex flex-col items-center justify-center text-center p-8 transition-colors ${
+                  isDraggingAsset ? 'border-violet-400 bg-violet-50' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                {galleryUploading ? (
+                  <Loader2 className="w-12 h-12 text-violet-400 mb-4 animate-spin" />
+                ) : (
+                  <ImageIcon className={`w-12 h-12 mb-4 ${isDraggingAsset ? 'text-violet-400' : 'text-slate-300'}`} />
+                )}
+                <h3 className="text-base font-black text-slate-700">
+                  {isDraggingAsset ? 'Drop to upload' : galleryUploading ? 'Uploading…' : 'No brand assets yet'}
+                </h3>
+                <p className="text-sm text-slate-400 mt-1 mb-5">
+                  {isDraggingAsset ? 'Release to add this image to the library.' : 'Drag and drop images here, or upload photography, banners, product images, and approved campaign creative.'}
+                </p>
                 <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
                   {galleryUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                   Upload First Asset
@@ -1956,7 +2014,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </label>
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className={`grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 rounded-[2rem] transition-colors ${isDraggingAsset ? 'ring-2 ring-violet-400 ring-offset-4 bg-violet-50/40' : ''}`}>
                 {galleryImages.map(img => (
                   <div key={img.name} className="group rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 hover:border-violet-300 hover:shadow-md transition-all">
                     <div className="aspect-video bg-slate-100 overflow-hidden">

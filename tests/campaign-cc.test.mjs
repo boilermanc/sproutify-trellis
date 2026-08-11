@@ -25,3 +25,11 @@ test('campaign CC reaches both test RPC and durable batch sends', async () => {
   assert.match(resend, /p_from:[\s\S]*p_cc:/);
   assert.match(worker, /\.\.\.\(cc \? \{ cc: \[cc\] \} : \{\}\)/);
 });
+
+test('lead email keeps its Resend id and exposes delivery activity in lead details', async () => {
+  const leads = await read('pages/Leads.tsx');
+
+  assert.match(leads, /const sendResult = await sendLeadEmail/);
+  assert.match(leads, /resend_email_id:\s*sendResult\.id/);
+  assert.match(leads, /<EmailActivitySection email=\{lead\.profile\.email\}/);
+});

@@ -388,6 +388,50 @@ export async function fetchLeadTimeline(
   return (data || []) as TimelineEntry[];
 }
 
+/**
+ * Fetch the newest operator/customer interaction for each requested lead.
+ * Lifecycle-only events are intentionally excluded so the list answers
+ * "what did we last do with this customer?" rather than showing stage edits.
+ */
+export async function fetchLatestLeadActivities(
+  leadIds: string[]
+): Promise<Record<string, TimelineEntry>> {
+  const uniqueIds = [...new Set(leadIds.filter(Boolean))];
+  const latestByLead: Record<string, TimelineEntry> = {};
+  const activityTypes: LeadActivityType[] = [
+    'lead_note',
+    'lead_call',
+    'lead_email',
+    'lead_meeting',
+    'lead_quote',
+  ];
+  const batchSize = 100;
+
+  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
+    const batch = uniqueIds.slice(offset, offset + batchSize);
+    const { data, error } = await supabase
+      .from('marketing_events')
+      .select('id, profile_id, event_type, source, payload, created_at')
+      .in('event_type', activityTypes)
+      .in('payload->>lead_id', batch)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching latest lead activities:', error);
+      throw error;
+    }
+
+    for (const event of data || []) {
+      const leadId = event.payload?.lead_id;
+      if (typeof leadId === 'string' && !latestByLead[leadId]) {
+        latestByLead[leadId] = event as TimelineEntry;
+      }
+    }
+  }
+
+  return latestByLead;
+}
+
 /** Resolve the latest recorded stage transition timestamp for each lead. */
 export async function fetchLeadStageDates(leadIds: string[]): Promise<Record<string, string>> {
   const uniqueIds = [...new Set(leadIds.filter(Boolean))];

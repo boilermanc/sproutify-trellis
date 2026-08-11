@@ -1,10 +1,19 @@
 {
   "version": "5",
+  "specifiers": {
+    "jsr:@supabase/functions-js@*": "2.107.0"
+  },
+  "jsr": {
+    "@supabase/functions-js@2.107.0": {
+      "integrity": "8bc791c05732fe5c923096e9b442135bd0f9fbacbd40a9dd7470f4e03b941387"
+    }
+  },
   "redirects": {
     "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.106.0"
   },
   "remote": {
-    "https://esm.sh/@supabase/supabase-js@2.106.0": "a897c060b1e4db8c6a1d713e2c00a7281b11dfdddcc43f0510433851315c36a7"
+    "https://esm.sh/@supabase/supabase-js@2.106.0": "a897c060b1e4db8c6a1d713e2c00a7281b11dfdddcc43f0510433851315c36a7",
+    "https://esm.sh/@supabase/supabase-js@2.90.1": "fcf5e194d637ff365df76d1806e7c2f239905c4b08e83e5d95690a2b22e21a1d"
   },
   "workspace": {
     "packageJson": {
@@ -13,10 +22,13 @@
         "npm:@supabase/supabase-js@^2.90.1",
         "npm:@types/node@^22.14.0",
         "npm:@vitejs/plugin-react@5",
+        "npm:autoprefixer@10.4.20",
         "npm:lucide-react@0.562",
+        "npm:postcss@8.4.49",
         "npm:react-dom@^19.2.3",
         "npm:react-email-editor@^1.7.11",
         "npm:react@^19.2.3",
+        "npm:tailwindcss@3.4.17",
         "npm:typescript@~5.8.2",
         "npm:vite@^6.2.0"
       ]

@@ -98,7 +98,7 @@ export const EmailActivitySection: React.FC<Props> = ({ email }) => {
 
           {events.length === 0 ? (
             <p className="text-sm text-gray-400 py-1">
-              No email activity yet. Events appear here after this contact is sent a campaign.
+              No delivery activity reported yet. Events appear here after this contact is sent an email through Trellis.
             </p>
           ) : (
             <>
