@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   AlertCircle,
+  Activity,
   Calendar,
   Check,
   ChevronDown,
@@ -24,13 +25,14 @@ import {
   X,
 } from 'lucide-react';
 import { BranchContext, Lead, LeadEmailEligibility, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
-import LeadTimeline from '../components/leads/LeadTimeline';
+import LeadTimeline, { formatRelativeTime, summarizeTimelineEntry } from '../components/leads/LeadTimeline';
 import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
 import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
 import { followUpState, getFollowUpWindow, leadMatchesSearch, paginateItems, sortFollowUps } from '../components/leads/leadViewUtils';
 import LeadBoard from '../components/leads/LeadBoard';
 import LeadDeepDive from '../components/leads/LeadDeepDive';
+import EmailActivitySection from '../components/EmailActivitySection';
 import { fetchResearchStatusByLead, LeadResearchStatus } from '../services/manusService';
 import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
@@ -42,6 +44,7 @@ import {
   createLead,
   createLeadsBulk,
   fetchLeads,
+  fetchLatestLeadActivities,
   fetchLeadTimeline,
   fetchLeadEmailEligibility,
   fetchLeadStageDates,
@@ -120,6 +123,14 @@ const profileTags = (lead: Lead): string[] => {
 
 const dateInputValue = (value?: string | null): string => value ? value.slice(0, 10) : '';
 
+const activityLabel = (entry: TimelineEntry): string => ({
+  lead_note: 'Note',
+  lead_call: 'Call',
+  lead_email: 'Email',
+  lead_meeting: 'Meeting',
+  lead_quote: 'Quote',
+}[entry.event_type] || 'Activity');
+
 // At-a-glance deep-dive indicator for the list row.
 const renderDeepDiveBadge = (status?: LeadResearchStatus) => {
   if (status === 'complete') {
@@ -150,6 +161,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [savingDetail, setSavingDetail] = useState<string | null>(null);
   const [stageSavingId, setStageSavingId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, TimelineEntry[]>>({});
+  const [latestActivities, setLatestActivities] = useState<Record<string, TimelineEntry>>({});
+  const [latestActivitiesLoading, setLatestActivitiesLoading] = useState(false);
   const [timelineLoadingId, setTimelineLoadingId] = useState<string | null>(null);
   const [quickActivity, setQuickActivity] = useState<{ lead: Lead; kind: QuickActivityKind } | null>(null);
   const [savingActivity, setSavingActivity] = useState(false);
@@ -203,6 +216,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     setSelectedPipelineId('');
     setLeads([]);
     setTimelines({});
+    setLatestActivities({});
     setStageFilter('all');
     setSelectedLeadIds(new Set());
 
@@ -294,6 +308,32 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     [filteredLeads, page, pageSize]
   );
   const paginatedLeads = pagination.items;
+
+  useEffect(() => {
+    const leadIds = paginatedLeads.map(lead => lead.id);
+    if (viewMode !== 'list' || leadIds.length === 0) {
+      setLatestActivitiesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLatestActivitiesLoading(true);
+    fetchLatestLeadActivities(leadIds)
+      .then(entries => {
+        if (cancelled) return;
+        setLatestActivities(current => {
+          const next = { ...current };
+          leadIds.forEach(leadId => { delete next[leadId]; });
+          return { ...next, ...entries };
+        });
+      })
+      .catch(error => {
+        if (!cancelled) console.error('Failed to load latest lead activities:', error);
+      })
+      .finally(() => { if (!cancelled) setLatestActivitiesLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [page, pageSize, paginatedLeads, refreshNonce, viewMode]);
 
   useEffect(() => {
     if (page !== pagination.page) setPage(pagination.page);
@@ -426,6 +466,13 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     try {
       const entries = await fetchLeadTimeline(lead.id, lead.profile_id);
       setTimelines(current => ({ ...current, [lead.id]: entries }));
+      const latestInteraction = entries.find(entry => ['lead_note', 'lead_call', 'lead_email', 'lead_meeting', 'lead_quote'].includes(entry.event_type));
+      setLatestActivities(current => {
+        const next = { ...current };
+        if (latestInteraction) next[lead.id] = latestInteraction;
+        else delete next[lead.id];
+        return next;
+      });
     } catch (error) {
       console.error('Failed to load lead timeline:', error);
       addToast('Could not load lead activity.', 'error');
@@ -492,7 +539,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     if (!emailLead?.profile?.email || emailEligibility?.hardBlocked || emailEligibilityError) return;
     setSendingEmail(true);
     try {
-      await sendLeadEmail({
+      const sendResult = await sendLeadEmail({
         to: emailLead.profile.email,
         cc: LEAD_CC_RECIPIENT,
         scope: activeBranch?.slug,
@@ -503,7 +550,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           leadId: emailLead.id,
           profileId: emailLead.profile_id,
           type: 'lead_email',
-          payload: { subject: input.subject, direction: 'outbound', preview: input.body.slice(0, 200) },
+          payload: {
+            subject: input.subject,
+            direction: 'outbound',
+            preview: input.body.slice(0, 200),
+            resend_email_id: sendResult.id,
+          },
         });
         await loadTimeline(emailLead);
         addToast('Email sent and activity logged.', 'success');
@@ -874,11 +926,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
             ) : (
               <div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[920px] text-left">
+                  <table className="w-full min-w-[1120px] text-left">
                   <thead className="border-b border-white/10 bg-white/[0.025] text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
                     <tr>
                       <th className="px-4 py-4"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} aria-label="Select all visible leads" className="h-4 w-4 accent-cyan-400" /></th>
                       <th className="px-6 py-4">Name</th>
+                      <th className="px-4 py-4">Last Activity</th>
                       <th className="px-4 py-4">Email</th>
                       <th className="px-4 py-4">Source</th>
                       <th className="px-4 py-4">Stage</th>
@@ -891,6 +944,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                     {paginatedLeads.map(lead => {
                       const isExpanded = expandedLeadId === lead.id;
                       const tags = profileTags(lead);
+                      const latestActivity = latestActivities[lead.id];
                       return (
                         <React.Fragment key={lead.id}>
                           <tr onClick={() => toggleLeadDetails(lead)} className="cursor-pointer transition hover:bg-cyan-400/[0.035]">
@@ -908,6 +962,18 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                   </div>
                                 </div>
                               </div>
+                            </td>
+                            <td className="max-w-[260px] px-4 py-5">
+                              {latestActivitiesLoading && !latestActivity ? (
+                                <span className="inline-flex items-center gap-2 text-[10px] text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Checking activity…</span>
+                              ) : latestActivity ? (
+                                <div title={`${summarizeTimelineEntry(latestActivity)} — ${new Date(latestActivity.created_at).toLocaleString()}`}>
+                                  <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-cyan-300"><Activity size={12} />{activityLabel(latestActivity)} <span className="font-medium normal-case tracking-normal text-slate-500">· {formatRelativeTime(latestActivity.created_at)}</span></p>
+                                  <p className="mt-1 truncate text-xs text-slate-300">{summarizeTimelineEntry(latestActivity)}</p>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-slate-500">No activity yet</p>
+                              )}
                             </td>
                             <td className="px-4 py-5 text-xs text-slate-300">{lead.profile?.email || '—'}</td>
                             <td className="px-4 py-5 text-xs font-bold text-slate-400">{lead.source.replace(/_/g, ' ')}</td>
@@ -930,7 +996,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                           </tr>
                           {isExpanded && (
                             <tr>
-                              <td colSpan={8} className="bg-[#0A0E27]/70 px-6 py-6">
+                              <td colSpan={9} className="bg-[#0A0E27]/70 px-6 py-6">
                                 <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
                                   <div className="space-y-4">
                                     <div className="flex flex-wrap gap-2">
@@ -946,6 +1012,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <p className="text-sm leading-6 text-slate-200">{lead.inquiry_text || 'No inquiry text provided.'}</p>
                                     </div>
                                     <LeadTimeline entries={timelines[lead.id] || []} loading={timelineLoadingId === lead.id} />
+                                    {lead.profile?.email && <EmailActivitySection email={lead.profile.email} />}
                                     <label className="block rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <span className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
                                         Notes {savingDetail === 'notes' && <Loader2 className="h-3 w-3 animate-spin text-cyan-300" />}

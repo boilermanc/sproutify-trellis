@@ -13,9 +13,26 @@ import {
 
 const CACHE_MS = 60 * 60 * 1000;
 const WINDOWS = new Set([7, 30, 90]);
-const SIGNUP_EVENTS = ["user_signed_up", "account_created"];
-const ONBOARDING_EVENTS = ["onboarding_completed"];
+
+// ── INTERIM MAPPING (2026-08-08) ───────────────────────────────────────────────
+// Rejoice currently emits ONLY PostHog defaults + mobile-lifecycle events; it has no
+// custom user_signed_up / onboarding_completed / activation_milestone_reached yet.
+// Until the app is instrumented we proxy the funnel with the mobile events that DO
+// exist, so the panel shows real acquisition instead of all-zeros. Labels are sent to
+// the client so nothing is mislabeled ("Installed"/"Identified", not "Signed up").
+//
+// TO REVERT once the app ships the canonical events, restore these values + redeploy:
+//   const SIGNUP_EVENTS = ["user_signed_up", "account_created"];
+//   const ONBOARDING_EVENTS = ["onboarding_completed"];
+//   const ACTIVATION_EVENTS = ["activation_milestone_reached"];
+//   const FUNNEL_LABELS = { signed_up: "Signed up", onboarded: "Onboarded", activated: "Activated" };
+//   const CONVERSION_LABELS = { signup_to_onboarding: "Signup → onboarding", onboarding_to_activation: "Onboarding → activation" };
+const SIGNUP_EVENTS = ["Application Installed"];
+const ONBOARDING_EVENTS = ["$identify"];
 const ACTIVATION_EVENTS = ["activation_milestone_reached"];
+const FUNNEL_LABELS = { signed_up: "Installed", onboarded: "Identified", activated: "Activated" };
+const CONVERSION_LABELS = { signup_to_onboarding: "Install → identified", onboarding_to_activation: "Identified → activated" };
+// ───────────────────────────────────────────────────────────────────────────────
 
 const n = (value: unknown): number => {
   const number = Number(value ?? 0);
@@ -162,6 +179,8 @@ Deno.serve(async (req: Request) => {
         activated,
         signup_to_onboarding_pct: pct(onboarded, signedUp),
         onboarding_to_activation_pct: pct(activated, onboarded),
+        labels: FUNNEL_LABELS,
+        conversion_labels: CONVERSION_LABELS,
       },
       retention: {
         day_7_pct: pct(retained7, cohort7),

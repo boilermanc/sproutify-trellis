@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET="/opt/trellis/workers/stitch_worker.py"
+
+cat > "$TARGET" << 'STITCH_WORKER_EOF'
 #!/usr/bin/env python3
 """
 Trellis Sessions — audio stitch worker
@@ -290,3 +296,10 @@ def health():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
+STITCH_WORKER_EOF
+
+sudo systemctl restart trellis-stitch
+sleep 1
+curl -s http://127.0.0.1:8099/health
+echo
+sudo systemctl status trellis-stitch --no-pager

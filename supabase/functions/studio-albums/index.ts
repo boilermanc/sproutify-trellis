@@ -142,7 +142,19 @@ async function queueStudioTrackGeneration(db: any, album: any, userId: string, s
   if (updateError) throw new Error(updateError.message);
   const { error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, track_id: studioTrack.id, job_type: "track_generation", status: "processing", progress: 5, provider: "legacy_lyria_adapter", attempt_count: 1, input_json: { legacy_session_id: legacySession.id, legacy_generation_id: legacyTrack.id } });
   if (jobError) throw new Error(jobError.message);
-  await invokeLegacyWorker(legacySession.id, null);
+  try {
+    await invokeLegacyWorker(legacySession.id, null);
+  } catch (startError) {
+    // The track and job rows above are already committed as "regenerating"/"processing".
+    // If the worker never actually started, leaving them that way strands the track with a
+    // permanent spinner and no retry path (only planned/failed/rejected tracks are editable).
+    // Unwind to "failed" so the normal edit-and-retry flow in the UI can recover it.
+    const message = startError instanceof Error ? startError.message : "Could not start the generation worker.";
+    await db.from("studio_tracks").update({ review_status: "failed", rejection_reason: message.slice(0, 500), updated_at: new Date().toISOString() }).eq("id", studioTrack.id);
+    await db.from("studio_jobs").update({ status: "failed", error_message: message.slice(0, 700), completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("track_id", studioTrack.id).eq("job_type", "track_generation").eq("status", "processing");
+    await db.from("trellis_music_tracks").update({ status: "failed", error_message: message.slice(0, 700), updated_at: new Date().toISOString() }).eq("id", legacyTrack.id);
+    throw startError;
+  }
   await db.from("studio_albums").update({ status: "track_generation", music_generation_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
   return trackWithAsset(db, studioTrack.id);
 }
