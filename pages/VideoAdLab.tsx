@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig, TextOverlayLayer } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { BRANCH_DISPLAY_NAMES, formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
@@ -679,6 +679,20 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     [jobs, trackedJobId],
   );
 
+  // Scroll target for jumping back up to the review/progress panel (step 4).
+  const topRef = useRef<HTMLDivElement>(null);
+
+  // Open the Step 4 review/progress panel for any job in the library. Same
+  // surface Generate lands on — full approve / regenerate / discard / edit
+  // controls — so a creative sitting in the list is no longer a dead end.
+  const openInReviewPanel = (job: VideoAdJob) => {
+    setTrackedJobId(job.id);
+    setStep(4);
+    setExpandedJobId(null);
+    // Let step 4 render before scrolling it into view.
+    requestAnimationFrame(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
   // Clear the form and start over from the format picker.
   const startAnother = () => {
     setTrackedJobId(null);
@@ -1200,7 +1214,7 @@ STRICT RULES:
   // RENDER
   // ═══════════════════════════════════════════════════════════════════
   return (
-    <div className="space-y-6 min-h-screen pb-40">
+    <div ref={topRef} className="space-y-6 min-h-screen pb-40">
 
       {/* ── Top Bar ── */}
       <div className="flex items-center justify-between">
@@ -3234,6 +3248,15 @@ STRICT RULES:
                               </button>
                             )
                           )}
+                          {job.status === 'awaiting_approval' && !isCardBackground(job) && (
+                            <button
+                              onClick={() => openInReviewPanel(job)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 text-white rounded-lg text-[11px] font-bold hover:bg-amber-600 transition"
+                              title="Open the review panel — approve, edit, regenerate, or discard"
+                            >
+                              <ThumbsUp size={13} /> Review
+                            </button>
+                          )}
                           {!TERMINAL_STATUSES.includes(job.status) && (
                             <button
                               onClick={() => handleCancel(job.id)}
@@ -3522,6 +3545,24 @@ STRICT RULES:
                                       {job.text_model && <> · copy by <span className="font-mono">{job.text_model}</span></>}
                                     </p>
                                   )}
+                                </div>
+                              )}
+
+                              {/* Still in review — the detail panel is view-only, so
+                                  send it to the Step 4 panel that has the full
+                                  approve / edit / regenerate / discard controls. */}
+                              {job.status === 'awaiting_approval' && !isCardBackground(job) && (
+                                <div className="col-span-2 mt-2 pt-3 border-t border-slate-200">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-2">What's next</span>
+                                  <button
+                                    onClick={() => openInReviewPanel(job)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition"
+                                  >
+                                    <ThumbsUp size={13} /> Review this creative
+                                  </button>
+                                  <p className="text-[11px] text-slate-400 mt-1.5">
+                                    Approve, edit the caption or headline, regenerate, or discard.
+                                  </p>
                                 </div>
                               )}
 
