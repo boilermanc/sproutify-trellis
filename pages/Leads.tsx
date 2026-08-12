@@ -503,7 +503,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           leadId: emailLead.id,
           profileId: emailLead.profile_id,
           type: 'lead_email',
-          payload: { subject: input.subject, direction: 'outbound', preview: input.body.slice(0, 200) },
+          payload: { subject: input.subject, to: emailLead.profile.email, direction: 'outbound', body: input.body },
         });
         await loadTimeline(emailLead);
         addToast('Email sent and activity logged.', 'success');

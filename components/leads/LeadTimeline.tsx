@@ -89,6 +89,28 @@ const detailEntries = (entry: TimelineEntry): Array<[string, string]> => (
     ])
 );
 
+// The email body is stored in full (older entries only kept a short preview).
+const renderEmailDetail = (payload: Record<string, unknown>) => {
+  const to = textValue(payload, 'to');
+  const subject = textValue(payload, 'subject');
+  const body = textValue(payload, 'body');
+  const preview = textValue(payload, 'preview');
+  return (
+    <span className="mt-3 block space-y-2 rounded-lg bg-[#10142E] p-3">
+      {to && <span className="block text-[10px] text-slate-500"><span className="text-slate-600">To&nbsp;&nbsp;</span>{to}</span>}
+      {subject && <span className="block text-[10px] text-slate-400"><span className="text-slate-600">Subject&nbsp;&nbsp;</span><span className="font-bold text-slate-300">{subject}</span></span>}
+      {body ? (
+        <span className="block whitespace-pre-wrap rounded-md bg-white/[0.03] p-3 text-[11px] leading-5 text-slate-400">{body}</span>
+      ) : preview ? (
+        <span className="block rounded-md bg-white/[0.03] p-3 text-[11px] leading-5 text-slate-400">{preview}<span className="mt-2 block text-[9px] italic text-slate-600">Preview only — the full body wasn’t stored for this older email.</span></span>
+      ) : (
+        <span className="block text-[10px] italic text-slate-600">Body not recorded.</span>
+      )}
+      {body && <span className="block text-[9px] italic text-slate-600">A standard Sproutify Farm footer was appended on send.</span>}
+    </span>
+  );
+};
+
 interface LeadTimelineProps {
   entries: TimelineEntry[];
   loading: boolean;
@@ -133,7 +155,9 @@ const LeadTimeline: React.FC<LeadTimelineProps> = ({ entries, loading }) => {
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-bold leading-5 text-slate-200">{summarizeTimelineEntry(entry)}</span>
                   <span className="mt-0.5 block text-[10px] text-slate-600" title={new Date(entry.created_at).toLocaleString()}>{formatRelativeTime(entry.created_at)}</span>
-                  {expanded && details.length > 0 && <span className="mt-3 block space-y-1 rounded-lg bg-[#10142E] p-3">{details.map(([label, value]) => <span key={label} className="grid grid-cols-[7rem_1fr] gap-2 text-[10px]"><span className="capitalize text-slate-600">{label}</span><span className="break-words text-slate-400">{value}</span></span>)}</span>}
+                  {expanded && (entry.event_type === 'lead_email'
+                    ? renderEmailDetail(entry.payload || {})
+                    : details.length > 0 && <span className="mt-3 block space-y-1 rounded-lg bg-[#10142E] p-3">{details.map(([label, value]) => <span key={label} className="grid grid-cols-[7rem_1fr] gap-2 text-[10px]"><span className="capitalize text-slate-600">{label}</span><span className="break-words text-slate-400">{value}</span></span>)}</span>)}
                 </span>
               </button>
             );
