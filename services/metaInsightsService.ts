@@ -35,3 +35,47 @@ export async function fetchBrandInsights(branchId: string): Promise<MetaInsights
     return { connected: false, error: e instanceof Error ? e.message : 'Failed to fetch insights' };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Historical follower/reach trend — read from `brand_daily_metrics`,
+// the one-row-per-brand/platform/day table filled by the S4 "Daily
+// Brand Metrics" n8n job. Meta only ever reports "right now", so this
+// table is the ONLY source of a follower trend. Empty until that job
+// has run for a couple of days — callers render a "collecting" state
+// rather than a fake flat line.
+// ═══════════════════════════════════════════════════════════════
+
+export interface BrandDailyMetric {
+  branch_id: string;
+  captured_on: string; // YYYY-MM-DD
+  platform: SocialPlatform;
+  followers: number | null;
+  posts: number | null;
+  reach_28d: number | null;
+}
+
+export type SocialPlatform = 'facebook' | 'instagram';
+
+/**
+ * Returns daily follower/reach snapshots for the last `days` days, oldest
+ * first. Never throws — a load failure (RLS, missing table) yields an empty
+ * array so the panel shows its "collecting data" state instead of an error.
+ */
+export async function getBrandDailyMetrics(days = 30): Promise<BrandDailyMetric[]> {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceStr = since.toISOString().slice(0, 10);
+
+    const { data, error } = await supabase
+      .from('brand_daily_metrics')
+      .select('branch_id, captured_on, platform, followers, posts, reach_28d')
+      .gte('captured_on', sinceStr)
+      .order('captured_on', { ascending: true });
+
+    if (error) throw error;
+    return (data as BrandDailyMetric[]) ?? [];
+  } catch {
+    return [];
+  }
+}

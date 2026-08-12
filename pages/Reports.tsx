@@ -5,15 +5,17 @@ import { Article } from '../src/data/helpContent';
 import EmailPerformancePanel from '../components/EmailPerformancePanel';
 import PostHogAnalyticsPanel from '../components/PostHogAnalyticsPanel';
 import YouTubePerformancePanel from '../components/YouTubePerformancePanel';
+import SocialPerformancePanel from '../components/SocialPerformancePanel';
 import {
-  BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity,
+  BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity, Share2,
   ShieldCheck, AlertTriangle, Crown,
   Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe
 } from 'lucide-react';
 
-type ReportsTab = 'audience' | 'email' | 'youtube' | 'product' | 'blueprints';
+type ReportsTab = 'audience' | 'social' | 'email' | 'youtube' | 'product' | 'blueprints';
 const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
   { id: 'audience', label: 'Audience', icon: Users },
+  { id: 'social', label: 'Social', icon: Share2 },
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
   { id: 'product', label: 'Product', icon: Activity },
@@ -254,6 +256,16 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       {/* ═══════════════════════════════════════════════════════════════ */}
       {activeTab === 'product' && (
         <PostHogAnalyticsPanel
+          branches={branchContext?.allBranches || []}
+          branchContext={branchContext}
+        />
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* SOCIAL AUDIENCE (Meta live followers + brand_daily_metrics trend) */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'social' && (
+        <SocialPerformancePanel
           branches={branchContext?.allBranches || []}
           branchContext={branchContext}
         />
