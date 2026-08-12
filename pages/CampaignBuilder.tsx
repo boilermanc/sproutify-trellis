@@ -76,6 +76,7 @@ interface CampaignBuilderDraftState {
   currentStep: number;
   campaignName: string;
   emailSubject: string;
+  emailPreviewText: string;
   emailCc: string;
   selectedBranches: string[];
   selectedSegments: string[];
@@ -102,6 +103,24 @@ interface ChannelConfig {
   gateway: string;
   color: string;
 }
+
+// Mailchimp-style "Preview Text" (preheader): the inbox snippet shown after the
+// subject line. Injected as a hidden block at the very top of <body> so mail
+// clients read it for the preview but it never renders in the email itself. The
+// trailing zero-width-joiner + nbsp padding stops the body copy from bleeding
+// into the preview after the preview text ends.
+const injectPreheader = (html: string, previewText: string): string => {
+  const preview = previewText.trim();
+  if (!preview) return html;
+  const esc = preview.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const spacer = '&nbsp;&zwnj;'.repeat(60);
+  const block = `<div style="display:none !important;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;opacity:0;">${esc}${spacer}</div>`;
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/(<body[^>]*>)/i, `$1${block}`);
+  }
+  // Fragment template with no <body> tag — prepend so it's first in the DOM.
+  return block + html;
+};
 
 const CHANNEL_CONFIG: ChannelConfig[] = [
   { id: 'email', label: 'Email', icon: Mail, charLimit: 0, placeholder: 'Email is composed via the template system below', gateway: 'resend', color: 'indigo' },
@@ -187,6 +206,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Campaign identity
   const [campaignName, setCampaignName] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
+  const [emailPreviewText, setEmailPreviewText] = useState('');
   const [emailCc, setEmailCc] = useState('');
   const emailCcIsValid = !emailCc.trim() || EMAIL_ADDRESS_PATTERN.test(emailCc.trim());
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
@@ -358,6 +378,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         setCurrentStep(Math.max(0, Math.min(STEPS.length - 1, Number(saved.currentStep) || 0)));
         setCampaignName(saved.campaignName || campaign.name || '');
         setEmailSubject(saved.emailSubject || campaign.subject || '');
+        setEmailPreviewText(saved.emailPreviewText || campaign.dispatch?.preview_text || '');
         setEmailCc(saved.emailCc || '');
         setSelectedBranches(Array.isArray(saved.selectedBranches) ? saved.selectedBranches : campaign.branches);
         setSelectedSegments(Array.isArray(saved.selectedSegments) ? saved.selectedSegments : campaign.segments);
@@ -776,6 +797,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     currentStep,
     campaignName,
     emailSubject,
+    emailPreviewText,
     emailCc,
     selectedBranches,
     selectedSegments,
@@ -792,7 +814,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     scheduledTime,
     branchContent,
   }), [
-    currentStep, campaignName, emailSubject, emailCc, selectedBranches,
+    currentStep, campaignName, emailSubject, emailPreviewText, emailCc, selectedBranches,
     selectedSegments, selectedSavedSegments, triggerType, channelList,
     channelContents, activeComposeTab, emailTemplate, customTemplateFields,
     templateImageOverrides,
@@ -805,11 +827,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const hasSaveworthyContent = useMemo(() => (
     !!campaignName.trim()
     || !!emailSubject.trim()
+    || !!emailPreviewText.trim()
     || Object.keys(channelContents).some(channel => channelContents[channel as CampaignChannel].trim().length > 0)
     || Object.keys(customTemplateFields).some(field => customTemplateFields[field].trim().length > 0)
     || Object.keys(templateImageOverrides).some(source => templateImageOverrides[source].trim().length > 0)
     || Object.keys(branchContent).some(branch => branchContent[branch].trim().length > 0)
-  ), [campaignName, emailSubject, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
+  ), [campaignName, emailSubject, emailPreviewText, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
 
   const draftSaveInFlightRef = useRef(false);
   const handleSaveDraft = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -1074,13 +1097,21 @@ Return ONLY the post content, no explanations or labels.`,
         .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, () => unsubUrl);
     };
 
-    if (isCustomTemplate) {
-      const ct = customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''));
-      if (ct) return fill(ct.html_body);
-    } else if (BUILTIN_EMAIL_TEMPLATES[emailTemplate]) {
-      return fill(BUILTIN_EMAIL_TEMPLATES[emailTemplate]);
-    }
-    return renderCampaignHtml({ profile, subject: emailSubject, templateId: emailTemplate, campaignName });
+    const buildRaw = (): string => {
+      if (isCustomTemplate) {
+        const ct = customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''));
+        if (ct) return fill(ct.html_body);
+      }
+      if (BUILTIN_EMAIL_TEMPLATES[emailTemplate]) {
+        return fill(BUILTIN_EMAIL_TEMPLATES[emailTemplate]);
+      }
+      return renderCampaignHtml({ profile, subject: emailSubject, templateId: emailTemplate, campaignName });
+    };
+    // Bake the preview text into the template as a hidden preheader. Run it through
+    // fill() too so {{first_name}} resolves — for the launch snapshot (empty profile)
+    // the token stays intact and campaign-sender fills it per recipient, exactly like
+    // the body copy.
+    return injectPreheader(buildRaw(), fill(emailPreviewText));
   };
 
   const handleSendTest = async () => {
@@ -1159,6 +1190,7 @@ Return ONLY the post content, no explanations or labels.`,
     const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
     const dispatch = {
       subject: emailSubject,
+      preview_text: emailPreviewText.trim() || undefined,
       from: activeBranch?.resend_from_address || undefined,
       cc: emailCc.trim() || undefined,
       html_template: buildDispatchHtml({ email: '', first_name: '' } as Profile),
@@ -1334,6 +1366,7 @@ Return ONLY the post content, no explanations or labels.`,
           setCurrentStep(0);
           setCampaignName('');
           setEmailSubject('');
+          setEmailPreviewText('');
           setEmailCc('');
           setSelectedBranches([]);
           setSelectedSegments([]);
@@ -1963,6 +1996,31 @@ Return ONLY the post content, no explanations or labels.`,
                     value={emailSubject}
                     onChange={e => setEmailSubject(e.target.value)}
                   />
+
+                  {/* Preview Text (a.k.a. preheader) — the inbox snippet shown right
+                      after the subject. Baked into the sent HTML as a hidden block. */}
+                  <div>
+                    <div className="flex justify-between items-end mb-2">
+                      <label htmlFor="campaign-preview-text" className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Preview Text <span className="font-bold normal-case tracking-normal text-slate-400">(inbox preheader)</span>
+                      </label>
+                      <span className={`text-[10px] font-bold ${emailPreviewText.length > 150 ? 'text-amber-500' : 'text-slate-300'}`}>
+                        {emailPreviewText.length}/150
+                      </span>
+                    </div>
+                    <input
+                      id="campaign-preview-text"
+                      type="text"
+                      placeholder="Shown in the inbox after the subject — e.g. Buy gift cards now and save on summer seedlings."
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 outline-none transition-all duration-300 shadow-inner"
+                      value={emailPreviewText}
+                      onChange={e => setEmailPreviewText(e.target.value)}
+                    />
+                    <p className="mt-1.5 text-[10px] text-slate-400 font-medium">
+                      Optional. Most inboxes show the first ~90–150 characters. Supports <span className="font-mono">{'{{first_name}}'}</span>.
+                    </p>
+                  </div>
+
                   <div className="grid gap-2 sm:grid-cols-[9rem_1fr] sm:items-center">
                     <label htmlFor="campaign-email-cc" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                       CC <span className="font-bold normal-case tracking-normal text-slate-400">(optional)</span>
@@ -2174,6 +2232,12 @@ Return ONLY the post content, no explanations or labels.`,
                         <div className="px-6 py-2.5 border-b border-slate-100 bg-white">
                           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
                           <p className="text-xs font-bold text-slate-800 mt-0.5 break-words">{emailSubject || '(no subject yet)'}</p>
+                          {emailPreviewText.trim() && (
+                            <p className="text-[11px] text-slate-400 mt-1 break-words">
+                              <span className="font-black uppercase tracking-widest text-[9px] text-slate-400">Preview</span>{' '}
+                              {emailPreviewText}
+                            </p>
+                          )}
                         </div>
                         <iframe
                           title="Live email preview"

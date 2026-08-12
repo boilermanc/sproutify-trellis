@@ -41,6 +41,7 @@ export type CampaignDraftInput = Omit<
 // without re-deriving anything. The worker reads this off the campaign row.
 export interface CampaignDispatch {
   subject: string;
+  preview_text?: string;              // inbox preheader (Mailchimp "Preview Text"); baked into html_template as a hidden block
   from?: string;
   cc?: string;
   html_template: string;              // content tokens filled; {{first_name}}/{{unsubscribe_url}} intact

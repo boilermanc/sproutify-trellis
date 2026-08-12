@@ -399,6 +399,9 @@ const CampaignDetailDrawer: React.FC<{
               <div className="text-xs text-slate-500">From <span className="font-bold text-slate-700">{c.dispatch.from}</span></div>
             )}
             <div className="text-xs text-slate-500 break-words">Subject <span className="font-bold text-slate-700">{c.dispatch?.subject || c.subject || 'No subject'}</span></div>
+            {c.dispatch?.preview_text && (
+              <div className="text-xs text-slate-500 break-words">Preview text <span className="font-bold text-slate-700">{c.dispatch.preview_text}</span></div>
+            )}
             {!c.dispatch?.html_template ? (
               <p className="text-[11px] italic text-slate-400">No saved email content — this campaign predates the durable outbox, or hasn't been sent yet.</p>
             ) : showEmail && (
