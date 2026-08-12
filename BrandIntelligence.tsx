@@ -1146,9 +1146,19 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
                   {/* Color Palette */}
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                      Color Palette {parsedColors.length > 0 && <span className="text-violet-500">(auto-detected)</span>}
-                    </label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Color Palette {parsedColors.length > 0 && <span className="text-violet-500">(auto-detected)</span>}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setManualColors(prev => ({ ...prev, extra: [...prev.extra, '#000000'] }))}
+                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-3 h-3" /> Add color
+                      </button>
+                    </div>
+                    {/* 4 named roles + any extras render as one continuous list. */}
                     <div className="grid grid-cols-4 gap-4">
                       {(['primary', 'secondary', 'accent', 'neutral'] as const).map((role) => (
                         <div key={role} className="space-y-2">
@@ -1158,13 +1168,48 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                               type="color"
                               value={manualColors[role]}
                               onChange={(e) => setManualColors(prev => ({ ...prev, [role]: e.target.value }))}
-                              className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200"
+                              className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
                             />
                             <input
                               type="text"
                               value={manualColors[role]}
                               onChange={(e) => setManualColors(prev => ({ ...prev, [role]: e.target.value }))}
-                              className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      {manualColors.extra.map((color, i) => (
+                        <div key={`extra-${i}`} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[10px] font-bold text-slate-500">Extra {i + 1}</label>
+                            <button
+                              type="button"
+                              onClick={() => setManualColors(prev => ({ ...prev, extra: prev.extra.filter((_, j) => j !== i) }))}
+                              className="text-slate-300 hover:text-red-500 transition-colors"
+                              title="Remove"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={color}
+                              onChange={(e) => setManualColors(prev => ({
+                                ...prev,
+                                extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
+                              }))}
+                              className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={color}
+                              onChange={(e) => setManualColors(prev => ({
+                                ...prev,
+                                extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
+                              }))}
+                              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
                             />
                           </div>
                         </div>
@@ -1192,61 +1237,6 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                         ))}
                       </div>
                     )}
-
-                    {/* Additional colors — anything beyond the 4 core roles. */}
-                    <div className="mt-5">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                          Additional Colors {manualColors.extra.length > 0 && <span className="text-slate-400">({manualColors.extra.length})</span>}
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setManualColors(prev => ({ ...prev, extra: [...prev.extra, '#000000'] }))}
-                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
-                        >
-                          <Plus className="w-3 h-3" /> Add color
-                        </button>
-                      </div>
-                      {manualColors.extra.length === 0 ? (
-                        <p className="text-[10px] text-slate-400">No extra colors. Click a detected swatch above or "Add color".</p>
-                      ) : (
-                        <div className="grid grid-cols-4 gap-3">
-                          {manualColors.extra.map((color, i) => (
-                            <div key={i} className="flex items-center gap-1.5">
-                              <input
-                                type="color"
-                                value={color}
-                                onChange={(e) => setManualColors(prev => ({
-                                  ...prev,
-                                  extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
-                                }))}
-                                className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
-                              />
-                              <input
-                                type="text"
-                                value={color}
-                                onChange={(e) => setManualColors(prev => ({
-                                  ...prev,
-                                  extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
-                                }))}
-                                className="w-full min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] font-mono"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setManualColors(prev => ({
-                                  ...prev,
-                                  extra: prev.extra.filter((_, j) => j !== i)
-                                }))}
-                                className="p-1 text-slate-300 hover:text-red-500 transition-colors flex-shrink-0"
-                                title="Remove"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
                   </div>
 
                   {/* Typography */}
@@ -2374,9 +2364,25 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
               {/* Colors */}
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                  Color Palette
-                </label>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Color Palette
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBrand({
+                      ...editingBrand,
+                      color_palette: {
+                        ...editingBrand.color_palette,
+                        extra: [...(editingBrand.color_palette.extra || []), '#000000']
+                      }
+                    })}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-3 h-3" /> Add color
+                  </button>
+                </div>
+                {/* 4 named roles + any extras render as one continuous list. */}
                 <div className="grid grid-cols-4 gap-4">
                   {(['primary', 'secondary', 'accent', 'neutral'] as const).map((role) => (
                     <div key={role} className="space-y-2">
@@ -2389,7 +2395,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                             ...editingBrand,
                             color_palette: { ...editingBrand.color_palette, [role]: e.target.value }
                           })}
-                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200"
+                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
                         />
                         <input
                           type="text"
@@ -2398,83 +2404,58 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                             ...editingBrand,
                             color_palette: { ...editingBrand.color_palette, [role]: e.target.value }
                           })}
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                          className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
                         />
                       </div>
                     </div>
                   ))}
-                </div>
-
-                {/* Additional colors — beyond the 4 core roles. */}
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                      Additional Colors {(editingBrand.color_palette.extra?.length ?? 0) > 0 && (
-                        <span className="text-slate-400">({editingBrand.color_palette.extra!.length})</span>
-                      )}
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setEditingBrand({
-                        ...editingBrand,
-                        color_palette: {
-                          ...editingBrand.color_palette,
-                          extra: [...(editingBrand.color_palette.extra || []), '#000000']
-                        }
-                      })}
-                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
-                    >
-                      <Plus className="w-3 h-3" /> Add color
-                    </button>
-                  </div>
-                  {(editingBrand.color_palette.extra?.length ?? 0) === 0 ? (
-                    <p className="text-[10px] text-slate-400">No extra colors.</p>
-                  ) : (
-                    <div className="grid grid-cols-4 gap-3">
-                      {editingBrand.color_palette.extra!.map((color, i) => (
-                        <div key={i} className="flex items-center gap-1.5">
-                          <input
-                            type="color"
-                            value={color}
-                            onChange={(e) => setEditingBrand({
-                              ...editingBrand,
-                              color_palette: {
-                                ...editingBrand.color_palette,
-                                extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
-                              }
-                            })}
-                            className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
-                          />
-                          <input
-                            type="text"
-                            value={color}
-                            onChange={(e) => setEditingBrand({
-                              ...editingBrand,
-                              color_palette: {
-                                ...editingBrand.color_palette,
-                                extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
-                              }
-                            })}
-                            className="w-full min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setEditingBrand({
-                              ...editingBrand,
-                              color_palette: {
-                                ...editingBrand.color_palette,
-                                extra: editingBrand.color_palette.extra!.filter((_, j) => j !== i)
-                              }
-                            })}
-                            className="p-1 text-slate-300 hover:text-red-500 transition-colors flex-shrink-0"
-                            title="Remove"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                  {(editingBrand.color_palette.extra || []).map((color, i) => (
+                    <div key={`extra-${i}`} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-500">Extra {i + 1}</label>
+                        <button
+                          type="button"
+                          onClick={() => setEditingBrand({
+                            ...editingBrand,
+                            color_palette: {
+                              ...editingBrand.color_palette,
+                              extra: editingBrand.color_palette.extra!.filter((_, j) => j !== i)
+                            }
+                          })}
+                          className="text-slate-300 hover:text-red-500 transition-colors"
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => setEditingBrand({
+                            ...editingBrand,
+                            color_palette: {
+                              ...editingBrand.color_palette,
+                              extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
+                            }
+                          })}
+                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
+                        />
+                        <input
+                          type="text"
+                          value={color}
+                          onChange={(e) => setEditingBrand({
+                            ...editingBrand,
+                            color_palette: {
+                              ...editingBrand.color_palette,
+                              extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
+                            }
+                          })}
+                          className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                        />
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
 
