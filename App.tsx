@@ -463,6 +463,7 @@ const AppContent: React.FC = () => {
         <PlatformSetupWizard
           supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
           branches={branches}
+          branchSocialAccounts={branchSocialAccounts}
           onComplete={(platform) => {
             addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully.`);
           }}

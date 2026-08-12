@@ -717,8 +717,11 @@ export type BranchSocialAccountsMap = Record<string, SocialAccount[]>;
 
 /** Non-sensitive connection status returned by Supabase RPC */
 export interface SocialConnectionStatus {
+  credential_id?: string;
+  branch_social_account_id?: string;
   platform: SocialPlatform;
   is_connected: boolean;
+  platform_user_id?: string;
   platform_username?: string;
   connected_at?: string;
   // Whether the App Secret is stored (the boolean only, never the secret). A

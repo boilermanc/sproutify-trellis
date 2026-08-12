@@ -63,7 +63,8 @@ export async function saveAppCredentials(
   branchId: string,
   platform: SocialPlatform,
   appId: string,
-  appSecret: string
+  appSecret: string,
+  branchSocialAccountId?: string,
 ): Promise<ServiceResult> {
   if (!branchId || !platform) {
     return { success: false, error: 'Branch and platform are required' };
@@ -72,14 +73,25 @@ export async function saveAppCredentials(
     return { success: false, error: 'App ID and App Secret are required' };
   }
 
-  const { data, error } = await supabase.rpc('upsert_social_credential', {
+  if (platform === 'youtube' && !branchSocialAccountId) {
+    return { success: false, error: 'Choose the specific YouTube channel before saving credentials' };
+  }
+
+  const rpc = branchSocialAccountId ? 'save_social_account_app_credentials' : 'upsert_social_credential';
+  const params: Record<string, unknown> = {
     p_branch_id: branchId,
     p_platform: platform,
-    p_access_token: null,        // app creds only — no user token yet
     p_app_id: appId.trim(),
     p_app_secret: appSecret.trim(),
-    p_status: 'pending',
-  });
+  };
+  if (branchSocialAccountId) {
+    params.p_branch_social_account_id = branchSocialAccountId;
+  } else {
+    params.p_access_token = null; // legacy unscoped app credentials only
+    params.p_status = 'pending';
+  }
+
+  const { data, error } = await supabase.rpc(rpc, params);
 
   if (error) {
     return { success: false, error: error.message };
@@ -101,15 +113,19 @@ export function openSocialOAuthPopup(
   branchId: string,
   platform: SocialPlatform,
   supabaseUrl: string,
-  onDone: () => void
+  onDone: () => void,
+  branchSocialAccountId?: string,
 ): void {
   if (!branchId || !platform || !supabaseUrl) return;
+  if (platform === 'youtube' && !branchSocialAccountId) return;
   const oauthState = crypto.randomUUID();
   sessionStorage.setItem('oauth_state', oauthState);
+  const functionName = platform === 'youtube' ? 'youtube-oauth' : 'social-oauth';
   const oauthUrl =
-    `${supabaseUrl}/functions/v1/social-oauth` +
+    `${supabaseUrl}/functions/v1/${functionName}` +
     `?branch_id=${encodeURIComponent(branchId)}` +
     `&platform=${encodeURIComponent(platform)}` +
+    (branchSocialAccountId ? `&account_id=${encodeURIComponent(branchSocialAccountId)}` : '') +
     `&state=${encodeURIComponent(oauthState)}`;
   const popup = window.open(oauthUrl, `connect_${platform}`, 'width=600,height=700');
 
@@ -147,8 +163,11 @@ export async function checkConnections(branchId: string): Promise<{
   // RPC returns a jsonb array (or [] when the branch has no credentials).
   const rows: any[] = Array.isArray(data) ? data : [];
   const connections: SocialConnectionStatus[] = rows.map((row: any) => ({
+    credential_id: row.id || undefined,
+    branch_social_account_id: row.branch_social_account_id || undefined,
     platform: row.platform as SocialPlatform,
     is_connected: row.status === 'active',
+    platform_user_id: row.platform_user_id || undefined,
     platform_username: row.platform_username || row.platform_metadata?.username || undefined,
     connected_at: row.created_at || undefined,
     has_app_secret: row.has_app_secret === true,
@@ -163,13 +182,14 @@ export async function checkConnections(branchId: string): Promise<{
 // live connection actually works (not just whether a row exists).
 export async function testConnection(
   branchId: string,
-  platform: SocialPlatform
+  platform: SocialPlatform,
+  branchSocialAccountId?: string,
 ): Promise<{ ok: boolean; username?: string; error?: string }> {
   if (!branchId || !platform) {
     return { ok: false, error: 'Branch and platform are required' };
   }
   const { data, error } = await supabase.functions.invoke('test-social-connection', {
-    body: { branch_id: branchId, platform },
+    body: { branch_id: branchId, platform, branch_social_account_id: branchSocialAccountId },
   });
   if (error) {
     return { ok: false, error: error.message };
@@ -185,19 +205,28 @@ export async function testConnection(
 // Calls SECURITY DEFINER RPC — deletes credential row.
 export async function disconnectPlatform(
   branchId: string,
-  platform: SocialPlatform
+  platform: SocialPlatform,
+  branchSocialAccountId?: string,
 ): Promise<ServiceResult> {
   if (!branchId || !platform) {
     return { success: false, error: 'Branch ID and platform are required' };
   }
 
-  const { error } = await supabase.rpc('revoke_social_credential', {
-    p_branch_id: branchId,
-    p_platform: platform,
-  });
+  const { data, error } = branchSocialAccountId
+    ? await supabase.rpc('revoke_social_account_credential', {
+        p_branch_id: branchId,
+        p_branch_social_account_id: branchSocialAccountId,
+      })
+    : await supabase.rpc('revoke_social_credential', {
+        p_branch_id: branchId,
+        p_platform: platform,
+      });
 
   if (error) {
     return { success: false, error: error.message };
+  }
+  if (data && (data as any).success === false) {
+    return { success: false, error: (data as any).error || 'Failed to revoke credential' };
   }
   return { success: true };
 }

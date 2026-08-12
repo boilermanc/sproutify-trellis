@@ -11,7 +11,7 @@
     "test:campaigns": "node --test tests/campaign-draft-contract.test.mjs",
     "test:reddit-ads": "node --test tests/reddit-ads-contract.test.mjs",
     "test:studio": "node --test tests/studio-album-planning.test.mjs tests/studio-album-contract.test.mjs",
-    "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs",
+    "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs tests/youtube-oauth-contract.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
