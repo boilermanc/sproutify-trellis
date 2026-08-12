@@ -12,19 +12,21 @@
       "parameters": {
         "method": "POST",
         "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/youtube-publish-token",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
         "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ youtube_account_id: $('YouTube Upload Input').item.json.youtube_account_id }) }}",
+        "contentType": "json",
+        "specifyBody": "keypair",
+        "bodyParameters": { "parameters": [
+          { "name": "youtube_account_id", "value": "={{ $('YouTube Upload Input').item.json.youtube_account_id }}" }
+        ] },
         "options": { "timeout": 120000 }
       },
       "name": "Resolve YouTube Token",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [400, 300],
-      "credentials": { "httpHeaderAuth": { "id": "REPLACE_WITH_TRELLIS_SERVICE_ROLE_HEADER_AUTH", "name": "Trellis service role bearer" } }
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL", "name": "Sproutify Trellis" } }
     },
     {
       "parameters": {
@@ -86,7 +88,7 @@
     },
     {
       "parameters": {
-        "content": "## Account-aware YouTube uploader\n\nImported once and called by E4, E8, and E10. It resolves the exact Trellis `youtube_account_id`, refreshes its token through the service-role-only Edge Function, verifies the immutable channel ID, and performs a resumable YouTube upload.\n\n### Setup\n1. Import and activate this workflow.\n2. Create an n8n Header Auth credential named **Trellis service role bearer** with header `Authorization` and value `Bearer <Hub service-role key>`.\n3. Map that credential on **Resolve YouTube Token**.\n4. Put this workflow's ID into each parent Execute Workflow node.\n\nNever put a Google access token, refresh token, client secret, or Supabase service-role key directly in this JSON.",
+        "content": "## Account-aware YouTube uploader\n\nImported once and called by E4, E8, and E10. It resolves the exact Trellis `youtube_account_id`, refreshes its token through the service-role-only Edge Function, verifies the immutable channel ID, and performs a resumable YouTube upload.\n\n### Setup\n1. Import this workflow. It is an internal Execute Workflow sub-workflow and does not need a public trigger.\n2. Map the existing **Sproutify Trellis** Supabase API credential on **Resolve YouTube Token**.\n3. Keep the request body in JSON/key-value mode with `youtube_account_id` mapped from the workflow input.\n4. Put this workflow's ID into each parent Execute Workflow node.\n\nNever put a Google access token, refresh token, client secret, or Supabase service-role key directly in this JSON.",
         "width": 560,
         "height": 420
       },

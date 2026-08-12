@@ -62,10 +62,16 @@ test('publishing workflows delegate to the account-aware resumable uploader', as
       .map(name => readFile(new URL(`../n8n-blueprints/${name}`, import.meta.url), 'utf8')),
   ]);
   const uploader = JSON.parse(uploaderSource);
-  assert.ok(uploader.nodes.some(node => node.name === 'Resolve YouTube Token'));
+  const resolveTokenNode = uploader.nodes.find(node => node.name === 'Resolve YouTube Token');
+  assert.ok(resolveTokenNode);
+  assert.equal(resolveTokenNode.parameters.authentication, 'predefinedCredentialType');
+  assert.equal(resolveTokenNode.parameters.nodeCredentialType, 'supabaseApi');
+  assert.equal(resolveTokenNode.parameters.contentType, 'json');
+  assert.equal(resolveTokenNode.parameters.bodyParameters.parameters[0].name, 'youtube_account_id');
+  assert.ok(resolveTokenNode.credentials.supabaseApi);
   assert.ok(uploader.nodes.some(node => node.name === 'Start Resumable Upload'));
   assert.ok(uploader.nodes.some(node => node.name === 'Upload Video Bytes'));
-  assert.doesNotMatch(uploaderSource, /REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL|youTubeOAuth2Api/);
+  assert.doesNotMatch(uploaderSource, /REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL|youTubeOAuth2Api|httpHeaderAuth/);
   for (const source of parentSources) {
     assert.match(source, /REPLACE_WITH_E11_WORKFLOW_ID/);
     assert.match(source, /youtube_account_id/);
