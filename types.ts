@@ -592,6 +592,7 @@ export interface StudioVideo {
 export interface StudioPublication {
   id: string;
   album_id: string;
+  youtube_account_id: string | null;
   platform: 'youtube';
   status: 'draft' | 'ready' | 'submitting' | 'live' | 'failed' | 'cancelled';
   title: string;
@@ -1667,6 +1668,7 @@ export interface EpisodeMetadata {
 export interface EpisodePublication {
   id: string;
   episode_id: string;
+  youtube_account_id: string | null;
   platform: PublishPlatform;
   status: PublishStatus;
   external_id: string | null;
@@ -1914,6 +1916,7 @@ export interface ClipRenderJob {
 export interface ClipPublication {
   id: string;
   project_id: string;
+  youtube_account_id: string | null;
   platform: 'youtube' | 'social';
   status: 'pending' | 'uploading' | 'processing' | 'live' | 'failed';
   external_id: string | null;

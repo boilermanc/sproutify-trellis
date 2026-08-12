@@ -425,9 +425,9 @@ const AppContent: React.FC = () => {
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
       case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
       case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
-      case 'studio-albums': return <StudioAlbums addToast={addToast} />;
-      case 'trellis-episodes': return <TrellisEpisodes branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
-      case 'clip-studio': return <ClipStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
+      case 'trellis-episodes': return <TrellisEpisodes branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'clip-studio': return <ClipStudio branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
       case 'ad-performance': return <AdPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
       case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
@@ -464,7 +464,14 @@ const AppContent: React.FC = () => {
           supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
           branches={branches}
           branchSocialAccounts={branchSocialAccounts}
-          onComplete={(platform) => {
+          onComplete={async (platform) => {
+            try {
+              setBranchSocialAccounts(await fetchBranchSocialAccounts());
+            } catch (error) {
+              console.error('Could not refresh social accounts after OAuth:', error);
+              addToast('Connected, but the channel list needs a page refresh.', 'info');
+              return;
+            }
             addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully.`);
           }}
           onClose={() => setActiveView('social-hub')}

@@ -759,9 +759,11 @@ export async function publishClip(
   project: ClipProject,
   videoUrl: string,
   metadata: { title: string; description: string; tags: string[]; hashtags: string[] },
+  youtubeAccountId: string,
 ): Promise<ClipPublication> {
+  if (!youtubeAccountId) throw new Error('Choose an active YouTube channel before publishing.');
   const { data: pub, error } = await supabase.from('trellis_clip_publications').insert({
-    project_id: project.id, platform: 'youtube', status: 'pending',
+    project_id: project.id, platform: 'youtube', status: 'pending', youtube_account_id: youtubeAccountId,
   }).select('*').single();
   if (error || !pub) throw new Error(`Could not create publication: ${error?.message}`);
 
@@ -769,6 +771,7 @@ export async function publishClip(
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       publication_id: pub.id, project_id: project.id, branch: project.branch,
+      youtube_account_id: youtubeAccountId,
       platform: 'youtube', video_url: videoUrl, metadata,
     }),
   }).catch(() => {});

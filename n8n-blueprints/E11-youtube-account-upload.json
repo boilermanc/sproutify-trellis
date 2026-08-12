@@ -1,0 +1,106 @@
+{
+  "name": "Trellis: Account-Aware YouTube Upload",
+  "nodes": [
+    {
+      "parameters": { "inputSource": "passthrough" },
+      "name": "YouTube Upload Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/youtube-publish-token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ youtube_account_id: $('YouTube Upload Input').item.json.youtube_account_id }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "name": "Resolve YouTube Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [400, 300],
+      "credentials": { "httpHeaderAuth": { "id": "REPLACE_WITH_TRELLIS_SERVICE_ROLE_HEADER_AUTH", "name": "Trellis service role bearer" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "={{ 'Bearer ' + $('Resolve YouTube Token').item.json.access_token }}" },
+          { "name": "X-Upload-Content-Type", "value": "={{ $('YouTube Upload Input').item.binary.data.mimeType || 'video/mp4' }}" }
+        ] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ snippet: { title: $('YouTube Upload Input').item.json.title, description: $('YouTube Upload Input').item.json.description, tags: String($('YouTube Upload Input').item.json.tags || '').split(',').filter(Boolean), categoryId: String($('YouTube Upload Input').item.json.category_id || '22') }, status: { privacyStatus: $('YouTube Upload Input').item.json.visibility || 'private', selfDeclaredMadeForKids: $('YouTube Upload Input').item.json.made_for_kids === true } }) }}",
+        "options": { "response": { "response": { "fullResponse": true } }, "timeout": 120000 }
+      },
+      "name": "Start Resumable Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const location = $json.headers?.location || $json.headers?.Location;\nif (!location) throw new Error('YouTube did not return a resumable upload URL');\nreturn { json: { upload_url: location }, binary: $('YouTube Upload Input').item.binary };"
+      },
+      "name": "Attach Video To Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.upload_url }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "={{ 'Bearer ' + $('Resolve YouTube Token').item.json.access_token }}" }
+        ] },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": { "timeout": 3600000 }
+      },
+      "name": "Upload Video Bytes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { ...$json, access_token: $('Resolve YouTube Token').item.json.access_token, youtube_account_id: $('YouTube Upload Input').item.json.youtube_account_id } };"
+      },
+      "name": "Return Upload Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1280, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Account-aware YouTube uploader\n\nImported once and called by E4, E8, and E10. It resolves the exact Trellis `youtube_account_id`, refreshes its token through the service-role-only Edge Function, verifies the immutable channel ID, and performs a resumable YouTube upload.\n\n### Setup\n1. Import and activate this workflow.\n2. Create an n8n Header Auth credential named **Trellis service role bearer** with header `Authorization` and value `Bearer <Hub service-role key>`.\n3. Map that credential on **Resolve YouTube Token**.\n4. Put this workflow's ID into each parent Execute Workflow node.\n\nNever put a Google access token, refresh token, client secret, or Supabase service-role key directly in this JSON.",
+        "width": 560,
+        "height": 420
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [120, -180]
+    }
+  ],
+  "connections": {
+    "YouTube Upload Input": { "main": [[{ "node": "Resolve YouTube Token", "type": "main", "index": 0 }]] },
+    "Resolve YouTube Token": { "main": [[{ "node": "Start Resumable Upload", "type": "main", "index": 0 }]] },
+    "Start Resumable Upload": { "main": [[{ "node": "Attach Video To Session", "type": "main", "index": 0 }]] },
+    "Attach Video To Session": { "main": [[{ "node": "Upload Video Bytes", "type": "main", "index": 0 }]] },
+    "Upload Video Bytes": { "main": [[{ "node": "Return Upload Result", "type": "main", "index": 0 }]] }
+  }
+}

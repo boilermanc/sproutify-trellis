@@ -98,38 +98,33 @@
     },
     {
       "parameters": {
-        "resource": "video",
-        "operation": "upload",
-        "title": "={{ $('Validate Studio Payload').item.json.title }}",
-        "regionCode": "US",
-        "categoryId": "={{ '10' }}",
-        "binaryProperty": "data",
-        "options": {
-          "description": "={{ $('Validate Studio Payload').item.json.description }}",
-          "privacyStatus": "={{ $('Validate Studio Payload').item.json.visibility }}",
-          "tags": "={{ $('Validate Studio Payload').item.json.tags }}",
-          "selfDeclaredMadeForKids": "={{ $('Validate Studio Payload').item.json.made_for_kids === true }}"
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "const m = $('Validate Studio Payload').item.json;\nif (!m.youtube_account_id) throw new Error('Missing youtube_account_id');\nreturn { json: { ...m, category_id: '10' }, binary: $binary };"
       },
-      "name": "Upload Studio Album to YouTube",
-      "type": "n8n-nodes-base.youTube",
-      "typeVersion": 1,
+      "name": "Prepare Studio Account Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "onError": "continueErrorOutput",
       "position": [
         1040,
         300
-      ],
-      "credentials": {
-        "youTubeOAuth2Api": {
-          "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL",
-          "name": "YouTube account"
-        }
-      }
+      ]
+    },
+    {
+      "parameters": { "workflowId": "REPLACE_WITH_E11_WORKFLOW_ID", "options": { "waitForSubWorkflow": true } },
+      "name": "Upload Studio Album to YouTube",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "onError": "continueErrorOutput",
+      "position": [
+        1260,
+        300
+      ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const y = $json || {}; let id = typeof y.id === 'object' ? y.id?.videoId : y.id; id = id || y?.snippet?.resourceId?.videoId || y.videoId || y.uploadId; if (!/^[A-Za-z0-9_-]{11}$/.test(String(id || ''))) throw new Error('YouTube upload returned no usable video id: ' + JSON.stringify(y).slice(0, 200)); return { json: { video_id: id, youtube_url: 'https://youtu.be/' + id } };"
+        "jsCode": "const y = $json || {}; let id = typeof y.id === 'object' ? y.id?.videoId : y.id; id = id || y?.snippet?.resourceId?.videoId || y.videoId || y.uploadId; if (!/^[A-Za-z0-9_-]{11}$/.test(String(id || ''))) throw new Error('YouTube upload returned no usable video id: ' + JSON.stringify(y).slice(0, 200)); return { json: { video_id: id, youtube_url: 'https://youtu.be/' + id, access_token: y.access_token, youtube_account_id: y.youtube_account_id } };"
       },
       "name": "Extract Studio Video ID",
       "type": "n8n-nodes-base.code",
@@ -167,8 +162,10 @@
       "parameters": {
         "method": "POST",
         "url": "=https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={{ $('Extract Studio Video ID').item.json.video_id }}&uploadType=media",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "={{ 'Bearer ' + $('Extract Studio Video ID').item.json.access_token }}" }
+        ] },
         "sendBody": true,
         "contentType": "binaryData",
         "inputDataFieldName": "thumb",
@@ -183,13 +180,7 @@
       "position": [
         1700,
         300
-      ],
-      "credentials": {
-        "youTubeOAuth2Api": {
-          "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL",
-          "name": "YouTube account"
-        }
-      }
+      ]
     },
     {
       "parameters": {
@@ -498,7 +489,7 @@
     },
     {
       "parameters": {
-        "content": "## Trellis: Studio Album Publish (YouTube)\n\nDedicated Studio publisher. Do not point Studio at the Episode workflow: their durable tables and status contracts differ.\n\n**Webhook:** `trellis-studio-album-publish`\n**Secret:** set `STUDIO_PUBLISH_WEBHOOK` on the `studio-albums` Edge Function.\n\nThe Edge Function supplies six-hour signed URLs for the private video and the thumbnail image. This workflow validates Studio IDs, uploads to YouTube, and updates `studio_publications`, `studio_albums`, and `studio_jobs`. Error outputs converge on a failure branch so releases never remain stuck in `submitting`.\n\n### Setup\n1. Map every Supabase node to the Hub service-role credential.\n2. Map the YouTube node AND the Set Studio Thumbnail node to the approved channel OAuth credential.\n3. Keep new releases private for the first live test.\n4. Activate only after the Studio publication migration and Edge Function are deployed.\n\nCustom-thumbnail upload is wired: after the video uploads, Download Studio Thumbnail + Set Studio Thumbnail push the composed 16:9 thumbnail via YouTube thumbnails.set. Both use onError=continueRegularOutput, so a missing thumbnail_url never blocks the release. Verify live once, then rely on it. Scheduling stays disabled until verified end to end.",
+        "content": "## Trellis: Studio Album Publish (YouTube)\\n\\nDedicated, account-aware Studio publisher. The payload must include `youtube_account_id`; E11 resolves that exact Rekkrd channel and performs the resumable upload.\\n\\n### Setup\\n1. Import and activate E11-youtube-account-upload first.\\n2. Replace `REPLACE_WITH_E11_WORKFLOW_ID` on Upload Studio Album to YouTube with E11's workflow ID.\\n3. Map every Supabase node to the Hub service-role credential.\\n4. Keep the first release private while validating the destination.\\n\\nThe thumbnail call reuses E11's short-lived access token. Scheduling stays disabled until verified end to end. Google credentials remain in Trellis.",
         "width": 560,
         "height": 460
       },
@@ -560,6 +551,24 @@
       ]
     },
     "Download Private Studio Video": {
+      "main": [
+        [
+          {
+            "node": "Prepare Studio Account Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Studio Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Studio Account Upload": {
       "main": [
         [
           {

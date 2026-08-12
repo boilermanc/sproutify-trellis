@@ -1100,6 +1100,15 @@ Deno.serve(async (req) => {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const publication = await publicationForAlbum(db, album.id);
       if (!publication || !["ready", "failed"].includes(publication.status) || album.metadata_status !== "approved" || album.video_status !== "approved") throw new Error("Approve the video and publishing metadata before submission.");
+      const youtubeAccountId = String(body.youtube_account_id || "").trim();
+      if (!youtubeAccountId) throw new Error("Choose an active YouTube channel before submission.");
+      const { data: youtubeAccount } = await db.from("branch_social_accounts").select("id,branch_id,platform,status").eq("id", youtubeAccountId).maybeSingle();
+      const { data: youtubeBranch } = youtubeAccount?.branch_id
+        ? await db.from("branches").select("slug").eq("id", youtubeAccount.branch_id).maybeSingle()
+        : { data: null };
+      if (!youtubeAccount || youtubeAccount.platform !== "youtube" || youtubeAccount.status !== "active" || youtubeBranch?.slug !== "rekkrd") {
+        throw new Error("The selected YouTube channel is not active for Rekkrd.");
+      }
       // Resolve the CURRENT active video and thumbnail, not the ids captured when
       // the draft was prepared — re-rendering after prepare archives the old ones,
       // and the stored reference would otherwise point at an archived asset.
@@ -1110,14 +1119,14 @@ Deno.serve(async (req) => {
       const { data: thumbnail } = await db.from("studio_assets").select("storage_bucket,storage_path").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
       if (thumbnail) thumbnailUrl = (await db.storage.from(thumbnail.storage_bucket).createSignedUrl(thumbnail.storage_path, 60 * 60 * 6)).data?.signedUrl || null;
       if (videoSignError || !signedVideo?.signedUrl) throw new Error("Could not prepare the private video for publishing.");
-      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "publishing_handoff", status: "queued", progress: 0, provider: "n8n_youtube", attempt_count: 1, input_json: { publication_id: publication.id, video_asset_id: video.id } }).select("*").single();
+      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "publishing_handoff", status: "queued", progress: 0, provider: "n8n_youtube", attempt_count: 1, input_json: { publication_id: publication.id, video_asset_id: video.id, youtube_account_id: youtubeAccountId } }).select("*").single();
       if (jobError || !job) throw new Error(jobError?.message || "Could not register the publishing handoff.");
       const now = new Date().toISOString();
-      const { data: submitting } = await db.from("studio_publications").update({ status: "submitting", submitted_at: now, error_message: null, updated_at: now }).eq("id", publication.id).select("*").single();
+      const { data: submitting } = await db.from("studio_publications").update({ youtube_account_id: youtubeAccountId, status: "submitting", submitted_at: now, error_message: null, updated_at: now }).eq("id", publication.id).select("*").single();
       await db.from("studio_albums").update({ publishing_status: "submitted", status: "publishing", updated_at: now }).eq("id", album.id);
       let response: Response;
       try {
-        response = await fetch(STUDIO_PUBLISH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", publication_id: publication.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, platform: "youtube", video_url: signedVideo.signedUrl, thumbnail_url: thumbnailUrl, visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for, metadata: { title: publication.title, description: publication.description, tags: publication.tags, chapters: [] } }) });
+        response = await fetch(STUDIO_PUBLISH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", publication_id: publication.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, platform: "youtube", youtube_account_id: youtubeAccountId, video_url: signedVideo.signedUrl, thumbnail_url: thumbnailUrl, visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for, metadata: { title: publication.title, description: publication.description, tags: publication.tags, chapters: [] } }) });
       } catch (dispatchError) {
         const message = `Could not reach the publishing workflow: ${dispatchError instanceof Error ? dispatchError.message : "network error"}`;
         await Promise.all([db.from("studio_publications").update({ status: "failed", error_message: message, updated_at: new Date().toISOString() }).eq("id", publication.id), db.from("studio_jobs").update({ status: "failed", error_message: message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id), db.from("studio_albums").update({ publishing_status: "failed", status: "ready_to_publish", updated_at: new Date().toISOString() }).eq("id", album.id)]);

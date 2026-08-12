@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BarChart3, Check, ExternalLink, Loader2, RefreshCw, Save, Send, Sparkles } from 'lucide-react';
-import { StudioAlbum, StudioPublication, StudioPublicationDraft, YouTubeDailyMetric } from '../types';
+import { Branch, BranchSocialAccountsMap, StudioAlbum, StudioPublication, StudioPublicationDraft, YouTubeDailyMetric } from '../types';
 import { approveStudioPublication, getStudioYouTubeMetrics, prepareStudioPublication, publishStudioAlbum, saveStudioPublication } from '../services/studioAlbumsService';
 import ConfirmationModal from './ConfirmationModal';
+import YouTubeAccountSelector from './YouTubeAccountSelector';
 
 function formatMetricNumber(value?: number | null): string {
   if (value == null || Number.isNaN(Number(value))) return '0';
@@ -30,22 +31,26 @@ function formatSyncAge(value?: string | null): string {
 type Props = {
   album: StudioAlbum;
   publication: StudioPublication | null;
+  branches: Branch[];
+  branchSocialAccounts: BranchSocialAccountsMap;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   onChange: (publication: StudioPublication) => void;
 };
 
 const EMPTY: StudioPublicationDraft = { title: '', description: '', tags: [], visibility: 'private', made_for_kids: false, scheduled_for: null };
 
-const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, onChange }) => {
+const StudioPublishingPanel: React.FC<Props> = ({ album, publication, branches, branchSocialAccounts, addToast, onChange }) => {
   const [draft, setDraft] = useState<StudioPublicationDraft>(EMPTY);
   const [busy, setBusy] = useState<'prepare' | 'save' | 'approve' | 'publish' | null>(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
+  const [youtubeAccountId, setYoutubeAccountId] = useState(publication?.youtube_account_id || '');
   const [metrics, setMetrics] = useState<YouTubeDailyMetric[]>([]);
   const [metricsBusy, setMetricsBusy] = useState(false);
 
   useEffect(() => {
     if (!publication) return setDraft(EMPTY);
     setDraft({ title: publication.title, description: publication.description, tags: publication.tags || [], visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for });
+    if (publication.youtube_account_id) setYoutubeAccountId(publication.youtube_account_id);
   }, [publication]);
 
   const refreshMetrics = useCallback(async () => {
@@ -72,7 +77,7 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
   };
 
   const confirmYouTubeSubmission = async () => {
-    const submitted = await run('publish', () => publishStudioAlbum(album.id), 'Album submitted to the YouTube publishing workflow.');
+    const submitted = await run('publish', () => publishStudioAlbum(album.id, youtubeAccountId), 'Album submitted to the YouTube publishing workflow.');
     if (submitted) setConfirmPublish(false);
   };
 
@@ -132,6 +137,7 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
       </div>}
       {publication.status === 'submitting' && <div className="mt-5 flex items-center gap-3 rounded-2xl border border-sky-300 bg-white p-4"><Loader2 size={18} className="animate-spin text-sky-700" /><p className="text-xs font-bold text-sky-900">Publishing to YouTube… this page updates automatically when it goes live.</p></div>}
       <div className="mt-5 grid gap-4">
+        <YouTubeAccountSelector branchSlug="rekkrd" branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={locked || busy !== null} />
         <label className="text-xs font-bold text-slate-700">YouTube title<input value={draft.title} disabled={locked} maxLength={95} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">{draft.title.length}/95</span></label>
         <label className="text-xs font-bold text-slate-700">Description<textarea value={draft.description} disabled={locked} maxLength={4900} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))} className="mt-1.5 min-h-40 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">{draft.description.length}/4900</span></label>
         <label className="text-xs font-bold text-slate-700">Search tags<input value={tagText} disabled={locked} onChange={event => setDraft(current => ({ ...current, tags: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean).slice(0, 15) }))} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">Comma-separated · maximum 15</span></label>
@@ -143,7 +149,7 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, addToast, 
         {publication.status === 'draft' && <button type="button" onClick={() => run('prepare', () => prepareStudioPublication(album.id), 'Fresh metadata written. Review it before approval.')} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wider text-sky-800 disabled:opacity-50" title="Rewrite the AI description, tags, and chapters (replaces edits)">{busy === 'prepare' ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />} Regenerate</button>}
         {!locked && <button type="button" onClick={() => run('save', () => saveStudioPublication(album.id, draft), 'Publishing metadata saved.')} disabled={busy !== null || !draft.title.trim() || !draft.description.trim()} className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wider text-sky-800 disabled:opacity-50">{busy === 'save' ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Save draft</button>}
         {publication.status === 'draft' && <button type="button" onClick={() => run('approve', () => approveStudioPublication(album.id), 'Publishing metadata approved. The release is ready to submit.')} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'approve' ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />} Approve metadata</button>}
-        {(publication.status === 'ready' || publication.status === 'failed') && <button type="button" onClick={() => setConfirmPublish(true)} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'publish' ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} {publication.status === 'failed' ? 'Retry submit to YouTube' : 'Submit to YouTube'}</button>}
+        {(publication.status === 'ready' || publication.status === 'failed') && <button type="button" onClick={() => setConfirmPublish(true)} disabled={busy !== null || !youtubeAccountId} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50">{busy === 'publish' ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} {publication.status === 'failed' ? 'Retry submit to YouTube' : 'Submit to YouTube'}</button>}
         {publication.external_url && <a href={publication.external_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white"><ExternalLink size={16} /> View release</a>}
       </div>
     </>}

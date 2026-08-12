@@ -1957,6 +1957,7 @@ CREATE TABLE IF NOT EXISTS trellis_episode_metadata (
 CREATE TABLE IF NOT EXISTS trellis_episode_publications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   episode_id UUID NOT NULL REFERENCES trellis_episodes(id) ON DELETE CASCADE,
+  youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT,
   platform TEXT NOT NULL CHECK (platform IN ('youtube','spotify','apple_podcasts','rekkrd','social')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','uploading','processing','live','failed')),
   external_id TEXT,
@@ -2142,6 +2143,7 @@ CREATE TABLE IF NOT EXISTS trellis_clip_render_jobs (
 CREATE TABLE IF NOT EXISTS trellis_clip_publications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT,
   platform TEXT NOT NULL CHECK (platform IN ('youtube','social')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','uploading','processing','live','failed')),
   external_id TEXT,
@@ -2151,6 +2153,51 @@ CREATE TABLE IF NOT EXISTS trellis_clip_publications (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE trellis_episode_publications ADD COLUMN IF NOT EXISTS youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT;
+ALTER TABLE trellis_clip_publications ADD COLUMN IF NOT EXISTS youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT;
+DO $$ BEGIN
+  IF to_regclass('public.studio_publications') IS NOT NULL THEN
+    ALTER TABLE studio_publications ADD COLUMN IF NOT EXISTS youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_episode_publications_youtube_account ON trellis_episode_publications (youtube_account_id) WHERE youtube_account_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_clip_publications_youtube_account ON trellis_clip_publications (youtube_account_id) WHERE youtube_account_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION private.validate_youtube_publication_account()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, private AS $$
+DECLARE v_branch_slug TEXT; v_valid BOOLEAN;
+BEGIN
+  IF NEW.platform <> 'youtube' THEN RETURN NEW; END IF;
+  IF NEW.youtube_account_id IS NULL THEN RAISE EXCEPTION 'A YouTube account is required for YouTube publications' USING ERRCODE = '23514'; END IF;
+  IF TG_TABLE_NAME = 'trellis_episode_publications' THEN
+    SELECT episode.branch INTO v_branch_slug FROM trellis_episodes episode WHERE episode.id = NEW.episode_id;
+  ELSIF TG_TABLE_NAME = 'trellis_clip_publications' THEN
+    SELECT project.branch INTO v_branch_slug FROM trellis_clip_projects project WHERE project.id = NEW.project_id;
+  ELSIF TG_TABLE_NAME = 'studio_publications' THEN
+    v_branch_slug := 'rekkrd';
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM branch_social_accounts account JOIN branches branch ON branch.id = account.branch_id
+    WHERE account.id = NEW.youtube_account_id AND account.platform = 'youtube' AND account.status = 'active' AND branch.slug = v_branch_slug
+  ) INTO v_valid;
+  IF NOT COALESCE(v_valid, false) THEN RAISE EXCEPTION 'The selected YouTube account is not active for branch %', COALESCE(v_branch_slug, '(unknown)') USING ERRCODE = '23514'; END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION private.validate_youtube_publication_account() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.validate_youtube_publication_account() TO service_role;
+DROP TRIGGER IF EXISTS validate_episode_youtube_account ON trellis_episode_publications;
+CREATE TRIGGER validate_episode_youtube_account BEFORE INSERT OR UPDATE OF youtube_account_id, platform ON trellis_episode_publications FOR EACH ROW EXECUTE FUNCTION private.validate_youtube_publication_account();
+DROP TRIGGER IF EXISTS validate_clip_youtube_account ON trellis_clip_publications;
+CREATE TRIGGER validate_clip_youtube_account BEFORE INSERT OR UPDATE OF youtube_account_id, platform ON trellis_clip_publications FOR EACH ROW EXECUTE FUNCTION private.validate_youtube_publication_account();
+DO $$ BEGIN
+  IF to_regclass('public.studio_publications') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS validate_studio_youtube_account ON studio_publications;
+    CREATE TRIGGER validate_studio_youtube_account BEFORE INSERT OR UPDATE OF youtube_account_id, platform ON studio_publications FOR EACH ROW EXECUTE FUNCTION private.validate_youtube_publication_account();
+    CREATE INDEX IF NOT EXISTS idx_studio_publications_youtube_account ON studio_publications (youtube_account_id) WHERE youtube_account_id IS NOT NULL;
+  END IF;
+END $$;
 
 ALTER TABLE trellis_clip_broll_beats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_clip_render_jobs ENABLE ROW LEVEL SECURITY;
