@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const migrationUrl = new URL('../supabase/migrations/20260812180913_add_youtube_account_to_publications.sql', import.meta.url);
+const lockMigrationUrl = new URL('../supabase/migrations/20260812183318_lock_youtube_destination_after_submission.sql', import.meta.url);
 const episodeUrl = new URL('../services/episodeService.ts', import.meta.url);
 const clipUrl = new URL('../services/clipService.ts', import.meta.url);
 const studioUrl = new URL('../supabase/functions/studio-albums/index.ts', import.meta.url);
@@ -16,6 +17,28 @@ test('publication tables retain and validate the immutable YouTube account id', 
   assert.match(sql, /account\.status = 'active'/);
   assert.match(sql, /branch\.slug = v_branch_slug/);
   assert.match(sql, /BEFORE INSERT OR UPDATE OF youtube_account_id, platform/);
+});
+
+test('YouTube destination locks when submission starts but failed attempts can be retargeted', async () => {
+  const sql = await readFile(lockMigrationUrl, 'utf8');
+  assert.match(sql, /NEW\.youtube_account_id IS NOT DISTINCT FROM OLD\.youtube_account_id/);
+  assert.match(sql, /OLD\.status = 'failed'/);
+  assert.match(sql, /OLD\.status IN \('draft', 'ready', 'failed', 'cancelled'\)/);
+  assert.match(sql, /OLD\.external_id IS NOT NULL OR OLD\.published_at IS NOT NULL/);
+  assert.equal((sql.match(/BEFORE UPDATE OF youtube_account_id/g) || []).length, 3);
+});
+
+test('publishing screens explain the destination lock boundary and retain channel labels', async () => {
+  const sources = await Promise.all([
+    readFile(new URL('../pages/TrellisEpisodes.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../pages/ClipStudio.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/StudioPublishingPanel.tsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(sources[0], /destination locks when upload begins/i);
+  assert.match(sources[1], /destination locks when upload begins/i);
+  assert.match(sources[2], /Destination locked when this upload was submitted/);
+  assert.match(sources[0], /youtubeAccountLabel/);
+  assert.match(sources[1], /youtubeAccountLabel/);
 });
 
 test('all three publishing handoffs include youtube_account_id', async () => {

@@ -16,7 +16,7 @@ import {
 } from '../services/episodeService';
 import { getSessions, getSession } from '../services/sessionService';
 import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
-import YouTubeAccountSelector from '../components/YouTubeAccountSelector';
+import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
 
 interface Props {
   branches: Branch[];
@@ -708,6 +708,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
               <h4 className={phaseHead}><Send size={15} className="text-emerald-500" /> Publish</h4>
               <div className="mt-3">
                 <YouTubeAccountSelector branchSlug={selected.branch} branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={!!busy} />
+                <p className="mt-1.5 text-[10px] font-medium text-slate-500">You can change the channel until you click Publish. The destination locks when upload begins.</p>
               </div>
               <div className={`mt-3 rounded-2xl border p-3 ${seoReady ? 'border-emerald-100 bg-emerald-50/60' : 'border-amber-100 bg-amber-50/60'}`}>
                 <div className="flex items-center justify-between gap-3">
@@ -764,6 +765,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                         <div key={p.id} className={`flex items-center justify-between gap-3 text-xs rounded-xl px-3 py-2 ${stuck ? 'bg-rose-50 border border-rose-100' : 'bg-slate-50'}`}>
                           <span className="min-w-0">
                             <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                            {p.platform === 'youtube' && <span className="mt-0.5 block text-[10px] font-bold text-slate-500">Channel: {youtubeAccountLabel(p.youtube_account_id, branchSocialAccounts)}</span>}
                             <span className="mt-0.5 block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatPublicationStamp(p)}</span>
                             {isPublicationInFlight(p) && (
                               <span className={`mt-0.5 block text-[10px] font-black uppercase tracking-widest ${stuck ? 'text-rose-600' : 'text-amber-600'}`}>

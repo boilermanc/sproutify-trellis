@@ -20,7 +20,7 @@ import {
   queueAssemble, getClipPublications, generateClipMetadata, publishClip, setClipStatus,
   generateClipMusic, pollClipMusic, clearClipMusic,
 } from '../services/clipService';
-import YouTubeAccountSelector from '../components/YouTubeAccountSelector';
+import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
 
 interface Props {
   branches: Branch[];
@@ -944,6 +944,7 @@ const ClipStudio: React.FC<Props> = ({ branches, branchSocialAccounts, addToast,
               ) : (
                 <div className="mt-3 space-y-3">
                   <YouTubeAccountSelector branchSlug={selected.branch} branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={!!busy} />
+                  <p className="text-[10px] font-medium text-slate-500">You can change the channel until you click Publish. The destination locks when upload begins.</p>
                   <div><label className={labelCls}>Title</label>
                     <input className={inputCls} value={pubMeta.title} onChange={e => setPubMeta({ ...pubMeta, title: e.target.value })} /></div>
                   <div><label className={labelCls}>Description</label>
@@ -966,7 +967,10 @@ const ClipStudio: React.FC<Props> = ({ branches, branchSocialAccounts, addToast,
                 <div className="mt-4 space-y-1.5">
                   {publications.map(p => (
                     <div key={p.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-2">
-                      <span className="font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                      <span>
+                        <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                        {p.platform === 'youtube' && <span className="mt-0.5 block text-[10px] font-bold text-slate-500">Channel: {youtubeAccountLabel(p.youtube_account_id, branchSocialAccounts)}</span>}
+                      </span>
                       <span className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
                         {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}

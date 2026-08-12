@@ -137,7 +137,12 @@ const StudioPublishingPanel: React.FC<Props> = ({ album, publication, branches, 
       </div>}
       {publication.status === 'submitting' && <div className="mt-5 flex items-center gap-3 rounded-2xl border border-sky-300 bg-white p-4"><Loader2 size={18} className="animate-spin text-sky-700" /><p className="text-xs font-bold text-sky-900">Publishing to YouTube… this page updates automatically when it goes live.</p></div>}
       <div className="mt-5 grid gap-4">
-        <YouTubeAccountSelector branchSlug="rekkrd" branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={locked || busy !== null} />
+        <div>
+          <YouTubeAccountSelector branchSlug="rekkrd" branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={locked || busy !== null} />
+          <p className={`mt-1.5 text-[10px] font-medium ${locked ? 'text-amber-700' : 'text-slate-500'}`}>
+            {locked ? 'Destination locked when this upload was submitted.' : 'You can change the channel until submission begins. Failed submissions can be retargeted before retry.'}
+          </p>
+        </div>
         <label className="text-xs font-bold text-slate-700">YouTube title<input value={draft.title} disabled={locked} maxLength={95} onChange={event => setDraft(current => ({ ...current, title: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">{draft.title.length}/95</span></label>
         <label className="text-xs font-bold text-slate-700">Description<textarea value={draft.description} disabled={locked} maxLength={4900} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))} className="mt-1.5 min-h-40 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">{draft.description.length}/4900</span></label>
         <label className="text-xs font-bold text-slate-700">Search tags<input value={tagText} disabled={locked} onChange={event => setDraft(current => ({ ...current, tags: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean).slice(0, 15) }))} className="mt-1.5 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60" /><span className="mt-1 block text-[10px] font-medium text-slate-400">Comma-separated · maximum 15</span></label>

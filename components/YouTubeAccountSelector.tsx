@@ -25,6 +25,12 @@ export function activeYouTubeAccounts(
   );
 }
 
+export function youtubeAccountLabel(accountId: string | null, accountsByBranch: BranchSocialAccountsMap): string {
+  if (!accountId) return 'Legacy destination';
+  const account = Object.values(accountsByBranch).flat().find(candidate => candidate.id === accountId);
+  return account ? (account.display_name || account.handle || 'YouTube channel') : 'Unavailable channel';
+}
+
 const YouTubeAccountSelector: React.FC<Props> = ({ branchSlug, branches, accountsByBranch, value, onChange, disabled }) => {
   const accounts = useMemo(
     () => activeYouTubeAccounts(branchSlug, branches, accountsByBranch),
