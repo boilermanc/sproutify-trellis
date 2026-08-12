@@ -320,6 +320,7 @@ const CampaignDetailDrawer: React.FC<{
   const [unsubCount, setUnsubCount] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -356,6 +357,11 @@ const CampaignDetailDrawer: React.FC<{
     { label: 'Unsubscribed', value: unsubCount ?? 0, sub: s.delivered ? `${pct(unsubCount ?? 0, s.delivered)}%` : undefined, icon: Ban, color: 'text-slate-600', bg: 'bg-slate-200' },
   ];
   const hasEvents = s.sent + s.delivered + s.opened + s.clicked + s.bounced + s.complained > 0;
+  // The exact HTML that was sent, with recipient tokens filled in for preview.
+  const emailPreviewHtml = (c.dispatch?.html_template || '')
+    .replace(/\{\{\s*first_name\s*\}\}/g, 'Friend')
+    .replace(/\{\{\s*unsubscribe_url\s*\}\}/g, '#')
+    .replace(/\{\{\s*email\s*\}\}/g, 'friend@example.com');
 
   return (
     <>
@@ -377,6 +383,32 @@ const CampaignDetailDrawer: React.FC<{
             <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded ${STATUS_STYLE[c.status] || 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" />{c.trigger_type}</span>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-500 flex items-center gap-1"><Calendar className="w-3 h-3" />{fmtDate(c.launched_at || c.created_at)}</span>
+          </div>
+
+          {/* Email that went out */}
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Email sent</h3>
+              {c.dispatch?.html_template && (
+                <button onClick={() => setShowEmail((v) => !v)} className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-700">
+                  <Eye className="w-3.5 h-3.5" />{showEmail ? 'Hide' : 'Preview'}
+                </button>
+              )}
+            </div>
+            {c.dispatch?.from && (
+              <div className="text-xs text-slate-500">From <span className="font-bold text-slate-700">{c.dispatch.from}</span></div>
+            )}
+            <div className="text-xs text-slate-500 break-words">Subject <span className="font-bold text-slate-700">{c.dispatch?.subject || c.subject || 'No subject'}</span></div>
+            {!c.dispatch?.html_template ? (
+              <p className="text-[11px] italic text-slate-400">No saved email content — this campaign predates the durable outbox, or hasn't been sent yet.</p>
+            ) : showEmail && (
+              <iframe
+                title="Email preview"
+                sandbox=""
+                className="w-full h-[26rem] rounded-lg border border-slate-200 bg-white"
+                srcDoc={emailPreviewHtml}
+              />
+            )}
           </div>
 
           {/* Delivery / send status (durable outbox) */}
