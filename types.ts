@@ -953,6 +953,10 @@ export interface BrandColorPalette {
   secondary: string;
   accent: string;
   neutral: string;
+  // Additional brand/marketing colors beyond the 4 core roles. Optional so
+  // existing records (and every consumer that reads only the named roles) keep
+  // working unchanged. Populated by the CSS sweep's leftover colors and by hand.
+  extra?: string[];
 }
 
 export interface BrandTypography {

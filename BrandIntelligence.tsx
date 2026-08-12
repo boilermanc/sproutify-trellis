@@ -87,7 +87,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     primary: '#3B82F6',
     secondary: '#6B7280',
     accent: '#F59E0B',
-    neutral: '#F3F4F6'
+    neutral: '#F3F4F6',
+    extra: [] as string[]
   });
   const [manualFonts, setManualFonts] = useState({
     heading: 'Inter',
@@ -738,9 +739,15 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       setParsedColors(parsed.colors);
       setParsedFonts(parsed.fonts);
 
-      // Auto-suggest color roles
+      // Auto-suggest color roles. Any detected colors not chosen for one of the
+      // 4 named roles get parked in `extra` so the sweep never silently drops a
+      // brand color — you can promote or delete them below.
       const suggested = suggestColorRoles(parsed.colors);
-      setManualColors(suggested);
+      const namedRoles = [suggested.primary, suggested.secondary, suggested.accent, suggested.neutral]
+        .map(c => c.toLowerCase());
+      const leftover = parsed.colors.filter(c => !namedRoles.includes(c.toLowerCase()));
+      const uniqueLeftover = Array.from(new Set(leftover.map(c => c.toLowerCase())));
+      setManualColors({ ...suggested, extra: uniqueLeftover });
 
       // Use first parsed font for headings, second for body
       if (parsed.fonts.length > 0) {
@@ -1164,24 +1171,82 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       ))}
                     </div>
 
-                    {/* Parsed colors preview */}
+                    {/* Parsed colors preview — click a swatch to add it to the
+                        palette (deduped against the 4 named roles + extras). */}
                     {parsedColors.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="text-[10px] text-slate-400 font-medium">All detected:</span>
-                        {parsedColors.slice(0, 12).map((color, i) => (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-medium">All detected (click to add):</span>
+                        {parsedColors.slice(0, 24).map((color, i) => (
                           <button
                             key={i}
-                            onClick={() => {
-                              // Click to set as primary
-                              setManualColors(prev => ({ ...prev, primary: color }));
-                            }}
+                            onClick={() => setManualColors(prev => {
+                              const used = [prev.primary, prev.secondary, prev.accent, prev.neutral, ...prev.extra]
+                                .map(c => c.toLowerCase());
+                              if (used.includes(color.toLowerCase())) return prev;
+                              return { ...prev, extra: [...prev.extra, color] };
+                            })}
                             className="w-6 h-6 rounded border border-slate-200 hover:scale-110 transition-transform"
                             style={{ backgroundColor: color }}
-                            title={color}
+                            title={`Add ${color}`}
                           />
                         ))}
                       </div>
                     )}
+
+                    {/* Additional colors — anything beyond the 4 core roles. */}
+                    <div className="mt-5">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                          Additional Colors {manualColors.extra.length > 0 && <span className="text-slate-400">({manualColors.extra.length})</span>}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setManualColors(prev => ({ ...prev, extra: [...prev.extra, '#000000'] }))}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                        >
+                          <Plus className="w-3 h-3" /> Add color
+                        </button>
+                      </div>
+                      {manualColors.extra.length === 0 ? (
+                        <p className="text-[10px] text-slate-400">No extra colors. Click a detected swatch above or "Add color".</p>
+                      ) : (
+                        <div className="grid grid-cols-4 gap-3">
+                          {manualColors.extra.map((color, i) => (
+                            <div key={i} className="flex items-center gap-1.5">
+                              <input
+                                type="color"
+                                value={color}
+                                onChange={(e) => setManualColors(prev => ({
+                                  ...prev,
+                                  extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
+                                }))}
+                                className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
+                              />
+                              <input
+                                type="text"
+                                value={color}
+                                onChange={(e) => setManualColors(prev => ({
+                                  ...prev,
+                                  extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
+                                }))}
+                                className="w-full min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] font-mono"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setManualColors(prev => ({
+                                  ...prev,
+                                  extra: prev.extra.filter((_, j) => j !== i)
+                                }))}
+                                className="p-1 text-slate-300 hover:text-red-500 transition-colors flex-shrink-0"
+                                title="Remove"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Typography */}
@@ -1538,6 +1603,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <ColorSwatch color={viewingBrand.color_palette.secondary} label="Secondary" />
                   <ColorSwatch color={viewingBrand.color_palette.accent} label="Accent" />
                   <ColorSwatch color={viewingBrand.color_palette.neutral} label="Neutral" />
+                  {viewingBrand.color_palette.extra?.map((color, i) => (
+                    <React.Fragment key={i}>
+                      <ColorSwatch color={color} label={`Extra ${i + 1}`} />
+                    </React.Fragment>
+                  ))}
                 </div>
               </div>
 
@@ -2209,6 +2279,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <ColorSwatch color={previewBrand.color_palette.secondary} label="Secondary" />
                   <ColorSwatch color={previewBrand.color_palette.accent} label="Accent" />
                   <ColorSwatch color={previewBrand.color_palette.neutral} label="Neutral" />
+                  {previewBrand.color_palette.extra?.map((color, i) => (
+                    <React.Fragment key={i}>
+                      <ColorSwatch color={color} label={`Extra ${i + 1}`} />
+                    </React.Fragment>
+                  ))}
                 </div>
               </div>
 
@@ -2328,6 +2403,78 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* Additional colors — beyond the 4 core roles. */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      Additional Colors {(editingBrand.color_palette.extra?.length ?? 0) > 0 && (
+                        <span className="text-slate-400">({editingBrand.color_palette.extra!.length})</span>
+                      )}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setEditingBrand({
+                        ...editingBrand,
+                        color_palette: {
+                          ...editingBrand.color_palette,
+                          extra: [...(editingBrand.color_palette.extra || []), '#000000']
+                        }
+                      })}
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                    >
+                      <Plus className="w-3 h-3" /> Add color
+                    </button>
+                  </div>
+                  {(editingBrand.color_palette.extra?.length ?? 0) === 0 ? (
+                    <p className="text-[10px] text-slate-400">No extra colors.</p>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-3">
+                      {editingBrand.color_palette.extra!.map((color, i) => (
+                        <div key={i} className="flex items-center gap-1.5">
+                          <input
+                            type="color"
+                            value={color}
+                            onChange={(e) => setEditingBrand({
+                              ...editingBrand,
+                              color_palette: {
+                                ...editingBrand.color_palette,
+                                extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
+                              }
+                            })}
+                            className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
+                          />
+                          <input
+                            type="text"
+                            value={color}
+                            onChange={(e) => setEditingBrand({
+                              ...editingBrand,
+                              color_palette: {
+                                ...editingBrand.color_palette,
+                                extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
+                              }
+                            })}
+                            className="w-full min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditingBrand({
+                              ...editingBrand,
+                              color_palette: {
+                                ...editingBrand.color_palette,
+                                extra: editingBrand.color_palette.extra!.filter((_, j) => j !== i)
+                              }
+                            })}
+                            className="p-1 text-slate-300 hover:text-red-500 transition-colors flex-shrink-0"
+                            title="Remove"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
