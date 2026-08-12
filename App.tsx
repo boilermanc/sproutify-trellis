@@ -45,6 +45,7 @@ import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { fetchSpokeConnections, migrateLocalStorageToSupabase } from './services/spokeConnectionsService';
+import { fetchBranchSocialAccounts, migrateLegacyBranchSocialAccounts } from './services/branchSocialAccountsService';
 import { fetchSocialSignals } from './services/socialService';
 import { fetchEngagementIndex, computeEngagementScore, type EngagementSummary } from './services/emailReportingService';
 import { mapFederatedConsent } from './utils/profileMapper';
@@ -131,6 +132,7 @@ const AppContent: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // localStorage is now an instant cache; Supabase is the source of truth.
   const [branchSocialAccounts, setBranchSocialAccounts] = useState<BranchSocialAccountsMap>(() => {
     try {
       const saved = localStorage.getItem('trellis_branch_social_accounts');
@@ -366,6 +368,25 @@ const AppContent: React.FC = () => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    const loadBranchSocialAccounts = async () => {
+      try {
+        await migrateLegacyBranchSocialAccounts();
+        const accounts = await fetchBranchSocialAccounts();
+        if (!cancelled) setBranchSocialAccounts(accounts);
+      } catch (error) {
+        console.error('Failed to load branch social accounts:', error);
+        if (!cancelled) addToast('Could not load branch social accounts.', 'error');
+      }
+    };
+
+    loadBranchSocialAccounts();
+    return () => { cancelled = true; };
+  }, [user?.id, addToast]);
 
   const handleOpenHelpArticle = useCallback((article: Article) => {
     setHelpArticle(article);

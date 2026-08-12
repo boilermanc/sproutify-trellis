@@ -696,13 +696,23 @@ export interface SocialActivity {
 export type SocialPlatform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube';
 
 export interface SocialAccount {
+  id?: string;
+  branch_id?: string;
   platform: SocialPlatform;
+  external_account_id?: string;
   handle: string;
+  display_name?: string;
   profile_url?: string;
+  purpose?: string;
+  is_primary?: boolean;
+  status?: 'registered' | 'pending' | 'active' | 'error' | 'revoked';
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
   is_connected: boolean;
 }
 
-/** localStorage sidecar shape: branchId → social accounts */
+/** Supabase-backed registry shape: branchId → public social account identities */
 export type BranchSocialAccountsMap = Record<string, SocialAccount[]>;
 
 /** Non-sensitive connection status returned by Supabase RPC */

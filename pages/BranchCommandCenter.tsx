@@ -15,6 +15,7 @@ import { generateSnapshot, saveSnapshot } from '../services/branchSnapshotServic
 import { checkConnections, disconnectPlatform, openSocialOAuthPopup } from '../services/socialService';
 import { SOCIAL_PLATFORM_META, getSocialUrl, PLATFORM_ICONS, PLATFORM_COLORS } from '../utils';
 import { upsertSpokeConnection, deleteSpokeConnection } from '../services/spokeConnectionsService';
+import { replaceBranchSocialAccounts } from '../services/branchSocialAccountsService';
 
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 const FONT_OPTIONS = ['Inter', 'Poppins', 'Roboto', 'System'];
@@ -277,10 +278,13 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     setIsSaving(true);
     try {
       await updateBranch(editingBranch.branchId, editedBranch);
-      // Save social accounts to localStorage sidecar
+      const savedSocialAccounts = await replaceBranchSocialAccounts(
+        editingBranch.branchId,
+        editedSocialAccounts,
+      );
       onBranchSocialAccountsChange?.({
         ...branchSocialAccounts,
-        [editingBranch.branchId]: editedSocialAccounts,
+        [editingBranch.branchId]: savedSocialAccounts,
       });
       showToast('Branch updated', 'success');
       await loadBranchData();
