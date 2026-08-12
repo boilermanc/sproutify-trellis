@@ -5,13 +5,13 @@ import {
   ShieldCheck, AlertTriangle, Loader2, CheckCircle2,
   Eye, EyeOff, Sparkles, ArrowRight, Globe, Lock,
   ClipboardCopy, RefreshCw, X, Info, Zap, Terminal, GitBranch, PlugZap,
-  Plus, Trash2, RotateCcw, Unplug, Clock, Settings2
+  Plus, Trash2, RotateCcw, Unplug, Clock, Settings2, Youtube
 } from 'lucide-react';
-import { Branch, SocialPlatform, SocialConnectionStatus } from '../types';
+import { Branch, SocialPlatform, SocialConnectionStatus, BranchSocialAccountsMap } from '../types';
 import { saveAppCredentials, openSocialOAuthPopup, checkConnections, disconnectPlatform, testConnection } from '../services/socialService';
 
 // ——— Types ————————————————————————————————————————————————
-type Platform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok';
+type Platform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube';
 
 interface WizardStep {
   id: string;
@@ -37,6 +37,7 @@ interface PlatformSetupWizardProps {
   platform?: Platform;
   supabaseUrl?: string;
   branches?: Branch[];
+  branchSocialAccounts?: BranchSocialAccountsMap;
   // Preselect a branch (+ optionally platform) when launched to edit an existing connection.
   initialBranchId?: string;
   onComplete?: (platform: Platform, branchId: string) => void;
@@ -752,6 +753,50 @@ const getTikTokSteps = (supabaseUrl: string): WizardStep[] => [
   },
 ];
 
+// ——— YouTube Steps —————————————————————————————————————————
+const getYouTubeSteps = (supabaseUrl: string): WizardStep[] => [
+  {
+    id: 'youtube-project',
+    title: 'Enable the YouTube APIs',
+    subtitle: 'Use a Google Cloud project owned by Rekkrd',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>Open Google Cloud Console and select or create the project Trellis will use for Rekkrd publishing.</Step>
+        <div className="pl-12"><ExtLink href="https://console.cloud.google.com/apis/library/youtube.googleapis.com">Open YouTube Data API</ExtLink></div>
+        <Step n={2}>Enable <strong>YouTube Data API v3</strong> and <strong>YouTube Analytics API</strong>.</Step>
+        <Callout type="info">One Google OAuth client can be reused for both Rekkrd channels. Trellis stores a separate user token for each immutable YouTube channel ID.</Callout>
+      </div>
+    ),
+  },
+  {
+    id: 'youtube-consent',
+    title: 'Configure OAuth Consent',
+    subtitle: 'Request upload and read-only analytics access',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>Configure the OAuth consent screen for your Google Cloud project.</Step>
+        <Step n={2}>During testing, add <strong>boilermanc@gmail.com</strong> as a test user.</Step>
+        <Step n={3}>Trellis requests YouTube upload, YouTube read-only, and YouTube Analytics read-only scopes.</Step>
+        <Callout type="warning">Google may show an unverified-app warning until the OAuth application completes verification. Keep the app in testing while connecting your own channels.</Callout>
+      </div>
+    ),
+  },
+  {
+    id: 'youtube-client',
+    title: 'Create a Web OAuth Client',
+    subtitle: 'Register the account-scoped Trellis callback',
+    content: (
+      <div className="space-y-6">
+        <Step n={1}>Under <strong>APIs &amp; Services → Credentials</strong>, create an OAuth Client ID with application type <strong>Web application</strong>.</Step>
+        <Step n={2}>Add this exact authorized redirect URI:</Step>
+        <div className="pl-12"><CopyBlock label="Authorized Redirect URI" value={`${supabaseUrl}/functions/v1/youtube-oauth/callback`} /></div>
+        <Step n={3}>Copy the generated Client ID and Client Secret. You will enter them on the next screen.</Step>
+        <Callout type="tip">During Google authorization, choose the Brand Account named for the specific channel selected in Trellis. Trellis independently verifies the returned channel ID before storing anything.</Callout>
+      </div>
+    ),
+  },
+];
+
 // ——— Platform Configs ——————————————————————————————————————
 const getPlatformConfigs = (supabaseUrl: string): Record<Platform, PlatformConfig> => ({
   instagram: {
@@ -814,6 +859,18 @@ const getPlatformConfigs = (supabaseUrl: string): Record<Platform, PlatformConfi
     credentialLabels: { key: 'Client Key', secret: 'Client Secret' },
     steps: getTikTokSteps(supabaseUrl),
   },
+  youtube: {
+    id: 'youtube',
+    name: 'YouTube',
+    icon: Youtube,
+    color: 'text-red-600',
+    bgColor: 'bg-gradient-to-br from-red-50 to-white',
+    borderColor: 'border-red-200',
+    devConsoleUrl: 'https://console.cloud.google.com/apis/credentials',
+    devConsoleName: 'Google Cloud Console',
+    credentialLabels: { key: 'OAuth Client ID', secret: 'OAuth Client Secret' },
+    steps: getYouTubeSteps(supabaseUrl),
+  },
 });
 
 // ————————————————————————————————————————————————————————————
@@ -825,6 +882,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
   // guide must point there — never at a spoke's Supabase URL.
   supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://horvjqqifgrzxesuxtfm.supabase.co',
   branches = [],
+  branchSocialAccounts = {},
   initialBranchId,
   onComplete,
   onClose,
@@ -835,6 +893,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
     initialBranchId || (activeBranches.length === 1 ? activeBranches[0].id : null)
   );
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(initialPlatform || null);
+  const [selectedSocialAccountId, setSelectedSocialAccountId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
@@ -856,6 +915,10 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
   const [testState, setTestState] = useState<Record<string, { loading?: boolean; ok?: boolean; username?: string; error?: string }>>({});
 
   const selectedBranch = activeBranches.find(b => b.id === selectedBranchId) || null;
+  const selectedBranchYouTubeAccounts = selectedBranchId
+    ? (branchSocialAccounts[selectedBranchId] || []).filter(account => account.platform === 'youtube')
+    : [];
+  const selectedSocialAccount = selectedBranchYouTubeAccounts.find(account => account.id === selectedSocialAccountId) || null;
 
   const configs = getPlatformConfigs(supabaseUrl);
   const config = selectedPlatform ? configs[selectedPlatform] : null;
@@ -871,7 +934,8 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
       selectedBranchId,
       selectedPlatform as SocialPlatform,
       appId,
-      appSecret
+      appSecret,
+      selectedPlatform === 'youtube' ? selectedSocialAccountId || undefined : undefined,
     );
     setIsSaving(false);
     if (result.success) {
@@ -884,6 +948,10 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
   // Launch the OAuth popup, then verify the branch now has an active connection.
   const handleConnectAccount = () => {
     if (!selectedBranchId || !selectedPlatform) return;
+    if (selectedPlatform === 'youtube' && !selectedSocialAccountId) {
+      setConnectError('Choose the exact YouTube channel before connecting.');
+      return;
+    }
     setIsConnecting(true);
     setConnectError(null);
     openSocialOAuthPopup(
@@ -894,14 +962,17 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
         const result = await checkConnections(selectedBranchId);
         setIsConnecting(false);
         const connected = result.connections.some(
-          c => c.platform === selectedPlatform && c.is_connected
+          c => c.platform === selectedPlatform
+            && c.is_connected
+            && (selectedPlatform !== 'youtube' || c.branch_social_account_id === selectedSocialAccountId)
         );
         if (connected) {
           setIsConnected(true);
         } else {
           setConnectError('The account was not connected. Please complete the authorization popup and try again.');
         }
-      }
+      },
+      selectedPlatform === 'youtube' ? selectedSocialAccountId || undefined : undefined,
     );
   };
 
@@ -913,6 +984,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
     setConnectError(null);
     setAppId('');
     setAppSecret('');
+    setSelectedSocialAccountId(null);
     setCurrentStep(0);
   };
 
@@ -1009,7 +1081,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
 
   // ——— Management View (landing dashboard) ————————————————————————
   if (mode === 'manage') {
-    const PLATFORM_ORDER: Platform[] = ['instagram', 'facebook', 'x', 'linkedin', 'tiktok'];
+    const PLATFORM_ORDER: Platform[] = ['instagram', 'facebook', 'x', 'linkedin', 'tiktok', 'youtube'];
     const statusMeta = {
       active: { label: 'Connected', cls: 'bg-emerald-100 text-emerald-700' },
       pending: { label: 'Saved · not connected', cls: 'bg-amber-100 text-amber-700' },
@@ -1070,6 +1142,33 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
                     {PLATFORM_ORDER.map((p) => {
                       const cfg = configs[p];
                       const Icon = cfg.icon;
+                      if (p === 'youtube') {
+                        const accounts = (branchSocialAccounts[b.id] || []).filter(account => account.platform === 'youtube');
+                        const connectedCount = conns.filter(connection =>
+                          connection.platform === 'youtube'
+                          && connection.is_connected
+                          && accounts.some(account => account.id === connection.branch_social_account_id)
+                        ).length;
+                        return (
+                          <div key={p} className="flex items-center gap-3 p-3 rounded-2xl border border-red-100 bg-red-50/40">
+                            <div className={`p-2 rounded-lg bg-white border border-red-100 ${cfg.color}`}><Icon size={16} /></div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-black text-slate-800 leading-tight">{cfg.name}</p>
+                              <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${connectedCount ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                {connectedCount}/{accounts.length} channels connected
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setupConnection(b.id, 'youtube')}
+                              disabled={accounts.length === 0}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider hover:bg-red-600 transition disabled:opacity-30"
+                              title={accounts.length ? 'Configure a registered YouTube channel' : 'Register a YouTube account under Branches first'}
+                            >
+                              <Settings2 size={11} /> Configure
+                            </button>
+                          </div>
+                        );
+                      }
                       const conn = conns.find((c) => c.platform === p);
                       const status: 'active' | 'pending' | 'none' = conn ? (conn.is_connected ? 'active' : 'pending') : 'none';
                       const sm = statusMeta[status];
@@ -1342,6 +1441,39 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
               </div>
 
               <div className="space-y-6 max-w-xl">
+                {selectedPlatform === 'youtube' && (
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
+                      Exact YouTube Channel
+                    </label>
+                    {selectedBranchYouTubeAccounts.length > 0 ? (
+                      <select
+                        value={selectedSocialAccountId || ''}
+                        onChange={event => {
+                          setSelectedSocialAccountId(event.target.value || null);
+                          setCredsSaved(false);
+                          setIsConnected(false);
+                          setConnectError(null);
+                        }}
+                        className="w-full bg-red-50 border-2 border-red-200 rounded-xl px-5 py-4 text-sm font-bold text-slate-800 outline-none focus:border-red-500 focus:bg-white transition"
+                      >
+                        <option value="">Choose the channel Google must return…</option>
+                        {selectedBranchYouTubeAccounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.display_name || account.handle} · {account.external_account_id}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Callout type="warning">No YouTube channels are registered for this branch. Add the channel under Branches before configuring OAuth.</Callout>
+                    )}
+                    {selectedSocialAccount && (
+                      <p className="mt-2 text-[10px] font-bold text-red-600">
+                        Google must return {selectedSocialAccount.display_name || selectedSocialAccount.handle} ({selectedSocialAccount.external_account_id}). A different Brand Account will be rejected.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">
                     {config!.credentialLabels.key}
@@ -1379,7 +1511,7 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
                 <div className="pt-4">
                   <button
                     onClick={handleSaveCredentials}
-                    disabled={!appId || !appSecret || isSaving || isConnected}
+                    disabled={!appId || !appSecret || isSaving || isConnected || (selectedPlatform === 'youtube' && !selectedSocialAccountId)}
                     className={`w-full py-5 rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center space-x-3 transition shadow-lg ${
                       credsSaved
                         ? 'bg-emerald-500 text-white'

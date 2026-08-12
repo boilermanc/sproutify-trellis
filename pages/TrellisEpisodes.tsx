@@ -5,7 +5,7 @@ import {
   AlertCircle, Copy, BarChart3,
 } from 'lucide-react';
 import {
-  Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform, YouTubeDailyMetric,
+  Branch, BranchSocialAccountsMap, Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication, CreateEpisodeConfig, AssetType, MusicSession, PublishPlatform, YouTubeDailyMetric,
 } from '../types';
 import { EPISODE_PHASES, EPISODE_STATUS_META, PUBLISH_PLATFORMS, EPISODE_ART_STYLES } from '../constants';
 import {
@@ -16,9 +16,11 @@ import {
 } from '../services/episodeService';
 import { getSessions, getSession } from '../services/sessionService';
 import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
+import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
 
 interface Props {
-  branches: Array<{ slug: string; name: string }>;
+  branches: Branch[];
+  branchSocialAccounts: BranchSocialAccountsMap;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   userId?: string | null;
   geminiApiKey?: string;
@@ -147,12 +149,13 @@ function isPublicationStuck(pub: EpisodePublication): boolean {
   return isPublicationInFlight(pub) && age !== null && age >= STUCK_PUBLICATION_MINUTES;
 }
 
-const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey }) => {
+const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addToast, userId, geminiApiKey }) => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selected, setSelected] = useState<Episode | null>(null);
   const [assets, setAssets] = useState<EpisodeAsset[]>([]);
   const [metadata, setMetadata] = useState<EpisodeMetadata | null>(null);
   const [pubs, setPubs] = useState<EpisodePublication[]>([]);
+  const [youtubeAccountId, setYoutubeAccountId] = useState('');
   const [youtubeMetrics, setYoutubeMetrics] = useState<YouTubeDailyMetric[]>([]);
   const [sessionsList, setSessionsList] = useState<MusicSession[]>([]);
   const [linkedSession, setLinkedSession] = useState<MusicSession | null>(null);
@@ -703,6 +706,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
             {/* Phase 6: Publish */}
             <div className={card}>
               <h4 className={phaseHead}><Send size={15} className="text-emerald-500" /> Publish</h4>
+              <div className="mt-3">
+                <YouTubeAccountSelector branchSlug={selected.branch} branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={!!busy} />
+                <p className="mt-1.5 text-[10px] font-medium text-slate-500">You can change the channel until you click Publish. The destination locks when upload begins.</p>
+              </div>
               <div className={`mt-3 rounded-2xl border p-3 ${seoReady ? 'border-emerald-100 bg-emerald-50/60' : 'border-amber-100 bg-amber-50/60'}`}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -740,8 +747,8 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {PUBLISH_PLATFORMS.map(p => (
-                  <button key={p.id} type="button" disabled={!p.available || !!busy}
-                    onClick={() => run(`pub-${p.id}`, () => publishEpisode(selected, p.id as PublishPlatform, video?.url || null, metadata, publishThumbnailUrl).then(() => {}))}
+                  <button key={p.id} type="button" disabled={!p.available || !!busy || (p.id === 'youtube' && !youtubeAccountId)}
+                    onClick={() => run(`pub-${p.id}`, () => publishEpisode(selected, p.id as PublishPlatform, video?.url || null, metadata, publishThumbnailUrl, youtubeAccountId).then(() => {}))}
                     className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-100 text-[10px] font-black text-emerald-700 uppercase tracking-tight hover:border-emerald-400 transition disabled:opacity-40 flex items-center gap-1">
                     <Send size={11} /> {p.label}{!p.available && ' (soon)'}
                   </button>
@@ -758,6 +765,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, addToast, userId, geminiAp
                         <div key={p.id} className={`flex items-center justify-between gap-3 text-xs rounded-xl px-3 py-2 ${stuck ? 'bg-rose-50 border border-rose-100' : 'bg-slate-50'}`}>
                           <span className="min-w-0">
                             <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                            {p.platform === 'youtube' && <span className="mt-0.5 block text-[10px] font-bold text-slate-500">Channel: {youtubeAccountLabel(p.youtube_account_id, branchSocialAccounts)}</span>}
                             <span className="mt-0.5 block text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatPublicationStamp(p)}</span>
                             {isPublicationInFlight(p) && (
                               <span className={`mt-0.5 block text-[10px] font-black uppercase tracking-widest ${stuck ? 'text-rose-600' : 'text-amber-600'}`}>

@@ -362,9 +362,11 @@ export async function publishEpisode(
   videoUrl: string | null,
   metadata: EpisodeMetadata | null,
   thumbnailUrl?: string | null,
+  youtubeAccountId?: string | null,
 ): Promise<EpisodePublication> {
+  if (platform === 'youtube' && !youtubeAccountId) throw new Error('Choose an active YouTube channel before publishing.');
   const { data: pub, error } = await supabase.from('trellis_episode_publications').insert({
-    episode_id: episode.id, platform, status: 'pending',
+    episode_id: episode.id, platform, status: 'pending', youtube_account_id: platform === 'youtube' ? youtubeAccountId : null,
   }).select('*').single();
   if (error || !pub) throw new Error(`Could not create publication: ${error?.message}`);
 
@@ -372,6 +374,7 @@ export async function publishEpisode(
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       publication_id: pub.id, episode_id: episode.id, branch: episode.branch, platform,
+      youtube_account_id: platform === 'youtube' ? youtubeAccountId : null,
       video_url: videoUrl,
       thumbnail_url: thumbnailUrl || null,
       made_for_kids: false,

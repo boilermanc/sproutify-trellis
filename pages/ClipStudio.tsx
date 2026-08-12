@@ -6,7 +6,7 @@ import {
   Trophy, Pencil, Download, Send, ExternalLink, Layers, Video, Music,
 } from 'lucide-react';
 import {
-  ClipProject, ClipSource, ClipGeneration, ClipFormat, CreateClipConfig,
+  Branch, BranchSocialAccountsMap, ClipProject, ClipSource, ClipGeneration, ClipFormat, CreateClipConfig,
   ClipBrollBeat, ClipRenderJob, ClipPublication, ClipTriage,
   ClipAudioConfig, MusicGeneration,
 } from '../types';
@@ -20,9 +20,11 @@ import {
   queueAssemble, getClipPublications, generateClipMetadata, publishClip, setClipStatus,
   generateClipMusic, pollClipMusic, clearClipMusic,
 } from '../services/clipService';
+import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
 
 interface Props {
-  branches: Array<{ slug: string; name: string }>;
+  branches: Branch[];
+  branchSocialAccounts: BranchSocialAccountsMap;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   userId?: string | null;
   geminiApiKey?: string;
@@ -67,7 +69,7 @@ const TRIAGE_META: Record<ClipTriage, { label: string; cls: string }> = {
   edited: { label: 'Made the edit', cls: 'bg-blue-100 text-blue-700' },
 };
 
-const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey }) => {
+const ClipStudio: React.FC<Props> = ({ branches, branchSocialAccounts, addToast, userId, geminiApiKey }) => {
   const [mode, setMode] = useState<'library' | 'create' | 'project'>('library');
   const [projects, setProjects] = useState<ClipProject[]>([]);
   const [selected, setSelected] = useState<ClipProject | null>(null);
@@ -76,6 +78,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [brollBeats, setBrollBeats] = useState<ClipBrollBeat[]>([]);
   const [renderJobs, setRenderJobs] = useState<ClipRenderJob[]>([]);
   const [publications, setPublications] = useState<ClipPublication[]>([]);
+  const [youtubeAccountId, setYoutubeAccountId] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [tab, setTab] = useState<'script' | 'broll' | 'runs' | 'publish'>('script');
@@ -940,14 +943,16 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                 </button>
               ) : (
                 <div className="mt-3 space-y-3">
+                  <YouTubeAccountSelector branchSlug={selected.branch} branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={!!busy} />
+                  <p className="text-[10px] font-medium text-slate-500">You can change the channel until you click Publish. The destination locks when upload begins.</p>
                   <div><label className={labelCls}>Title</label>
                     <input className={inputCls} value={pubMeta.title} onChange={e => setPubMeta({ ...pubMeta, title: e.target.value })} /></div>
                   <div><label className={labelCls}>Description</label>
                     <textarea className={`${inputCls} h-24 resize-none`} value={pubMeta.description} onChange={e => setPubMeta({ ...pubMeta, description: e.target.value })} /></div>
                   <p className="text-[11px] font-bold text-cyan-600">{pubMeta.hashtags.join(' ')}</p>
                   <div className="flex flex-wrap gap-1">{pubMeta.tags.slice(0, 20).map((t, i) => <span key={i} className="px-2 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500">{t}</span>)}</div>
-                  <button type="button" disabled={!!busy} onClick={() => run('publish', async () => {
-                    await publishClip(selected, videoForPublish!, pubMeta);
+                  <button type="button" disabled={!!busy || !youtubeAccountId} onClick={() => run('publish', async () => {
+                    await publishClip(selected, videoForPublish!, pubMeta, youtubeAccountId);
                     setPublications(await getClipPublications(selected.id));
                     await refreshProject(selected.id);
                     addToast('Publishing — n8n uploads to YouTube', 'success');
@@ -962,7 +967,10 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                 <div className="mt-4 space-y-1.5">
                   {publications.map(p => (
                     <div key={p.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-2">
-                      <span className="font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                      <span>
+                        <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                        {p.platform === 'youtube' && <span className="mt-0.5 block text-[10px] font-bold text-slate-500">Channel: {youtubeAccountLabel(p.youtube_account_id, branchSocialAccounts)}</span>}
+                      </span>
                       <span className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
                         {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}

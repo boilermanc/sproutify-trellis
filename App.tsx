@@ -45,6 +45,7 @@ import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { fetchSpokeConnections, migrateLocalStorageToSupabase } from './services/spokeConnectionsService';
+import { fetchBranchSocialAccounts, migrateLegacyBranchSocialAccounts } from './services/branchSocialAccountsService';
 import { fetchSocialSignals } from './services/socialService';
 import { fetchEngagementIndex, computeEngagementScore, type EngagementSummary } from './services/emailReportingService';
 import { mapFederatedConsent } from './utils/profileMapper';
@@ -131,6 +132,7 @@ const AppContent: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // localStorage is now an instant cache; Supabase is the source of truth.
   const [branchSocialAccounts, setBranchSocialAccounts] = useState<BranchSocialAccountsMap>(() => {
     try {
       const saved = localStorage.getItem('trellis_branch_social_accounts');
@@ -367,6 +369,25 @@ const AppContent: React.FC = () => {
     }, 4000);
   }, []);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    const loadBranchSocialAccounts = async () => {
+      try {
+        await migrateLegacyBranchSocialAccounts();
+        const accounts = await fetchBranchSocialAccounts();
+        if (!cancelled) setBranchSocialAccounts(accounts);
+      } catch (error) {
+        console.error('Failed to load branch social accounts:', error);
+        if (!cancelled) addToast('Could not load branch social accounts.', 'error');
+      }
+    };
+
+    loadBranchSocialAccounts();
+    return () => { cancelled = true; };
+  }, [user?.id, addToast]);
+
   const handleOpenHelpArticle = useCallback((article: Article) => {
     setHelpArticle(article);
     setActiveView('help-center');
@@ -404,9 +425,9 @@ const AppContent: React.FC = () => {
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
       case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
       case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
-      case 'studio-albums': return <StudioAlbums addToast={addToast} />;
-      case 'trellis-episodes': return <TrellisEpisodes branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
-      case 'clip-studio': return <ClipStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
+      case 'trellis-episodes': return <TrellisEpisodes branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'clip-studio': return <ClipStudio branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
       case 'ad-performance': return <AdPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
       case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
@@ -442,7 +463,15 @@ const AppContent: React.FC = () => {
         <PlatformSetupWizard
           supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
           branches={branches}
-          onComplete={(platform) => {
+          branchSocialAccounts={branchSocialAccounts}
+          onComplete={async (platform) => {
+            try {
+              setBranchSocialAccounts(await fetchBranchSocialAccounts());
+            } catch (error) {
+              console.error('Could not refresh social accounts after OAuth:', error);
+              addToast('Connected, but the channel list needs a page refresh.', 'info');
+              return;
+            }
             addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully.`);
           }}
           onClose={() => setActiveView('social-hub')}

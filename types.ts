@@ -592,6 +592,7 @@ export interface StudioVideo {
 export interface StudioPublication {
   id: string;
   album_id: string;
+  youtube_account_id: string | null;
   platform: 'youtube';
   status: 'draft' | 'ready' | 'submitting' | 'live' | 'failed' | 'cancelled';
   title: string;
@@ -696,19 +697,32 @@ export interface SocialActivity {
 export type SocialPlatform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube';
 
 export interface SocialAccount {
+  id?: string;
+  branch_id?: string;
   platform: SocialPlatform;
+  external_account_id?: string;
   handle: string;
+  display_name?: string;
   profile_url?: string;
+  purpose?: string;
+  is_primary?: boolean;
+  status?: 'registered' | 'pending' | 'active' | 'error' | 'revoked';
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
   is_connected: boolean;
 }
 
-/** localStorage sidecar shape: branchId → social accounts */
+/** Supabase-backed registry shape: branchId → public social account identities */
 export type BranchSocialAccountsMap = Record<string, SocialAccount[]>;
 
 /** Non-sensitive connection status returned by Supabase RPC */
 export interface SocialConnectionStatus {
+  credential_id?: string;
+  branch_social_account_id?: string;
   platform: SocialPlatform;
   is_connected: boolean;
+  platform_user_id?: string;
   platform_username?: string;
   connected_at?: string;
   // Whether the App Secret is stored (the boolean only, never the secret). A
@@ -1654,6 +1668,7 @@ export interface EpisodeMetadata {
 export interface EpisodePublication {
   id: string;
   episode_id: string;
+  youtube_account_id: string | null;
   platform: PublishPlatform;
   status: PublishStatus;
   external_id: string | null;
@@ -1901,6 +1916,7 @@ export interface ClipRenderJob {
 export interface ClipPublication {
   id: string;
   project_id: string;
+  youtube_account_id: string | null;
   platform: 'youtube' | 'social';
   status: 'pending' | 'uploading' | 'processing' | 'live' | 'failed';
   external_id: string | null;

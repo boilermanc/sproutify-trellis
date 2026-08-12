@@ -15,6 +15,7 @@ import { generateSnapshot, saveSnapshot } from '../services/branchSnapshotServic
 import { checkConnections, disconnectPlatform, openSocialOAuthPopup } from '../services/socialService';
 import { SOCIAL_PLATFORM_META, getSocialUrl, PLATFORM_ICONS, PLATFORM_COLORS } from '../utils';
 import { upsertSpokeConnection, deleteSpokeConnection } from '../services/spokeConnectionsService';
+import { replaceBranchSocialAccounts } from '../services/branchSocialAccountsService';
 
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 const FONT_OPTIONS = ['Inter', 'Poppins', 'Roboto', 'System'];
@@ -215,8 +216,12 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   // Helper: update is_connected flags from real credential data
   const updateAccountConnectionFlags = (accounts: SocialAccount[], statuses: SocialConnectionStatus[]): SocialAccount[] => {
     return accounts.map(acc => {
-      const match = statuses.find(s => s.platform === acc.platform);
-      return { ...acc, is_connected: match?.is_connected || false };
+      const match = statuses.find(s =>
+        s.platform === acc.platform
+        && (s.branch_social_account_id ? s.branch_social_account_id === acc.id : acc.platform !== 'youtube')
+      );
+      const isConnected = match?.is_connected || false;
+      return { ...acc, is_connected: isConnected, status: isConnected ? 'active' : acc.status };
     });
   };
 
@@ -277,10 +282,13 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     setIsSaving(true);
     try {
       await updateBranch(editingBranch.branchId, editedBranch);
-      // Save social accounts to localStorage sidecar
+      const savedSocialAccounts = await replaceBranchSocialAccounts(
+        editingBranch.branchId,
+        editedSocialAccounts,
+      );
       onBranchSocialAccountsChange?.({
         ...branchSocialAccounts,
-        [editingBranch.branchId]: editedSocialAccounts,
+        [editingBranch.branchId]: savedSocialAccounts,
       });
       showToast('Branch updated', 'success');
       await loadBranchData();
@@ -353,6 +361,12 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   };
 
   const handleRemoveSocialAccount = (index: number) => {
+    const account = editedSocialAccounts[index];
+    if (!account) return;
+    const warning = account.is_connected || account.status === 'active' || account.status === 'pending'
+      ? `Remove ${account.display_name || account.handle}? Saving will also delete its stored OAuth credential.`
+      : `Remove ${account.display_name || account.handle} from this branch?`;
+    if (!confirm(warning)) return;
     setEditedSocialAccounts(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -361,37 +375,45 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   };
 
   // Phase 3: Connect platform (opens OAuth popup via shared helper)
-  const handleConnectPlatform = (platform: SocialPlatform) => {
+  const handleConnectPlatform = (account: SocialAccount) => {
     if (!editingBranch?.branchId) return;
+    if (account.platform === 'youtube' && !account.id) {
+      showToast('Save the branch first so this YouTube account has a durable identity.', 'error');
+      return;
+    }
     const branchId = editingBranch.branchId;
     openSocialOAuthPopup(
       branchId,
-      platform,
+      account.platform,
       import.meta.env.VITE_SUPABASE_URL,
       () => fetchConnectionStatuses(branchId),
+      account.id,
     );
   };
 
   // Phase 3: Disconnect platform (deletes credential via RPC)
-  const handleDisconnectSocialPlatform = async (platform: SocialPlatform) => {
+  const handleDisconnectSocialPlatform = async (account: SocialAccount) => {
     if (!editingBranch?.branchId) return;
-    const label = SOCIAL_PLATFORM_META[platform]?.label || platform;
-    if (!confirm(`Disconnect ${label}? This will revoke API access.`)) return;
+    const label = account.display_name || account.handle || SOCIAL_PLATFORM_META[account.platform]?.label || account.platform;
+    if (!confirm(`Disconnect ${label}? This will revoke API access for this account.`)) return;
 
-    setDisconnectingPlatform(platform);
-    const result = await disconnectPlatform(editingBranch.branchId, platform);
+    const connectionKey = account.id || account.platform;
+    setDisconnectingPlatform(connectionKey);
+    const result = await disconnectPlatform(editingBranch.branchId, account.platform, account.id);
     if (result.success) {
       // Update cached statuses
       setConnectionStatuses(prev => {
         const updated = { ...prev };
         if (updated[editingBranch.branchId!]) {
-          updated[editingBranch.branchId!] = updated[editingBranch.branchId!].filter(s => s.platform !== platform);
+          updated[editingBranch.branchId!] = updated[editingBranch.branchId!].filter(s =>
+            account.id ? s.branch_social_account_id !== account.id : s.platform !== account.platform
+          );
         }
         return updated;
       });
       // Update local account flags
       setEditedSocialAccounts(prev =>
-        prev.map(acc => acc.platform === platform ? { ...acc, is_connected: false } : acc)
+        prev.map(acc => (account.id ? acc.id === account.id : acc.platform === account.platform) ? { ...acc, is_connected: false, status: 'registered' } : acc)
       );
       showToast(`${label} disconnected`, 'success');
     } else {
@@ -1100,12 +1122,12 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                           {/* Connection status button */}
                           {acc.is_connected ? (
                             <button
-                              onClick={() => handleDisconnectSocialPlatform(acc.platform)}
-                              disabled={disconnectingPlatform === acc.platform}
+                              onClick={() => handleDisconnectSocialPlatform(acc)}
+                              disabled={disconnectingPlatform === (acc.id || acc.platform)}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black uppercase tracking-wider hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
                               title="Click to disconnect"
                             >
-                              {disconnectingPlatform === acc.platform ? (
+                              {disconnectingPlatform === (acc.id || acc.platform) ? (
                                 <Loader2 className="w-3 h-3 animate-spin" />
                               ) : (
                                 <PlugZap className="w-3 h-3" />
@@ -1114,7 +1136,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleConnectPlatform(acc.platform)}
+                              onClick={() => handleConnectPlatform(acc)}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors"
                               title="Connect via OAuth"
                             >

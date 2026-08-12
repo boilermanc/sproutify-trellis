@@ -178,8 +178,9 @@ test('Studio publishing requires review and has a durable failure path', async (
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Album Publishing'));
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Publish Job'));
   const youtubeUpload = workflow.nodes.find(node => node.name === 'Upload Studio Album to YouTube');
-  assert.equal(youtubeUpload?.parameters.regionCode, 'US');
-  assert.equal(youtubeUpload?.parameters.categoryId, "={{ '10' }}");
+  assert.equal(youtubeUpload?.type, 'n8n-nodes-base.executeWorkflow');
+  assert.equal(youtubeUpload?.parameters.workflowId, 'REPLACE_WITH_E11_WORKFLOW_ID');
+  assert.ok(workflow.nodes.some(node => node.name === 'Prepare Studio Account Upload'));
 });
 
 test('publishing draft picks the approved cover as the thumbnail, not just the newest one', async () => {
