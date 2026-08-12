@@ -32,6 +32,7 @@ import { followUpState, getFollowUpWindow, leadMatchesSearch, paginateItems, sor
 import LeadBoard from '../components/leads/LeadBoard';
 import LeadDeepDive from '../components/leads/LeadDeepDive';
 import { fetchResearchStatusByLead, LeadResearchStatus } from '../services/manusService';
+import { fetchLeadEmailEngagement, EmailEngagementStatus } from '../services/emailReportingService';
 import LeadMetrics from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
 import LeadBulkBar from '../components/leads/LeadBulkBar';
@@ -150,6 +151,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [savingDetail, setSavingDetail] = useState<string | null>(null);
   const [stageSavingId, setStageSavingId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, TimelineEntry[]>>({});
+  const [emailEngagement, setEmailEngagement] = useState<Record<string, Record<string, EmailEngagementStatus>>>({});
   const [timelineLoadingId, setTimelineLoadingId] = useState<string | null>(null);
   const [quickActivity, setQuickActivity] = useState<{ lead: Lead; kind: QuickActivityKind } | null>(null);
   const [savingActivity, setSavingActivity] = useState(false);
@@ -426,6 +428,14 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     try {
       const entries = await fetchLeadTimeline(lead.id, lead.profile_id);
       setTimelines(current => ({ ...current, [lead.id]: entries }));
+      if (lead.profile?.email) {
+        try {
+          const engagement = await fetchLeadEmailEngagement(lead.profile.email);
+          setEmailEngagement(current => ({ ...current, [lead.id]: engagement }));
+        } catch (engagementError) {
+          console.error('Failed to load lead email engagement:', engagementError);
+        }
+      }
     } catch (error) {
       console.error('Failed to load lead timeline:', error);
       addToast('Could not load lead activity.', 'error');
@@ -945,7 +955,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Inquiry</p>
                                       <p className="text-sm leading-6 text-slate-200">{lead.inquiry_text || 'No inquiry text provided.'}</p>
                                     </div>
-                                    <LeadTimeline entries={timelines[lead.id] || []} loading={timelineLoadingId === lead.id} />
+                                    <LeadTimeline entries={timelines[lead.id] || []} loading={timelineLoadingId === lead.id} engagement={emailEngagement[lead.id]} />
                                     <label className="block rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <span className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
                                         Notes {savingDetail === 'notes' && <Loader2 className="h-3 w-3 animate-spin text-cyan-300" />}

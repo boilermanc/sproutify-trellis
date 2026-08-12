@@ -124,6 +124,45 @@ export async function fetchEmailActivity(email: string): Promise<EmailEventRow[]
   }
 }
 
+// Delivery/engagement rollup for one recipient, keyed by email SUBJECT (lowercased),
+// so a specific sent email (e.g. a lead's welcome) can show its own status. Same
+// subject-keying campaign stats use. Timestamps are the latest of each event type
+// (fetchEmailActivity returns rows newest-first).
+export interface EmailEngagementStatus {
+  sent: boolean;
+  delivered: boolean;
+  opened: boolean;
+  clicked: boolean;
+  bounced: boolean;
+  complained: boolean;
+  openedAt: string | null;
+  clickedAt: string | null;
+}
+
+export async function fetchLeadEmailEngagement(
+  email: string,
+): Promise<Record<string, EmailEngagementStatus>> {
+  const rows = await fetchEmailActivity(email);
+  const map: Record<string, EmailEngagementStatus> = {};
+  for (const r of rows) {
+    const key = (r.campaign_subject || '').trim().toLowerCase();
+    if (!key) continue;
+    const s = map[key] || (map[key] = {
+      sent: false, delivered: false, opened: false, clicked: false,
+      bounced: false, complained: false, openedAt: null, clickedAt: null,
+    });
+    switch (r.event_type) {
+      case 'sent': s.sent = true; break;
+      case 'delivered': s.delivered = true; break;
+      case 'opened': s.opened = true; if (!s.openedAt) s.openedAt = r.occurred_at; break;
+      case 'clicked': s.clicked = true; if (!s.clickedAt) s.clickedAt = r.occurred_at; break;
+      case 'bounced': s.bounced = true; break;
+      case 'complained': s.complained = true; break;
+    }
+  }
+  return map;
+}
+
 // One row per recipient of a given campaign (matched by subject, same grouping
 // campaign_email_stats uses) — the "who opened/clicked/complained" list, so you
 // don't have to open each customer's profile one at a time to find out.

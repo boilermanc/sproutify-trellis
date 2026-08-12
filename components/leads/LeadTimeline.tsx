@@ -111,12 +111,34 @@ const renderEmailDetail = (payload: Record<string, unknown>) => {
   );
 };
 
+// Compact delivery/engagement chips for a sent email, matched by subject.
+const renderEngagementChips = (
+  payload: Record<string, unknown>,
+  engagement?: Record<string, { delivered: boolean; opened: boolean; clicked: boolean; bounced: boolean; complained: boolean }>,
+) => {
+  if (!engagement) return null; // not loaded yet
+  const subject = textValue(payload, 'subject').toLowerCase();
+  const eng = engagement[subject];
+  const pill = (label: string, active: boolean, activeCls: string) => (
+    <span key={label} className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${active ? activeCls : 'bg-white/[0.04] text-slate-500'}`}>{label}</span>
+  );
+  const chips = [] as React.ReactNode[];
+  if (eng?.bounced) chips.push(pill('Bounced', true, 'bg-rose-400/10 text-rose-300'));
+  else chips.push(pill('Delivered', !!eng?.delivered, 'bg-emerald-400/10 text-emerald-300'));
+  chips.push(pill('Opened', !!eng?.opened, 'bg-cyan-400/10 text-cyan-300'));
+  chips.push(pill('Clicked', !!eng?.clicked, 'bg-indigo-400/10 text-indigo-300'));
+  if (eng?.complained) chips.push(pill('Complained', true, 'bg-rose-400/10 text-rose-300'));
+  return <span className="mt-1.5 flex flex-wrap gap-1">{chips}</span>;
+};
+
 interface LeadTimelineProps {
   entries: TimelineEntry[];
   loading: boolean;
+  /** Per-subject email engagement for this lead (keyed by lowercased subject). */
+  engagement?: Record<string, { delivered: boolean; opened: boolean; clicked: boolean; bounced: boolean; complained: boolean }>;
 }
 
-const LeadTimeline: React.FC<LeadTimelineProps> = ({ entries, loading }) => {
+const LeadTimeline: React.FC<LeadTimelineProps> = ({ entries, loading, engagement }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
@@ -155,6 +177,7 @@ const LeadTimeline: React.FC<LeadTimelineProps> = ({ entries, loading }) => {
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-bold leading-5 text-slate-200">{summarizeTimelineEntry(entry)}</span>
                   <span className="mt-0.5 block text-[10px] text-slate-600" title={new Date(entry.created_at).toLocaleString()}>{formatRelativeTime(entry.created_at)}</span>
+                  {entry.event_type === 'lead_email' && renderEngagementChips(entry.payload || {}, engagement)}
                   {expanded && (entry.event_type === 'lead_email'
                     ? renderEmailDetail(entry.payload || {})
                     : details.length > 0 && <span className="mt-3 block space-y-1 rounded-lg bg-[#10142E] p-3">{details.map(([label, value]) => <span key={label} className="grid grid-cols-[7rem_1fr] gap-2 text-[10px]"><span className="capitalize text-slate-600">{label}</span><span className="break-words text-slate-400">{value}</span></span>)}</span>)}
