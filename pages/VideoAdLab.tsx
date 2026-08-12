@@ -622,14 +622,25 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     }
   }, [addToast]);
 
+  // A job requested by Card Studio purely as an editorial card's backdrop.
+  // Card Studio consumes its frame_url directly the moment it exists — there
+  // is nothing here for a human to approve, and the review panel would show
+  // it with auto-seeded headline text it was never meant to carry. They are
+  // inputs to Card Studio, not standalone ads, so they are kept out of the
+  // Creative Library (and its counts) entirely — otherwise they sit here
+  // forever as phantom "review" creatives with no available action.
+  const isCardBackground = (j: VideoAdJob) => j.request_payload?.purpose === 'card_background';
+
   // ── Branch-scoped jobs ──
   // The generation wizard keeps its own branch picker; this only scopes the
   // jobs history (and its count badges) to the global Branch Scope picker in
-  // the top bar. `j.branch` is a slug.
+  // the top bar. `j.branch` is a slug. Card backgrounds are filtered out here
+  // so every downstream view (library rows + all count badges) sees ads only.
   const scopedJobs = useMemo(() => {
-    if (!branchContext || branchContext.isAllSelected) return jobs;
+    const ads = jobs.filter(j => !isCardBackground(j));
+    if (!branchContext || branchContext.isAllSelected) return ads;
     const activeSlugs = new Set(branchContext.activeBranchSlugs);
-    return jobs.filter(j => j.branch && activeSlugs.has(j.branch));
+    return ads.filter(j => j.branch && activeSlugs.has(j.branch));
   }, [jobs, branchContext]);
 
   // ── Filtered jobs ──
@@ -656,12 +667,6 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     static: scopedJobs.filter(j => j.format === 'static').length,
     carousel: scopedJobs.filter(j => j.format === 'carousel').length,
   }), [scopedJobs]);
-
-  // A job requested by Card Studio purely as an editorial card's backdrop.
-  // Card Studio consumes its frame_url directly the moment it exists — there
-  // is nothing here for a human to approve, and the review panel would show
-  // it with auto-seeded headline text it was never meant to carry.
-  const isCardBackground = (j: VideoAdJob) => j.request_payload?.purpose === 'card_background';
 
   // ── Jobs awaiting review ──
   // The Progress step already shows the job it's tracking in full, so exclude
