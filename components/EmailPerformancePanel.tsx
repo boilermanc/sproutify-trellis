@@ -19,6 +19,7 @@ import {
   SuppressionSummary,
 } from '../services/emailReportingService';
 import { CampaignRecipientsModal } from './CampaignRecipientsModal';
+import { LinkClickSummaryModal } from './LinkClickSummaryModal';
 import { SuppressionListModal } from './SuppressionListModal';
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
@@ -38,6 +39,7 @@ export const EmailPerformancePanel: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [viewingSubject, setViewingSubject] = useState<string | null>(null);
+  const [linkSubject, setLinkSubject] = useState<string | null>(null);
   const [suppressionView, setSuppressionView] = useState<{ reason?: string; title: string } | null>(null);
 
   const load = async () => {
@@ -213,7 +215,20 @@ export const EmailPerformancePanel: React.FC = () => {
                     <td className="py-3 px-2 text-right text-xs text-slate-500">{r.sent}</td>
                     <td className="py-3 px-2 text-right text-xs text-slate-500">{r.delivered}</td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-emerald-600">{r.opened} <span className="text-slate-300 font-normal">({pct(r.opened, r.delivered || r.sent)}%)</span></td>
-                    <td className="py-3 px-2 text-right text-xs font-bold text-blue-600">{r.clicked}</td>
+                    <td className="py-3 px-2 text-right text-xs font-bold text-blue-600">
+                      {r.clicked > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setLinkSubject(r.campaign_subject)}
+                          title="See which links were clicked, and who clicked them"
+                          className="underline decoration-dotted underline-offset-4 hover:text-violet-600 transition"
+                        >
+                          {r.clicked}
+                        </button>
+                      ) : (
+                        r.clicked
+                      )}
+                    </td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-rose-600">{r.bounced}</td>
                     <td className="py-3 pl-2 text-right text-[10px] text-slate-400">{fmtDate(r.last_event_at)}</td>
                     <td className="py-3 pl-2 text-right">
@@ -275,6 +290,9 @@ export const EmailPerformancePanel: React.FC = () => {
 
       {viewingSubject && (
         <CampaignRecipientsModal campaignSubject={viewingSubject} onClose={() => setViewingSubject(null)} />
+      )}
+      {linkSubject && (
+        <LinkClickSummaryModal campaignSubject={linkSubject} onClose={() => setLinkSubject(null)} />
       )}
       {suppressionView && (
         <SuppressionListModal

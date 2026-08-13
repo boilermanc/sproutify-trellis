@@ -458,6 +458,45 @@ GROUP BY campaign_subject, email;
 -- Raw recipient addresses — authenticated-only, same as email_events itself.
 GRANT SELECT ON campaign_recipient_status TO authenticated, service_role;
 
+-- Per-link click rollup within one campaign — one row per (campaign_subject, link)
+-- instead of one row per raw click event. Backs the link click summary
+-- (LinkClickSummaryModal / fetchCampaignLinkClicks): "which link earned the
+-- clicks", then drill into who clicked it.
+--
+-- COALESCE(link_url, metadata->'click'->>'link') matches the other stats views:
+-- link_url wasn't captured before Aug 5, so the metadata fallback recovers the
+-- link for older events. Unsubscribe links are excluded for the same reason
+-- campaign_email_stats excludes them — otherwise the per-link rows would report
+-- clicks the rest of the UI deliberately doesn't count.
+--
+-- clicks is COUNT(*) (raw click events, so repeat clicks show) while
+-- unique_clickers is COUNT(DISTINCT email). Summing unique_clickers across links
+-- does NOT equal campaign_email_stats.clicked — one person clicking three links
+-- is one clicker there and three here. The UI labels these separately.
+CREATE OR REPLACE VIEW campaign_link_clicks
+WITH (security_invoker = true) AS
+SELECT
+  campaign_subject,
+  COALESCE(link_url, metadata->'click'->>'link') AS link_url,
+  COUNT(*)              AS clicks,
+  COUNT(DISTINCT email) AS unique_clickers,
+  MIN(occurred_at)      AS first_click_at,
+  MAX(occurred_at)      AS last_click_at
+FROM email_events
+WHERE event_type = 'clicked'
+  AND campaign_subject IS NOT NULL
+  AND COALESCE(link_url, metadata->'click'->>'link', '') <> ''
+  AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+GROUP BY campaign_subject, COALESCE(link_url, metadata->'click'->>'link');
+-- Derived from email_events (authenticated-only), so same audience. Supabase's
+-- default privileges hand anon SELECT on every new public object, so revoke it
+-- explicitly — from PUBLIC as well as anon, since a REVOKE from anon alone is a
+-- no-op against a privilege held by PUBLIC. security_invoker already blocks anon
+-- (it can't read email_events underneath); this is the second lock.
+REVOKE ALL ON campaign_link_clicks FROM PUBLIC;
+REVOKE ALL ON campaign_link_clicks FROM anon;
+GRANT SELECT ON campaign_link_clicks TO authenticated, service_role;
+
 -- One row per email, all-time, instead of one row per open/click event —
 -- bounded by audience size, not by years of engagement history. Backs
 -- fetchEngagementByEmail/fetchEngagementIndex (churn risk, segment targeting).

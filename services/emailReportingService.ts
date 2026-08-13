@@ -281,6 +281,194 @@ export async function fetchCampaignUnsubscribedCount(campaignSubject: string): P
   }
 }
 
+// ── Link click summary ───────────────────────────────────────────────────────
+// "Which link in this campaign actually earned the clicks", then drill into who
+// clicked it. Sourced from campaign_link_clicks (server-side rollup over
+// email_events), with human-readable labels recovered from the sent HTML.
+
+export interface CampaignLinkClick {
+  linkUrl: string;
+  // Anchor text from the sent email ("Shop This Week's Sale"). Falls back to a
+  // label derived from the URL when the link had no text (image/icon links) or
+  // when the campaign's HTML isn't available — never null, so the UI always has
+  // something readable to show.
+  label: string;
+  // True when `label` came from the email's own copy rather than the URL. The UI
+  // dims derived labels so a guess is never mistaken for the real link text.
+  labelFromEmail: boolean;
+  // Raw click events — repeat clicks by the same person included.
+  clicks: number;
+  // Distinct people. Summing this across links does NOT equal the campaign's
+  // Clicked count (one person clicking three links is 1 clicker, 3 rows here).
+  uniqueClickers: number;
+  firstClickAt: string | null;
+  lastClickAt: string | null;
+}
+
+// Resend's click payload carries only the destination URL — there is no anchor
+// text in it — so a bare URL is all email_events can store. The readable label
+// has to come from the email we sent, which the durable outbox saved verbatim in
+// campaigns.dispatch.html_template.
+//
+// Parsed with DOMParser rather than a regex: it decodes entities in both the
+// href and the text (`&amp;` in a stored href vs. the raw `&` Resend reports
+// would otherwise never match, and `&rsquo;` would render literally), and it
+// handles the nested tags email HTML wraps every link in. 'text/html' parsing
+// does not execute scripts, and the result is only ever read as text — never
+// injected back into the DOM.
+export function extractLinkLabels(html: string): Map<string, string> {
+  const labels = new Map<string, string>();
+  if (!html) return labels;
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('a[href]').forEach((anchor) => {
+      const href = (anchor.getAttribute('href') || '').trim();
+      if (!href || href.startsWith('{{') || href.startsWith('#') || href.startsWith('mailto:')) return;
+      let text = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
+      // Image/icon links (the social row) have no text — the alt attribute is
+      // the only description the email itself provides.
+      if (!text) text = (anchor.querySelector('img')?.getAttribute('alt') || '').trim();
+      if (!text) return;
+      // Same href can appear twice with different text (a bare icon and a worded
+      // link). First non-empty wins; don't let a later empty one clear it.
+      const key = normalizeLinkKey(href);
+      if (!labels.has(key)) labels.set(key, text.length > 120 ? `${text.slice(0, 117)}…` : text);
+    });
+  } catch (e) {
+    console.error('extractLinkLabels failed:', e);
+  }
+  return labels;
+}
+
+// Match key for "same link" across the two sources. Resend reports the URL it
+// redirected through, which can differ from the stored href by trailing slash or
+// protocol case, so compare on a normalized form instead of raw equality.
+function normalizeLinkKey(url: string): string {
+  return url.trim().replace(/\/+$/, '').toLowerCase();
+}
+
+// Readable fallback when the email gave us no anchor text: "atlurbanfarms.com →
+// blog / keep your tower clean" reads far better than a raw URL in a table.
+export function deriveLabelFromUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/^\/|\/$/g, '');
+    const host = u.hostname.replace(/^www\./, '');
+    if (!path) return host;
+    const readable = path
+      .split('/')
+      .map((seg) => decodeURIComponent(seg).replace(/[-_+]/g, ' ').trim())
+      .filter(Boolean)
+      .join(' / ');
+    return `${host} · ${readable}`;
+  } catch {
+    return url;
+  }
+}
+
+// The campaign HTML we actually sent, looked up by subject (the same key the
+// stats views group on). Newest match wins if two campaigns share a subject.
+async function fetchSentHtmlBySubject(campaignSubject: string): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('dispatch,created_at')
+      .eq('subject', campaignSubject)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return (data?.[0] as any)?.dispatch?.html_template || '';
+  } catch (e) {
+    console.error('fetchSentHtmlBySubject failed:', e);
+    return '';
+  }
+}
+
+// Per-link click counts for one campaign, ranked by clicks. Pass `sentHtml` when
+// the caller already has the campaign row (the Campaigns drawer does) to skip the
+// extra lookup; Reports only knows the subject, so it omits it.
+export async function fetchCampaignLinkClicks(
+  campaignSubject: string,
+  sentHtml?: string,
+): Promise<CampaignLinkClick[]> {
+  if (!campaignSubject) return [];
+  try {
+    const [{ data, error }, html] = await Promise.all([
+      supabase
+        .from('campaign_link_clicks')
+        .select('link_url,clicks,unique_clickers,first_click_at,last_click_at')
+        .eq('campaign_subject', campaignSubject)
+        .order('clicks', { ascending: false }),
+      sentHtml !== undefined ? Promise.resolve(sentHtml) : fetchSentHtmlBySubject(campaignSubject),
+    ]);
+    if (error) throw error;
+
+    const labels = extractLinkLabels(html);
+    return (data || []).map((r: any) => {
+      const fromEmail = labels.get(normalizeLinkKey(r.link_url));
+      return {
+        linkUrl: r.link_url,
+        label: fromEmail || deriveLabelFromUrl(r.link_url),
+        labelFromEmail: !!fromEmail,
+        clicks: r.clicks ?? 0,
+        uniqueClickers: r.unique_clickers ?? 0,
+        firstClickAt: r.first_click_at ?? null,
+        lastClickAt: r.last_click_at ?? null,
+      };
+    });
+  } catch (e) {
+    console.error('fetchCampaignLinkClicks failed:', e);
+    return [];
+  }
+}
+
+export interface LinkClicker {
+  email: string;
+  clicks: number; // times this person clicked THIS link
+  firstClickAt: string;
+  lastClickAt: string;
+}
+
+// Who clicked one specific link, most recent first. Scoped to a single link of a
+// single campaign, so this reads a small slice of email_events rather than the
+// whole campaign's click history.
+export async function fetchLinkClickers(
+  campaignSubject: string,
+  linkUrl: string,
+): Promise<LinkClicker[]> {
+  if (!campaignSubject || !linkUrl) return [];
+  try {
+    const rows = await fetchAllPages<{ email: string; link_url: string | null; occurred_at: string; metadata: any }>(
+      'email_events',
+      'email,link_url,occurred_at,metadata',
+      (q) => q.eq('campaign_subject', campaignSubject).eq('event_type', 'clicked'),
+      'occurred_at',
+    );
+
+    const target = normalizeLinkKey(linkUrl);
+    const byEmail = new Map<string, LinkClicker>();
+    for (const r of rows) {
+      // Same COALESCE the view uses — pre-Aug-5 events only carry the link in metadata.
+      const url = r.link_url || r.metadata?.click?.link || '';
+      if (!url || normalizeLinkKey(url) !== target) continue;
+      const key = (r.email || '').toLowerCase();
+      if (!key) continue;
+      const existing = byEmail.get(key);
+      if (existing) {
+        existing.clicks++;
+        // fetchAllPages orders ascending, so later rows are always the newer ones.
+        existing.lastClickAt = r.occurred_at;
+      } else {
+        byEmail.set(key, { email: key, clicks: 1, firstClickAt: r.occurred_at, lastClickAt: r.occurred_at });
+      }
+    }
+    return [...byEmail.values()].sort((a, b) => (a.lastClickAt < b.lastClickAt ? 1 : -1));
+  } catch (e) {
+    console.error('fetchLinkClickers failed:', e);
+    return [];
+  }
+}
+
 // Bulk per-address engagement aggregate, built for segment targeting (see
 // SEGMENT_FIELDS 'engagement' category + segmentEngine.ts). One row per email that
 // has at least one 'opened' or 'clicked' event.

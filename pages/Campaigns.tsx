@@ -7,6 +7,7 @@ import {
 import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign, fetchNonOpeners, resendToNonOpeners } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat, fetchCampaignUnsubscribedCount } from '../services/emailReportingService';
 import { CampaignRecipientsModal } from '../components/CampaignRecipientsModal';
+import { LinkClickSummaryModal } from '../components/LinkClickSummaryModal';
 import { BranchContext } from '../types';
 
 interface CampaignsProps {
@@ -320,6 +321,7 @@ const CampaignDetailDrawer: React.FC<{
   const [unsubCount, setUnsubCount] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
+  const [showLinkClicks, setShowLinkClicks] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
 
   useEffect(() => {
@@ -351,7 +353,7 @@ const CampaignDetailDrawer: React.FC<{
     { label: 'Sent', value: s.sent, icon: Send, color: 'text-slate-600', bg: 'bg-slate-100' },
     { label: 'Delivered', value: s.delivered, sub: `${pct(s.delivered, s.sent)}%`, icon: MailCheck, color: 'text-emerald-600', bg: 'bg-emerald-100' },
     { label: 'Opened', value: s.opened, sub: `${pct(s.opened, s.delivered)}%`, icon: Eye, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { label: 'Clicked', value: s.clicked, sub: `${pct(s.clicked, s.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600', bg: 'bg-violet-100' },
+    { label: 'Clicked', value: s.clicked, sub: `${pct(s.clicked, s.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600', bg: 'bg-violet-100', onClick: s.clicked > 0 ? () => setShowLinkClicks(true) : undefined },
     { label: 'Bounced', value: s.bounced, icon: MailX, color: 'text-red-600', bg: 'bg-red-100' },
     { label: 'Complained', value: s.complained, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-100' },
     { label: 'Unsubscribed', value: unsubCount ?? 0, sub: s.delivered ? `${pct(unsubCount ?? 0, s.delivered)}%` : undefined, icon: Ban, color: 'text-slate-600', bg: 'bg-slate-200' },
@@ -462,17 +464,31 @@ const CampaignDetailDrawer: React.FC<{
               </p>
             )}
             <div className="grid grid-cols-3 gap-3">
-              {metrics.map((m) => (
-                <div key={m.label} className="bg-slate-50 rounded-xl border border-slate-100 p-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${m.bg}`}>
-                    <m.icon className={`w-4 h-4 ${m.color}`} />
-                  </div>
-                  <div className={`text-xl font-black ${m.color}`}>{m.value.toLocaleString()}</div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                    {m.label}{m.sub ? ` · ${m.sub}` : ''}
-                  </div>
-                </div>
-              ))}
+              {metrics.map((m) => {
+                const Tile = m.onClick ? 'button' : 'div';
+                return (
+                  <Tile
+                    key={m.label}
+                    {...(m.onClick ? { type: 'button' as const, onClick: m.onClick, title: 'See which links were clicked, and who clicked them' } : {})}
+                    className={`bg-slate-50 rounded-xl border border-slate-100 p-3 text-left w-full ${
+                      m.onClick ? 'hover:border-violet-300 hover:bg-violet-50/40 transition cursor-pointer' : ''
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${m.bg}`}>
+                      <m.icon className={`w-4 h-4 ${m.color}`} />
+                    </div>
+                    <div className={`text-xl font-black ${m.color}`}>{m.value.toLocaleString()}</div>
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                      {m.label}{m.sub ? ` · ${m.sub}` : ''}
+                    </div>
+                    {m.onClick && (
+                      <div className="text-[9px] font-black uppercase tracking-widest text-violet-500 mt-1 flex items-center gap-0.5">
+                        Links <ChevronRight className="w-2.5 h-2.5" />
+                      </div>
+                    )}
+                  </Tile>
+                );
+              })}
             </div>
             {hasEvents && (
               <button
@@ -542,6 +558,15 @@ const CampaignDetailDrawer: React.FC<{
 
       {showRecipients && c.subject && (
         <CampaignRecipientsModal campaignSubject={c.subject} onClose={() => setShowRecipients(false)} />
+      )}
+      {showLinkClicks && c.subject && (
+        <LinkClickSummaryModal
+          campaignSubject={c.subject}
+          // We already hold the sent HTML here, so pass it and skip the by-subject
+          // lookup the Reports panel has to do.
+          sentHtml={c.dispatch?.html_template || ''}
+          onClose={() => setShowLinkClicks(false)}
+        />
       )}
     </>
   );
