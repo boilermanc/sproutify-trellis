@@ -5,12 +5,61 @@ description: Writes Card Studio briefs for the Rejoice brand (letsrejoice.app �
 
 # Rejoice card briefs
 
-Card Studio splits one job in two: a **creative director** (Gemini) writes the words, and a
-**canvas renderer** draws them into a fixed layout. A brief only changes the words. Writing
-design instructions into it is wasted breath — this skill is about spending every sentence on
-the part that actually moves.
+Clint does not write briefs. He asks for card ideas and expects a finished one back, ready to
+paste into Card Studio. **Produce the brief. Do not teach the method, do not ask him to fill
+anything in, and do not ask what angle he wants** — pick one and commit. He'll say if it's wrong.
 
-## What the brief controls
+## What to give him, every time
+
+Always this exact shape, nothing more:
+
+1. **One line naming the angle** and why it fits right now.
+2. **The settings** to use — direction, count, scripture — as a short list.
+3. **The brief itself**, in a fenced code block, ready to paste with no edits.
+4. **Two alternate angles**, one line each, so he can say "do the second one."
+
+That's the whole deliverable. Skip the explanation of how briefs work — it's in this file for
+your benefit, not his.
+
+Only ask a question if the request genuinely can't be answered without one (e.g. he references a
+launch or an event you know nothing about). "Which angle?" is never that question.
+
+### "Cards for this week"
+
+Check today's date and pick something that fits the actual moment — the school year starting, the
+week after a holiday, the first cold morning, the stretch of February where nothing happens. A
+brief tied to a real week beats an evergreen one, and it's the main reason to ask you rather than
+reuse a preset.
+
+If nothing about the calendar stands out, pick an angle he hasn't used recently rather than
+forcing a seasonal hook.
+
+### Output shape
+
+> **Angle:** the week the routine restarts — everyone's schedule just changed and "I'll start when
+> things settle down" is the lie of the season.
+>
+> **Settings:** Rejoice · direction *Everyday Wisdom* · count 4 · scripture Mix
+>
+> ```
+> Four headlines for the week the school year restarts and everyone's
+> schedule just changed.
+>
+> Each one a different version of "I'll start when things settle down":
+> waiting for the calendar to calm, waiting to feel less scattered,
+> waiting until the kids are settled, waiting for a week with nothing in it.
+>
+> None may use the words journey, grace, or peace. None may tell the reader
+> to do anything — each one just names the delay and sets it down.
+>
+> Footers: 6 words max, each naming a first move that takes under a minute.
+> ```
+>
+> Two other angles if this isn't it:
+> - **The 3pm slump** — six headlines, one per time of day, about needing a minute rather than an hour
+> - **Objections** — five headlines that concede a reason not to start before answering it
+
+## Reference — what the brief controls
 
 | Reaches the card | Ignored entirely |
 |---|---|
@@ -32,7 +81,12 @@ Hard limits worth writing to:
   just smaller and weaker.
 - **Batch size is 1–6.** For more, generate twice with different angles.
 
-## The rut, and how to get out of it
+**The number in the brief must match the count you tell him to set, and the axis must list
+exactly that many variants.** Anything over the count is silently discarded — the first N are
+kept — so a brief asking for six while the dropdown says three throws away the three most
+interesting variants and answers the three most obvious ones. That is the rut, reintroduced.
+
+## Reference — the rut, and how to get out of it
 
 The failure mode is always the same: a vague brief ("motivational posts about joy") gives the
 model nothing to differentiate on, so it converges on the safest line every time — and every
@@ -50,7 +104,7 @@ Rejoice brief has three parts:
 
 Banning the brand's own comfort words is the single highest-leverage line you can write.
 
-### Axes that reliably produce six different cards
+### Axes that reliably produce a batch of different cards
 
 - **Objection** — "I don't have time" / "I won't understand it" / "I've tried apps like this"
 - **Entry point** — never opened a Bible / raised in it and left / reads daily already
@@ -100,9 +154,9 @@ wording is fetched server-side from a licensed Berean Standard Bible source. So:
 - Verse cards need a connected Bible source and the Scripture control set to Mix or Require.
 - A verse must genuinely fit the card's emotion. A forced fit reads worse than no verse.
 
-## Writing the brief
+## Reference — the brief template
 
-Give Clint a brief in this shape, ready to paste:
+Every brief you write follows this shape:
 
 ```
 [Count] headlines for [specific situation].
@@ -157,14 +211,15 @@ may begin with "You".
 Footers: 6 words max.
 ```
 
-## Before handing the brief over
+## Self-check before replying
 
 - Does it name a specific situation, not a category?
 - Is there an explicit axis with the variants listed out?
 - Is there at least one refusal — a banned word or move?
 - Does it stay off design (fonts, position, scrim, "the photo")?
 - Are footers constrained to ~6 words?
-- Does the count match how many variants the axis actually has?
+- Does the number in the brief match the count in your settings line, and does the axis list exactly that many variants?
+- Did you give him a paste-ready block plus two alternates, rather than an explanation?
 
 ## Related
 
