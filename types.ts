@@ -2046,7 +2046,7 @@ export interface ScheduledPost {
   media_type: 'image' | 'video' | 'carousel';
   media_urls: string[];
   scheduled_for: string;
-  status: 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
+  status: 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled' | 'needs_review';
   attempts: number | null;
   last_error: string | null;
   post_id: string | null;
