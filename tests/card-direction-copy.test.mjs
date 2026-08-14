@@ -130,6 +130,23 @@ test('the direction brief never shows the model the preset overlay lines', () =>
   assert.match(brief, /headline .* and the footer for this concept from the brief/);
 });
 
+// Rejoice is a phone app, so its scenes carry a phone — but an image model
+// given a phone screen invents a garbled fake UI, which on a Bible-study brand
+// reads as fabricated scripture. The object is allowed; its content is not.
+test('every Rejoice scene includes a phone with an unreadable screen', () => {
+  const rejoice = directions.BRAND_CREATIVE_DIRECTIONS.filter(d => d.branchSlug === 'rejoice');
+  assert.ok(rejoice.length > 0, 'no Rejoice directions seeded');
+  for (const direction of rejoice) {
+    assert.match(direction.photoBrief, /phone/i, `${direction.id} has no phone in the scene`);
+    assert.match(
+      direction.photoBrief,
+      /screen (is )?dark|dark screen|screen dark|face-down|angled away/i,
+      `${direction.id} does not keep the phone screen unreadable`,
+    );
+    assert.match(direction.styleNotes, /never show a visible interface/i, `${direction.id} is missing the screen rule`);
+  }
+});
+
 test('every seeded direction still has a fallback overlay to degrade to', () => {
   for (const direction of directions.BRAND_CREATIVE_DIRECTIONS) {
     assert.ok(direction.safeOverlay.heading.trim(), `${direction.id} has no fallback heading`);

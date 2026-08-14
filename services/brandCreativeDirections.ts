@@ -31,6 +31,13 @@ const REJOICE_STYLE_NOTES = [
   'Use a light, welcoming family of cream, soft violet, warm amber, and sage rather than dark crisis imagery.',
   'Keep the subject weighted to the RIGHT side and the LEFT half calm and uncluttered for typography.',
   'Show everyday life with dignity and emotional range; Rejoice is for joy, curiosity, wisdom, growth, peace, and hard days.',
+  // Rejoice is a phone app, so a phone belongs in these scenes — but an image
+  // model asked for a phone screen invents a garbled fake interface with
+  // nonsense text, which on a Bible-study brand reads as fabricated scripture.
+  // Same reason the existing rule keeps printed Bible text illegible: the
+  // object may appear, its content may not.
+  'A smartphone may appear naturally in the scene, but its screen must always be dark, switched off, or a soft reflection — never show a visible interface, app, icons, buttons, or any legible text on a screen.',
+  'A Bible or notebook may appear, but printed and handwritten words must stay soft and illegible.',
   'No embedded words, logos, watermarks, fabricated scripture, visible Bible text, or exaggerated spiritual transformation.',
   'Avoid defaulting to sadness, bowed heads, tears, loneliness, or gloomy blue lighting.',
 ].join(' ');
@@ -87,7 +94,7 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     description: 'Celebration, gratitude, music, friendship, and ordinary moments of delight.',
     wordmark: 'Rejoice',
     wordmarkSubtitle: 'Bible Study for How You Feel',
-    photoBrief: 'A genuinely joyful everyday moment among friends in warm late-afternoon sunlight, relaxed laughter and connection, subtle sense of gratitude, candid rather than posed, people grouped on the right with calm negative space on the left.',
+    photoBrief: 'A genuinely joyful everyday moment among friends in warm late-afternoon sunlight, one of them holding a phone they have just shown the others with the dark screen angled away from camera, relaxed laughter and connection, candid rather than posed, people grouped on the right with calm negative space on the left.',
     styleNotes: REJOICE_STYLE_NOTES,
     scrimStrength: 0.42,
     safeOverlay: { heading: 'Make room for joy.', footer: 'Explore joy in scripture' },
@@ -99,7 +106,7 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     description: 'Questions, discovery, learning, and the pleasure of going deeper.',
     wordmark: 'Rejoice',
     wordmarkSubtitle: 'Bible Study for How You Feel',
-    photoBrief: 'An inviting study table with an open Bible whose printed words are not legible, a notebook with blank-looking pages, warm tea, pencils, and soft morning window light, thoughtful person studying on the right, curious and energized rather than solemn.',
+    photoBrief: 'An inviting study table with an open Bible whose printed words are not legible, an open notebook with blank-looking pages, a pen, warm tea, and a phone propped against a small stack of books with its screen dark, soft morning window light, thoughtful person studying on the right, curious and energized rather than solemn.',
     styleNotes: REJOICE_STYLE_NOTES,
     scrimStrength: 0.46,
     safeOverlay: { heading: 'Bring your questions.', footer: 'Explore scripture with Rejoice' },
@@ -111,7 +118,7 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     description: 'Faith applied to relationships, work, choices, patience, and ordinary life.',
     wordmark: 'Rejoice',
     wordmarkSubtitle: 'Bible Study for How You Feel',
-    photoBrief: 'A calm kitchen-table reflection in an active, lived-in home, a person pausing with a journal before beginning the day, warm natural light, subtle signs of ordinary responsibilities, grounded and practical, person on the right.',
+    photoBrief: 'A calm kitchen-table reflection in an active, lived-in home, a person pausing with an open journal and pen before beginning the day, a phone resting face-up beside it with a dark screen, warm natural light, subtle signs of ordinary responsibilities, grounded and practical, person on the right.',
     styleNotes: REJOICE_STYLE_NOTES,
     scrimStrength: 0.44,
     safeOverlay: { heading: 'Faith for ordinary days.', footer: 'Study. Reflect. Grow.' },
@@ -123,7 +130,7 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     description: 'Habits, deeper study, reflection, purpose, and steady spiritual growth.',
     wordmark: 'Rejoice',
     wordmarkSubtitle: 'Bible Study for How You Feel',
-    photoBrief: 'A hopeful morning walk through a sunlit garden path with a person moving forward on the right, fresh green growth, warm light, peaceful energy, visual metaphor for steady growth without dramatic transformation imagery.',
+    photoBrief: 'A hopeful morning pause on a bench along a sunlit garden path, a person seated on the right with a phone held loosely in one hand, screen dark, a small pocket notebook beside them, fresh green growth, warm light, peaceful forward-looking energy without dramatic transformation imagery.',
     styleNotes: REJOICE_STYLE_NOTES,
     scrimStrength: 0.4,
     safeOverlay: { heading: 'Keep growing.', footer: 'Start where you are' },
@@ -135,7 +142,7 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     description: 'Rest, presence, breathing room, and reflection without implying crisis.',
     wordmark: 'Rejoice',
     wordmarkSubtitle: 'Bible Study for How You Feel',
-    photoBrief: 'A peaceful light-filled reading corner in late morning, a comfortable chair, soft blanket, plant, tea, and an open book with no legible text, calm but not lonely, warm cream and sage palette, visual interest on the right.',
+    photoBrief: 'A peaceful light-filled reading corner in late morning, a comfortable chair, soft blanket, plant, tea, an open book with no legible text, and a phone and small notebook resting on the arm of the chair with the phone screen dark, calm but not lonely, warm cream and sage palette, visual interest on the right.',
     styleNotes: REJOICE_STYLE_NOTES,
     scrimStrength: 0.4,
     safeOverlay: { heading: 'A quiet place to begin.', footer: 'Open Rejoice' },
@@ -147,7 +154,7 @@ export const BRAND_CREATIVE_DIRECTIONS: BrandCreativeDirection[] = [
     description: 'Gentle support for difficult moments, included as one part of a much wider emotional range.',
     wordmark: 'Rejoice',
     wordmarkSubtitle: 'Bible Study for How You Feel',
-    photoBrief: 'A compassionate everyday scene of one friend quietly present with another, warm lamplight, supportive body language, dignity and connection, no tears or melodrama, people on the right with hopeful warm light entering the space.',
+    photoBrief: 'A compassionate everyday scene of one friend quietly present with another, a phone set face-down on the table between them, warm lamplight, supportive body language, dignity and connection, no tears or melodrama, people on the right with hopeful warm light entering the space.',
     styleNotes: REJOICE_STYLE_NOTES,
     scrimStrength: 0.48,
     safeOverlay: { heading: "You don't have to have the words.", footer: 'Start with how you feel' },
