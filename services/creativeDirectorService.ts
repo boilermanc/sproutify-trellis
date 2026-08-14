@@ -781,6 +781,17 @@ function enforceTemplateRestriction(concept: CardConceptWithRef, cardStyle?: Bra
     // the renderer draws whatever of it applies to the new template's shape.
     // Also carry a `statement` fallback since several templates read it.
     if (!demoted.statement && salvagedStatement) demoted.statement = salvagedStatement;
+    // ...and `heading` alongside it, because "editorial" (the usual demotion
+    // target for a direction-restricted brand) draws its headline from
+    // `heading`, not `statement`. Without this, a concept arriving here — a
+    // verse the brand can't render, say — lands on editorial with no headline
+    // at all and silently falls back to the direction's stock line.
+    if (!demoted.heading && (demoted.statement || salvagedStatement)) {
+      demoted.heading = demoted.statement || salvagedStatement;
+    }
+    // A verse reference is meaningless on any non-verse template and would
+    // leave the card asking to be hydrated with scripture it will never draw.
+    if (target !== 'verse') delete demoted.verse_ref;
   }
 
   return demoted;

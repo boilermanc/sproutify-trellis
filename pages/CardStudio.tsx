@@ -510,11 +510,12 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         ? creativeDirectionId === 'variety'
           ? [
               brief,
-              `Create a visually varied pack using these shared brand directions: ${requestedDirections.map(direction => `${direction.label} — ${direction.description}. Tone reference only: “${direction.safeOverlay.heading}” / “${direction.safeOverlay.footer}”`).join('; ')}.`,
-              // The tone references are a REGISTER SAMPLE, not copy to reuse —
-              // they used to be "use the approved overlays verbatim", which is
-              // why every pack came back saying the same handful of lines.
-              'Those quoted lines are tone references, NOT copy to reuse — write a fresh headline and footer for every concept, answering the brief above. Each concept needs a distinct headline. Footers are tracked caps on one line: about 6 words or 40 characters. Do not add product claims, speed claims, guarantees, prices, testimonials, statistics, or offers.',
+              `Create a visually varied pack using these shared brand directions: ${requestedDirections.map(direction => `${direction.label} — ${direction.description}`).join('; ')}.`,
+              // `safeOverlay` is deliberately absent here — see the comment in
+              // `buildCreativeDirectionBrief`. Quoting those lines to the model,
+              // even labelled "do not reuse", got them copied straight back onto
+              // cards whose brief was about something else.
+              'Write the headline and footer for every concept from the brief above; each concept needs its own distinct headline. Footers are tracked caps on one line: about 6 words or 40 characters. Do not add product claims, speed claims, guarantees, prices, testimonials, statistics, or offers.',
             ].join('\n\n')
           : buildCreativeDirectionBrief(requestedDirections[0], 'instagram', brief)
         : brief;

@@ -91,20 +91,43 @@ test("applies the direction's visual identity regardless of the copy", () => {
 
 test("keeps the director's rationale so the reviewer sees why this copy", () => {
   const out = directions.applyBrandCreativeDirection(
-    generated({ heading: 'Notice the good today.' }),
+    generated({ heading: 'Notice the good today.', footer: 'One small moment' }),
     DIRECTION,
   );
   assert.match(out.rationale, /Joy Worth Noticing/);
   assert.match(out.rationale, /noticing rather than striving/);
+  // Both lines are the director's, so nothing should be flagged.
+  assert.doesNotMatch(out.rationale, /Stock/);
 });
 
-test('the direction brief asks for fresh copy rather than reusing the overlay', () => {
+test('flags on the card when stock copy had to be used', () => {
+  const bothStock = directions.applyBrandCreativeDirection(generated(), DIRECTION);
+  assert.match(bothStock.rationale, /Stock headline and footer/);
+
+  const footerOnly = directions.applyBrandCreativeDirection(
+    generated({ heading: 'Notice the good today.', footer: 'A footer far too long to fit on the single tracked line' }),
+    DIRECTION,
+  );
+  assert.match(footerOnly.rationale, /Stock footer/);
+
+  const headingOnly = directions.applyBrandCreativeDirection(
+    generated({ footer: 'One small moment' }),
+    DIRECTION,
+  );
+  assert.match(headingOnly.rationale, /Stock headline/);
+  assert.doesNotMatch(headingOnly.rationale, /Stock headline and footer/);
+});
+
+test('the direction brief never shows the model the preset overlay lines', () => {
   const brief = directions.buildCreativeDirectionBrief(DIRECTION, 'instagram', 'Write posts about noticing small good things.');
   assert.match(brief, /Write posts about noticing small good things\./);
-  assert.match(brief, /DO NOT reuse these lines/);
-  assert.match(brief, /FRESH headline/);
-  // The old wording handed the preset over as approved copy to stamp on.
+  // The preset lines must not appear in the brief AT ALL. Sent as "approved
+  // overlay" copy they were stamped on verbatim; sent as a "tone reference --
+  // do not reuse" the model copied them anyway.
+  assert.doesNotMatch(brief, /Make room for joy/);
+  assert.doesNotMatch(brief, /Explore joy in scripture/);
   assert.doesNotMatch(brief, /Approved overlay/);
+  assert.match(brief, /headline .* and the footer for this concept from the brief/);
 });
 
 test('every seeded direction still has a fallback overlay to degrade to', () => {

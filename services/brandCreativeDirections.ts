@@ -180,13 +180,16 @@ export function buildCreativeDirectionBrief(
     `SHARED BRAND CREATIVE DIRECTION — ${direction.label}: ${direction.description}`,
     `Background scene: ${direction.photoBrief}`,
     `Visual rules: ${direction.styleNotes}`,
-    // Deliberately worded as a REGISTER SAMPLE, not approved copy to reuse.
-    // These two lines used to be handed over as "approved overlay" text and
-    // then stamped onto the card verbatim, so every batch in this direction
-    // said the same thing forever. The layout is what the direction fixes;
-    // the words are what the brief is for.
-    `Tone reference for the overlay — match this register, DO NOT reuse these lines: headline "${direction.safeOverlay.heading}", footer "${direction.safeOverlay.footer}".`,
-    'Write a FRESH headline (the "statement" field) and a FRESH footer for this concept, both answering the marketer\'s brief above. The footer is tracked caps on one line — keep it to about 6 words or 40 characters. Each concept in the batch needs its own distinct headline; do not repeat a line you have already used.',
+    // `direction.safeOverlay` is DELIBERATELY not sent to the model, in any
+    // framing. It was first sent as "approved overlay" copy (stamped on
+    // verbatim), then softened to a "tone reference — do not reuse these
+    // lines" — and the model reused them anyway, putting "Make room for joy."
+    // back on a card whose brief was about something else entirely. A line the
+    // model can see is a line it can copy, and copying is exactly the failure
+    // being designed out. The presets survive only as the code-level fallback
+    // in `applyBrandCreativeDirection`, where nothing can echo them.
+    `Register: ${direction.description} Match that feeling — the words themselves must come from the marketer's brief above.`,
+    'Write the headline (the "statement" field) and the footer for this concept from the brief. The footer is tracked caps on one line — keep it to about 6 words or 40 characters. Every concept in the batch needs its own distinct headline.',
     channel === 'reddit'
       ? 'This is paid Reddit creative. Keep the artwork sparse because Reddit supplies the promoted headline and CTA outside the image.'
       : 'This is an Instagram feed creative. Let the caption carry detail; keep the image message short and visually led.',
@@ -219,6 +222,20 @@ export function applyBrandCreativeDirection(
 ): CardConceptWithRef {
   const generatedHeading = (concept.heading || concept.statement || '').trim();
   const generatedFooter = (concept.footer || '').trim();
+  const usedStockHeading = !generatedHeading;
+  const usedStockFooter = !generatedFooter || generatedFooter.length > MAX_FOOTER_CHARS;
+
+  // Say so on the card when the stock copy had to be used. A silent fallback
+  // is indistinguishable from the old always-overwrite bug — the reviewer sees
+  // a familiar stock line and reasonably concludes the brief was ignored,
+  // rather than "the director returned nothing usable for this one."
+  const fallbackNote = usedStockHeading && usedStockFooter
+    ? ' (Stock headline and footer — the director returned neither.)'
+    : usedStockHeading
+    ? ' (Stock headline — the director returned none.)'
+    : usedStockFooter
+    ? ' (Stock footer — the director\'s was missing or too long for one line.)'
+    : '';
 
   return {
     ...concept,
@@ -236,8 +253,8 @@ export function applyBrandCreativeDirection(
     footer: generatedFooter && generatedFooter.length <= MAX_FOOTER_CHARS
       ? generatedFooter
       : direction.safeOverlay.footer,
-    rationale: concept.rationale
+    rationale: (concept.rationale
       ? `${direction.label}: ${concept.rationale}`
-      : `${direction.label}: ${direction.description}`,
+      : `${direction.label}: ${direction.description}`) + fallbackNote,
   };
 }
