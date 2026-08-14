@@ -622,6 +622,13 @@ function resolveConceptFromRaw(raw: any, model: string, cardStyle?: BrandCardSty
     }
 
     if (statement) base.statement = statement;
+    // `drawEditorial` draws its big serif headline from `heading`, not
+    // `statement` — the prompt asks for the headline under the name
+    // "statement" (shared with the statement template), so mirror it into
+    // `heading` here. Without this an editorial concept renders headline-less
+    // unless something downstream supplies one, which is exactly what the
+    // brand-direction presets were silently compensating for.
+    if (statement) base.heading = statement;
     if (wordmark) base.wordmark = wordmark;
     if (wordmarkSubtitle) base.wordmarkSubtitle = wordmarkSubtitle;
     base.bullets = bullets;

@@ -180,8 +180,13 @@ export function buildCreativeDirectionBrief(
     `SHARED BRAND CREATIVE DIRECTION — ${direction.label}: ${direction.description}`,
     `Background scene: ${direction.photoBrief}`,
     `Visual rules: ${direction.styleNotes}`,
-    `Approved overlay headline: ${direction.safeOverlay.heading}`,
-    `Approved overlay footer: ${direction.safeOverlay.footer}`,
+    // Deliberately worded as a REGISTER SAMPLE, not approved copy to reuse.
+    // These two lines used to be handed over as "approved overlay" text and
+    // then stamped onto the card verbatim, so every batch in this direction
+    // said the same thing forever. The layout is what the direction fixes;
+    // the words are what the brief is for.
+    `Tone reference for the overlay — match this register, DO NOT reuse these lines: headline "${direction.safeOverlay.heading}", footer "${direction.safeOverlay.footer}".`,
+    'Write a FRESH headline (the "statement" field) and a FRESH footer for this concept, both answering the marketer\'s brief above. The footer is tracked caps on one line — keep it to about 6 words or 40 characters. Each concept in the batch needs its own distinct headline; do not repeat a line you have already used.',
     channel === 'reddit'
       ? 'This is paid Reddit creative. Keep the artwork sparse because Reddit supplies the promoted headline and CTA outside the image.'
       : 'This is an Instagram feed creative. Let the caption carry detail; keep the image message short and visually led.',
@@ -189,22 +194,50 @@ export function buildCreativeDirectionBrief(
   ].join('\n\n');
 }
 
+// The footer is drawn as ONE un-shrunk tracked-caps line (see `drawEditorial`
+// — unlike the headline, it has no auto-fit), so a long one runs off the right
+// edge instead of wrapping. Roughly the widest that fits at the footer's fixed
+// size; anything longer falls back to the direction's own short line.
+const MAX_FOOTER_CHARS = 44;
+
+/**
+ * Stamps a direction's VISUAL identity onto a generated concept — layout,
+ * wordmark, photo brief, scrim — while leaving the COPY the director wrote in
+ * place.
+ *
+ * The overlay copy used to be overwritten with `direction.safeOverlay` too,
+ * which meant every card in a batch could only ever say one of a handful of
+ * hardcoded lines ("Make room for joy.", "Bring your questions.") no matter
+ * what the brief asked for: the brief was generated against and then thrown
+ * away. The presets are now the FALLBACK, used when the director didn't write
+ * usable copy — not the override. Everything visual is still fixed, so a
+ * direction still renders as the same designed card; only the words change.
+ */
 export function applyBrandCreativeDirection(
   concept: CardConceptWithRef,
   direction: BrandCreativeDirection,
 ): CardConceptWithRef {
+  const generatedHeading = (concept.heading || concept.statement || '').trim();
+  const generatedFooter = (concept.footer || '').trim();
+
   return {
     ...concept,
     template: 'editorial',
     creativeDirectionId: direction.id,
+    // Visual identity — always the direction's.
     wordmark: direction.wordmark,
     wordmarkSubtitle: direction.wordmarkSubtitle,
-    heading: direction.safeOverlay.heading,
     bullets: [],
-    footer: direction.safeOverlay.footer,
     photo_brief: direction.photoBrief,
     backgroundUrl: undefined,
     scrimStrength: direction.scrimStrength ?? 0.58,
-    rationale: `${direction.label}: ${direction.description}`,
+    // Copy — the director's, with the direction as a safety net.
+    heading: generatedHeading || direction.safeOverlay.heading,
+    footer: generatedFooter && generatedFooter.length <= MAX_FOOTER_CHARS
+      ? generatedFooter
+      : direction.safeOverlay.footer,
+    rationale: concept.rationale
+      ? `${direction.label}: ${concept.rationale}`
+      : `${direction.label}: ${direction.description}`,
   };
 }
