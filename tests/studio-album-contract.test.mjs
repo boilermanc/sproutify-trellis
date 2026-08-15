@@ -264,6 +264,19 @@ test('Studio video renders with no separate artwork-approval step', async () => 
   assert.match(page, /Render final video/);
 });
 
+test('oversized Studio renders use Supabase resumable storage uploads', async () => {
+  const worker = await read('workers/video_worker.py');
+  const requirements = await read('workers/requirements.txt');
+  assert.match(requirements, /tuspy==1\.1\.0/);
+  assert.match(worker, /\.storage\.supabase\.co/);
+  assert.match(worker, /storage\/v1\/upload\/resumable/);
+  assert.match(worker, /TUS_CHUNK_SIZE = 6 \* 1024 \* 1024/);
+  assert.match(worker, /"bucketName": bucket/);
+  assert.match(worker, /"objectName": path_in_bucket/);
+  assert.match(worker, /if size_mb > MAX_STANDARD_UPLOAD_MB:[\s\S]*?_upload_resumable/);
+  assert.doesNotMatch(worker, /above the configured standard upload limit/);
+});
+
 test('video renders from a native 16:9 text-free companion photo, not a crop of the square typography cover', async () => {
   // Root-cause fix: cropping a square cover that has title text burned near its
   // edges either clips the text or throws away ~44% of the photo. Episodes never
