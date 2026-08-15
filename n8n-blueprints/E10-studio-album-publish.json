@@ -75,21 +75,12 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ $('Validate Studio Payload').item.json.video_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "data"
-            }
-          },
-          "timeout": 300000
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "const m = $('Validate Studio Payload').item.json;\nif (!m.youtube_account_id) throw new Error('Missing youtube_account_id');\nreturn { json: { ...m, category_id: '10' } };"
       },
-      "name": "Download Private Studio Video",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "name": "Prepare Studio Account Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "onError": "continueErrorOutput",
       "position": [
         820,
@@ -98,26 +89,19 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const m = $('Validate Studio Payload').item.json;\nif (!m.youtube_account_id) throw new Error('Missing youtube_account_id');\nreturn { json: { ...m, category_id: '10' }, binary: $binary };"
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_E11_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "options": { "waitForSubWorkflow": true }
       },
-      "name": "Prepare Studio Account Upload",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "onError": "continueErrorOutput",
-      "position": [
-        1040,
-        300
-      ]
-    },
-    {
-      "parameters": { "workflowId": "REPLACE_WITH_E11_WORKFLOW_ID", "options": { "waitForSubWorkflow": true } },
       "name": "Upload Studio Album to YouTube",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "onError": "continueErrorOutput",
       "position": [
-        1260,
+        1040,
         300
       ]
     },
@@ -489,7 +473,7 @@
     },
     {
       "parameters": {
-        "content": "## Trellis: Studio Album Publish (YouTube)\\n\\nDedicated, account-aware Studio publisher. The payload must include `youtube_account_id`; E11 resolves that exact Rekkrd channel and performs the resumable upload.\\n\\n### Setup\\n1. Import and activate E11-youtube-account-upload first.\\n2. Replace `REPLACE_WITH_E11_WORKFLOW_ID` on Upload Studio Album to YouTube with E11's workflow ID.\\n3. Map every Supabase node to the Hub service-role credential.\\n4. Keep the first release private while validating the destination.\\n\\nThe thumbnail call reuses E11's short-lived access token. Scheduling stays disabled until verified end to end. Google credentials remain in Trellis.",
+        "content": "## Trellis: Studio Album Publish (YouTube)\\n\\nDedicated, account-aware Studio publisher. The payload must include `youtube_account_id`; E11 resolves that exact Rekkrd channel and performs the resumable upload.\\n\\n### Setup\\n1. Import E11-youtube-account-upload first. It is an internal sub-workflow and does not need activation.\\n2. Set Upload Studio Album to YouTube to **By ID** and replace `REPLACE_WITH_E11_WORKFLOW_ID` with E11's workflow ID.\\n3. Map every Supabase node to the Hub service-role credential.\\n4. Keep the first release private while validating the destination.\\n\\nThe thumbnail call reuses E11's short-lived access token. Scheduling stays disabled until verified end to end. Google credentials remain in Trellis.",
         "width": 560,
         "height": 460
       },
@@ -533,24 +517,6 @@
       ]
     },
     "Mark Studio Uploading": {
-      "main": [
-        [
-          {
-            "node": "Download Private Studio Video",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Build Studio Failure",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Download Private Studio Video": {
       "main": [
         [
           {

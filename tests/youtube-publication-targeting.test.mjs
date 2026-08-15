@@ -83,7 +83,12 @@ test('publishing workflows delegate to the account-aware resumable uploader', as
   assert.equal(resolveTokenNode.parameters.bodyParameters.parameters[0].name, 'youtube_account_id');
   assert.ok(resolveTokenNode.credentials.supabaseApi);
   assert.ok(uploader.nodes.some(node => node.name === 'Start Resumable Upload'));
-  assert.ok(uploader.nodes.some(node => node.name === 'Upload Video Bytes'));
+  assert.ok(uploader.nodes.some(node => node.name === 'Download Video Inside E11'));
+  assert.match(uploaderSource, /video_mime_type \|\| 'video\/mp4'/);
+  const directUploadNode = uploader.nodes.find(node => node.name === 'Attach Video To Session');
+  assert.match(directUploadNode.parameters.jsCode, /getBinaryDataBuffer\(0, 'data'\)/);
+  assert.match(directUploadNode.parameters.jsCode, /helpers\.httpRequest/);
+  assert.ok(!uploader.nodes.some(node => node.name === 'Upload Video Bytes'));
   assert.doesNotMatch(uploaderSource, /REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL|youTubeOAuth2Api|httpHeaderAuth/);
   for (const source of parentSources) {
     assert.match(source, /REPLACE_WITH_E11_WORKFLOW_ID/);
