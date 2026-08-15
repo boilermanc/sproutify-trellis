@@ -378,7 +378,7 @@ Rules:
   }
 }
 
-async function preparePublicationDraft(db: any, album: any, userId: string) {
+async function preparePublicationDraft(db: any, album: any, userId: string, youtubeAccountId: string) {
   if (album.video_status !== "approved") throw new Error("Approve the final video before preparing publishing metadata.");
   const existing = await publicationForAlbum(db, album.id);
   if (existing?.status === "live") throw new Error("This album is already published.");
@@ -416,6 +416,7 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
   const tags = publicationTags([album.artist_name, album.genre, album.subgenre, album.mood, album.series_name, ...(meta?.hashtags || []).map((h: string) => h.replace(/^#/, "")), "instrumental music", "full album"]);
   const draft = {
     album_id: album.id, created_by: userId, platform: "youtube", status: "draft",
+    youtube_account_id: youtubeAccountId,
     title: cleanText(`${album.artist_name} — ${album.title}`, 95) || "Untitled Album",
     description, tags, chapters, visibility: existing?.visibility || "private", made_for_kids: false,
     scheduled_for: existing?.scheduled_for || null, video_asset_id: video.id, thumbnail_asset_id: thumbnail?.id || cover?.id || null,
@@ -1063,7 +1064,9 @@ Deno.serve(async (req) => {
     }
     if (body.action === "prepare_publication") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      return json({ publication: await preparePublicationDraft(db, album, user.id) });
+      const youtubeAccountId = String(body.youtube_account_id || "").trim();
+      if (!youtubeAccountId) throw new Error("Choose an active YouTube channel before preparing publishing metadata.");
+      return json({ publication: await preparePublicationDraft(db, album, user.id, youtubeAccountId) });
     }
     if (body.action === "save_publication") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
@@ -1078,8 +1081,10 @@ Deno.serve(async (req) => {
       const visibility = ["private", "unlisted", "public"].includes(input.visibility) ? input.visibility : "private";
       if (input.scheduled_for) throw new Error("Scheduled YouTube publishing is not enabled yet. Leave the schedule blank and submit explicitly when ready.");
       const scheduledFor: string | null = null;
+      const youtubeAccountId = String(body.youtube_account_id || "").trim();
+      if (!youtubeAccountId) throw new Error("Choose an active YouTube channel before saving publishing metadata.");
       if (!title || !description) throw new Error("A publishing title and description are required.");
-      const { data, error } = await db.from("studio_publications").update({ title, description, tags, visibility, made_for_kids: input.made_for_kids === true, scheduled_for: scheduledFor, status: "draft", error_message: null, updated_at: new Date().toISOString() }).eq("id", existing.id).select("*").single();
+      const { data, error } = await db.from("studio_publications").update({ youtube_account_id: youtubeAccountId, title, description, tags, visibility, made_for_kids: input.made_for_kids === true, scheduled_for: scheduledFor, status: "draft", error_message: null, updated_at: new Date().toISOString() }).eq("id", existing.id).select("*").single();
       if (error || !data) throw new Error(error?.message || "Could not save publishing metadata.");
       await db.from("studio_albums").update({ metadata_status: "pending_review", publishing_status: "not_started", status: "metadata_review", updated_at: new Date().toISOString() }).eq("id", album.id);
       return json({ publication: data });

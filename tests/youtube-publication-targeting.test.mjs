@@ -46,6 +46,19 @@ test('all three publishing handoffs include youtube_account_id', async () => {
   for (const source of sources) assert.match(source, /youtube_account_id/);
 });
 
+test('Studio chooses and persists its YouTube destination before metadata preparation', async () => {
+  const [panel, service, studio] = await Promise.all([
+    readFile(new URL('../components/StudioPublishingPanel.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../services/studioAlbumsService.ts', import.meta.url), 'utf8'),
+    readFile(studioUrl, 'utf8'),
+  ]);
+  assert.match(panel, /prepareStudioPublication\(album\.id, youtubeAccountId\)/);
+  assert.match(panel, /disabled=\{busy !== null \|\| !youtubeAccountId\}/);
+  assert.match(service, /prepare_publication', \{ album_id: albumId, youtube_account_id: youtubeAccountId \}/);
+  assert.match(studio, /preparePublicationDraft\(db, album, user\.id, youtubeAccountId\)/);
+  assert.match(studio, /youtube_account_id: youtubeAccountId/);
+});
+
 test('token broker is service-role-only and verifies refreshed tokens against the channel id', async () => {
   const source = await readFile(tokenBrokerUrl, 'utf8');
   assert.match(source, /authorization === `Bearer \$\{SERVICE_KEY\}`/);
