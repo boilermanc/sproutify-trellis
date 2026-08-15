@@ -106,6 +106,13 @@ Environment=VIDEO_AUDIO_BITRATE=96k
 Environment=VIDEO_MAX_STANDARD_UPLOAD_MB=48
 ```
 
+Install `workers/requirements.txt` before restarting the service. Video files at
+or below `VIDEO_MAX_STANDARD_UPLOAD_MB` use the standard Storage endpoint.
+Larger renders automatically use Supabase Storage's resumable TUS endpoint in
+6 MB chunks, so long-form videos keep the configured render quality instead of
+failing after ffmpeg completes. `SUPABASE_STORAGE_URL` is optional and defaults
+to the project's direct `*.storage.supabase.co` hostname.
+
 ## Wiring the webhook
 
 `MUSIC_STITCH_WEBHOOK` in `constants.ts` is currently

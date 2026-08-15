@@ -42,6 +42,11 @@ VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "12"))
 VIDEO_CRF = os.environ.get("VIDEO_CRF", "32").strip()
 VIDEO_AUDIO_BITRATE = os.environ.get("VIDEO_AUDIO_BITRATE", "96k").strip()
 MAX_STANDARD_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_STANDARD_UPLOAD_MB", "48"))
+TUS_CHUNK_SIZE = 6 * 1024 * 1024
+STORAGE_URL = os.environ.get(
+    "SUPABASE_STORAGE_URL",
+    SUPABASE_URL.replace(".supabase.co", ".storage.supabase.co"),
+).strip().rstrip("/")
 RENDER_PROFILE = "studio-landscape-v1"
 
 app = Flask(__name__)
@@ -141,14 +146,47 @@ def _download(url: str, path: str):
         f.write(r.content)
 
 
+def _public_url(bucket: str, path_in_bucket: str) -> str:
+    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path_in_bucket}"
+
+
+def _upload_resumable(bucket: str, path_in_bucket: str, data: bytes, content_type: str):
+    """Upload a large render with Supabase Storage's TUS endpoint."""
+    try:
+        from tusclient import client as tus_client
+
+        client = tus_client.TusClient(
+            f"{STORAGE_URL}/storage/v1/upload/resumable",
+            headers={
+                "Authorization": f"Bearer {SERVICE_KEY}",
+                "apikey": SERVICE_KEY,
+                "x-upsert": "true",
+            },
+        )
+        uploader = client.uploader(
+            file_stream=io.BytesIO(data),
+            chunk_size=TUS_CHUNK_SIZE,
+            metadata={
+                "bucketName": bucket,
+                "objectName": path_in_bucket,
+                "contentType": content_type,
+                "cacheControl": "3600",
+            },
+        )
+        uploader.upload()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Resumable video upload failed: {exc}") from exc
+
+
 def _upload(bucket: str, path_in_bucket: str, data: bytes, content_type: str) -> str:
     size_mb = len(data) / (1024 * 1024)
     if size_mb > MAX_STANDARD_UPLOAD_MB:
-        raise RuntimeError(
-            f"Video is {size_mb:.1f} MB, above the configured standard upload limit "
-            f"of {MAX_STANDARD_UPLOAD_MB} MB. Lower VIDEO_WIDTH/VIDEO_HEIGHT/VIDEO_FPS, "
-            "raise VIDEO_CRF, or switch the worker to Supabase resumable uploads."
+        print(
+            f"[video] {size_mb:.1f}MB exceeds the {MAX_STANDARD_UPLOAD_MB}MB "
+            "standard-upload threshold; switching to Supabase TUS"
         )
+        _upload_resumable(bucket, path_in_bucket, data, content_type)
+        return _public_url(bucket, path_in_bucket)
 
     r = requests.post(
         f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path_in_bucket}",
@@ -162,7 +200,7 @@ def _upload(bucket: str, path_in_bucket: str, data: bytes, content_type: str) ->
                 "Use smaller video render settings or configure resumable uploads for long videos."
             )
         raise RuntimeError(f"Upload failed {r.status_code}: {r.text}")
-    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path_in_bucket}"
+    return _public_url(bucket, path_in_bucket)
 
 
 def _run_ffmpeg(cmd: list[str], asset_id: str, duration_s: float, pipeline: str = "episode", job_id: str | None = None, album_id: str | None = None):
@@ -324,7 +362,7 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             metadata_column = "metadata_json" if pipeline == "studio" else "metadata"
             existing = _get_row(table, asset_id, metadata_column) or {}
             metadata = existing.get(metadata_column) if isinstance(existing.get(metadata_column), dict) else {}
-            _patch(table, asset_id, {"status": "failed", "error_message": str(e)[:500], metadata_column: {**metadata, "worker": {"stage": "failed", "message": str(e)[:500], "heartbeat_at": _now()}}, "updated_at": _now()})
+            _patch(table, asset_id, {"status": "failed", "error_message": str(e)[:500], metadata_column: {**metadata, "worker": {"stage": "failed", "message": str(e)[:500], "heartbeat_at": _now(), "settings": {"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT, "fps": VIDEO_FPS, "crf": VIDEO_CRF, "audio_bitrate": VIDEO_AUDIO_BITRATE, "render_profile": RENDER_PROFILE}}}, "updated_at": _now()})
             if pipeline == "studio":
                 if job_id:
                     _patch("studio_jobs", job_id, {"status": "failed", "error_message": str(e)[:500], "completed_at": _now(), "updated_at": _now()})
