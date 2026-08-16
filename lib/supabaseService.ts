@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Profile, MarketingEvent, QueuedTask, FailedSync, Branch, Role } from '../types';
+import { Profile, MarketingEvent, QueuedTask, FailedSync, Branch, Role, EnrichedProfile } from '../types';
 
 /**
  * Fetch all profiles from the profiles table
@@ -31,44 +31,84 @@ export async function getProfiles(): Promise<Profile[]> {
  * Rows with an empty `branches` array are deliberately excluded: the same
  * table also holds Trellis operator accounts and the Leads CRM, neither of
  * which is a campaign audience.
+ *
+ * Each row is emitted once PER branch tag, as a pseudo-spoke keyed
+ * `hub:<slug>`. That is deliberate: it makes a spoke-less branch look like any
+ * other data source to `useBranchStats`, the Profiles data-source picker and
+ * the per-source stats, instead of needing a parallel code path in each.
  */
-export async function fetchHubBranchProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .neq('status', 'deleted');
+export const HUB_SPOKE_PREFIX = 'hub:';
 
-  if (error) {
-    console.error('Error fetching Hub branch profiles:', error);
-    return [];
+export interface HubNativeSource {
+  id: string;   // `hub:<slug>`
+  name: string; // branch display name
+  slug: string;
+}
+
+export interface HubNativeResult {
+  profiles: EnrichedProfile[];
+  sources: HubNativeSource[];
+}
+
+export async function fetchHubNativeProfiles(): Promise<HubNativeResult> {
+  const [profileRes, branchRes] = await Promise.all([
+    supabase.from('profiles').select('*').neq('status', 'deleted'),
+    supabase.from('branches').select('slug, name').eq('is_active', true),
+  ]);
+
+  if (profileRes.error) {
+    console.error('Error fetching Hub-native profiles:', profileRes.error);
+    return { profiles: [], sources: [] };
   }
 
-  return (data || [])
-    .filter((row: any) => Array.isArray(row.branches) && row.branches.length > 0)
-    .map((row: any): Profile => ({
-      id: row.id,
-      spoke_uuid: row.spoke_uuid || undefined,
-      email: row.email,
-      first_name: row.first_name || '',
-      last_name: row.last_name || undefined,
-      phone: row.phone || undefined,
-      is_subscribed: row.is_subscribed !== false,
-      marketing_pause: row.marketing_pause === true,
-      tags: Array.isArray(row.tags) ? row.tags : [],
-      segments: Array.isArray(row.segments) ? row.segments : [],
-      branches: row.branches,
-      branch_consent: row.branch_consent || undefined,
-      status: row.status || 'active',
-      ltv: Number(row.ltv) || 0,
-      churn_risk: row.churn_risk || 'unknown',
-      engagement_score: row.engagement_score ?? null,
-      last_active: row.last_active || row.created_at,
-      metadata: {
-        ...(row.metadata || {}),
-        consent_source: row.metadata?.consent_source || 'spoke_native',
-        hub_native: true,
-      },
-    }));
+  const nameBySlug = new Map<string, string>(
+    (branchRes.data || []).map((b: any) => [b.slug, b.name]),
+  );
+
+  const profiles: EnrichedProfile[] = [];
+  const sources = new Map<string, HubNativeSource>();
+
+  for (const row of profileRes.data || []) {
+    if (!Array.isArray(row.branches) || row.branches.length === 0) continue;
+    if (!row.email) continue;
+
+    for (const slug of row.branches) {
+      if (typeof slug !== 'string' || !slug) continue;
+      const spokeId = `${HUB_SPOKE_PREFIX}${slug}`;
+      const name = nameBySlug.get(slug);
+      // Skip tags that point at a branch that is gone or deactivated — those
+      // are stale rows, not an audience.
+      if (!name) continue;
+
+      if (!sources.has(spokeId)) sources.set(spokeId, { id: spokeId, name, slug });
+
+      profiles.push({
+        id: row.id,
+        email: row.email,
+        first_name: row.first_name || undefined,
+        last_name: row.last_name || undefined,
+        phone: row.phone || undefined,
+        // An explicit false is respected; anything else leaves consent to
+        // mapFederatedConsent rather than inventing an opt-in here.
+        subscribed: row.is_subscribed !== false,
+        created_at: row.created_at || undefined,
+        tags: Array.isArray(row.tags) ? row.tags.filter((t: unknown) => typeof t === 'string') : undefined,
+        _spoke_id: spokeId,
+        _spoke_name: name,
+        metadata: { ...(row.metadata || {}), hub_native: true },
+      });
+    }
+  }
+
+  return { profiles, sources: [...sources.values()] };
+}
+
+/**
+ * Resolve a spoke id to a branch slug when it is a Hub-native pseudo-spoke.
+ * Returns null for real spoke connection ids.
+ */
+export function hubSlugFromSpokeId(spokeId: string): string | null {
+  return spokeId.startsWith(HUB_SPOKE_PREFIX) ? spokeId.slice(HUB_SPOKE_PREFIX.length) : null;
 }
 
 /**

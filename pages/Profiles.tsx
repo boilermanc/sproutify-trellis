@@ -76,6 +76,16 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     if (selectedSpokeIds.size === 0) return [];
     return branchStats.enrichedProfiles.filter(p => selectedSpokeIds.has(p._spoke_id));
   }, [branchStats.enrichedProfiles, selectedSpokeIds]);
+
+  // Selectable data sources = active spoke connections + Hub-native branches
+  // (still-janes-daughter and friends have no spoke DB, so they would otherwise
+  // never appear in the picker and their subscribers stay invisible here).
+  const dataSources = useMemo(() => ([
+    ...spokeConnections
+      .filter(c => c.status === 'active')
+      .map(c => ({ id: c.id, name: c.name, isHub: false })),
+    ...(branchStats.hubSources || []).map(s => ({ id: s.id, name: s.name, isHub: true })),
+  ]), [spokeConnections, branchStats.hubSources]);
   const isFederating = branchStats.isLoading;
   const federationError = branchStats.errors.length > 0 ? branchStats.errors.join('; ') : null;
 
@@ -163,8 +173,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   };
 
   const selectAllSpokes = () => {
-    const activeIds = spokeConnections.filter(c => c.status === 'active').map(c => c.id);
-    setSelectedSpokeIds(new Set(activeIds));
+    setSelectedSpokeIds(new Set(dataSources.map(s => s.id)));
   };
 
   const clearSpokeSelection = () => {
@@ -186,14 +195,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         .filter(b => branchContext.activeBranchSlugs.includes(b.slug))
         .map(b => b.name)
     );
-    const matchingIds = spokeConnections
-      .filter(c => c.status === 'active' && activeNames.has(c.name))
-      .map(c => c.id);
+    const matchingIds = dataSources
+      .filter(s => activeNames.has(s.name))
+      .map(s => s.id);
     setSelectedSpokeIds(new Set(matchingIds));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, spokeConnections]);
+  }, [scopeKey, dataSources]);
 
-  const activeConnectionCount = spokeConnections.filter(c => c.status === 'active').length;
+  const activeConnectionCount = dataSources.length;
 
   // Build branchMap for fast lookup by slug
   const branchMap = useMemo(() => {
@@ -368,7 +377,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {spokeConnections.filter(c => c.status === 'active').map((connection) => {
+              {dataSources.map((connection) => {
                 const isSelected = selectedSpokeIds.has(connection.id);
                 return (
                   <button
@@ -392,6 +401,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                       )}
                     </div>
                     <span className="text-xs font-bold">{connection.name}</span>
+                    {connection.isHub && (
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Hub</span>
+                    )}
                   </button>
                 );
               })}

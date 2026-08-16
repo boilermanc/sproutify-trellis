@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { SpokeConnection, EnrichedProfile, BranchStatsResult, SpokeStats } from '../types';
 import { fetchEnrichedProfiles } from '../spokeConnector';
+import { fetchHubNativeProfiles, HubNativeSource } from '../lib/supabaseService';
 
 export function useBranchStats(spokeConnections: SpokeConnection[]): BranchStatsResult {
   const [enrichedProfiles, setEnrichedProfiles] = useState<EnrichedProfile[]>([]);
+  const [hubSources, setHubSources] = useState<HubNativeSource[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
@@ -14,16 +16,24 @@ export function useBranchStats(spokeConnections: SpokeConnection[]): BranchStats
   const fetchData = useCallback(async () => {
     const connections = connectionsRef.current;
     const active = connections.filter(c => c.status === 'active');
-    if (active.length === 0) {
-      setEnrichedProfiles([]);
-      setErrors([]);
-      setIsLoading(false);
-      return;
-    }
+
     setIsLoading(true);
     try {
+      // Branches with no spoke DB keep their subscribers Hub-side. They are a
+      // real data source, so they load even when NO spoke connection is active
+      // — otherwise a Hub-only ecosystem would show an empty Profiles page.
+      const hub = await fetchHubNativeProfiles();
+      setHubSources(hub.sources);
+
+      if (active.length === 0) {
+        setEnrichedProfiles(hub.profiles);
+        setErrors([]);
+        setLastFetchedAt(new Date().toISOString());
+        return;
+      }
+
       const { profiles, errors: fetchErrors } = await fetchEnrichedProfiles(connections);
-      setEnrichedProfiles(profiles);
+      setEnrichedProfiles([...profiles, ...hub.profiles]);
       setErrors(fetchErrors);
       setLastFetchedAt(new Date().toISOString());
     } catch (err) {
@@ -43,8 +53,22 @@ export function useBranchStats(spokeConnections: SpokeConnection[]): BranchStats
     const now = Date.now();
     const ninetyDays = 90 * 24 * 60 * 60 * 1000;
 
-    // Initialize from connection metadata
-    for (const conn of spokeConnections) {
+    // Initialize from connection metadata, then from Hub-native branches. Both
+    // are stat sources — without the second loop the profile loop below hits
+    // `if (!statsMap[sid]) continue` and silently drops every Hub-native row.
+    const sourceMeta: Array<Pick<SpokeConnection, 'id' | 'name' | 'supabase_url' | 'status' | 'last_tested_at' | 'last_error'>> = [
+      ...spokeConnections,
+      ...hubSources.map(s => ({
+        id: s.id,
+        name: s.name,
+        supabase_url: '',
+        status: 'active' as const,
+        last_tested_at: undefined,
+        last_error: undefined,
+      })),
+    ];
+
+    for (const conn of sourceMeta) {
       statsMap[conn.id] = {
         spokeId: conn.id,
         spokeName: conn.name,
@@ -160,13 +184,14 @@ export function useBranchStats(spokeConnections: SpokeConnection[]): BranchStats
     };
 
     return { spokeStats: statsMap, spokeStatsList: list, totals: t };
-  }, [enrichedProfiles, spokeConnections]);
+  }, [enrichedProfiles, spokeConnections, hubSources]);
 
   return {
     enrichedProfiles,
     spokeStats,
     spokeStatsList,
     totals,
+    hubSources,
     isLoading,
     errors,
     lastFetchedAt,

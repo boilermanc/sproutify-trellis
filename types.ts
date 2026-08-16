@@ -1105,6 +1105,11 @@ export interface BranchStatsResult {
     profilesWithOrders: number;
   };
 
+  // Branches with no spoke database, whose subscribers live Hub-side in
+  // profiles.branches. Surfaced as pseudo-spokes (`hub:<slug>`) so they can be
+  // picked as a data source alongside real connections.
+  hubSources: { id: string; name: string; slug: string }[];
+
   isLoading: boolean;
   errors: string[];
   lastFetchedAt: string | null;

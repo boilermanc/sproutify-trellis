@@ -40,7 +40,7 @@ import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import SetPassword from './pages/SetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { getProfileByEmail, fetchAllBranches, fetchHubBranchProfiles } from './lib/supabaseService';
+import { getProfileByEmail, fetchAllBranches, hubSlugFromSpokeId } from './lib/supabaseService';
 import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
@@ -223,14 +223,6 @@ const AppContent: React.FC = () => {
     fetchEngagementIndex().then(setEngagementIndex).catch(() => {});
   }, []);
 
-  // Hub-native audience. Branches without a spoke DB keep their subscribers in
-  // the Hub `profiles` table, tagged via the `branches` JSONB array — the
-  // federated fetch above can't see them.
-  const [hubProfiles, setHubProfiles] = useState<Profile[]>([]);
-  useEffect(() => {
-    fetchHubBranchProfiles().then(setHubProfiles).catch(() => {});
-  }, []);
-
   // Derive Profile[] for backwards compatibility with pages that still use it
   // Build connectionId → branch slug lookup so profiles carry slugs, not display names
   const profiles: Profile[] = useMemo(() => {
@@ -242,9 +234,13 @@ const AppContent: React.FC = () => {
     }
 
     const now = new Date().toISOString();
-    const fromSpokes = branchStats.enrichedProfiles.map(p => {
+    const mapped = branchStats.enrichedProfiles.map(p => {
       const consent = mapFederatedConsent(p);
-      const branchSlug = slugByConnectionId.get(p._spoke_id) || p._spoke_name;
+      // Hub-native rows arrive as `hub:<slug>` pseudo-spokes and already carry
+      // the slug; real connections resolve through the branches table.
+      const branchSlug = hubSlugFromSpokeId(p._spoke_id)
+        || slugByConnectionId.get(p._spoke_id)
+        || p._spoke_name;
 
       // Only score addresses we have actually emailed. Everyone else is
       // 'unknown' rather than being scored 0 / critical off the back of no data.
@@ -289,30 +285,31 @@ const AppContent: React.FC = () => {
       };
     });
 
-    // Merge Hub-native profiles on email (the atomic merge key). Someone can be
-    // both an ATL customer and a Still Jane's Daughter subscriber — union the
-    // branch tags rather than letting either side win and drop the other's.
+    // Collapse on email (the atomic merge key). One person can appear once per
+    // spoke AND once per Hub branch tag — union the branch tags and consent so
+    // they stay targetable from every branch rather than one source winning.
     const byEmail = new Map<string, number>();
-    fromSpokes.forEach((p, i) => byEmail.set((p.email || '').toLowerCase(), i));
+    const merged: Profile[] = [];
 
-    const merged = [...fromSpokes];
-    for (const hub of hubProfiles) {
-      const key = (hub.email || '').toLowerCase();
+    for (const p of mapped) {
+      const key = (p.email || '').toLowerCase();
       const existingIndex = byEmail.get(key);
       if (existingIndex === undefined) {
-        merged.push(hub);
+        merged.push(p);
         byEmail.set(key, merged.length - 1);
         continue;
       }
       const existing = merged[existingIndex];
       merged[existingIndex] = {
         ...existing,
-        branches: Array.from(new Set([...existing.branches, ...hub.branches])),
-        branch_consent: { ...(hub.branch_consent || {}), ...(existing.branch_consent || {}) },
+        branches: Array.from(new Set([...existing.branches, ...p.branches])),
+        branch_consent: { ...(p.branch_consent || {}), ...(existing.branch_consent || {}) },
+        // Keep the richest commercial signal across sources.
+        ltv: Math.max(existing.ltv || 0, p.ltv || 0),
       };
     }
     return merged;
-  }, [branchStats.enrichedProfiles, branches, engagementIndex, hubProfiles]);
+  }, [branchStats.enrichedProfiles, branches, engagementIndex]);
   const isLoadingProfiles = branchStats.isLoading;
 
   // Fetch user's profile from Supabase to get first_name
