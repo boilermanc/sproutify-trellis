@@ -19,6 +19,59 @@ export async function getProfiles(): Promise<Profile[]> {
 }
 
 /**
+ * Fetch Hub-side profiles that are tagged to one or more branches.
+ *
+ * Most branches carry a spoke connection, so their audience arrives via
+ * `fetchEnrichedProfiles()` in spokeConnector. Branches with no spoke DB
+ * (still-janes-daughter, sproutify-home, sweetwater-urban-farms) keep their
+ * subscribers here on the Hub, tagged via the `branches` JSONB array — and
+ * before this loader existed nothing read them, so those branches had no
+ * audience and never appeared in Campaign Builder.
+ *
+ * Rows with an empty `branches` array are deliberately excluded: the same
+ * table also holds Trellis operator accounts and the Leads CRM, neither of
+ * which is a campaign audience.
+ */
+export async function fetchHubBranchProfiles(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .neq('status', 'deleted');
+
+  if (error) {
+    console.error('Error fetching Hub branch profiles:', error);
+    return [];
+  }
+
+  return (data || [])
+    .filter((row: any) => Array.isArray(row.branches) && row.branches.length > 0)
+    .map((row: any): Profile => ({
+      id: row.id,
+      spoke_uuid: row.spoke_uuid || undefined,
+      email: row.email,
+      first_name: row.first_name || '',
+      last_name: row.last_name || undefined,
+      phone: row.phone || undefined,
+      is_subscribed: row.is_subscribed !== false,
+      marketing_pause: row.marketing_pause === true,
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      segments: Array.isArray(row.segments) ? row.segments : [],
+      branches: row.branches,
+      branch_consent: row.branch_consent || undefined,
+      status: row.status || 'active',
+      ltv: Number(row.ltv) || 0,
+      churn_risk: row.churn_risk || 'unknown',
+      engagement_score: row.engagement_score ?? null,
+      last_active: row.last_active || row.created_at,
+      metadata: {
+        ...(row.metadata || {}),
+        consent_source: row.metadata?.consent_source || 'spoke_native',
+        hub_native: true,
+      },
+    }));
+}
+
+/**
  * Fetch a single profile by ID
  */
 export async function getProfile(id: string): Promise<Profile | null> {

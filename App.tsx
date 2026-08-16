@@ -40,7 +40,7 @@ import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import SetPassword from './pages/SetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { getProfileByEmail, fetchAllBranches } from './lib/supabaseService';
+import { getProfileByEmail, fetchAllBranches, fetchHubBranchProfiles } from './lib/supabaseService';
 import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
@@ -223,6 +223,14 @@ const AppContent: React.FC = () => {
     fetchEngagementIndex().then(setEngagementIndex).catch(() => {});
   }, []);
 
+  // Hub-native audience. Branches without a spoke DB keep their subscribers in
+  // the Hub `profiles` table, tagged via the `branches` JSONB array — the
+  // federated fetch above can't see them.
+  const [hubProfiles, setHubProfiles] = useState<Profile[]>([]);
+  useEffect(() => {
+    fetchHubBranchProfiles().then(setHubProfiles).catch(() => {});
+  }, []);
+
   // Derive Profile[] for backwards compatibility with pages that still use it
   // Build connectionId → branch slug lookup so profiles carry slugs, not display names
   const profiles: Profile[] = useMemo(() => {
@@ -234,7 +242,7 @@ const AppContent: React.FC = () => {
     }
 
     const now = new Date().toISOString();
-    return branchStats.enrichedProfiles.map(p => {
+    const fromSpokes = branchStats.enrichedProfiles.map(p => {
       const consent = mapFederatedConsent(p);
       const branchSlug = slugByConnectionId.get(p._spoke_id) || p._spoke_name;
 
@@ -280,7 +288,31 @@ const AppContent: React.FC = () => {
         },
       };
     });
-  }, [branchStats.enrichedProfiles, branches, engagementIndex]);
+
+    // Merge Hub-native profiles on email (the atomic merge key). Someone can be
+    // both an ATL customer and a Still Jane's Daughter subscriber — union the
+    // branch tags rather than letting either side win and drop the other's.
+    const byEmail = new Map<string, number>();
+    fromSpokes.forEach((p, i) => byEmail.set((p.email || '').toLowerCase(), i));
+
+    const merged = [...fromSpokes];
+    for (const hub of hubProfiles) {
+      const key = (hub.email || '').toLowerCase();
+      const existingIndex = byEmail.get(key);
+      if (existingIndex === undefined) {
+        merged.push(hub);
+        byEmail.set(key, merged.length - 1);
+        continue;
+      }
+      const existing = merged[existingIndex];
+      merged[existingIndex] = {
+        ...existing,
+        branches: Array.from(new Set([...existing.branches, ...hub.branches])),
+        branch_consent: { ...(hub.branch_consent || {}), ...(existing.branch_consent || {}) },
+      };
+    }
+    return merged;
+  }, [branchStats.enrichedProfiles, branches, engagementIndex, hubProfiles]);
   const isLoadingProfiles = branchStats.isLoading;
 
   // Fetch user's profile from Supabase to get first_name

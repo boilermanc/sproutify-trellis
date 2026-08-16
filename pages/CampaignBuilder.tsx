@@ -554,12 +554,19 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   }, [branches]);
 
   const availableBranches = useMemo(() => {
+    // The branches table is the source of truth: every active branch is
+    // targetable, whether or not it has a spoke DB behind it. Branches whose
+    // audience lives Hub-side (spoke_connection_id NULL) used to fall through
+    // both of the derived lists below and silently disappear from the picker.
+    const fromBranchRecords = branches
+      .filter(b => b.is_active !== false && b.slug)
+      .map(b => b.slug);
     const fromProfiles = profiles.flatMap(p => p.branches);
     const fromSpokes = spokeConnections
       .filter(c => c.status === 'active')
       .map(c => slugByConnectionId.get(c.id) || c.name);
-    return Array.from(new Set([...fromProfiles, ...fromSpokes])).filter(Boolean);
-  }, [profiles, spokeConnections, slugByConnectionId]);
+    return Array.from(new Set([...fromBranchRecords, ...fromProfiles, ...fromSpokes])).filter(Boolean);
+  }, [branches, profiles, spokeConnections, slugByConnectionId]);
 
   const spokeStatusMap = useMemo(() => {
     const map: Record<string, SpokeConnection['status']> = {};
