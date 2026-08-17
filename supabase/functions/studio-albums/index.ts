@@ -7,6 +7,8 @@ const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const LEGACY_TRACK_WORKER = "generate-session-track";
+const MAX_CONCURRENT_STUDIO_TRACKS = 3;
+const STALE_STUDIO_TRACK_MS = 25 * 60 * 1000;
 const MUSIC_STITCH_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-music-stitch";
 const VIDEO_RENDER_WEBHOOK = Deno.env.get("STUDIO_VIDEO_RENDER_WEBHOOK") || Deno.env.get("STUDIO_VIDEO_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-episode-video";
 const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-studio-album-publish";
@@ -96,6 +98,31 @@ async function invokeLegacyWorker(sessionId: string, branch: string | null) {
   if (!response.ok) throw new Error(`Legacy music worker failed to start: ${await response.text()}`);
 }
 
+async function recoverStudioTrackQueue(db: any, albumId: string) {
+  const { data: studioTracks, error: studioError } = await db.from("studio_tracks")
+    .select("legacy_generation_id")
+    .eq("album_id", albumId)
+    .eq("review_status", "regenerating")
+    .not("legacy_generation_id", "is", null);
+  if (studioError) throw new Error(studioError.message);
+  const legacyIds = (studioTracks || []).map((track: any) => track.legacy_generation_id).filter(Boolean);
+  if (!legacyIds.length) return 0;
+
+  const { data: legacyTracks, error: legacyError } = await db.from("trellis_music_tracks")
+    .select("id,session_id,status,updated_at")
+    .in("id", legacyIds);
+  if (legacyError) throw new Error(legacyError.message);
+
+  const cutoff = Date.now() - STALE_STUDIO_TRACK_MS;
+  const active = (legacyTracks || []).filter((track: any) => track.status === "generating" && new Date(track.updated_at).getTime() >= cutoff);
+  const stale = (legacyTracks || []).filter((track: any) => track.status === "generating" && new Date(track.updated_at).getTime() < cutoff);
+  const queued = (legacyTracks || []).filter((track: any) => track.status === "queued");
+  const availableSlots = Math.max(0, MAX_CONCURRENT_STUDIO_TRACKS - active.length);
+  const dispatch = [...stale, ...queued].slice(0, availableSlots);
+  await Promise.all(dispatch.map((track: any) => invokeLegacyWorker(track.session_id, null)));
+  return dispatch.length;
+}
+
 async function trackWithAsset(db: any, trackId: string) {
   const { data: track, error } = await db.from("studio_tracks").select("*").eq("id", trackId).single();
   if (error) throw new Error(error.message);
@@ -132,7 +159,7 @@ async function syncLegacyTrack(db: any, studioTrackId: string) {
   return trackWithAsset(db, studioTrackId);
 }
 
-async function queueStudioTrackGeneration(db: any, album: any, userId: string, studioTrack: any) {
+async function queueStudioTrackGeneration(db: any, album: any, userId: string, studioTrack: any, startWorker = true) {
   const duration = Number(studioTrack.duration_seconds);
   const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Adapter] ${album.title} — ${studioTrack.title}`, target_duration_seconds: duration, genre: album.genre, mood: album.mood, track_count: 1, avg_track_length_seconds: duration, status: "planned" }).select("*").single();
   if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the legacy generation adapter.");
@@ -142,7 +169,7 @@ async function queueStudioTrackGeneration(db: any, album: any, userId: string, s
   if (updateError) throw new Error(updateError.message);
   const { error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, track_id: studioTrack.id, job_type: "track_generation", status: "processing", progress: 5, provider: "legacy_lyria_adapter", attempt_count: 1, input_json: { legacy_session_id: legacySession.id, legacy_generation_id: legacyTrack.id } });
   if (jobError) throw new Error(jobError.message);
-  await invokeLegacyWorker(legacySession.id, null);
+  if (startWorker) await invokeLegacyWorker(legacySession.id, null);
   await db.from("studio_albums").update({ status: "track_generation", music_generation_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
   return trackWithAsset(db, studioTrack.id);
 }
@@ -551,6 +578,7 @@ Deno.serve(async (req) => {
     }
     if (body.action === "tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
+      await recoverStudioTrackQueue(db, album.id);
       const { data, error } = await db.from("studio_tracks").select("*").eq("album_id", body.album_id).order("track_number");
       if (error) throw new Error(error.message);
       const tracks = await Promise.all((data || []).map((track: any) => syncLegacyTrack(db, track.id)));
@@ -657,7 +685,7 @@ Deno.serve(async (req) => {
         const batch = approvedPlans.slice(index, index + concurrency);
         const results = await Promise.all(batch.map(async (track: any) => {
           try {
-            return { track: await queueStudioTrackGeneration(db, album, user.id, track) };
+            return { track: await queueStudioTrackGeneration(db, album, user.id, track, false) };
           } catch (generationError) {
             return { failure: { track_id: track.id, title: track.title, error: generationError instanceof Error ? generationError.message : "Could not queue generation." } };
           }
@@ -668,6 +696,7 @@ Deno.serve(async (req) => {
         }
       }
       if (!tracks.length) throw new Error(failures[0]?.error || "No approved tracks could be queued.");
+      await recoverStudioTrackQueue(db, album.id);
       return json({ tracks, failures }, failures.length ? 207 : 201);
     }
     if (body.action === "generate_one") {

@@ -25,6 +25,17 @@ test('batch generation reports partial failures instead of hiding queued tracks'
   assert.match(fn, /return json\(\{ tracks, failures \}, failures\.length \? 207 : 201\)/);
 });
 
+test('Studio limits active Lyria workers and automatically recovers stale track jobs', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /const MAX_CONCURRENT_STUDIO_TRACKS = 3/);
+  assert.match(fn, /const STALE_STUDIO_TRACK_MS = 25 \* 60 \* 1000/);
+  assert.match(fn, /async function recoverStudioTrackQueue/);
+  assert.match(fn, /track\.status === "generating" && new Date\(track\.updated_at\)\.getTime\(\) < cutoff/);
+  assert.match(fn, /const availableSlots = Math\.max\(0, MAX_CONCURRENT_STUDIO_TRACKS - active\.length\)/);
+  assert.match(fn, /queueStudioTrackGeneration\(db, album, user\.id, track, false\)/);
+  assert.match(fn, /await recoverStudioTrackQueue\(db, album\.id\)/);
+});
+
 test('review UI explains and confirms approve-all behavior', async () => {
   const page = await read('pages/StudioAlbums.tsx');
   const confirmation = await read('components/ConfirmationModal.tsx');
