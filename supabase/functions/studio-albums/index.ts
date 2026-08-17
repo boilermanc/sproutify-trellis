@@ -12,7 +12,8 @@ const STALE_STUDIO_TRACK_MS = 25 * 60 * 1000;
 const MUSIC_STITCH_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-music-stitch";
 const VIDEO_RENDER_WEBHOOK = Deno.env.get("STUDIO_VIDEO_RENDER_WEBHOOK") || Deno.env.get("STUDIO_VIDEO_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-episode-video";
 const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-studio-album-publish";
-const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
+const configuredImageModel = Deno.env.get("IMAGE_MODEL") || "";
+const IMAGE_MODEL = configuredImageModel.startsWith("imagen-") ? "gemini-3.1-flash-image" : configuredImageModel || "gemini-3.1-flash-image";
 const IMAGE_EDIT_MODEL = Deno.env.get("IMAGE_EDIT_MODEL") || "gemini-3.1-flash-image";
 const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains"]);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -190,6 +191,23 @@ function buildCoverPrompt(aspectLabel: string, params: { stylePrompt: string; st
   return `${aspectLabel} IMAGE-ONLY album artwork plate for an original music release. Typography will be added later with real fonts.\nSTYLE / MEDIUM: ${params.stylePrompt}\nSCENE SETTING: ${params.styleSetting || "an evocative, geographically specific setting"}.\nUSER DIRECTION — HIGHEST PRIORITY: ${params.customDirection || "Create one elegant focal subject and a restrained editorial composition"}.\n${params.subjectConstraint}\n${params.locationConstraint}\nALBUM CONTEXT: Genre ${params.genreLabel}; mood ${params.moodLabel}.\nABSOLUTE EXCLUSIONS: no title, no words, no letters, no numbers, no signage, no labels, no logos, no watermark, no signature, no readable writing, no real artists, and no copyrighted characters. Do not invent extra people, vehicles, or narrative props that conflict with the user direction.`;
 }
 
+async function generateNativeImage(key: string, prompt: string, aspectRatio: "1:1" | "16:9", errorLabel: string) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } },
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`${errorLabel}: ${JSON.stringify(payload).slice(0, 240)}`);
+  const imagePart = payload?.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data || part.inline_data?.data);
+  const encoded = imagePart?.inlineData?.data || imagePart?.inline_data?.data;
+  if (!encoded) throw new Error("The image provider returned no image data.");
+  return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+}
+
 async function generateStudioCover(db: any, album: any, input: any) {
   if (album.release_identity_status !== "approved") throw new Error("Approve the Release Identity before generating cover concepts.");
   const { data: secret } = await db.from("tenant_secrets").select("gemini_api_key").eq("organization_id", ORG_ID).maybeSingle();
@@ -212,12 +230,7 @@ async function generateStudioCover(db: any, album: any, input: any) {
   const genreLabel = album.subgenre || album.genre || "instrumental";
   const moodLabel = album.mood || "cinematic";
   const prompt = buildCoverPrompt("Square", { stylePrompt, styleSetting: styleSetting || album.theme, customDirection, subjectConstraint, locationConstraint, genreLabel, moodLabel });
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "1:1" } }) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Cover concept generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
-  const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
-  if (!b64) throw new Error("The image provider returned no cover image.");
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const bytes = await generateNativeImage(key, prompt, "1:1", "Cover concept generation failed");
   const { data: prior } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (prior?.version || 0) + 1;
   const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}.png`;
@@ -270,12 +283,7 @@ async function generateStudioVideoSource(db: any, album: any, sourceConcept: any
     genreLabel: album.subgenre || album.genre || "instrumental",
     moodLabel: album.mood || "cinematic",
   });
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "16:9" } }) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Video source generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
-  const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
-  if (!b64) throw new Error("The image provider returned no video source image.");
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const bytes = await generateNativeImage(key, prompt, "16:9", "Video source generation failed");
   return storeVideoSource(db, album, sourceConcept, bytes, { prompt, model: IMAGE_MODEL, method: "fresh_scene" });
 }
 

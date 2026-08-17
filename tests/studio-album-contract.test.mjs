@@ -199,6 +199,15 @@ test('Studio publishing requires review and has a durable failure path', async (
   assert.ok(!workflow.nodes.some(node => node.name === 'Download Private Studio Video'));
 });
 
+test('Studio cover generation uses the current native Gemini image API', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /const IMAGE_MODEL = configuredImageModel\.startsWith\("imagen-"\) \? "gemini-3\.1-flash-image"/);
+  assert.match(fn, /generativelanguage\.googleapis\.com\/v1beta\/models\/\$\{IMAGE_MODEL\}:generateContent/);
+  assert.match(fn, /generationConfig: \{ responseModalities: \["IMAGE"\], imageConfig: \{ aspectRatio \} \}/);
+  assert.match(fn, /candidates\?\.\[0\]\?\.content\?\.parts\?\.find/);
+  assert.doesNotMatch(fn, /models\/\$\{IMAGE_MODEL\}:predict/);
+});
+
 test('publishing draft picks the approved cover as the thumbnail, not just the newest one', async () => {
   // Regression: querying cover_art ordered by version desc grabs whatever
   // concept was generated most recently — including an unapproved alternate
