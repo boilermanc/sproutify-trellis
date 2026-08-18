@@ -934,6 +934,142 @@ REVOKE ALL ON FUNCTION private.can_manage_marketing() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION private.is_active_trellis_user() TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION private.can_manage_marketing() TO authenticated, service_role;
 
+-- 13c. CONTENT INTELLIGENCE REGISTRATIONS
+-- Immutable runtime approvals for successful Scheduler publications. Versioned
+-- project specs and research remain in .trellis; these tables are the Hub review log.
+CREATE TABLE IF NOT EXISTS content_intelligence_topics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id TEXT NOT NULL CHECK (project_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
+  topic_id TEXT NOT NULL CHECK (topic_id ~ '^[a-z0-9][a-z0-9_-]{2,127}$'),
+  title TEXT NOT NULL CHECK (char_length(btrim(title)) BETWEEN 3 AND 240),
+  cluster TEXT NOT NULL DEFAULT '',
+  intent TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'publication_review',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'retired')),
+  created_by UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, topic_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_intelligence_topics_project
+  ON content_intelligence_topics (project_id, status);
+
+CREATE TABLE IF NOT EXISTS content_intelligence_posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id TEXT NOT NULL CHECK (project_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
+  post_id TEXT NOT NULL CHECK (post_id ~ '^[a-z0-9][a-z0-9_-]{2,127}$'),
+  topic_id TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('instagram', 'facebook')),
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status = 'published'),
+  canonical_url TEXT NOT NULL CHECK (canonical_url ~* '^https://[^[:space:]]+$'),
+  published_at TIMESTAMPTZ NOT NULL,
+  task_id TEXT,
+  title TEXT,
+  primary_query TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  source_record_id UUID NOT NULL REFERENCES scheduled_social_posts(id) ON DELETE RESTRICT,
+  external_post_id TEXT,
+  approved_by UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE RESTRICT,
+  approved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, post_id),
+  UNIQUE (source_record_id),
+  FOREIGN KEY (project_id, topic_id)
+    REFERENCES content_intelligence_topics(project_id, topic_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_intelligence_posts_project_published
+  ON content_intelligence_posts (project_id, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_intelligence_posts_topic
+  ON content_intelligence_posts (project_id, topic_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_intelligence_posts_external_identity
+  ON content_intelligence_posts (project_id, platform, external_post_id)
+  WHERE external_post_id IS NOT NULL AND btrim(external_post_id) <> '';
+
+ALTER TABLE content_intelligence_topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_intelligence_posts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON content_intelligence_topics FROM anon, authenticated;
+REVOKE ALL ON content_intelligence_posts FROM anon, authenticated;
+GRANT SELECT, INSERT ON content_intelligence_topics TO authenticated;
+GRANT SELECT, INSERT ON content_intelligence_posts TO authenticated;
+GRANT ALL ON content_intelligence_topics TO service_role;
+GRANT ALL ON content_intelligence_posts TO service_role;
+
+DROP POLICY IF EXISTS "Active Trellis users read content topics" ON content_intelligence_topics;
+CREATE POLICY "Active Trellis users read content topics"
+  ON content_intelligence_topics FOR SELECT TO authenticated
+  USING ((SELECT private.is_active_trellis_user()));
+
+DROP POLICY IF EXISTS "Marketing operators create content topics" ON content_intelligence_topics;
+CREATE POLICY "Marketing operators create content topics"
+  ON content_intelligence_topics FOR INSERT TO authenticated
+  WITH CHECK ((SELECT private.can_manage_marketing()) AND created_by = (SELECT auth.uid()));
+
+DROP POLICY IF EXISTS "Active Trellis users read content registrations" ON content_intelligence_posts;
+CREATE POLICY "Active Trellis users read content registrations"
+  ON content_intelligence_posts FOR SELECT TO authenticated
+  USING ((SELECT private.is_active_trellis_user()));
+
+DROP POLICY IF EXISTS "Marketing operators approve content registrations" ON content_intelligence_posts;
+CREATE POLICY "Marketing operators approve content registrations"
+  ON content_intelligence_posts FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT private.can_manage_marketing())
+    AND approved_by = (SELECT auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM scheduled_social_posts scheduled
+      WHERE scheduled.id = source_record_id
+        AND scheduled.status = 'published'
+        AND scheduled.branch_slug = project_id
+        AND scheduled.platform = platform
+        AND scheduled.post_id IS NOT DISTINCT FROM external_post_id
+    )
+  );
+
+CREATE OR REPLACE FUNCTION approve_content_registration(
+  p_project_id TEXT,
+  p_topic_id TEXT,
+  p_topic_title TEXT,
+  p_post_id TEXT,
+  p_platform TEXT,
+  p_canonical_url TEXT,
+  p_published_at TIMESTAMPTZ,
+  p_source_record_id UUID,
+  p_external_post_id TEXT DEFAULT NULL,
+  p_task_id TEXT DEFAULT NULL,
+  p_title TEXT DEFAULT NULL
+)
+RETURNS content_intelligence_posts
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  approved public.content_intelligence_posts;
+BEGIN
+  INSERT INTO public.content_intelligence_topics (project_id, topic_id, title, created_by)
+  VALUES (p_project_id, p_topic_id, p_topic_title, (SELECT auth.uid()))
+  ON CONFLICT (project_id, topic_id) DO NOTHING;
+
+  INSERT INTO public.content_intelligence_posts (
+    project_id, post_id, topic_id, platform, canonical_url, published_at,
+    source_record_id, external_post_id, task_id, title, approved_by
+  ) VALUES (
+    p_project_id, p_post_id, p_topic_id, p_platform, p_canonical_url, p_published_at,
+    p_source_record_id, NULLIF(p_external_post_id, ''), NULLIF(p_task_id, ''),
+    NULLIF(p_title, ''), (SELECT auth.uid())
+  ) RETURNING * INTO approved;
+  RETURN approved;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION approve_content_registration(
+  TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, UUID, TEXT, TEXT, TEXT
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION approve_content_registration(
+  TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, UUID, TEXT, TEXT, TEXT
+) TO authenticated, service_role;
+
 DROP POLICY IF EXISTS "campaigns_app_access" ON campaigns;
 DROP POLICY IF EXISTS "Active Trellis users read campaigns" ON campaigns;
 CREATE POLICY "Active Trellis users read campaigns" ON campaigns FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));

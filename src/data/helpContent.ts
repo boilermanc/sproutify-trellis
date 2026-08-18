@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The Assets tab automatically detects successful Post Scheduler publications and prepares a registration command. A person still confirms the canonical topic and real public URL before writing the record. Scheduled analytics imports, direct in-app approval writes, and an approval workflow for learning promotion are the remaining integration phase.
+The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. Scheduled analytics imports, guided learning promotion, experiment reminders, and optional export back to versioned JSONL are the remaining integration phase.
     `
   },
   {

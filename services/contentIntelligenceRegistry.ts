@@ -26,6 +26,8 @@ export interface ContentPost {
   notes: string;
   source_record_id?: string;
   external_post_id?: string;
+  approved_by?: string;
+  approved_at?: string;
   created_at?: string;
   updated_at?: string;
 }

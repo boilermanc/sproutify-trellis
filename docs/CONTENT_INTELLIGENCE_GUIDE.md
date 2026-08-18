@@ -57,7 +57,7 @@ Capture evidence in `research.md`, including sources and why they matter to this
 
 Publish through the external platform. Register only the real asset:
 
-Open the **Assets** tab first. Trellis reads successful Post Scheduler/Social Hub publications for the selected branch and lists anything that does not match a canonical record. Choose its topic, paste the real public URL, optionally link its task, and copy the generated registration command. Trellis matches future refreshes through `source_record_id` and the platform `external_post_id`.
+Open the **Assets** tab first. Trellis reads successful Post Scheduler/Social Hub publications for the selected branch and lists anything that does not match a registered record. Choose an existing topic—or create the project's first audience question—paste the real public URL, optionally link its task, then select **Approve & register**. Trellis writes the topic and post atomically to the Hub, records the approving user, and matches future refreshes through `source_record_id` and the platform `external_post_id`. The CLI command remains available as a versioned-knowledge fallback.
 
 ```powershell
 npm run content -- register-post --project rejoice --post-id post_2026_08_rejoice_001 --topic-id topic_sleep_night_routine --platform instagram --status published --canonical-url "https://www.instagram.com/p/REAL_ID/" --published-at "2026-08-18T16:00:00-04:00" --task-id content_rejoice_sleep_001
@@ -100,11 +100,11 @@ Confirm that published URLs are real, references resolve inside one project, per
 
 ## What remains to automate
 
-The Assets tab now reconciles successful Social Hub/Post Scheduler publications into candidate registrations. It matches those candidates to canonical records by scheduler source ID or platform post ID and requires a person to confirm the topic and real public URL. The next integration phase is:
+The Assets tab now reconciles successful Social Hub/Post Scheduler publications, supports in-review topic creation, and writes approved registrations through role-protected Hub policies. It matches candidates by scheduler source ID or platform post ID and still requires a person to confirm the audience question and real public URL. The next integration phase is:
 
-1. Add an authenticated approval action that writes reviewed candidates without copying the generated CLI command.
-2. Import scheduled metric snapshots from Instagram, YouTube, Google Search Console, and other configured providers.
-3. Add an approval workflow for promoting reviewed learnings.
-4. Add due/evaluation reminders for running experiments.
+1. Import scheduled metric snapshots from Instagram, YouTube, Google Search Console, and other configured providers.
+2. Add an approval workflow for promoting reviewed learnings.
+3. Add due/evaluation reminders for running experiments.
+4. Add a versioned export/sync path from approved Hub records back into project JSONL when repository history is required.
 
 Until those integrations exist, publishers and analytics providers remain authoritative, and the validated CLI performs canonical writes.

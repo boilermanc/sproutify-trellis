@@ -49,5 +49,21 @@ test('published Scheduler rows are reconciled before canonical registration', ()
   assert.match(service, /external_post_id/);
   assert.match(page, /Published assets awaiting canonical registration/);
   assert.match(page, /Nothing is registered without review/);
-  assert.match(page, /Copy registration command/);
+  assert.match(page, /Copy CLI fallback/);
+});
+
+test('reviewers can atomically approve a publication and its project topic', () => {
+  const service = read('services/contentRegistrationService.ts');
+  const page = read('pages/ContentIntelligence.tsx');
+  const migration = read('supabase/migrations/20260818215636_content_intelligence_post_registrations.sql');
+  assert.match(service, /rpc\('approve_content_registration'/);
+  assert.match(service, /requireHttpsUrl/);
+  assert.match(page, /Approve & register/);
+  assert.match(page, /Create a new topic/);
+  assert.match(migration, /create table if not exists public\.content_intelligence_topics/);
+  assert.match(migration, /create table if not exists public\.content_intelligence_posts/);
+  assert.match(migration, /security invoker/);
+  assert.match(migration, /private\.can_manage_marketing/);
+  assert.match(migration, /revoke all on table public\.content_intelligence_posts from anon, authenticated/);
+  assert.match(migration, /grant select, insert on table public\.content_intelligence_posts to authenticated/);
 });
