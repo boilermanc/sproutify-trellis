@@ -1,0 +1,16 @@
+{
+  "task_id": "content_project_topic_001",
+  "project_id": "required_project_slug",
+  "status": "plan",
+  "target_audience": "Required",
+  "topic_question": "Required",
+  "platform": "Required",
+  "hypothesis": "Required and measurable",
+  "topic_id": "",
+  "expected_success_metrics": [
+    "required_metric"
+  ],
+  "source_branch": "",
+  "created_at": "",
+  "updated_at": ""
+}

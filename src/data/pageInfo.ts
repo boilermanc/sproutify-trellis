@@ -35,6 +35,9 @@ export const PAGE_INFO: Partial<Record<ViewState, string>> = {
   'social-hub':
     "An AI content lab for Facebook, Instagram, X, and LinkedIn: generate on-brand post copy, plan it on a content calendar, and export it — text plus images — ready to paste into Meta Business Suite. It's intentionally content-only and doesn't auto-publish, so use it to plan and write your social calendar, then post manually on the day (or send finished creative to Post Scheduler for platforms that do publish automatically).",
 
+  'content-intelligence':
+    "The durable learning layer for content work — project-specific topics, published assets, hypotheses, append-only performance snapshots, and promoted lessons. Rejoice, Rekkrd, and future branches share one workflow without mixing their audiences or strategic memory.",
+
   'reddit-growth':
     "A dedicated workspace for Reddit ad campaigns — AI-drafted strategy (objective, target communities, budget), creative generation and review, and performance tracking, all in one place. Use it to plan and manage Reddit-specific paid campaigns separately from organic Social Hub content.",
 

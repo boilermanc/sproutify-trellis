@@ -18,3 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xhH6r_RnjW_UmSuqCUI_OQ
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Content intelligence workflow
+
+Repository-native content experiments, project-partitioned canonical records, task templates, and helper commands live in [`.trellis/README.md`](.trellis/README.md). Rejoice and Rekkrd share the workflow while keeping topics, posts, performance, and learned strategy separate.

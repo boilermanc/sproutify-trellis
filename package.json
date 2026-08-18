@@ -13,6 +13,8 @@
     "test:studio": "node --test tests/studio-album-planning.test.mjs tests/studio-album-contract.test.mjs",
     "test:cards": "node --test tests/card-direction-copy.test.mjs",
     "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs tests/youtube-oauth-contract.test.mjs",
+    "content": "node scripts/content-intelligence.mjs",
+    "test:content": "node --test tests/content-intelligence.test.mjs tests/content-intelligence-ui.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

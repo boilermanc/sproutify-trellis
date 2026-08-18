@@ -1,0 +1,198 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  Beaker,
+  BookOpen,
+  BrainCircuit,
+  Check,
+  CircleHelp,
+  Clipboard,
+  ExternalLink,
+  FileText,
+  GitBranch,
+  Lightbulb,
+  ListChecks,
+  Plus,
+  Search,
+  Sparkles,
+} from 'lucide-react';
+import { BranchContext } from '../types';
+import {
+  CONTENT_INTELLIGENCE_PROJECTS,
+  ContentExperiment,
+  ContentIntelligenceProject,
+  ContentPerformanceEvent,
+  ContentPost,
+  ContentTopic,
+} from '../services/contentIntelligenceRegistry';
+
+type Tab = 'overview' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
+
+interface Props {
+  branchContext: BranchContext;
+  addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}
+
+const TABS: Array<{ id: Tab; label: string; icon: typeof BrainCircuit }> = [
+  { id: 'overview', label: 'Overview', icon: BrainCircuit },
+  { id: 'topics', label: 'Topics', icon: Search },
+  { id: 'assets', label: 'Assets', icon: FileText },
+  { id: 'experiments', label: 'Experiments', icon: Beaker },
+  { id: 'performance', label: 'Performance', icon: Activity },
+  { id: 'learnings', label: 'Learnings', icon: Lightbulb },
+  { id: 'workflow', label: 'New Task', icon: Plus },
+];
+
+const STATUS_STYLES: Record<string, string> = {
+  active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  published: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  running: 'bg-sky-50 text-sky-700 border-sky-200',
+  reviewed: 'bg-violet-50 text-violet-700 border-violet-200',
+  planned: 'bg-amber-50 text-amber-700 border-amber-200',
+  scheduled: 'bg-amber-50 text-amber-700 border-amber-200',
+  draft: 'bg-slate-50 text-slate-600 border-slate-200',
+  archived: 'bg-slate-50 text-slate-500 border-slate-200',
+  paused: 'bg-amber-50 text-amber-700 border-amber-200',
+  retired: 'bg-slate-50 text-slate-500 border-slate-200',
+};
+
+function labelFromSlug(slug: string) {
+  return slug.split(/[-_]/).map(word => word ? word[0].toUpperCase() + word.slice(1) : '').join(' ');
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${STATUS_STYLES[status] || STATUS_STYLES.draft}`}>{status}</span>;
+}
+
+function EmptyState({ icon: Icon, title, detail, command }: { icon: typeof BrainCircuit; title: string; detail: string; command?: string }) {
+  return (
+    <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+      <Icon className="mx-auto h-9 w-9 text-slate-300" />
+      <h3 className="mt-4 text-sm font-black uppercase tracking-tight text-slate-700">{title}</h3>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">{detail}</p>
+      {command && <code className="mt-4 inline-block max-w-full overflow-x-auto rounded-xl bg-slate-900 px-4 py-2 text-left text-xs text-emerald-300">{command}</code>}
+    </div>
+  );
+}
+
+function MarkdownPanel({ markdown, empty }: { markdown: string; empty: string }) {
+  const lines = markdown.split(/\r?\n/).filter((line, index, all) => line.trim() || (index > 0 && all[index - 1].trim()));
+  if (!markdown.trim()) return <p className="text-sm text-slate-400">{empty}</p>;
+  return (
+    <div className="space-y-2 text-sm leading-6 text-slate-600">
+      {lines.map((line, index) => {
+        if (line.startsWith('# ')) return <h2 key={index} className="text-xl font-black uppercase tracking-tight text-slate-800">{line.slice(2)}</h2>;
+        if (line.startsWith('## ')) return <h3 key={index} className="pt-4 text-xs font-black uppercase tracking-widest text-emerald-700">{line.slice(3)}</h3>;
+        if (line.startsWith('### ')) return <h4 key={index} className="pt-3 font-black text-slate-800">{line.slice(4)}</h4>;
+        if (line.startsWith('- ')) return <p key={index} className="pl-4 before:-ml-4 before:mr-2 before:text-emerald-500 before:content-['•']">{line.slice(2).replace(/\*\*/g, '')}</p>;
+        if (!line.trim()) return <div key={index} className="h-1" />;
+        return <p key={index}>{line.replace(/\*\*/g, '').replace(/`/g, '')}</p>;
+      })}
+    </div>
+  );
+}
+
+function TopicTable({ topics }: { topics: ContentTopic[] }) {
+  if (!topics.length) return <EmptyState icon={Search} title="No topics registered" detail="Research a project-specific audience question, then register it in this project's canonical topic inventory." command="npm run content -- register-topic --project …" />;
+  return (
+    <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400"><tr><th className="px-5 py-4">Topic</th><th className="px-5 py-4">Cluster</th><th className="px-5 py-4">Intent</th><th className="px-5 py-4">Source</th><th className="px-5 py-4">Status</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {topics.map(topic => <tr key={topic.topic_id} className="hover:bg-slate-50/70"><td className="px-5 py-4"><p className="font-bold text-slate-800">{topic.title}</p><code className="text-[10px] text-slate-400">{topic.topic_id}</code></td><td className="px-5 py-4 text-slate-600">{topic.cluster || '—'}</td><td className="px-5 py-4 text-slate-600">{topic.intent || '—'}</td><td className="px-5 py-4 text-slate-600">{topic.source || '—'}</td><td className="px-5 py-4"><StatusBadge status={topic.status} /></td></tr>)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AssetTable({ posts, topics }: { posts: ContentPost[]; topics: ContentTopic[] }) {
+  const topicNames = new Map(topics.map(topic => [topic.topic_id, topic.title]));
+  if (!posts.length) return <EmptyState icon={FileText} title="No assets registered" detail="Drafts stay task-local. Register an asset here only after it has a stable content identity; published assets require a real canonical URL and publication time." command="npm run content -- register-post --project …" />;
+  return (
+    <div className="grid gap-4">
+      {posts.map(post => <article key={post.post_id} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{post.platform}</p><h3 className="mt-1 font-black text-slate-800">{post.title || topicNames.get(post.topic_id) || post.post_id}</h3><code className="text-[10px] text-slate-400">{post.post_id}</code></div><StatusBadge status={post.status} /></div><div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500"><span>Topic: <strong className="text-slate-700">{topicNames.get(post.topic_id) || post.topic_id}</strong></span>{post.published_at && <span>Published: <strong className="text-slate-700">{new Date(post.published_at).toLocaleDateString()}</strong></span>}{post.task_id && <span>Task: <code>{post.task_id}</code></span>}</div>{post.canonical_url && <a href={post.canonical_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-900">Open canonical asset <ExternalLink size={13} /></a>}</article>)}
+    </div>
+  );
+}
+
+function ExperimentList({ experiments }: { experiments: ContentExperiment[] }) {
+  if (!experiments.length) return <EmptyState icon={Beaker} title="No experiments registered" detail="A useful experiment declares a falsifiable hypothesis, comparison, success metrics, and evaluation window before results arrive." command="npm run content -- register-experiment --project …" />;
+  return <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => <article key={experiment.experiment_id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{experiment.experiment_id}</code><StatusBadge status={experiment.status} /></div><p className="mt-4 text-sm font-bold leading-6 text-slate-800">{experiment.hypothesis}</p><div className="mt-5 flex flex-wrap gap-2">{experiment.success_metrics.map(metric => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{metric}</span>)}</div><p className="mt-4 text-xs text-slate-400">Evaluate after {experiment.evaluation_window_days} days</p></article>)}</div>;
+}
+
+function PerformanceList({ events }: { events: ContentPerformanceEvent[] }) {
+  if (!events.length) return <EmptyState icon={Activity} title="No performance history" detail="Append snapshots rather than replacing them. Each event preserves the metric date, capture time, source, post, and experiment provenance." command="npm run content -- append-performance --project …" />;
+  return <div className="space-y-3">{[...events].sort((a, b) => b.metric_date.localeCompare(a.metric_date)).map(event => <article key={event.event_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-slate-800">{event.post_id}</p><code className="text-[10px] text-slate-400">{event.event_id}</code></div><div className="text-right"><p className="text-xs font-bold text-slate-700">{event.metric_date}</p><p className="text-[10px] uppercase tracking-wider text-slate-400">{event.platform} · {event.source.replace('_', ' ')}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(event.metrics).map(([metric, value]) => <span key={metric} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span></span>)}</div></article>)}</div>;
+}
+
+function TaskCommandBuilder({ project, addToast }: { project: ContentIntelligenceProject; addToast: Props['addToast'] }) {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const [taskId, setTaskId] = useState(`content_${project.projectId}_${date}_001`);
+  const [audience, setAudience] = useState('');
+  const [topic, setTopic] = useState('');
+  const [platform, setPlatform] = useState('instagram');
+  const [hypothesis, setHypothesis] = useState('');
+  const [metrics, setMetrics] = useState('impressions,saves,clicks');
+
+  useEffect(() => setTaskId(`content_${project.projectId}_${date}_001`), [project.projectId, date]);
+
+  const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const command = `npm run content -- create-task --project ${project.projectId} --task ${taskId || 'required_task_id'} --audience ${quote(audience || 'Required audience')} --topic ${quote(topic || 'Required audience question')} --platform ${platform || 'required_platform'} --hypothesis ${quote(hypothesis || 'Required measurable hypothesis')} --success-metrics ${metrics || 'required_metric'}`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      addToast('Task command copied.', 'success');
+    } catch {
+      addToast('Could not copy the task command.', 'error');
+    }
+  };
+
+  const inputClass = 'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100';
+  return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-emerald-100 p-2 text-emerald-700"><ListChecks size={18} /></div><div><h2 className="font-black text-slate-800">Create a branch-local task</h2><p className="text-xs text-slate-400">Required ownership and hypothesis fields are built into the command.</p></div></div><div className="mt-6 grid gap-4 md:grid-cols-2"><label className="text-xs font-bold text-slate-600">Task ID<input value={taskId} onChange={event => setTaskId(event.target.value)} className={inputClass} /></label><label className="text-xs font-bold text-slate-600">Platform<input value={platform} onChange={event => setPlatform(event.target.value)} className={inputClass} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Target audience<input value={audience} onChange={event => setAudience(event.target.value)} placeholder="Who is this specifically for?" className={inputClass} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Topic or question<input value={topic} onChange={event => setTopic(event.target.value)} placeholder="What real question will the asset answer?" className={inputClass} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Hypothesis<textarea value={hypothesis} onChange={event => setHypothesis(event.target.value)} placeholder="What should change, compared with what, and why?" className={`${inputClass} min-h-24`} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Success metrics<input value={metrics} onChange={event => setMetrics(event.target.value)} className={inputClass} /></label></div></section><aside className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Copy-ready PowerShell command</p><code className="mt-4 block break-words text-xs leading-6 text-slate-200">{command}</code><button type="button" onClick={copy} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-400"><Clipboard size={15} /> Copy command</button><p className="mt-5 text-xs leading-5 text-slate-400">Run this from the repository. The validated helper creates the task files; the browser cannot write into Git working trees.</p></aside></div>;
+}
+
+export default function ContentIntelligence({ branchContext, addToast }: Props) {
+  const configured = CONTENT_INTELLIGENCE_PROJECTS;
+  const initialProject = configured.find(project => branchContext.activeBranchSlugs.includes(project.projectId)) || configured[0];
+  const [projectId, setProjectId] = useState(initialProject?.projectId || '');
+  const [tab, setTab] = useState<Tab>('overview');
+  const project = configured.find(item => item.projectId === projectId) || configured[0];
+
+  const branchLabels = useMemo(() => new Map(branchContext.allBranches.map(branch => [branch.slug, branch.name])), [branchContext.allBranches]);
+  const missingPartitions = branchContext.allBranches.filter(branch => !configured.some(projectItem => projectItem.projectId === branch.slug));
+  const projectName = project ? branchLabels.get(project.projectId) || labelFromSlug(project.projectId) : 'Content Intelligence';
+  const publishedCount = project?.posts.filter(post => post.status === 'published').length || 0;
+  const runningCount = project?.experiments.filter(experiment => experiment.status === 'running').length || 0;
+
+  if (!project) return <div className="p-6 lg:p-10"><EmptyState icon={BrainCircuit} title="No content partitions configured" detail="Add a project strategy and knowledge partition under .trellis, then rebuild the app." /></div>;
+
+  return (
+    <div className="space-y-6 p-5 lg:p-10">
+      <header className="rounded-[2rem] bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 p-6 text-white shadow-xl lg:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-5"><div className="flex items-start gap-4"><div className="rounded-2xl bg-emerald-400/15 p-3 text-emerald-300 ring-1 ring-emerald-300/20"><BrainCircuit size={28} /></div><div><p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-300">Closed-loop project memory</p><h1 className="mt-1 text-2xl font-black uppercase tracking-tight lg:text-3xl">Content Intelligence</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">One shared experimentation workflow. Separate strategy, evidence, and durable learnings for every branch.</p></div></div><label className="min-w-52 text-[10px] font-black uppercase tracking-widest text-slate-400">Project<select value={project.projectId} onChange={event => { setProjectId(event.target.value); setTab('overview'); }} className="mt-2 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-sm font-bold normal-case tracking-normal text-white outline-none"><option className="text-slate-900" value={project.projectId}>{projectName}</option>{configured.filter(item => item.projectId !== project.projectId).map(item => <option className="text-slate-900" key={item.projectId} value={item.projectId}>{branchLabels.get(item.projectId) || labelFromSlug(item.projectId)}</option>)}</select></label></div>
+        <div className="mt-7 flex flex-wrap gap-2">{TABS.map(item => <button type="button" key={item.id} onClick={() => setTab(item.id)} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${tab === item.id ? 'bg-white text-slate-900 shadow' : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}><item.icon size={14} />{item.label}</button>)}</div>
+      </header>
+
+      {project.loadErrors.length > 0 && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"><strong>Some canonical records could not be loaded.</strong>{project.loadErrors.map(error => <p key={error} className="mt-1 text-xs">{error}</p>)}</div>}
+
+      {tab === 'overview' && <div className="space-y-6"><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[
+        { label: 'Canonical topics', value: project.topics.length, icon: Search, color: 'text-sky-600 bg-sky-50' },
+        { label: 'Published assets', value: publishedCount, icon: FileText, color: 'text-emerald-600 bg-emerald-50' },
+        { label: 'Running experiments', value: runningCount, icon: Beaker, color: 'text-violet-600 bg-violet-50' },
+        { label: 'Metric snapshots', value: project.performance.length, icon: Activity, color: 'text-amber-600 bg-amber-50' },
+      ].map(item => <article key={item.label} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`inline-flex rounded-xl p-2.5 ${item.color}`}><item.icon size={19} /></div><p className="mt-5 text-3xl font-black text-slate-800">{item.value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</p></article>)}</section><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.topicClusters} empty="No topic landscape documented." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.openQuestions} empty="No open questions documented." /></section></div>{missingPartitions.length > 0 && <section className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><div className="flex items-start gap-3"><GitBranch className="mt-0.5 text-amber-600" size={20} /><div><h2 className="font-black text-amber-950">Branches awaiting a content partition</h2><p className="mt-1 text-sm text-amber-800">The framework supports them; each needs its own strategy and empty canonical knowledge files before tracking begins.</p><div className="mt-4 grid gap-2">{missingPartitions.map(branch => <code key={branch.slug} className="overflow-x-auto rounded-xl bg-white/70 px-3 py-2 text-xs text-amber-900">npm run content -- create-project --project {branch.slug} --name '{branch.name.replace(/'/g, "''")}'</code>)}</div></div></div></section>}</div>}
+      {tab === 'topics' && <TopicTable topics={project.topics} />}
+      {tab === 'assets' && <AssetTable posts={project.posts} topics={project.topics} />}
+      {tab === 'experiments' && <ExperimentList experiments={project.experiments} />}
+      {tab === 'performance' && <PerformanceList events={project.performance} />}
+      {tab === 'learnings' && <div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Promoted learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings promoted." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div>}
+      {tab === 'workflow' && <TaskCommandBuilder project={project} addToast={addToast} />}
+
+      <footer className="flex flex-wrap items-center justify-between gap-3 px-2 text-xs text-slate-400"><span className="inline-flex items-center gap-1.5"><Check size={13} className="text-emerald-500" /> Canonical records are compiled from <code>.trellis/knowledge/projects/{project.projectId}</code></span><span className="inline-flex items-center gap-1.5"><CircleHelp size={13} /> Run <code>npm run content -- validate</code> before merging.</span></footer>
+    </div>
+  );
+}
