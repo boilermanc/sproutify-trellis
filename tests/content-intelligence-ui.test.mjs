@@ -39,3 +39,15 @@ test('the Help Center and contextual flyout document the operating workflow', ()
   assert.match(contextualHelp, /'content-intelligence'/);
   assert.match(contextualHelp, /art_content_intelligence_guide/);
 });
+
+test('published Scheduler rows are reconciled before canonical registration', () => {
+  const service = read('services/contentPublicationReconciliationService.ts');
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(service, /fetchScheduledPosts\(\{ branchSlug: projectId, status: 'published' \}\)/);
+  assert.match(service, /isPublishedPostRegistered/);
+  assert.match(service, /source_record_id/);
+  assert.match(service, /external_post_id/);
+  assert.match(page, /Published assets awaiting canonical registration/);
+  assert.match(page, /Nothing is registered without review/);
+  assert.match(page, /Copy registration command/);
+});

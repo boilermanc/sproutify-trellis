@@ -24,6 +24,8 @@ export interface ContentPost {
   title: string;
   primary_query: string;
   notes: string;
+  source_record_id?: string;
+  external_post_id?: string;
   created_at?: string;
   updated_at?: string;
 }

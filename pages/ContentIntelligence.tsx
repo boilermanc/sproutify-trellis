@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FC } from 'react';
 import {
   Activity,
   Beaker,
@@ -7,12 +7,14 @@ import {
   Check,
   CircleHelp,
   Clipboard,
+  Copy,
   ExternalLink,
   FileText,
   GitBranch,
   Lightbulb,
   ListChecks,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -25,6 +27,7 @@ import {
   ContentPost,
   ContentTopic,
 } from '../services/contentIntelligenceRegistry';
+import { fetchPublishedContentCandidates, PublishedContentCandidate } from '../services/contentPublicationReconciliationService';
 
 type Tab = 'overview' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
 
@@ -119,6 +122,70 @@ function AssetTable({ posts, topics }: { posts: ContentPost[]; topics: ContentTo
   );
 }
 
+const CandidateRegistrationCard: FC<{ candidate: PublishedContentCandidate; topics: ContentTopic[]; addToast: Props['addToast'] }> = ({ candidate, topics, addToast }) => {
+  const [topicId, setTopicId] = useState('');
+  const [postId, setPostId] = useState(candidate.suggestedPostId);
+  const [canonicalUrl, setCanonicalUrl] = useState('');
+  const [taskId, setTaskId] = useState('');
+  const firstLine = candidate.caption.split(/\r?\n/).find(line => line.trim())?.trim() || '';
+  const title = firstLine.slice(0, 100);
+  const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const command = `npm run content -- register-post --project ${candidate.projectId} --post-id ${postId || 'required_post_id'} --topic-id ${topicId || 'required_topic_id'} --platform ${candidate.platform} --status published --canonical-url ${quote(canonicalUrl || 'Required canonical URL')} --published-at ${quote(candidate.publishedAt)}${taskId ? ` --task-id ${taskId}` : ''}${title ? ` --title ${quote(title)}` : ''} --source-record-id ${candidate.sourceRecordId}${candidate.externalPostId ? ` --external-post-id ${quote(candidate.externalPostId)}` : ''}`;
+  const ready = Boolean(topicId && postId && canonicalUrl);
+
+  const copyCommand = async () => {
+    if (!ready) {
+      addToast('Choose a topic and enter the real canonical URL first.', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(command);
+      addToast('Post registration command copied.', 'success');
+    } catch {
+      addToast('Could not copy the registration command.', 'error');
+    }
+  };
+
+  return (
+    <article className="rounded-[2rem] border border-amber-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-amber-700">Needs registration</span><span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{candidate.platform} · {candidate.mediaType}</span></div><p className="mt-3 line-clamp-3 text-sm font-bold leading-6 text-slate-800">{candidate.caption || 'Published post with no caption'}</p><div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-400"><span>{new Date(candidate.publishedAt).toLocaleString()}</span><span>Source: {candidate.source}</span>{candidate.externalPostId && <span>External ID: <code>{candidate.externalPostId}</code></span>}</div></div>{candidate.mediaUrls[0] && <img src={candidate.mediaUrls[0]} alt="Published creative" className="h-24 w-24 rounded-2xl border border-slate-200 object-cover" />}</div>
+      {candidate.insight && <div className="mt-4 flex flex-wrap gap-2">{Object.entries({ impressions: candidate.insight.impressions, reach: candidate.insight.reach, likes: candidate.insight.likes, comments: candidate.insight.comments, saves: candidate.insight.saves, shares: candidate.insight.shares }).filter(([, value]) => value !== null).map(([metric, value]) => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] text-slate-500"><strong className="text-slate-800">{value}</strong> {metric}</span>)}</div>}
+      <div className="mt-5 grid gap-3 md:grid-cols-2"><label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Topic<select value={topicId} onChange={event => setTopicId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 outline-none focus:border-emerald-500"><option value="">Choose canonical topic…</option>{topics.map(topic => <option key={topic.topic_id} value={topic.topic_id}>{topic.title} · {topic.topic_id}</option>)}</select></label><label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Canonical URL<input value={canonicalUrl} onChange={event => setCanonicalUrl(event.target.value)} placeholder="Paste the real public post URL" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 outline-none focus:border-emerald-500" /></label><label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Post ID<input value={postId} onChange={event => setPostId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 outline-none focus:border-emerald-500" /></label><label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Task ID (optional)<input value={taskId} onChange={event => setTaskId(event.target.value)} placeholder="content_project_topic_001" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium normal-case tracking-normal text-slate-700 outline-none focus:border-emerald-500" /></label></div>
+      {topics.length === 0 && <p className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-700">Register the audience question in the Topics tab before registering this asset.</p>}
+      <button type="button" onClick={copyCommand} className={`mt-4 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-wider transition ${ready ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-slate-100 text-slate-400'}`}><Copy size={14} /> Copy registration command</button>
+    </article>
+  );
+};
+
+function PublishedCandidateReview({ project, addToast }: { project: ContentIntelligenceProject; addToast: Props['addToast'] }) {
+  const [candidates, setCandidates] = useState<PublishedContentCandidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setCandidates(await fetchPublishedContentCandidates(project.projectId, project.posts));
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Could not load published candidates.';
+      setError(message);
+      addToast(message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [project.projectId, project.posts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Publication reconciliation</p><h2 className="mt-1 text-lg font-black text-slate-800">Published assets awaiting canonical registration</h2><p className="mt-1 text-sm text-slate-500">Read from the authenticated Post Scheduler history and matched by source/external identity. Nothing is registered without review.</p></div><button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh</button></div>
+      {loading ? <div className="rounded-[2rem] border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Checking published posts…</div> : error ? <div className="rounded-[2rem] border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">{error}</div> : candidates.length === 0 ? <div className="rounded-[2rem] border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-800"><strong>Publication queue reconciled.</strong> No unregistered published assets were found for this project.</div> : <div className="grid gap-4">{candidates.map(candidate => <CandidateRegistrationCard key={candidate.sourceRecordId} candidate={candidate} topics={project.topics} addToast={addToast} />)}</div>}
+    </section>
+  );
+}
+
 function ExperimentList({ experiments }: { experiments: ContentExperiment[] }) {
   if (!experiments.length) return <EmptyState icon={Beaker} title="No experiments registered" detail="A useful experiment declares a falsifiable hypothesis, comparison, success metrics, and evaluation window before results arrive." command="npm run content -- register-experiment --project …" />;
   return <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => <article key={experiment.experiment_id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{experiment.experiment_id}</code><StatusBadge status={experiment.status} /></div><p className="mt-4 text-sm font-bold leading-6 text-slate-800">{experiment.hypothesis}</p><div className="mt-5 flex flex-wrap gap-2">{experiment.success_metrics.map(metric => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{metric}</span>)}</div><p className="mt-4 text-xs text-slate-400">Evaluate after {experiment.evaluation_window_days} days</p></article>)}</div>;
@@ -154,7 +221,7 @@ function UsageGuide({ projectId }: { projectId: string }) {
 
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-900 p-2 text-white"><ListChecks size={18} /></div><div><h2 className="font-black text-slate-800">The seven-step loop</h2><p className="text-xs text-slate-400">Follow it in order so results can be compared with what you originally expected.</p></div></div><div className="mt-6 grid gap-3">{steps.map((step, index) => <div key={step.title} className="flex gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-black text-white">{index + 1}</span><div><h3 className="text-sm font-black text-slate-800">{step.title}</h3><p className="mt-1 text-sm leading-5 text-slate-500">{step.detail}</p></div></div>)}</div></section>
 
-      <section className="grid gap-6 xl:grid-cols-2"><article className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Before merging canonical changes</p><div className="mt-4 space-y-3 text-sm text-slate-300">{['Every record has the selected project_id.', 'Published posts have a real URL and publication time.', 'Performance events are appended, not overwritten.', 'Evidence IDs support every promoted learning.', 'Unrelated records from parallel branches were preserved.'].map(item => <p key={item} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-400" />{item}</p>)}</div><code className="mt-6 block rounded-xl bg-black/30 px-4 py-3 text-xs text-emerald-300">npm run content -- validate</code></article><article className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Still manual today</p><h3 className="mt-2 font-black text-amber-950">Publishing and analytics stay authoritative outside Trellis</h3><p className="mt-3 text-sm leading-6 text-amber-900">Register the asset after it actually publishes, and append platform metrics after capture. Automatic publisher reconciliation, scheduled analytics imports, and guided learning promotion are the next integration phase—not behavior the current page pretends to perform.</p></article></section>
+      <section className="grid gap-6 xl:grid-cols-2"><article className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Before merging canonical changes</p><div className="mt-4 space-y-3 text-sm text-slate-300">{['Every record has the selected project_id.', 'Published posts have a real URL and publication time.', 'Performance events are appended, not overwritten.', 'Evidence IDs support every promoted learning.', 'Unrelated records from parallel branches were preserved.'].map(item => <p key={item} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-400" />{item}</p>)}</div><code className="mt-6 block rounded-xl bg-black/30 px-4 py-3 text-xs text-emerald-300">npm run content -- validate</code></article><article className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Still manual today</p><h3 className="mt-2 font-black text-amber-950">Registration approval and analytics remain deliberate</h3><p className="mt-3 text-sm leading-6 text-amber-900">The Assets tab now detects successful Post Scheduler publications and prepares a canonical registration command. A person still confirms the topic and real public URL before writing the record. Scheduled analytics imports and guided learning promotion remain the next integration phase.</p></article></section>
     </div>
   );
 }
@@ -218,7 +285,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
       ].map(item => <article key={item.label} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`inline-flex rounded-xl p-2.5 ${item.color}`}><item.icon size={19} /></div><p className="mt-5 text-3xl font-black text-slate-800">{item.value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</p></article>)}</section><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.topicClusters} empty="No topic landscape documented." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.openQuestions} empty="No open questions documented." /></section></div>{missingPartitions.length > 0 && <section className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><div className="flex items-start gap-3"><GitBranch className="mt-0.5 text-amber-600" size={20} /><div><h2 className="font-black text-amber-950">Branches awaiting a content partition</h2><p className="mt-1 text-sm text-amber-800">The framework supports them; each needs its own strategy and empty canonical knowledge files before tracking begins.</p><div className="mt-4 grid gap-2">{missingPartitions.map(branch => <code key={branch.slug} className="overflow-x-auto rounded-xl bg-white/70 px-3 py-2 text-xs text-amber-900">npm run content -- create-project --project {branch.slug} --name '{branch.name.replace(/'/g, "''")}'</code>)}</div></div></div></section>}</div>}
       {tab === 'guide' && <UsageGuide projectId={project.projectId} />}
       {tab === 'topics' && <TopicTable topics={project.topics} />}
-      {tab === 'assets' && <AssetTable posts={project.posts} topics={project.topics} />}
+      {tab === 'assets' && <div className="space-y-8"><PublishedCandidateReview project={project} addToast={addToast} /><section><div className="mb-4"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Canonical registry</p><h2 className="mt-1 text-lg font-black text-slate-800">Registered assets</h2></div><AssetTable posts={project.posts} topics={project.topics} /></section></div>}
       {tab === 'experiments' && <ExperimentList experiments={project.experiments} />}
       {tab === 'performance' && <PerformanceList events={project.performance} />}
       {tab === 'learnings' && <div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Promoted learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings promoted." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div>}

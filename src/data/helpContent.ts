@@ -1101,7 +1101,7 @@ Use retrospective.md to propose a finding. Promote it into only that project's c
 - Overview — project totals, topic landscape, open questions, and missing branch partitions.
 - How It Works — the operating workflow, knowledge boundary, and merge checklist.
 - Topics — canonical audience questions and their clusters, intent, source, and status.
-- Assets — registered content with topic, platform, publication identity, and provenance.
+- Assets — registered content plus successful Post Scheduler publications awaiting canonical review.
 - Experiments — hypotheses, success metrics, evaluation windows, and review status.
 - Performance — append-only snapshots associated with posts and experiments.
 - Learnings — promoted guidance alongside the current project strategy and channel rules.
@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The current system intentionally requires explicit registration after publication, manual or API-sourced metric appends, and human review before promoting a lesson. Automatic publisher reconciliation, scheduled analytics imports, and an approval UI for learning promotion are the remaining integration phase.
+The Assets tab automatically detects successful Post Scheduler publications and prepares a registration command. A person still confirms the canonical topic and real public URL before writing the record. Scheduled analytics imports, direct in-app approval writes, and an approval workflow for learning promotion are the remaining integration phase.
     `
   },
   {

@@ -57,6 +57,8 @@ Capture evidence in `research.md`, including sources and why they matter to this
 
 Publish through the external platform. Register only the real asset:
 
+Open the **Assets** tab first. Trellis reads successful Post Scheduler/Social Hub publications for the selected branch and lists anything that does not match a canonical record. Choose its topic, paste the real public URL, optionally link its task, and copy the generated registration command. Trellis matches future refreshes through `source_record_id` and the platform `external_post_id`.
+
 ```powershell
 npm run content -- register-post --project rejoice --post-id post_2026_08_rejoice_001 --topic-id topic_sleep_night_routine --platform instagram --status published --canonical-url "https://www.instagram.com/p/REAL_ID/" --published-at "2026-08-18T16:00:00-04:00" --task-id content_rejoice_sleep_001
 ```
@@ -98,11 +100,11 @@ Confirm that published URLs are real, references resolve inside one project, per
 
 ## What remains to automate
 
-The current workflow is operational but intentionally explicit. The next integration phase is:
+The Assets tab now reconciles successful Social Hub/Post Scheduler publications into candidate registrations. It matches those candidates to canonical records by scheduler source ID or platform post ID and requires a person to confirm the topic and real public URL. The next integration phase is:
 
-1. Reconcile successful Social Hub/Post Scheduler publications into candidate post registrations.
+1. Add an authenticated approval action that writes reviewed candidates without copying the generated CLI command.
 2. Import scheduled metric snapshots from Instagram, YouTube, Google Search Console, and other configured providers.
-3. Add an in-app review queue for accepting registrations and promoting learnings.
+3. Add an approval workflow for promoting reviewed learnings.
 4. Add due/evaluation reminders for running experiments.
 
 Until those integrations exist, publishers and analytics providers remain authoritative, and the validated CLI performs canonical writes.

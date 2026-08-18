@@ -411,6 +411,8 @@ function recordFromOptions(dataset, projectId, options) {
     title: options.title || '',
     primary_query: options['primary-query'] || '',
     notes: options.notes || '',
+    source_record_id: options['source-record-id'] || '',
+    external_post_id: options['external-post-id'] || '',
     created_at: options['created-at'] ? iso(options['created-at'], 'created_at') : now,
     updated_at: now,
   };
@@ -447,7 +449,7 @@ Commands:
   create-project --project ID --name TEXT
   create-task --project ID --task ID --audience TEXT --topic TEXT --platform NAME --hypothesis TEXT --success-metrics a,b [--topic-id ID]
   register-topic --project ID --topic-id ID --title TEXT [--cluster NAME] [--intent NAME] [--source NAME]
-  register-post --project ID --post-id ID --topic-id ID --platform NAME --status published --canonical-url URL --published-at ISO [--task-id ID]
+  register-post --project ID --post-id ID --topic-id ID --platform NAME --status published --canonical-url URL --published-at ISO [--task-id ID] [--source-record-id ID] [--external-post-id ID]
   register-experiment --project ID --experiment-id ID --topic-id ID --hypothesis TEXT --success-metrics a,b [--post-id ID] [--window-days 30]
   append-performance --project ID --post-id ID --platform NAME --metric-date YYYY-MM-DD --metrics JSON [--experiment-id ID] [--source manual_import|api_import]
   append-record --project ID --dataset topics|posts|experiments|performance --json JSON
