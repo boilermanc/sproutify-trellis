@@ -1092,7 +1092,7 @@ Capture query evidence, customer questions, comments, or other signals in resear
 Publish through the external channel. Then register the real asset with its post ID, topic ID, platform, status, canonical URL, publication time, source branch, and task ID. Never invent a URL or mark an unverified asset as published.
 
 ### 6. Append Performance and Review
-Approved Instagram and Facebook assets automatically inherit every collected platform snapshot in the Performance tab. Use Refresh snapshots after a collector runs. The Experiments tab calculates review dates from publication time plus the declared evaluation window and marks upcoming, due, or overdue reviews. For unconnected sources, append manual snapshots without replacing older values. In results.md, classify the hypothesis as supported, mixed, unsupported, or inconclusive.
+Append metric snapshots at the declared evaluation windows. Do not replace an older snapshot with a later cumulative value. In results.md, compare the observations with the original hypothesis and classify the result as supported, mixed, unsupported, or inconclusive.
 
 ### 7. Promote Durable Learnings
 Use retrospective.md to propose a finding. Promote it into only that project's content-learnings.md when the evidence justifies a reusable recommendation. Include evidence IDs, confidence, conditions, and how to use or retest the lesson.
@@ -1102,8 +1102,8 @@ Use retrospective.md to propose a finding. Promote it into only that project's c
 - How It Works — the operating workflow, knowledge boundary, and merge checklist.
 - Topics — canonical audience questions and their clusters, intent, source, and status.
 - Assets — registered content plus successful Post Scheduler publications awaiting canonical review.
-- Experiments — hypotheses, success metrics, calculated review dates, and due/overdue status.
-- Performance — versioned events plus complete API snapshot history for approved social assets.
+- Experiments — hypotheses, success metrics, evaluation windows, and review status.
+- Performance — append-only snapshots associated with posts and experiments.
 - Learnings — promoted guidance alongside the current project strategy and channel rules.
 - New Task — builds a validated, project-scoped task command.
 
@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The Assets tab automatically detects successful Post Scheduler publications, and approved social assets automatically inherit collected Instagram/Facebook history. A reviewer still confirms the topic and public URL, evaluates due hypotheses, and promotes durable learnings. Connectors for YouTube/Search Console, proactive reminder notifications, learning approval, and optional export back to versioned JSONL remain future integration work.
+The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. Scheduled analytics imports, guided learning promotion, experiment reminders, and optional export back to versioned JSONL are the remaining integration phase.
     `
   },
   {

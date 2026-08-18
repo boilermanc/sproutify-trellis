@@ -13,8 +13,8 @@ import { supabase } from '../lib/supabase';
 //     post_impressions_unique, post_engaged_users, post_clicks,
 //     post_reactions_by_type_total) — the flat columns don't mean
 //     anything for a Facebook Page post.
-// This service reads both latest-per-post badges and complete append-only
-// history; it never writes — writing is the n8n workflows' job.
+// This service only ever reads the latest snapshot per post; it never
+// writes — writing is the n8n workflows' job.
 // ────────────────────────────────────────────────────────────────────
 
 export type SocialInsightPlatform = 'instagram' | 'facebook';
@@ -29,8 +29,6 @@ export interface FacebookRawInsights {
 }
 
 export interface PostInsightSnapshot {
-  id: string;
-  scheduled_post_id: string;
   platform: SocialInsightPlatform;
   impressions: number;
   reach: number;
@@ -40,55 +38,6 @@ export interface PostInsightSnapshot {
   shares: number;
   raw: FacebookRawInsights | Record<string, unknown> | null;
   fetched_at: string;
-}
-
-function normalizeInsight(row: any): PostInsightSnapshot {
-  return {
-    id: String(row.id || `${row.scheduled_post_id}_${row.fetched_at}`),
-    scheduled_post_id: String(row.scheduled_post_id || ''),
-    platform: (row.platform as SocialInsightPlatform) ?? 'instagram',
-    impressions: row.impressions ?? 0,
-    reach: row.reach ?? 0,
-    likes: row.likes ?? 0,
-    comments: row.comments ?? 0,
-    saves: row.saves ?? null,
-    shares: row.shares ?? 0,
-    raw: parseJsonbField<Record<string, unknown> | null>(row.raw, null),
-    fetched_at: row.fetched_at,
-  };
-}
-
-/**
- * Reads the complete append-only insight history for Scheduler publications.
- * Queries are chunked by post identity and paged so PostgREST row limits do not
- * silently truncate long-running experiments.
- */
-export async function fetchInsightHistory(scheduledPostIds: string[]): Promise<PostInsightSnapshot[]> {
-  const ids = Array.from(new Set(scheduledPostIds.filter(Boolean)));
-  if (ids.length === 0) return [];
-
-  const snapshots: PostInsightSnapshot[] = [];
-  const idChunkSize = 50;
-  const pageSize = 1000;
-  for (let offset = 0; offset < ids.length; offset += idChunkSize) {
-    const chunk = ids.slice(offset, offset + idChunkSize);
-    for (let page = 0; ; page += 1) {
-      const from = page * pageSize;
-      const { data, error } = await supabase
-        .from('social_post_insights')
-        .select('id, scheduled_post_id, platform, impressions, reach, likes, comments, saves, shares, raw, fetched_at')
-        .in('scheduled_post_id', chunk)
-        .order('fetched_at', { ascending: false })
-        .range(from, from + pageSize - 1);
-
-      if (error) throw new Error(`Could not load social insight history: ${error.message}`);
-      const rows = (data as any[]) || [];
-      snapshots.push(...rows.map(normalizeInsight));
-      if (rows.length < pageSize) break;
-    }
-  }
-
-  return snapshots.sort((a, b) => b.fetched_at.localeCompare(a.fetched_at));
 }
 
 // n8n's Supabase node (and, defensively, any other writer) can stringify a
@@ -116,13 +65,32 @@ function parseJsonbField<T>(value: unknown, fallback: T): T {
  */
 export async function fetchLatestInsights(scheduledPostIds: string[]): Promise<Map<string, PostInsightSnapshot>> {
   const result = new Map<string, PostInsightSnapshot>();
+  const ids = Array.from(new Set(scheduledPostIds.filter(Boolean)));
+  if (ids.length === 0) return result;
 
   try {
-    const history = await fetchInsightHistory(scheduledPostIds);
-    for (const snapshot of history) {
-      const postId = snapshot.scheduled_post_id;
+    const { data, error } = await supabase
+      .from('social_post_insights')
+      .select('scheduled_post_id, platform, impressions, reach, likes, comments, saves, shares, raw, fetched_at')
+      .in('scheduled_post_id', ids)
+      .order('fetched_at', { ascending: false });
+
+    if (error) throw error;
+
+    for (const row of (data as any[]) ?? []) {
+      const postId = row.scheduled_post_id;
       if (!postId || result.has(postId)) continue; // first occurrence = newest, thanks to the order() above
-      result.set(postId, snapshot);
+      result.set(postId, {
+        platform: (row.platform as SocialInsightPlatform) ?? 'instagram',
+        impressions: row.impressions ?? 0,
+        reach: row.reach ?? 0,
+        likes: row.likes ?? 0,
+        comments: row.comments ?? 0,
+        saves: row.saves ?? null,
+        shares: row.shares ?? 0,
+        raw: parseJsonbField<Record<string, unknown> | null>(row.raw, null),
+        fetched_at: row.fetched_at,
+      });
     }
   } catch {
     return new Map();

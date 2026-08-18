@@ -71,9 +71,7 @@ npm run content -- register-experiment --project rejoice --experiment-id exp_rej
 
 ### 6. Append performance and review
 
-Performance is append-only. After an asset is approved, the **Performance** tab automatically reads every collected Instagram or Facebook snapshot from `social_post_insights`, maps it to the canonical post, and preserves the platform's real metric names. The **Experiments** tab calculates each running experiment's review date from the publication date and declared evaluation window, then labels upcoming, due, and overdue reviews.
-
-Use **Refresh snapshots** after an external collector runs. Manual imports remain available for sources that are not connected yet; every snapshot gets a distinct event ID and preserves its metric date, capture time, platform, and source.
+Performance is append-only. Every snapshot gets a distinct event ID and preserves its metric date, capture time, platform, and source.
 
 ```powershell
 npm run content -- append-performance --project rejoice --post-id post_2026_08_rejoice_001 --experiment-id exp_rejoice_sleep_question_001 --platform instagram --metric-date 2026-09-17 --metrics '{"impressions":1200,"saves":42,"profile_visits":19}' --source manual_import
@@ -102,11 +100,11 @@ Confirm that published URLs are real, references resolve inside one project, per
 
 ## What remains to automate
 
-The Assets tab now reconciles successful Social Hub/Post Scheduler publications, supports in-review topic creation, and writes approved registrations through role-protected Hub policies. Approved Instagram and Facebook assets inherit their complete collected insight history, and running experiments show calculated review reminders. The next integration phase is:
+The Assets tab now reconciles successful Social Hub/Post Scheduler publications, supports in-review topic creation, and writes approved registrations through role-protected Hub policies. It matches candidates by scheduler source ID or platform post ID and still requires a person to confirm the audience question and real public URL. The next integration phase is:
 
-1. Add scheduled imports for YouTube, Google Search Console, and other configured providers beyond the existing social collectors.
+1. Import scheduled metric snapshots from Instagram, YouTube, Google Search Console, and other configured providers.
 2. Add an approval workflow for promoting reviewed learnings.
-3. Add proactive notifications for due experiments outside the in-app reminder badges.
+3. Add due/evaluation reminders for running experiments.
 4. Add a versioned export/sync path from approved Hub records back into project JSONL when repository history is required.
 
-Publishers and analytics providers remain authoritative for external facts. Trellis stores reviewed Hub registrations at runtime; the validated CLI remains the path for versioned repository knowledge.
+Until those integrations exist, publishers and analytics providers remain authoritative, and the validated CLI performs canonical writes.

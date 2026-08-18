@@ -4,7 +4,6 @@ import {
   Beaker,
   BookOpen,
   BrainCircuit,
-  CalendarClock,
   Check,
   CircleHelp,
   Clipboard,
@@ -34,8 +33,6 @@ import {
   fetchApprovedContentRegistry,
   mergeContentRecords,
 } from '../services/contentRegistrationService';
-import { fetchImportedContentPerformance } from '../services/contentPerformanceImportService';
-import { getExperimentReviewState } from '../services/contentExperimentReviewService';
 
 type Tab = 'overview' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
 
@@ -255,22 +252,14 @@ function PublishedCandidateReview({
   );
 }
 
-function ExperimentList({ experiments, posts }: { experiments: ContentExperiment[]; posts: ContentPost[] }) {
+function ExperimentList({ experiments }: { experiments: ContentExperiment[] }) {
   if (!experiments.length) return <EmptyState icon={Beaker} title="No experiments registered" detail="A useful experiment declares a falsifiable hypothesis, comparison, success metrics, and evaluation window before results arrive." command="npm run content -- register-experiment --project …" />;
-  return <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => {
-    const review = getExperimentReviewState(experiment, posts);
-    const reviewStyle = review.status === 'overdue' ? 'border-rose-200 bg-rose-50 text-rose-700' : review.status === 'due' ? 'border-amber-200 bg-amber-50 text-amber-700' : review.status === 'reviewed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-sky-200 bg-sky-50 text-sky-700';
-    return <article key={experiment.experiment_id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{experiment.experiment_id}</code><div className="flex flex-wrap items-center gap-2"><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${reviewStyle}`}><CalendarClock size={12} /> {review.label}</span><StatusBadge status={experiment.status} /></div></div><p className="mt-4 text-sm font-bold leading-6 text-slate-800">{experiment.hypothesis}</p><div className="mt-5 flex flex-wrap gap-2">{experiment.success_metrics.map(metric => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{metric}</span>)}</div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400"><span>Window: {experiment.evaluation_window_days} days</span>{review.dueAt && <span>Due: {new Date(review.dueAt).toLocaleDateString()}</span>}{experiment.post_id && <span>Post: <code>{experiment.post_id}</code></span>}</div></article>;
-  })}</div>;
+  return <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => <article key={experiment.experiment_id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{experiment.experiment_id}</code><StatusBadge status={experiment.status} /></div><p className="mt-4 text-sm font-bold leading-6 text-slate-800">{experiment.hypothesis}</p><div className="mt-5 flex flex-wrap gap-2">{experiment.success_metrics.map(metric => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{metric}</span>)}</div><p className="mt-4 text-xs text-slate-400">Evaluate after {experiment.evaluation_window_days} days</p></article>)}</div>;
 }
 
 function PerformanceList({ events }: { events: ContentPerformanceEvent[] }) {
   if (!events.length) return <EmptyState icon={Activity} title="No performance history" detail="Append snapshots rather than replacing them. Each event preserves the metric date, capture time, source, post, and experiment provenance." command="npm run content -- append-performance --project …" />;
   return <div className="space-y-3">{[...events].sort((a, b) => b.metric_date.localeCompare(a.metric_date)).map(event => <article key={event.event_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-slate-800">{event.post_id}</p><code className="text-[10px] text-slate-400">{event.event_id}</code></div><div className="text-right"><p className="text-xs font-bold text-slate-700">{event.metric_date}</p><p className="text-[10px] uppercase tracking-wider text-slate-400">{event.platform} · {event.source.replace('_', ' ')}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(event.metrics).map(([metric, value]) => <span key={metric} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span></span>)}</div></article>)}</div>;
-}
-
-function PerformanceRegistry({ events, importedCount, loading, error, onRefresh }: { events: ContentPerformanceEvent[]; importedCount: number; loading: boolean; error: string | null; onRefresh: () => void }) {
-  return <div className="space-y-5"><section className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-sky-200 bg-sky-50 p-5"><div><p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Automated platform history</p><h2 className="mt-1 font-black text-sky-950">{loading ? 'Loading scheduled snapshots…' : `${importedCount} API snapshot${importedCount === 1 ? '' : 's'} imported`}</h2><p className="mt-1 text-xs leading-5 text-sky-800">Approved Scheduler assets inherit every collected insight observation. Raw rows remain authoritative and are never overwritten.</p></div><button type="button" onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-50"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh snapshots</button></section>{error && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}<PerformanceList events={events} /></div>;
 }
 
 function UsageGuide({ projectId }: { projectId: string }) {
@@ -298,7 +287,7 @@ function UsageGuide({ projectId }: { projectId: string }) {
 
       <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-900 p-2 text-white"><ListChecks size={18} /></div><div><h2 className="font-black text-slate-800">The seven-step loop</h2><p className="text-xs text-slate-400">Follow it in order so results can be compared with what you originally expected.</p></div></div><div className="mt-6 grid gap-3">{steps.map((step, index) => <div key={step.title} className="flex gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-black text-white">{index + 1}</span><div><h3 className="text-sm font-black text-slate-800">{step.title}</h3><p className="mt-1 text-sm leading-5 text-slate-500">{step.detail}</p></div></div>)}</div></section>
 
-      <section className="grid gap-6 xl:grid-cols-2"><article className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Before merging canonical changes</p><div className="mt-4 space-y-3 text-sm text-slate-300">{['Every record has the selected project_id.', 'Published posts have a real URL and publication time.', 'Performance events are appended, not overwritten.', 'Evidence IDs support every promoted learning.', 'Unrelated records from parallel branches were preserved.'].map(item => <p key={item} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-400" />{item}</p>)}</div><code className="mt-6 block rounded-xl bg-black/30 px-4 py-3 text-xs text-emerald-300">npm run content -- validate</code></article><article className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Still reviewed by a person</p><h3 className="mt-2 font-black text-amber-950">Automation supplies observations, not conclusions</h3><p className="mt-3 text-sm leading-6 text-amber-900">Approved social assets automatically inherit their collected snapshot history, and experiments show calculated review dates. A reviewer still judges the hypothesis, documents confounders, and decides whether evidence is durable enough to promote.</p></article></section>
+      <section className="grid gap-6 xl:grid-cols-2"><article className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Before merging canonical changes</p><div className="mt-4 space-y-3 text-sm text-slate-300">{['Every record has the selected project_id.', 'Published posts have a real URL and publication time.', 'Performance events are appended, not overwritten.', 'Evidence IDs support every promoted learning.', 'Unrelated records from parallel branches were preserved.'].map(item => <p key={item} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-400" />{item}</p>)}</div><code className="mt-6 block rounded-xl bg-black/30 px-4 py-3 text-xs text-emerald-300">npm run content -- validate</code></article><article className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Still reviewed by a person</p><h3 className="mt-2 font-black text-amber-950">Approval is one click after the facts are confirmed</h3><p className="mt-3 text-sm leading-6 text-amber-900">The Assets tab detects successful publications and writes the approved topic and post atomically to the Hub. A reviewer still supplies the audience question and real public URL. Scheduled analytics imports and guided learning promotion remain the next integration phase.</p></article></section>
     </div>
   );
 }
@@ -337,10 +326,6 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
   const [tab, setTab] = useState<Tab>('overview');
   const [approvedPosts, setApprovedPosts] = useState<ContentPost[]>([]);
   const [approvedTopics, setApprovedTopics] = useState<ContentTopic[]>([]);
-  const [importedPerformance, setImportedPerformance] = useState<ContentPerformanceEvent[]>([]);
-  const [performanceLoading, setPerformanceLoading] = useState(false);
-  const [performanceError, setPerformanceError] = useState<string | null>(null);
-  const [performanceRefresh, setPerformanceRefresh] = useState(0);
   const project = configured.find(item => item.projectId === projectId) || configured[0];
 
   useEffect(() => {
@@ -368,30 +353,6 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     () => mergeContentRecords(project?.topics || [], approvedTopics, 'topic_id'),
     [project, approvedTopics],
   );
-  const projectImportedPerformance = useMemo(
-    () => importedPerformance.filter(event => event.project_id === projectId),
-    [importedPerformance, projectId],
-  );
-  const performance = useMemo(
-    () => mergeContentRecords(project?.performance || [], projectImportedPerformance, 'event_id'),
-    [project, projectImportedPerformance],
-  );
-
-  useEffect(() => {
-    let current = true;
-    setPerformanceLoading(true);
-    setPerformanceError(null);
-    setImportedPerformance([]);
-    fetchImportedContentPerformance(posts, project?.experiments || [])
-      .then(events => { if (current) setImportedPerformance(events); })
-      .catch(caught => {
-        if (!current) return;
-        setImportedPerformance([]);
-        setPerformanceError(caught instanceof Error ? caught.message : 'Could not import platform snapshots.');
-      })
-      .finally(() => { if (current) setPerformanceLoading(false); });
-    return () => { current = false; };
-  }, [projectId, posts, performanceRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleApproved = (post: ContentPost, topic: ContentTopic) => {
     setApprovedPosts(current => mergeContentRecords(current, [post], 'post_id'));
@@ -419,13 +380,13 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
         { label: 'Canonical topics', value: topics.length, icon: Search, color: 'text-sky-600 bg-sky-50' },
         { label: 'Published assets', value: publishedCount, icon: FileText, color: 'text-emerald-600 bg-emerald-50' },
         { label: 'Running experiments', value: runningCount, icon: Beaker, color: 'text-violet-600 bg-violet-50' },
-        { label: 'Metric snapshots', value: performance.length, icon: Activity, color: 'text-amber-600 bg-amber-50' },
+        { label: 'Metric snapshots', value: project.performance.length, icon: Activity, color: 'text-amber-600 bg-amber-50' },
       ].map(item => <article key={item.label} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`inline-flex rounded-xl p-2.5 ${item.color}`}><item.icon size={19} /></div><p className="mt-5 text-3xl font-black text-slate-800">{item.value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</p></article>)}</section><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.topicClusters} empty="No topic landscape documented." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.openQuestions} empty="No open questions documented." /></section></div>{missingPartitions.length > 0 && <section className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><div className="flex items-start gap-3"><GitBranch className="mt-0.5 text-amber-600" size={20} /><div><h2 className="font-black text-amber-950">Branches awaiting a content partition</h2><p className="mt-1 text-sm text-amber-800">The framework supports them; each needs its own strategy and empty canonical knowledge files before tracking begins.</p><div className="mt-4 grid gap-2">{missingPartitions.map(branch => <code key={branch.slug} className="overflow-x-auto rounded-xl bg-white/70 px-3 py-2 text-xs text-amber-900">npm run content -- create-project --project {branch.slug} --name '{branch.name.replace(/'/g, "''")}'</code>)}</div></div></div></section>}</div>}
       {tab === 'guide' && <UsageGuide projectId={project.projectId} />}
       {tab === 'topics' && <TopicTable topics={topics} />}
       {tab === 'assets' && <div className="space-y-8"><PublishedCandidateReview projectId={project.projectId} posts={posts} topics={topics} addToast={addToast} onApproved={handleApproved} /><section><div className="mb-4"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Canonical registry</p><h2 className="mt-1 text-lg font-black text-slate-800">Registered assets</h2></div><AssetTable posts={posts} topics={topics} /></section></div>}
-      {tab === 'experiments' && <ExperimentList experiments={project.experiments} posts={posts} />}
-      {tab === 'performance' && <PerformanceRegistry events={performance} importedCount={projectImportedPerformance.length} loading={performanceLoading} error={performanceError} onRefresh={() => setPerformanceRefresh(value => value + 1)} />}
+      {tab === 'experiments' && <ExperimentList experiments={project.experiments} />}
+      {tab === 'performance' && <PerformanceList events={project.performance} />}
       {tab === 'learnings' && <div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Promoted learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings promoted." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div>}
       {tab === 'workflow' && <TaskCommandBuilder project={project} addToast={addToast} />}
 
