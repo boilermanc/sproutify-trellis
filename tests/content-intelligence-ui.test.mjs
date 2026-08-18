@@ -67,3 +67,20 @@ test('reviewers can atomically approve a publication and its project topic', () 
   assert.match(migration, /revoke all on table public\.content_intelligence_posts from anon, authenticated/);
   assert.match(migration, /grant select, insert on table public\.content_intelligence_posts to authenticated/);
 });
+
+test('approved assets inherit append-only platform history and experiment reminders', () => {
+  const insights = read('services/socialInsightsService.ts');
+  const importer = read('services/contentPerformanceImportService.ts');
+  const review = read('services/contentExperimentReviewService.ts');
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(insights, /fetchInsightHistory/);
+  assert.match(insights, /\.range\(from, from \+ pageSize - 1\)/);
+  assert.match(importer, /source_record_id/);
+  assert.match(importer, /source: 'api_import'/);
+  assert.match(importer, /social_insight_/);
+  assert.match(review, /evaluation_window_days \* DAY_MS/);
+  assert.match(review, /Review due today/);
+  assert.match(review, /overdue/);
+  assert.match(page, /Automated platform history/);
+  assert.match(page, /Refresh snapshots/);
+});
