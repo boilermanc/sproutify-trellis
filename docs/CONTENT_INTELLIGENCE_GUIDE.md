@@ -73,6 +73,10 @@ npm run content -- register-experiment --project rejoice --experiment-id exp_rej
 
 Performance is append-only. Every snapshot gets a distinct event ID and preserves its metric date, capture time, platform, and source.
 
+For an asset approved from Post Scheduler, open **Performance** in Content Intelligence. Trellis automatically reads every available `social_post_insights` observation for that Scheduler record and labels it as an API import. Use **Refresh snapshots** after a provider sync. Source rows are read-only and are never replaced or copied into a new profile store.
+
+Use the CLI only for a provider that is not connected to the automatic history reader:
+
 ```powershell
 npm run content -- append-performance --project rejoice --post-id post_2026_08_rejoice_001 --experiment-id exp_rejoice_sleep_question_001 --platform instagram --metric-date 2026-09-17 --metrics '{"impressions":1200,"saves":42,"profile_visits":19}' --source manual_import
 ```
@@ -102,7 +106,7 @@ Confirm that published URLs are real, references resolve inside one project, per
 
 The Assets tab now reconciles successful Social Hub/Post Scheduler publications, supports in-review topic creation, and writes approved registrations through role-protected Hub policies. It matches candidates by scheduler source ID or platform post ID and still requires a person to confirm the audience question and real public URL. The next integration phase is:
 
-1. Import scheduled metric snapshots from Instagram, YouTube, Google Search Console, and other configured providers.
+1. Extend automatic imports beyond the currently collected social insight providers.
 2. Add an approval workflow for promoting reviewed learnings.
 3. Add due/evaluation reminders for running experiments.
 4. Add a versioned export/sync path from approved Hub records back into project JSONL when repository history is required.

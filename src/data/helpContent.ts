@@ -1092,7 +1092,7 @@ Capture query evidence, customer questions, comments, or other signals in resear
 Publish through the external channel. Then register the real asset with its post ID, topic ID, platform, status, canonical URL, publication time, source branch, and task ID. Never invent a URL or mark an unverified asset as published.
 
 ### 6. Append Performance and Review
-Append metric snapshots at the declared evaluation windows. Do not replace an older snapshot with a later cumulative value. In results.md, compare the observations with the original hypothesis and classify the result as supported, mixed, unsupported, or inconclusive.
+Approved Post Scheduler assets automatically inherit every available social insight observation in the Performance tab. Select Refresh snapshots after a provider sync. Append manual snapshots only for providers that are not connected, and never replace an older snapshot with a later cumulative value. In results.md, compare the observations with the original hypothesis and classify the result as supported, mixed, unsupported, or inconclusive.
 
 ### 7. Promote Durable Learnings
 Use retrospective.md to propose a finding. Promote it into only that project's content-learnings.md when the evidence justifies a reusable recommendation. Include evidence IDs, confidence, conditions, and how to use or retest the lesson.
@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. Scheduled analytics imports, guided learning promotion, experiment reminders, and optional export back to versioned JSONL are the remaining integration phase.
+The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. The Performance tab then reads the approved asset's append-only social insight history. Guided learning promotion, experiment reminders, additional analytics providers, and optional export back to versioned JSONL remain manual.
     `
   },
   {

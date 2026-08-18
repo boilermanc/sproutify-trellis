@@ -70,3 +70,15 @@ test('reviewers can atomically approve a publication and its project topic', () 
   assert.match(migration, /revoke all on table public\.content_intelligence_posts from anon, authenticated/);
   assert.match(migration, /grant select, insert on table public\.content_intelligence_posts to authenticated/);
 });
+
+test('approved publications import append-only social insight history inside the isolated feature', () => {
+  const service = read('services/contentPerformanceImportService.ts');
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(service, /from\('social_post_insights'\)/);
+  assert.match(service, /\.in\('scheduled_post_id', chunk\)/);
+  assert.match(service, /\.range\(from, from \+ 999\)/);
+  assert.match(service, /event_id: `social_insight_\$\{row\.id\}`/);
+  assert.match(service, /linkedExperiments\.length === 1/);
+  assert.match(page, /Automated platform history/);
+  assert.match(page, /Refresh snapshots/);
+});
