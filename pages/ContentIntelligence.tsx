@@ -5,7 +5,6 @@ import {
   Beaker,
   BookOpen,
   BrainCircuit,
-  CalendarClock,
   Check,
   CircleHelp,
   Clipboard,
@@ -36,7 +35,11 @@ import {
   mergeContentRecords,
 } from '../services/contentRegistrationService';
 import { fetchImportedContentPerformance } from '../services/contentPerformanceImportService';
-import { getExperimentReviewState } from '../services/contentExperimentReviewService';
+import {
+  fetchHubContentExperiments,
+  HubContentExperiment,
+} from '../services/contentExperimentRegistryService';
+import ContentExperimentWorkspace from '../components/ContentExperimentWorkspace';
 import {
   approveContentLearning,
   ContentLearningPromotion,
@@ -262,15 +265,6 @@ function PublishedCandidateReview({
   );
 }
 
-function ExperimentList({ experiments, posts }: { experiments: ContentExperiment[]; posts: ContentPost[] }) {
-  if (!experiments.length) return <EmptyState icon={Beaker} title="No experiments registered" detail="A useful experiment declares a falsifiable hypothesis, comparison, success metrics, and evaluation window before results arrive." command="npm run content -- register-experiment --project …" />;
-  return <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => {
-    const review = getExperimentReviewState(experiment, posts);
-    const reviewStyle = review.status === 'overdue' ? 'border-rose-200 bg-rose-50 text-rose-700' : review.status === 'due' ? 'border-amber-200 bg-amber-50 text-amber-700' : review.status === 'reviewed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : review.status === 'unlinked' ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-sky-200 bg-sky-50 text-sky-700';
-    return <article key={experiment.experiment_id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{experiment.experiment_id}</code><div className="flex flex-wrap items-center gap-2"><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${reviewStyle}`}><CalendarClock size={12} /> {review.label}</span><StatusBadge status={experiment.status} /></div></div><p className="mt-4 text-sm font-bold leading-6 text-slate-800">{experiment.hypothesis}</p><div className="mt-5 flex flex-wrap gap-2">{experiment.success_metrics.map(metric => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{metric}</span>)}</div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400"><span>Window: {experiment.evaluation_window_days} days</span>{review.dueAt && <span>Due: {new Date(review.dueAt).toLocaleDateString()}</span>}{experiment.post_id && <span>Post: <code>{experiment.post_id}</code></span>}</div></article>;
-  })}</div>;
-}
-
 function PerformanceList({ events }: { events: ContentPerformanceEvent[] }) {
   if (!events.length) return <EmptyState icon={Activity} title="No performance history" detail="Append snapshots rather than replacing them. Each event preserves the metric date, capture time, source, post, and experiment provenance." command="npm run content -- append-performance --project …" />;
   return <div className="space-y-3">{[...events].sort((a, b) => b.metric_date.localeCompare(a.metric_date)).map(event => <article key={event.event_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-slate-800">{event.post_id}</p><code className="text-[10px] text-slate-400">{event.event_id}</code></div><div className="text-right"><p className="text-xs font-bold text-slate-700">{event.metric_date}</p><p className="text-[10px] uppercase tracking-wider text-slate-400">{event.platform} · {event.source.replace('_', ' ')}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(event.metrics).map(([metric, value]) => <span key={metric} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span></span>)}</div></article>)}</div>;
@@ -281,7 +275,8 @@ function PerformanceRegistry({ events, importedCount, loading, error, onRefresh 
 }
 
 function LearningPromotionWorkspace({ project, posts, performance, approved, loading, addToast, onApproved }: { project: ContentIntelligenceProject; posts: ContentPost[]; performance: ContentPerformanceEvent[]; approved: ContentLearningPromotion[]; loading: boolean; addToast: Props['addToast']; onApproved: (learning: ContentLearningPromotion) => void }) {
-  const eligibleExperiments = project.experiments.filter(experiment => experiment.status === 'reviewed' && posts.some(post => post.post_id === experiment.post_id && post.source_record_id));
+  const [hubLearningExperiments, setHubLearningExperiments] = useState<HubContentExperiment[]>([]);
+  const eligibleExperiments = mergeContentRecords(project.experiments, hubLearningExperiments, 'experiment_id').filter(experiment => experiment.status === 'reviewed' && posts.some(post => post.post_id === experiment.post_id && post.source_record_id));
   const [experimentId, setExperimentId] = useState(eligibleExperiments[0]?.experiment_id || '');
   const [learningId, setLearningId] = useState(`learning_${project.projectId}_`);
   const [finding, setFinding] = useState('');
@@ -292,6 +287,14 @@ function LearningPromotionWorkspace({ project, posts, performance, approved, loa
   const [saving, setSaving] = useState(false);
   const experiment = eligibleExperiments.find(item => item.experiment_id === experimentId);
   const evidence = performance.filter(event => event.experiment_id === experimentId || (!!experiment?.post_id && event.post_id === experiment.post_id));
+
+  useEffect(() => {
+    let current = true;
+    fetchHubContentExperiments(project.projectId)
+      .then(items => { if (current) setHubLearningExperiments(items); })
+      .catch(caught => { if (current) addToast(caught instanceof Error ? caught.message : 'Could not load reviewed Hub experiments.', 'error'); });
+    return () => { current = false; };
+  }, [project.projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setExperimentId(eligibleExperiments[0]?.experiment_id || '');
@@ -401,6 +404,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
   const [performanceRefresh, setPerformanceRefresh] = useState(0);
   const [approvedLearnings, setApprovedLearnings] = useState<ContentLearningPromotion[]>([]);
   const [learningsLoading, setLearningsLoading] = useState(false);
+  const [hubExperiments, setHubExperiments] = useState<HubContentExperiment[]>([]);
   const project = configured.find(item => item.projectId === projectId) || configured[0];
 
   useEffect(() => {
@@ -428,6 +432,10 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     () => mergeContentRecords(project?.topics || [], approvedTopics, 'topic_id'),
     [project, approvedTopics],
   );
+  const experiments = useMemo(
+    () => mergeContentRecords(project?.experiments || [], hubExperiments, 'experiment_id'),
+    [project, hubExperiments],
+  );
   const projectImportedPerformance = useMemo(
     () => importedPerformance.filter(event => event.project_id === projectId),
     [importedPerformance, projectId],
@@ -442,7 +450,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     setPerformanceLoading(true);
     setPerformanceError(null);
     setImportedPerformance([]);
-    fetchImportedContentPerformance(posts, project?.experiments || [])
+    fetchImportedContentPerformance(posts, experiments)
       .then(events => { if (current) setImportedPerformance(events); })
       .catch(caught => {
         if (!current) return;
@@ -451,7 +459,17 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
       })
       .finally(() => { if (current) setPerformanceLoading(false); });
     return () => { current = false; };
-  }, [projectId, posts, performanceRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, posts, experiments, performanceRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let current = true;
+    setHubExperiments([]);
+    if (!projectId) return () => { current = false; };
+    fetchHubContentExperiments(projectId)
+      .then(items => { if (current) setHubExperiments(items); })
+      .catch(caught => { if (current) addToast(caught instanceof Error ? caught.message : 'Could not load Hub experiments.', 'error'); });
+    return () => { current = false; };
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let current = true;
@@ -474,7 +492,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
   const missingPartitions = branchContext.allBranches.filter(branch => !configured.some(projectItem => projectItem.projectId === branch.slug));
   const projectName = project ? branchLabels.get(project.projectId) || labelFromSlug(project.projectId) : 'Content Intelligence';
   const publishedCount = posts.filter(post => post.status === 'published').length;
-  const runningCount = project?.experiments.filter(experiment => experiment.status === 'running').length || 0;
+  const runningCount = experiments.filter(experiment => experiment.status === 'running').length;
 
   if (!project) return <div className="p-6 lg:p-10"><EmptyState icon={BrainCircuit} title="No content partitions configured" detail="Add a project strategy and knowledge partition under .trellis, then rebuild the app." /></div>;
 
@@ -496,7 +514,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
       {tab === 'guide' && <UsageGuide projectId={project.projectId} />}
       {tab === 'topics' && <TopicTable topics={topics} />}
       {tab === 'assets' && <div className="space-y-8"><PublishedCandidateReview projectId={project.projectId} posts={posts} topics={topics} addToast={addToast} onApproved={handleApproved} /><section><div className="mb-4"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Canonical registry</p><h2 className="mt-1 text-lg font-black text-slate-800">Registered assets</h2></div><AssetTable posts={posts} topics={topics} /></section></div>}
-      {tab === 'experiments' && <ExperimentList experiments={project.experiments} posts={posts} />}
+      {tab === 'experiments' && <ContentExperimentWorkspace projectId={project.projectId} experiments={experiments} hubExperiments={hubExperiments} posts={posts} addToast={addToast} onRegistered={experiment => setHubExperiments(current => mergeContentRecords(current, [experiment], 'experiment_id'))} onReviewed={experiment => setHubExperiments(current => mergeContentRecords(current, [experiment], 'experiment_id'))} />}
       {tab === 'performance' && <PerformanceRegistry events={performance} importedCount={projectImportedPerformance.length} loading={performanceLoading} error={performanceError} onRefresh={() => setPerformanceRefresh(value => value + 1)} />}
       {tab === 'learnings' && <div className="space-y-6"><LearningPromotionWorkspace project={project} posts={posts} performance={performance} approved={approvedLearnings} loading={learningsLoading} addToast={addToast} onApproved={learning => setApprovedLearnings(current => [learning, ...current])} /><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Versioned learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings exported to the repository." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div></div>}
       {tab === 'workflow' && <TaskCommandBuilder project={project} addToast={addToast} />}

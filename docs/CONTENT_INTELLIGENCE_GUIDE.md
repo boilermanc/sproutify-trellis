@@ -63,13 +63,13 @@ Open the **Assets** tab first. Trellis reads successful Post Scheduler/Social Hu
 npm run content -- register-post --project rejoice --post-id post_2026_08_rejoice_001 --topic-id topic_sleep_night_routine --platform instagram --status published --canonical-url "https://www.instagram.com/p/REAL_ID/" --published-at "2026-08-18T16:00:00-04:00" --task-id content_rejoice_sleep_001
 ```
 
-Register the experiment if the post tests a hypothesis:
+If the approved post tests a hypothesis, open **Experiments**, choose the asset, declare the hypothesis and metrics, set the evaluation window, and select **Register experiment**. This creates a Hub-native experiment and starts its durable review clock. Use the CLI only when versioned repository knowledge is specifically required:
 
 ```powershell
 npm run content -- register-experiment --project rejoice --experiment-id exp_rejoice_sleep_question_001 --topic-id topic_sleep_night_routine --post-id post_2026_08_rejoice_001 --hypothesis "A concrete nightly question will earn more saves than generic encouragement." --success-metrics impressions,saves,profile_visits --window-days 30 --status running
 ```
 
-The **Experiments** tab calculates the review date from the linked asset's publication time plus the evaluation window. It labels upcoming, due-today, and overdue reviews. If the asset has no usable publication time, the card explicitly requests one instead of inventing a deadline.
+The **Experiments** tab calculates the review date from the linked asset's publication time plus the evaluation window. It labels upcoming, due-today, and overdue reviews. A daily n8n worker queues one Slack reminder when a Hub-tracked experiment becomes due and retries failed delivery up to three times. If the asset has no usable publication time, Trellis refuses Hub registration instead of inventing a deadline.
 
 ### 6. Append performance and review
 
@@ -83,7 +83,7 @@ Use the CLI only for a provider that is not connected to the automatic history r
 npm run content -- append-performance --project rejoice --post-id post_2026_08_rejoice_001 --experiment-id exp_rejoice_sleep_question_001 --platform instagram --metric-date 2026-09-17 --metrics '{"impressions":1200,"saves":42,"profile_visits":19}' --source manual_import
 ```
 
-Complete `results.md` and classify the hypothesis as supported, mixed, unsupported, or inconclusive.
+When the window closes, select **Review result** on the Hub-tracked experiment, classify it as supported, mixed, unsupported, or inconclusive, and summarize the observed evidence and confounders. Complete `results.md` too when repository history is required.
 
 ### 7. Promote the learning
 
@@ -111,7 +111,6 @@ Confirm that published URLs are real, references resolve inside one project, per
 The Assets tab now reconciles successful Social Hub/Post Scheduler publications, supports in-review topic creation, and writes approved registrations through role-protected Hub policies. It matches candidates by scheduler source ID or platform post ID and still requires a person to confirm the audience question and real public URL. The next integration phase is:
 
 1. Extend automatic imports beyond the currently collected social insight providers.
-2. Add external reminder delivery for due experiments; in-app due and overdue states are already calculated.
-3. Add a versioned export/sync path from approved Hub learnings back into project Markdown when repository history is required.
+2. Add a versioned export/sync path from approved Hub learnings back into project Markdown when repository history is required.
 
 Until those integrations exist, publishers and analytics providers remain authoritative, and the validated CLI performs canonical writes.

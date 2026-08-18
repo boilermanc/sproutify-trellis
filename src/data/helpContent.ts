@@ -1089,10 +1089,10 @@ Open New Task. Define the target audience, topic/question, platform, measurable 
 Capture query evidence, customer questions, comments, or other signals in research.md. Follow the selected project's strategy and SEO/social rules. Keep draft variants task-local until an asset has a stable identity.
 
 ### 5. Publish and Register
-Publish through the external channel. Then register the real asset with its post ID, topic ID, platform, status, canonical URL, publication time, source branch, and task ID. Never invent a URL or mark an unverified asset as published.
+Publish through the external channel. In Assets, approve the real publication with its topic and canonical URL. If it tests a hypothesis, open Experiments, choose that approved asset, declare the success metrics and evaluation window, and select Register experiment. Never invent a URL or mark an unverified asset as published.
 
 ### 6. Append Performance and Review
-Approved Post Scheduler assets automatically inherit every available social insight observation in the Performance tab. Select Refresh snapshots after a provider sync. Append manual snapshots only for providers that are not connected, and never replace an older snapshot with a later cumulative value. In results.md, compare the observations with the original hypothesis and classify the result as supported, mixed, unsupported, or inconclusive.
+Approved Post Scheduler assets automatically inherit every available social insight observation in the Performance tab. Select Refresh snapshots after a provider sync. Append manual snapshots only for providers that are not connected, and never replace an older snapshot with a later cumulative value. Trellis calculates the review date and a daily worker sends one Slack reminder when it becomes due. Select Review result to classify the outcome and record the observed evidence and confounders.
 
 ### 7. Promote Durable Learnings
 Use retrospective.md to propose a finding. In the Learnings tab, choose a reviewed experiment and its immutable performance events, document confidence, conditions, and how to apply or retest the result, then select Approve durable learning. Trellis records the signed-in reviewer and keeps the approval inside the selected project. Export to content-learnings.md only when repository history is required.
@@ -1102,7 +1102,7 @@ Use retrospective.md to propose a finding. In the Learnings tab, choose a review
 - How It Works — the operating workflow, knowledge boundary, and merge checklist.
 - Topics — canonical audience questions and their clusters, intent, source, and status.
 - Assets — registered content plus successful Post Scheduler publications awaiting canonical review.
-- Experiments — hypotheses, success metrics, evaluation windows, and calculated upcoming, due, or overdue review dates.
+- Experiments — register approved assets, track upcoming/due/overdue windows, and complete a classified human review.
 - Performance — append-only snapshots associated with posts and experiments.
 - Learnings — promoted guidance alongside the current project strategy and channel rules.
 - New Task — builds a validated, project-scoped task command.
@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. The Performance tab reads the approved asset's append-only social insight history, Experiments calculates review timing, and Learnings provides an evidence-required operator approval. External reminder delivery, additional analytics providers, and optional export back to versioned project files remain manual.
+The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. Performance reads append-only social insight history, Experiments stores review timing and classified results, the daily worker delivers due reminders to Slack, and Learnings enforces evidence-backed operator approval. Additional analytics providers and optional export back to versioned project files remain manual.
     `
   },
   {
