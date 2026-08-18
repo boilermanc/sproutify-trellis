@@ -125,6 +125,23 @@ const HELP_MAP: Record<string, HelpContext> = {
       }
     ]
   },
+  'content-intelligence': {
+    title: 'Content Intelligence',
+    items: [
+      {
+        label: 'Using the Content Intelligence Loop',
+        icon: Lightbulb,
+        articleId: 'art_content_intelligence_guide',
+        tip: 'Start with a project-owned question and hypothesis; register only real published assets, then promote reviewed lessons.'
+      },
+      {
+        label: 'Task Files vs Canonical Knowledge',
+        icon: Book,
+        articleId: 'art_content_intelligence_guide',
+        tip: 'Drafts and research stay task-local. Stable topics, assets, performance events, and promoted lessons belong to one project partition.'
+      }
+    ]
+  },
   'reports': {
     title: 'Reports',
     items: [

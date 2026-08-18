@@ -23,10 +23,19 @@ test('the registry discovers project partitions instead of hardcoding supported 
 
 test('the page exposes the complete closed-loop content record set', () => {
   const page = read('pages/ContentIntelligence.tsx');
-  for (const label of ['Topics', 'Assets', 'Experiments', 'Performance', 'Learnings', 'New Task']) {
+  for (const label of ['How It Works', 'Topics', 'Assets', 'Experiments', 'Performance', 'Learnings', 'New Task']) {
     assert.match(page, new RegExp(label));
   }
   assert.match(page, /navigator\.clipboard\.writeText\(command\)/);
   assert.match(page, /create-project --project/);
   assert.match(page, /npm run content -- validate/);
+});
+
+test('the Help Center and contextual flyout document the operating workflow', () => {
+  const helpContent = read('src/data/helpContent.ts');
+  const contextualHelp = read('components/ContextAwareHelp.tsx');
+  assert.match(helpContent, /art_content_intelligence_guide/);
+  assert.match(helpContent, /The Seven-Step Workflow/);
+  assert.match(contextualHelp, /'content-intelligence'/);
+  assert.match(contextualHelp, /art_content_intelligence_guide/);
 });

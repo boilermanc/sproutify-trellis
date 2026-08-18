@@ -26,7 +26,7 @@ import {
   ContentTopic,
 } from '../services/contentIntelligenceRegistry';
 
-type Tab = 'overview' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
+type Tab = 'overview' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
 
 interface Props {
   branchContext: BranchContext;
@@ -35,6 +35,7 @@ interface Props {
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof BrainCircuit }> = [
   { id: 'overview', label: 'Overview', icon: BrainCircuit },
+  { id: 'guide', label: 'How It Works', icon: BookOpen },
   { id: 'topics', label: 'Topics', icon: Search },
   { id: 'assets', label: 'Assets', icon: FileText },
   { id: 'experiments', label: 'Experiments', icon: Beaker },
@@ -128,6 +129,36 @@ function PerformanceList({ events }: { events: ContentPerformanceEvent[] }) {
   return <div className="space-y-3">{[...events].sort((a, b) => b.metric_date.localeCompare(a.metric_date)).map(event => <article key={event.event_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-slate-800">{event.post_id}</p><code className="text-[10px] text-slate-400">{event.event_id}</code></div><div className="text-right"><p className="text-xs font-bold text-slate-700">{event.metric_date}</p><p className="text-[10px] uppercase tracking-wider text-slate-400">{event.platform} · {event.source.replace('_', ' ')}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(event.metrics).map(([metric, value]) => <span key={metric} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span></span>)}</div></article>)}</div>;
 }
 
+function UsageGuide({ projectId }: { projectId: string }) {
+  const steps = [
+    { title: 'Choose the project', detail: 'Start inside the branch whose audience and strategy own the work. Never use another branch as a shortcut.' },
+    { title: 'Register the question', detail: 'Create or reuse one stable topic ID for the audience question. Similar questions in different projects stay separate.' },
+    { title: 'Create the task', detail: 'Use New Task to define the audience, platform, measurable hypothesis, and success metrics before drafting.' },
+    { title: 'Research and draft', detail: 'Keep evidence, variants, and abandoned directions in the branch-local task folder. Follow the project strategy and channel rules.' },
+    { title: 'Publish and register', detail: 'Publish through the external channel, then register the real asset with its stable post ID, canonical URL, publication time, task, and branch.' },
+    { title: 'Measure and review', detail: 'Append metric snapshots at the declared windows. Compare the observed result with the original hypothesis and record confounders.' },
+    { title: 'Promote the lesson', detail: 'Move only durable, evidence-backed findings into this project’s learnings. A retrospective alone is not canonical guidance.' },
+  ];
+  return (
+    <div className="space-y-6">
+      <section className="rounded-[2rem] border border-emerald-200 bg-emerald-50 p-6 lg:p-8">
+        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">The operating rule</p>
+        <h2 className="mt-2 text-2xl font-black uppercase tracking-tight text-emerald-950">Shared workflow. Separate intelligence.</h2>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-emerald-900">Every branch uses the same lifecycle and record shapes, but topics, strategy, experiments, performance, and learnings remain inside that branch’s project partition. The selected project is <strong>{projectId}</strong>.</p>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Working material</p><h3 className="mt-2 font-black text-slate-800">Task-local files</h3><p className="mt-2 text-sm leading-6 text-slate-500">PRD, research, drafts, results, and retrospective live under <code>.trellis/tasks/&lt;task-id&gt;</code>. They can change on a branch and may include ideas that never ship.</p></article>
+        <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><p className="text-[10px] font-black uppercase tracking-widest text-violet-600">Durable truth</p><h3 className="mt-2 font-black text-slate-800">Canonical project knowledge</h3><p className="mt-2 text-sm leading-6 text-slate-500">Stable topics, real assets, experiments, and metric history live under <code>.trellis/knowledge/projects/{projectId}</code>. Reviewed guidance lives in the matching project spec.</p></article>
+      </section>
+
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-900 p-2 text-white"><ListChecks size={18} /></div><div><h2 className="font-black text-slate-800">The seven-step loop</h2><p className="text-xs text-slate-400">Follow it in order so results can be compared with what you originally expected.</p></div></div><div className="mt-6 grid gap-3">{steps.map((step, index) => <div key={step.title} className="flex gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-black text-white">{index + 1}</span><div><h3 className="text-sm font-black text-slate-800">{step.title}</h3><p className="mt-1 text-sm leading-5 text-slate-500">{step.detail}</p></div></div>)}</div></section>
+
+      <section className="grid gap-6 xl:grid-cols-2"><article className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Before merging canonical changes</p><div className="mt-4 space-y-3 text-sm text-slate-300">{['Every record has the selected project_id.', 'Published posts have a real URL and publication time.', 'Performance events are appended, not overwritten.', 'Evidence IDs support every promoted learning.', 'Unrelated records from parallel branches were preserved.'].map(item => <p key={item} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-400" />{item}</p>)}</div><code className="mt-6 block rounded-xl bg-black/30 px-4 py-3 text-xs text-emerald-300">npm run content -- validate</code></article><article className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Still manual today</p><h3 className="mt-2 font-black text-amber-950">Publishing and analytics stay authoritative outside Trellis</h3><p className="mt-3 text-sm leading-6 text-amber-900">Register the asset after it actually publishes, and append platform metrics after capture. Automatic publisher reconciliation, scheduled analytics imports, and guided learning promotion are the next integration phase—not behavior the current page pretends to perform.</p></article></section>
+    </div>
+  );
+}
+
 function TaskCommandBuilder({ project, addToast }: { project: ContentIntelligenceProject; addToast: Props['addToast'] }) {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const [taskId, setTaskId] = useState(`content_${project.projectId}_${date}_001`);
@@ -185,6 +216,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
         { label: 'Running experiments', value: runningCount, icon: Beaker, color: 'text-violet-600 bg-violet-50' },
         { label: 'Metric snapshots', value: project.performance.length, icon: Activity, color: 'text-amber-600 bg-amber-50' },
       ].map(item => <article key={item.label} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`inline-flex rounded-xl p-2.5 ${item.color}`}><item.icon size={19} /></div><p className="mt-5 text-3xl font-black text-slate-800">{item.value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</p></article>)}</section><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.topicClusters} empty="No topic landscape documented." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.openQuestions} empty="No open questions documented." /></section></div>{missingPartitions.length > 0 && <section className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><div className="flex items-start gap-3"><GitBranch className="mt-0.5 text-amber-600" size={20} /><div><h2 className="font-black text-amber-950">Branches awaiting a content partition</h2><p className="mt-1 text-sm text-amber-800">The framework supports them; each needs its own strategy and empty canonical knowledge files before tracking begins.</p><div className="mt-4 grid gap-2">{missingPartitions.map(branch => <code key={branch.slug} className="overflow-x-auto rounded-xl bg-white/70 px-3 py-2 text-xs text-amber-900">npm run content -- create-project --project {branch.slug} --name '{branch.name.replace(/'/g, "''")}'</code>)}</div></div></div></section>}</div>}
+      {tab === 'guide' && <UsageGuide projectId={project.projectId} />}
       {tab === 'topics' && <TopicTable topics={project.topics} />}
       {tab === 'assets' && <AssetTable posts={project.posts} topics={project.topics} />}
       {tab === 'experiments' && <ExperimentList experiments={project.experiments} />}

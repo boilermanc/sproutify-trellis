@@ -1053,6 +1053,86 @@ Social account credentials (Instagram access token, X bearer token, LinkedIn OAu
     `
   },
   {
+    id: 'art_content_intelligence_guide',
+    cat: 'social',
+    title: 'Content Intelligence: Complete Operating Guide',
+    desc: 'How to plan, register, measure, review, and retain project-specific content knowledge without mixing branches.',
+    time: '9m',
+    publishedAt: '2026-08-18',
+    content: `
+## What Content Intelligence Does
+Content Intelligence is Trellis's durable workflow and memory for content experiments. It connects the question you chose, the asset that actually published, the result observed later, and the lesson worth carrying forward.
+
+It does not replace Instagram, YouTube, Google Search Console, or another publisher/analytics provider. Those systems remain authoritative for publishing and raw metrics. Trellis preserves the reasoning and reviewed memory around them.
+
+## The Most Important Rule
+Shared workflow does not mean shared strategy. Every content record belongs to one project. Rejoice and Rekkrd use the same mechanics, but they do not share topic banks, hypotheses, baselines, or learnings. New branches receive their own partitions as well.
+
+## Where Information Lives
+### Task-Local Working Files
+Each active task lives in .trellis/tasks/<task-id>. Its PRD, research, drafts, results, and retrospective can evolve on a working branch. These files are evidence of the work, not durable truth.
+
+### Canonical Project Knowledge
+Stable records live in .trellis/knowledge/projects/<project-id>. Topics, posts, experiments, and performance events are isolated by project. Strategy and promoted lessons live in .trellis/spec/projects/<project-id>.
+
+## The Seven-Step Workflow
+### 1. Choose the Project
+Select the branch whose audience and strategy own the content. If the branch has no partition, use the setup command displayed on the Overview tab and complete its strategy before producing content.
+
+### 2. Register or Reuse a Topic
+A topic is a durable audience question, not merely a headline. Reuse a topic ID when the question is genuinely the same inside the same project. Similar questions in different projects get different IDs.
+
+### 3. Create the Task
+Open New Task. Define the target audience, topic/question, platform, measurable hypothesis, and success metrics. Copy and run the generated command from the repository. Trellis creates task.json, prd.md, research.md, drafts, results.md, and retrospective.md.
+
+### 4. Research and Draft
+Capture query evidence, customer questions, comments, or other signals in research.md. Follow the selected project's strategy and SEO/social rules. Keep draft variants task-local until an asset has a stable identity.
+
+### 5. Publish and Register
+Publish through the external channel. Then register the real asset with its post ID, topic ID, platform, status, canonical URL, publication time, source branch, and task ID. Never invent a URL or mark an unverified asset as published.
+
+### 6. Append Performance and Review
+Append metric snapshots at the declared evaluation windows. Do not replace an older snapshot with a later cumulative value. In results.md, compare the observations with the original hypothesis and classify the result as supported, mixed, unsupported, or inconclusive.
+
+### 7. Promote Durable Learnings
+Use retrospective.md to propose a finding. Promote it into only that project's content-learnings.md when the evidence justifies a reusable recommendation. Include evidence IDs, confidence, conditions, and how to use or retest the lesson.
+
+## Understanding the Tabs
+- Overview — project totals, topic landscape, open questions, and missing branch partitions.
+- How It Works — the operating workflow, knowledge boundary, and merge checklist.
+- Topics — canonical audience questions and their clusters, intent, source, and status.
+- Assets — registered content with topic, platform, publication identity, and provenance.
+- Experiments — hypotheses, success metrics, evaluation windows, and review status.
+- Performance — append-only snapshots associated with posts and experiments.
+- Learnings — promoted guidance alongside the current project strategy and channel rules.
+- New Task — builds a validated, project-scoped task command.
+
+## Commands You Will Use
+Create a project partition:
+npm run content -- create-project --project branch-slug --name 'Branch Name'
+
+Create a task:
+npm run content -- create-task --project branch-slug --task content_branch_topic_001 --audience 'Specific audience' --topic 'Audience question' --platform instagram --hypothesis 'Measurable expectation' --success-metrics impressions,saves,clicks
+
+Validate all canonical knowledge:
+npm run content -- validate
+
+Run focused tests:
+npm run test:content
+
+## Before Merging
+- Confirm every record uses the correct project ID.
+- Confirm published posts have real canonical URLs and publication times.
+- Preserve every distinct performance event.
+- Resolve JSONL conflicts by stable ID rather than accepting one whole side.
+- Include evidence IDs for promoted learnings.
+- Run the canonical validator and content tests.
+
+## What Is Still Manual
+The current system intentionally requires explicit registration after publication, manual or API-sourced metric appends, and human review before promoting a lesson. Automatic publisher reconciliation, scheduled analytics imports, and an approval UI for learning promotion are the remaining integration phase.
+    `
+  },
+  {
     id: 'art_social_content_variants',
     cat: 'social',
     title: 'Multi-Platform Content Variants',
