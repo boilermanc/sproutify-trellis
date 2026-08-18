@@ -19,7 +19,6 @@ import AdPerformance from './pages/AdPerformance';
 import PostScheduler from './pages/PostScheduler';
 import CardStudio from './pages/CardStudio';
 import PostPerformance from './pages/PostPerformance';
-import ContentIntelligence from './pages/ContentIntelligence';
 import RedditGrowth from './pages/RedditGrowth';
 import SupportHub from './pages/SupportHub';
 import KnowledgeBase from './pages/KnowledgeBase';
@@ -53,6 +52,9 @@ import { mapFederatedConsent } from './utils/profileMapper';
 import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch, BranchInfo, BranchContext, BranchSocialAccountsMap, SocialActivity, DraftPost, DeployedCampaign } from './types';
 import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
+import FeatureErrorBoundary from './components/FeatureErrorBoundary';
+
+const ContentIntelligence = React.lazy(() => import('./pages/ContentIntelligence'));
 
 const PERSISTENCE_KEY = 'trellis_v1_store';
 // UUID for the main Sproutify organization - must match the organization_id in tenant_secrets table
@@ -462,7 +464,13 @@ const AppContent: React.FC = () => {
       case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
       case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'post-performance': return <PostPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'content-intelligence': return <ContentIntelligence branchContext={branchContext} addToast={addToast} />;
+      case 'content-intelligence': return (
+        <FeatureErrorBoundary featureName="Content Intelligence" onExit={() => setActiveView('dashboard')}>
+          <React.Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-emerald-600" /><p className="mt-3 text-xs font-black uppercase tracking-widest text-slate-400">Loading Content Intelligence</p></div></div>}>
+            <ContentIntelligence branchContext={branchContext} addToast={addToast} />
+          </React.Suspense>
+        </FeatureErrorBoundary>
+      );
       case 'reddit-growth': return <RedditGrowth branchContext={branchContext} apiKeys={apiKeys} addToast={addToast} onNavigate={setActiveView} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} addToast={addToast} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;

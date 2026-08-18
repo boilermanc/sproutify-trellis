@@ -10,7 +10,10 @@ const read = path => readFileSync(join(root, path), 'utf8');
 test('Content Intelligence is a first-class routed navigation destination', () => {
   assert.match(read('types.ts'), /'content-intelligence'/);
   assert.match(read('components/Layout.tsx'), /Content Intelligence/);
-  assert.match(read('App.tsx'), /case 'content-intelligence'.*<ContentIntelligence/s);
+  const app = read('App.tsx');
+  assert.match(app, /React\.lazy\(\(\) => import\('\.\/pages\/ContentIntelligence'\)\)/);
+  assert.match(app, /case 'content-intelligence'[\s\S]*<FeatureErrorBoundary[\s\S]*<React\.Suspense[\s\S]*<ContentIntelligence/);
+  assert.match(read('components/FeatureErrorBoundary.tsx'), /Trellis is still running/);
   assert.match(read('src/data/pageInfo.ts'), /'content-intelligence'/);
 });
 
