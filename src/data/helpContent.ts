@@ -1102,7 +1102,7 @@ Use retrospective.md to propose a finding. Promote it into only that project's c
 - How It Works — the operating workflow, knowledge boundary, and merge checklist.
 - Topics — canonical audience questions and their clusters, intent, source, and status.
 - Assets — registered content plus successful Post Scheduler publications awaiting canonical review.
-- Experiments — hypotheses, success metrics, evaluation windows, and review status.
+- Experiments — hypotheses, success metrics, evaluation windows, and calculated upcoming, due, or overdue review dates.
 - Performance — append-only snapshots associated with posts and experiments.
 - Learnings — promoted guidance alongside the current project strategy and channel rules.
 - New Task — builds a validated, project-scoped task command.
@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. The Performance tab then reads the approved asset's append-only social insight history. Guided learning promotion, experiment reminders, additional analytics providers, and optional export back to versioned JSONL remain manual.
+The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. The Performance tab then reads the approved asset's append-only social insight history, while Experiments calculates the review date and overdue state. Guided learning promotion, external reminder delivery, additional analytics providers, and optional export back to versioned JSONL remain manual.
     `
   },
   {

@@ -82,3 +82,14 @@ test('approved publications import append-only social insight history inside the
   assert.match(page, /Automated platform history/);
   assert.match(page, /Refresh snapshots/);
 });
+
+test('running experiments expose deterministic review reminders', () => {
+  const service = read('services/contentExperimentReviewService.ts');
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(service, /linkedPost\?\.published_at \|\| experiment\.created_at/);
+  assert.match(service, /Review due today/);
+  assert.match(service, /daysFromDue < 0/);
+  assert.match(service, /Needs publication date/);
+  assert.match(page, /getExperimentReviewState\(experiment, posts\)/);
+  assert.match(page, /<CalendarClock/);
+});

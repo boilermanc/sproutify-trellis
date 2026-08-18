@@ -69,6 +69,8 @@ Register the experiment if the post tests a hypothesis:
 npm run content -- register-experiment --project rejoice --experiment-id exp_rejoice_sleep_question_001 --topic-id topic_sleep_night_routine --post-id post_2026_08_rejoice_001 --hypothesis "A concrete nightly question will earn more saves than generic encouragement." --success-metrics impressions,saves,profile_visits --window-days 30 --status running
 ```
 
+The **Experiments** tab calculates the review date from the linked asset's publication time plus the evaluation window. It labels upcoming, due-today, and overdue reviews. If the asset has no usable publication time, the card explicitly requests one instead of inventing a deadline.
+
 ### 6. Append performance and review
 
 Performance is append-only. Every snapshot gets a distinct event ID and preserves its metric date, capture time, platform, and source.
@@ -108,7 +110,7 @@ The Assets tab now reconciles successful Social Hub/Post Scheduler publications,
 
 1. Extend automatic imports beyond the currently collected social insight providers.
 2. Add an approval workflow for promoting reviewed learnings.
-3. Add due/evaluation reminders for running experiments.
+3. Add external reminder delivery for due experiments; in-app due and overdue states are already calculated.
 4. Add a versioned export/sync path from approved Hub records back into project JSONL when repository history is required.
 
 Until those integrations exist, publishers and analytics providers remain authoritative, and the validated CLI performs canonical writes.
