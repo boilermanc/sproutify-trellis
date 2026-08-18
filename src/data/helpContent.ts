@@ -1095,7 +1095,7 @@ Publish through the external channel. Then register the real asset with its post
 Approved Post Scheduler assets automatically inherit every available social insight observation in the Performance tab. Select Refresh snapshots after a provider sync. Append manual snapshots only for providers that are not connected, and never replace an older snapshot with a later cumulative value. In results.md, compare the observations with the original hypothesis and classify the result as supported, mixed, unsupported, or inconclusive.
 
 ### 7. Promote Durable Learnings
-Use retrospective.md to propose a finding. Promote it into only that project's content-learnings.md when the evidence justifies a reusable recommendation. Include evidence IDs, confidence, conditions, and how to use or retest the lesson.
+Use retrospective.md to propose a finding. In the Learnings tab, choose a reviewed experiment and its immutable performance events, document confidence, conditions, and how to apply or retest the result, then select Approve durable learning. Trellis records the signed-in reviewer and keeps the approval inside the selected project. Export to content-learnings.md only when repository history is required.
 
 ## Understanding the Tabs
 - Overview — project totals, topic landscape, open questions, and missing branch partitions.
@@ -1129,7 +1129,7 @@ npm run test:content
 - Run the canonical validator and content tests.
 
 ## What Is Still Manual
-The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. The Performance tab then reads the approved asset's append-only social insight history, while Experiments calculates the review date and overdue state. Guided learning promotion, external reminder delivery, additional analytics providers, and optional export back to versioned JSONL remain manual.
+The Assets tab automatically detects successful Post Scheduler publications. A reviewer chooses or creates the audience topic, confirms the real public URL, and selects Approve & register; Trellis writes both records atomically under the signed-in user's role. The Performance tab reads the approved asset's append-only social insight history, Experiments calculates review timing, and Learnings provides an evidence-required operator approval. External reminder delivery, additional analytics providers, and optional export back to versioned project files remain manual.
     `
   },
   {

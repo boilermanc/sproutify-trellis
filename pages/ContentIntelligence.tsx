@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FC } from 'react';
 import {
   Activity,
+  BadgeCheck,
   Beaker,
   BookOpen,
   BrainCircuit,
@@ -36,6 +37,12 @@ import {
 } from '../services/contentRegistrationService';
 import { fetchImportedContentPerformance } from '../services/contentPerformanceImportService';
 import { getExperimentReviewState } from '../services/contentExperimentReviewService';
+import {
+  approveContentLearning,
+  ContentLearningPromotion,
+  fetchContentLearningPromotions,
+  LearningConfidence,
+} from '../services/contentLearningPromotionService';
 
 type Tab = 'overview' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
 
@@ -273,6 +280,57 @@ function PerformanceRegistry({ events, importedCount, loading, error, onRefresh 
   return <div className="space-y-5"><section className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-sky-200 bg-sky-50 p-5"><div><p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Automated platform history</p><h2 className="mt-1 font-black text-sky-950">{loading ? 'Loading scheduled snapshots…' : `${importedCount} API snapshot${importedCount === 1 ? '' : 's'} imported`}</h2><p className="mt-1 text-xs leading-5 text-sky-800">Approved Scheduler assets inherit every collected insight observation. Source rows remain append-only and authoritative.</p></div><button type="button" onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-50"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh snapshots</button></section>{error && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}<PerformanceList events={events} /></div>;
 }
 
+function LearningPromotionWorkspace({ project, posts, performance, approved, loading, addToast, onApproved }: { project: ContentIntelligenceProject; posts: ContentPost[]; performance: ContentPerformanceEvent[]; approved: ContentLearningPromotion[]; loading: boolean; addToast: Props['addToast']; onApproved: (learning: ContentLearningPromotion) => void }) {
+  const eligibleExperiments = project.experiments.filter(experiment => experiment.status === 'reviewed' && posts.some(post => post.post_id === experiment.post_id && post.source_record_id));
+  const [experimentId, setExperimentId] = useState(eligibleExperiments[0]?.experiment_id || '');
+  const [learningId, setLearningId] = useState(`learning_${project.projectId}_`);
+  const [finding, setFinding] = useState('');
+  const [confidence, setConfidence] = useState<LearningConfidence>('medium');
+  const [conditions, setConditions] = useState('');
+  const [application, setApplication] = useState('');
+  const [selectedEvidence, setSelectedEvidence] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const experiment = eligibleExperiments.find(item => item.experiment_id === experimentId);
+  const evidence = performance.filter(event => event.experiment_id === experimentId || (!!experiment?.post_id && event.post_id === experiment.post_id));
+
+  useEffect(() => {
+    setExperimentId(eligibleExperiments[0]?.experiment_id || '');
+    setLearningId(`learning_${project.projectId}_`);
+    setFinding('');
+    setConfidence('medium');
+    setConditions('');
+    setApplication('');
+    setSelectedEvidence([]);
+  }, [project.projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!experimentId && eligibleExperiments[0]) setExperimentId(eligibleExperiments[0].experiment_id);
+  }, [eligibleExperiments, experimentId]);
+
+  const toggleEvidence = (eventId: string) => setSelectedEvidence(current => current.includes(eventId) ? current.filter(id => id !== eventId) : [...current, eventId]);
+  const submit = async () => {
+    if (!experiment) return addToast('Choose a reviewed experiment linked to an approved asset.', 'error');
+    setSaving(true);
+    try {
+      const learning = await approveContentLearning({ projectId: project.projectId, learningId, experimentId: experiment.experiment_id, postId: experiment.post_id, evidenceEventIds: selectedEvidence, finding, confidence, conditions, application });
+      onApproved(learning);
+      setLearningId(`learning_${project.projectId}_`);
+      setFinding('');
+      setConditions('');
+      setApplication('');
+      setSelectedEvidence([]);
+      addToast('Durable learning approved and saved.', 'success');
+    } catch (caught) {
+      addToast(caught instanceof Error ? caught.message : 'Could not approve the learning.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputClass = 'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100';
+  return <div className="space-y-6"><section className="rounded-[2rem] border border-emerald-200 bg-emerald-50 p-6"><div className="flex items-start gap-3"><BadgeCheck className="mt-0.5 text-emerald-700" size={22} /><div><p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Human approval gate</p><h2 className="mt-1 font-black text-emerald-950">Promote evidence, not impressions</h2><p className="mt-2 text-sm leading-6 text-emerald-900">Only reviewed experiments tied to approved Scheduler assets qualify. Every durable learning must cite at least one immutable performance event.</p></div></div></section>{approved.length > 0 && <section className="grid gap-4 lg:grid-cols-2">{approved.map(learning => <article key={learning.id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><code className="text-[10px] text-slate-400">{learning.learning_id}</code><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-700">{learning.confidence} confidence</span></div><p className="mt-4 text-sm font-bold leading-6 text-slate-800">{learning.finding}</p><p className="mt-3 text-xs leading-5 text-slate-500"><strong>Use when:</strong> {learning.conditions}</p><p className="mt-2 text-xs leading-5 text-slate-500"><strong>Next action:</strong> {learning.application}</p><div className="mt-4 flex flex-wrap gap-2">{learning.evidence_event_ids.map(id => <code key={id} className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] text-slate-500">{id}</code>)}</div></article>)}</section>}<section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div><p className="text-[10px] font-black uppercase tracking-widest text-violet-600">Approval form</p><h2 className="mt-1 text-lg font-black text-slate-900">Create a durable learning</h2></div>{loading ? <p className="mt-5 text-sm text-slate-500">Loading approved learnings…</p> : eligibleExperiments.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-600">No eligible experiment yet. Review an experiment that references an approved Scheduler asset, then return here with its performance evidence.</div> : <div className="mt-5 grid gap-4 lg:grid-cols-2"><label className="text-xs font-bold text-slate-600">Reviewed experiment<select className={inputClass} value={experimentId} onChange={event => { setExperimentId(event.target.value); setSelectedEvidence([]); }}>{eligibleExperiments.map(item => <option key={item.experiment_id} value={item.experiment_id}>{item.experiment_id}</option>)}</select></label><label className="text-xs font-bold text-slate-600">Learning ID<input className={inputClass} value={learningId} onChange={event => setLearningId(event.target.value)} /></label><label className="text-xs font-bold text-slate-600 lg:col-span-2">Bounded finding<textarea className={`${inputClass} min-h-24`} value={finding} onChange={event => setFinding(event.target.value)} placeholder="What did the evidence support—and no more than that?" /></label><label className="text-xs font-bold text-slate-600">Confidence<select className={inputClass} value={confidence} onChange={event => setConfidence(event.target.value as LearningConfidence)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><label className="text-xs font-bold text-slate-600">Conditions<input className={inputClass} value={conditions} onChange={event => setConditions(event.target.value)} placeholder="Audience, platform, timing, limitations" /></label><label className="text-xs font-bold text-slate-600 lg:col-span-2">How to apply or retest<textarea className={`${inputClass} min-h-20`} value={application} onChange={event => setApplication(event.target.value)} /></label><fieldset className="lg:col-span-2"><legend className="text-xs font-bold text-slate-600">Evidence events</legend><div className="mt-2 grid max-h-52 gap-2 overflow-y-auto rounded-2xl border border-slate-200 p-3">{evidence.length === 0 ? <p className="text-xs text-amber-700">No performance events are linked to this experiment or post yet.</p> : evidence.map(event => <label key={event.event_id} className="flex cursor-pointer items-start gap-3 rounded-xl bg-slate-50 p-3"><input type="checkbox" checked={selectedEvidence.includes(event.event_id)} onChange={() => toggleEvidence(event.event_id)} className="mt-0.5" /><span><code className="text-[10px] text-slate-700">{event.event_id}</code><span className="mt-1 block text-[10px] text-slate-400">{event.platform} · {event.metric_date}</span></span></label>)}</div></fieldset><div className="lg:col-span-2"><button type="button" onClick={submit} disabled={saving || evidence.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"><BadgeCheck size={15} /> {saving ? 'Approving…' : 'Approve durable learning'}</button></div></div>}</section></div>;
+}
+
 function UsageGuide({ projectId }: { projectId: string }) {
   const steps = [
     { title: 'Choose the project', detail: 'Start inside the branch whose audience and strategy own the work. Never use another branch as a shortcut.' },
@@ -341,6 +399,8 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [performanceError, setPerformanceError] = useState<string | null>(null);
   const [performanceRefresh, setPerformanceRefresh] = useState(0);
+  const [approvedLearnings, setApprovedLearnings] = useState<ContentLearningPromotion[]>([]);
+  const [learningsLoading, setLearningsLoading] = useState(false);
   const project = configured.find(item => item.projectId === projectId) || configured[0];
 
   useEffect(() => {
@@ -393,6 +453,18 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     return () => { current = false; };
   }, [projectId, posts, performanceRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    let current = true;
+    setLearningsLoading(true);
+    setApprovedLearnings([]);
+    if (!projectId) return () => { current = false; };
+    fetchContentLearningPromotions(projectId)
+      .then(learnings => { if (current) setApprovedLearnings(learnings); })
+      .catch(caught => { if (current) addToast(caught instanceof Error ? caught.message : 'Could not load approved learnings.', 'error'); })
+      .finally(() => { if (current) setLearningsLoading(false); });
+    return () => { current = false; };
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleApproved = (post: ContentPost, topic: ContentTopic) => {
     setApprovedPosts(current => mergeContentRecords(current, [post], 'post_id'));
     setApprovedTopics(current => mergeContentRecords(current, [topic], 'topic_id'));
@@ -426,7 +498,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
       {tab === 'assets' && <div className="space-y-8"><PublishedCandidateReview projectId={project.projectId} posts={posts} topics={topics} addToast={addToast} onApproved={handleApproved} /><section><div className="mb-4"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Canonical registry</p><h2 className="mt-1 text-lg font-black text-slate-800">Registered assets</h2></div><AssetTable posts={posts} topics={topics} /></section></div>}
       {tab === 'experiments' && <ExperimentList experiments={project.experiments} posts={posts} />}
       {tab === 'performance' && <PerformanceRegistry events={performance} importedCount={projectImportedPerformance.length} loading={performanceLoading} error={performanceError} onRefresh={() => setPerformanceRefresh(value => value + 1)} />}
-      {tab === 'learnings' && <div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Promoted learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings promoted." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div>}
+      {tab === 'learnings' && <div className="space-y-6"><LearningPromotionWorkspace project={project} posts={posts} performance={performance} approved={approvedLearnings} loading={learningsLoading} addToast={addToast} onApproved={learning => setApprovedLearnings(current => [learning, ...current])} /><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Versioned learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings exported to the repository." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div></div>}
       {tab === 'workflow' && <TaskCommandBuilder project={project} addToast={addToast} />}
 
       <footer className="flex flex-wrap items-center justify-between gap-3 px-2 text-xs text-slate-400"><span className="inline-flex items-center gap-1.5"><Check size={13} className="text-emerald-500" /> Registry combines reviewed Hub approvals with <code>.trellis/knowledge/projects/{project.projectId}</code></span><span className="inline-flex items-center gap-1.5"><CircleHelp size={13} /> Run <code>npm run content -- validate</code> before merging versioned knowledge.</span></footer>

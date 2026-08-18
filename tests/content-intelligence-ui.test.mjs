@@ -93,3 +93,20 @@ test('running experiments expose deterministic review reminders', () => {
   assert.match(page, /getExperimentReviewState\(experiment, posts\)/);
   assert.match(page, /<CalendarClock/);
 });
+
+test('durable learnings require operator approval and explicit evidence', () => {
+  const service = read('services/contentLearningPromotionService.ts');
+  const page = read('pages/ContentIntelligence.tsx');
+  const migration = read('supabase/migrations/20260818233500_content_intelligence_learning_promotions.sql');
+  assert.match(service, /rpc\('approve_content_learning'/);
+  assert.match(service, /Select at least one performance event as evidence/);
+  assert.match(page, /Human approval gate/);
+  assert.match(page, /Approve durable learning/);
+  assert.match(page, /experiment\.status === 'reviewed'/);
+  assert.match(migration, /create table if not exists public\.content_intelligence_learnings/);
+  assert.match(migration, /jsonb_array_length\(evidence_event_ids\) > 0/);
+  assert.match(migration, /security invoker/);
+  assert.match(migration, /private\.can_manage_marketing/);
+  assert.match(migration, /revoke all on table public\.content_intelligence_learnings from anon, authenticated/);
+  assert.match(migration, /grant select, insert on table public\.content_intelligence_learnings to authenticated/);
+});

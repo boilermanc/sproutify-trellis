@@ -87,7 +87,9 @@ Complete `results.md` and classify the hypothesis as supported, mixed, unsupport
 
 ### 7. Promote the learning
 
-Write the candidate in `retrospective.md`. Promote it to the same project's `content-learnings.md` only when it is durable. Include:
+Write the candidate in `retrospective.md`. When the experiment is reviewed and its Scheduler asset has been approved, open **Learnings** in Content Intelligence. Choose the reviewed experiment, select one or more immutable performance events, document the bounded finding, confidence, conditions, and next use, then select **Approve durable learning**. The Hub approval is immutable and records the signed-in reviewer.
+
+Promote the same approved record to the project's `content-learnings.md` when repository history is required. Include:
 
 - the bounded finding;
 - task, experiment, post, and performance event IDs;
@@ -109,8 +111,7 @@ Confirm that published URLs are real, references resolve inside one project, per
 The Assets tab now reconciles successful Social Hub/Post Scheduler publications, supports in-review topic creation, and writes approved registrations through role-protected Hub policies. It matches candidates by scheduler source ID or platform post ID and still requires a person to confirm the audience question and real public URL. The next integration phase is:
 
 1. Extend automatic imports beyond the currently collected social insight providers.
-2. Add an approval workflow for promoting reviewed learnings.
-3. Add external reminder delivery for due experiments; in-app due and overdue states are already calculated.
-4. Add a versioned export/sync path from approved Hub records back into project JSONL when repository history is required.
+2. Add external reminder delivery for due experiments; in-app due and overdue states are already calculated.
+3. Add a versioned export/sync path from approved Hub learnings back into project Markdown when repository history is required.
 
 Until those integrations exist, publishers and analytics providers remain authoritative, and the validated CLI performs canonical writes.
