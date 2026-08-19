@@ -40,7 +40,7 @@ Co-Founder, Sproutify`,
   },
   {
     id: 'new-farm-partnership-html',
-    name: 'New Farm Partnership — HTML',
+    name: 'Introducing Sproutify Farm — HTML',
     subject: 'Your Farm Just Got a Head Start',
     bodyFormat: 'html',
     body: SPROUTIFY_FARM_PARTNERSHIP_HTML,

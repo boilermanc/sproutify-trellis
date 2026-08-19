@@ -67,7 +67,9 @@ test('continues escaping markup in plain-text mode', () => {
 test('offers a cleaned Sproutify Farm HTML partnership template with the real logo', () => {
   const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === 'new-farm-partnership-html');
   assert.ok(template);
+  assert.equal(template.name, 'Introducing Sproutify Farm — HTML');
   assert.equal(template.bodyFormat, 'html');
+  assert.match(template.body, />Introducing Sproutify Farm<\/p>/);
   assert.match(template.body, /https:\/\/www\.sproutify\.app\/images\/sproutify-farm-white\.png/);
   assert.match(template.body, /<!-- SPROUTIFY_COMPLIANCE_FOOTER -->/);
   assert.doesNotMatch(template.body, /\{\{body_copy\}\}|#8217;|href="#"/);

@@ -34,7 +34,7 @@ export const SPROUTIFY_FARM_PARTNERSHIP_HTML = `<!DOCTYPE HTML PUBLIC "-//W3C//D
           </tr>
           <tr>
             <td align="center" style="background-color:#1D543B;padding:10px 20px;font-family:Arial,sans-serif;">
-              <p style="margin:0;color:#EAF3E9;font-size:12px;line-height:18px;letter-spacing:1.5px;text-transform:uppercase;font-weight:700;">New Farm Partnership</p>
+              <p style="margin:0;color:#EAF3E9;font-size:12px;line-height:18px;letter-spacing:1.5px;text-transform:uppercase;font-weight:700;">Introducing Sproutify Farm</p>
             </td>
           </tr>
           <tr>
