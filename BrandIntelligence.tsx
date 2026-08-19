@@ -128,9 +128,10 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const emailEditorRef = useRef<EditorRef>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryImages, setGalleryImages] = useState<{ url: string; name: string }[]>([]);
+  const [galleryImages, setGalleryImages] = useState<{ url: string; name: string; kind: 'image' | 'pdf' }[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
+  const [galleryDragActive, setGalleryDragActive] = useState(false);
 
   // Load brands from Supabase on mount
   useEffect(() => {
@@ -480,7 +481,10 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           const { data: urlData } = supabase.storage
             .from('email-assets')
             .getPublicUrl(`${templateBranchFilter}/gallery/${f.name}`);
-          return { url: urlData.publicUrl, name: f.name };
+          const kind = f.metadata?.mimetype === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+            ? 'pdf' as const
+            : 'image' as const;
+          return { url: urlData.publicUrl, name: f.name, kind };
         });
       setGalleryImages(images);
     } catch (err) {
@@ -497,35 +501,68 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     if (activeTab === 'assets' && templateBranchFilter) loadGallery();
   }, [activeTab, templateBranchFilter]);
 
-  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const uploadGalleryFiles = async (files: File[]) => {
+    if (files.length === 0) return;
     if (!templateBranchFilter) {
-      addToast?.('Pick a branch before uploading an image.', 'error');
-      e.target.value = '';
+      addToast?.('Pick a branch before uploading an asset.', 'error');
       return;
     }
+
+    const acceptedFiles = files.filter(file =>
+      file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    );
+    if (acceptedFiles.length === 0) {
+      addToast?.('Brand assets must be images or PDF files.', 'error');
+      return;
+    }
+
     setGalleryUploading(true);
+    let uploadedCount = 0;
+    const failedNames: string[] = [];
     try {
       // Same path the visual editor's upload callback writes to, so both routes
       // populate one gallery per branch.
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `${templateBranchFilter}/gallery/${Date.now()}_${safeName}`;
-      const { error } = await supabase.storage
-        .from('email-assets')
-        .upload(path, file, { upsert: true, contentType: file.type || undefined });
-      if (error) throw error;
-      await loadGallery();
-      addToast?.(`"${file.name}" added to the gallery.`, 'success');
-    } catch (err) {
-      // This used to fail silently — the image simply never appeared.
-      const message = err instanceof Error ? err.message : 'Upload failed';
-      console.error('Gallery upload failed:', err);
-      addToast?.(`Couldn't upload "${file.name}": ${message}`, 'error');
+      for (const file of acceptedFiles) {
+        try {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const unique = Math.random().toString(36).slice(2, 8);
+          const path = `${templateBranchFilter}/gallery/${Date.now()}_${unique}_${safeName}`;
+          const { error } = await supabase.storage
+            .from('email-assets')
+            .upload(path, file, { upsert: false, contentType: file.type || undefined });
+          if (error) throw error;
+          uploadedCount += 1;
+        } catch (err) {
+          failedNames.push(file.name);
+          console.error(`Gallery upload failed for ${file.name}:`, err);
+        }
+      }
+
+      if (uploadedCount > 0) {
+        await loadGallery();
+        addToast?.(`${uploadedCount} ${uploadedCount === 1 ? 'asset' : 'assets'} added to the gallery.`, 'success');
+      }
+      if (failedNames.length > 0) {
+        addToast?.(`Couldn't upload: ${failedNames.join(', ')}`, 'error');
+      }
+      if (files.length > acceptedFiles.length) {
+        addToast?.('Some files were skipped. Brand assets must be images or PDFs.', 'info');
+      }
     } finally {
       setGalleryUploading(false);
-      e.target.value = '';
     }
+  };
+
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await uploadGalleryFiles(Array.from(e.target.files || []));
+    e.target.value = '';
+  };
+
+  const handleGalleryDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setGalleryDragActive(false);
+    if (galleryUploading) return;
+    void uploadGalleryFiles(Array.from(event.dataTransfer.files));
   };
 
   const handleGalleryDeleteImage = async (name: string) => {
@@ -1984,19 +2021,34 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
                 {galleryUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 Upload Assets
-                <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
+                <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
               </label>
             </div>
           </div>
 
-          <div className="p-7">
+          <div
+            className={`relative p-7 transition-colors ${galleryDragActive ? 'bg-violet-50/70' : ''}`}
+            onDragEnter={(event) => { event.preventDefault(); if (!galleryUploading) setGalleryDragActive(true); }}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) setGalleryDragActive(false);
+            }}
+            onDrop={handleGalleryDrop}
+          >
+            {galleryDragActive && (
+              <div className="pointer-events-none absolute inset-3 z-20 rounded-[2rem] border-2 border-dashed border-violet-500 bg-violet-50/95 flex flex-col items-center justify-center text-center">
+                <Upload className="w-10 h-10 text-violet-500 mb-3" />
+                <p className="text-base font-black text-violet-700">Drop assets to upload</p>
+                <p className="text-xs font-bold text-violet-500 mt-1">Images and PDFs are accepted</p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{templateBranchFilter}</p>
-                <p className="text-sm font-bold text-slate-700 mt-1">{galleryImages.length} reusable {galleryImages.length === 1 ? 'image' : 'images'}</p>
+                <p className="text-sm font-bold text-slate-700 mt-1">{galleryImages.length} reusable {galleryImages.length === 1 ? 'asset' : 'assets'}</p>
               </div>
               <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 text-[9px] font-black uppercase tracking-widest text-emerald-700">
-                Available in Campaign Builder
+                Images available in Campaign Builder
               </div>
             </div>
 
@@ -2008,19 +2060,26 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               <div className="min-h-64 rounded-[2rem] border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-center p-8">
                 <ImageIcon className="w-12 h-12 text-slate-300 mb-4" />
                 <h3 className="text-base font-black text-slate-700">No brand assets yet</h3>
-                <p className="text-sm text-slate-400 mt-1 mb-5">Upload photography, banners, product images, and approved campaign creative.</p>
+                <p className="text-sm text-slate-400 mt-1 mb-5">Drag images or PDFs here, or browse for photography, banners, product images, and approved creative.</p>
                 <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
                   {galleryUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                   Upload First Asset
-                  <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
+                  <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
                 </label>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                 {galleryImages.map(img => (
                   <div key={img.name} className="group rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 hover:border-violet-300 hover:shadow-md transition-all">
-                    <div className="aspect-video bg-slate-100 overflow-hidden">
-                      <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                    <div className="aspect-video bg-slate-100 overflow-hidden flex items-center justify-center">
+                      {img.kind === 'pdf' ? (
+                        <div className="flex flex-col items-center text-rose-500">
+                          <FileText className="w-10 h-10" />
+                          <span className="mt-2 text-[9px] font-black uppercase tracking-widest">PDF document</span>
+                        </div>
+                      ) : (
+                        <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                      )}
                     </div>
                     <div className="p-3">
                       <p className="text-[10px] font-bold text-slate-600 truncate" title={img.name}>{img.name}</p>
@@ -2030,7 +2089,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                           onClick={() => { navigator.clipboard.writeText(img.url); addToast?.('Asset URL copied.', 'success'); }}
                           className="flex-1 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-wide hover:border-violet-300 hover:text-violet-600 transition-all"
                         >
-                          Copy URL
+                          {img.kind === 'pdf' ? 'Copy PDF URL' : 'Copy URL'}
                         </button>
                         <button
                           type="button"
@@ -2076,7 +2135,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <div className="flex items-center justify-center h-40">
                   <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
                 </div>
-              ) : galleryImages.length === 0 ? (
+              ) : galleryImages.filter(asset => asset.kind === 'image').length === 0 ? (
                 <div className="text-center py-16">
                   <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                   <p className="text-sm text-slate-400 font-bold">No images yet</p>
@@ -2084,7 +2143,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
-                  {galleryImages.map(img => (
+                  {galleryImages.filter(asset => asset.kind === 'image').map(img => (
                     <div key={img.name} className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 aspect-video">
                       <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
