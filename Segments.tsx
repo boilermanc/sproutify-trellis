@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Plus, Search, Filter, Crown, Sparkles, Clock, Repeat, Mail,
   UserX, MapPin, Package, Trash2, Edit2, Play, X, ChevronDown, ChevronRight,
-  Save, Layers, FlaskConical, AlertTriangle, Activity
+  Save, Layers, FlaskConical, AlertTriangle, Activity, CalendarDays
 } from 'lucide-react';
 import { BranchStatsResult, EnrichedProfile } from './types';
 import { SpokeConnection } from './types';
@@ -42,6 +42,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'layers': <Layers className="w-5 h-5" />,
   'flask': <FlaskConical className="w-5 h-5" />,
   'activity': <Activity className="w-5 h-5" />,
+  'calendar': <CalendarDays className="w-5 h-5" />,
 };
 
 // Parse a raw textarea blob (commas / spaces / newlines / semicolons) into a
@@ -360,6 +361,11 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
           </optgroup>
           <optgroup label="Email Engagement">
             {SEGMENT_FIELDS.filter(f => f.category === 'engagement').map(f => (
+              <option key={f.id} value={f.id}>{f.label}</option>
+            ))}
+          </optgroup>
+          <optgroup label="Events">
+            {SEGMENT_FIELDS.filter(f => f.category === 'events').map(f => (
               <option key={f.id} value={f.id}>{f.label}</option>
             ))}
           </optgroup>

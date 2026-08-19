@@ -265,7 +265,11 @@ const AppContent: React.FC = () => {
         phone: p.phone,
         is_subscribed: consent.is_subscribed,
         marketing_pause: consent.marketing_pause,
-        tags: (p as any)._order_only ? ['order_only'] : [],
+        tags: Array.from(new Set([
+          ...(p.tags || []),
+          ...((p as any)._order_only ? ['order_only'] : []),
+          ...(p.event_registrations?.length ? ['event_registrant'] : []),
+        ])),
         segments: (p as any)._order_only ? ['legacy_orders'] : [],
         branches: [branchSlug],
         branch_consent: {
@@ -288,6 +292,11 @@ const AppContent: React.FC = () => {
           spoke_name: p._spoke_name,
           order_stats: p.order_stats,
           predicted_demographics: p._predicted_demographics,
+          event_notice_consent: p.event_notice_consent === true,
+          event_registrations: p.event_registrations || [],
+          event_titles: p.event_titles || [],
+          event_statuses: p.event_statuses || [],
+          last_event_registration_at: p.last_event_registration_at,
         },
       };
     });
@@ -307,12 +316,27 @@ const AppContent: React.FC = () => {
         continue;
       }
       const existing = merged[existingIndex];
+      const existingRegistrations = existing.metadata?.event_registrations || [];
+      const incomingRegistrations = p.metadata?.event_registrations || [];
       merged[existingIndex] = {
         ...existing,
+        tags: Array.from(new Set([...(existing.tags || []), ...(p.tags || [])])),
         branches: Array.from(new Set([...existing.branches, ...p.branches])),
         branch_consent: { ...(p.branch_consent || {}), ...(existing.branch_consent || {}) },
         // Keep the richest commercial signal across sources.
         ltv: Math.max(existing.ltv || 0, p.ltv || 0),
+        metadata: {
+          ...(p.metadata || {}),
+          ...(existing.metadata || {}),
+          event_notice_consent: existing.metadata?.event_notice_consent === true || p.metadata?.event_notice_consent === true,
+          event_registrations: [...existingRegistrations, ...incomingRegistrations],
+          event_titles: Array.from(new Set([...(existing.metadata?.event_titles || []), ...(p.metadata?.event_titles || [])])),
+          event_statuses: Array.from(new Set([...(existing.metadata?.event_statuses || []), ...(p.metadata?.event_statuses || [])])),
+          last_event_registration_at: [existing.metadata?.last_event_registration_at, p.metadata?.last_event_registration_at]
+            .filter(Boolean)
+            .sort()
+            .at(-1),
+        },
       };
     }
     return merged;

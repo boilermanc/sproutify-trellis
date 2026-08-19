@@ -20,6 +20,7 @@
 //   { op: "fetch",    connection_id, table_type }                // runtime
 //   { op: "snapshot", connection_id }                            // runtime
 //   { op: "newsletter_audience", connection_id, tags? }           // runtime ATL RPC
+//   { op: "event_audience", connection_id }                       // runtime ATL events
 //   { op: "bible_passage", connection_id, book_id, chapter,
 //     verse_start, verse_end?, translation? }                     // runtime Rejoice BSB RPC
 //
@@ -30,6 +31,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const HUB_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Project-scoped secret already used by resend-webhook. Event registrations
+// are intentionally RLS-hidden from ATL's public connection key, so this one
+// fixed operation uses the server-only ATL service key.
+const ATL_SPOKE_SERVICE_KEY = Deno.env.get("ATL_SPOKE_SERVICE_KEY") || "";
 const BATCH_SIZE = 1000;
 const SNAPSHOT_NAME_SAMPLE = 500;
 const SNAPSHOT_TOTAL_SAMPLE = 5000;
@@ -44,6 +49,7 @@ const COMMON_TABLES = [
   "orders", "order_items", "legacy_orders", "legacy_order_items",
   "subscriptions", "payments", "products",
   "newsletter_subscribers", "customer_tags", "customer_addresses",
+  "events", "event_registrations",
 ];
 
 const cors = {
@@ -286,6 +292,49 @@ Deno.serve(async (req: Request) => {
       }
 
       return json({ connection_id: body.connection_id, name: resolved.conn.name, rows, errors });
+    }
+
+    // ── event_audience: RUNTIME ATL event registrations ──────────
+    // Fixed tables + fixed columns only. This deliberately does not expose a
+    // generic spoke-table passthrough or payment-intent/phone fields.
+    if (op === "event_audience") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+      if (!String(resolved.conn.supabase_url || "").includes("povudgtvzggnxwgtjexa")) {
+        return json({ error: "Event audience is only available for the ATL Urban Farms spoke" }, 404);
+      }
+
+      if (!ATL_SPOKE_SERVICE_KEY) return json({ error: "ATL event audience service key is not configured" }, 503);
+      const spoke = createClient(resolved.conn.supabase_url, ATL_SPOKE_SERVICE_KEY);
+      const registrationResult = await fetchAllRows(
+        spoke,
+        "event_registrations",
+        "id,event_id,name,email,status,amount_paid,quantity,created_at,updated_at",
+      );
+      if (registrationResult.error) return json({ error: registrationResult.error }, 502);
+
+      const eventIds = Array.from(new Set(
+        registrationResult.rows.map((row: any) => row.event_id).filter(Boolean),
+      ));
+      let events: Record<string, unknown>[] = [];
+      if (eventIds.length > 0) {
+        const { data, error } = await spoke
+          .from("events")
+          .select("id,title,event_type,start_date,end_date,start_time,end_time,location,is_active,registration_enabled,pre_register_enabled")
+          .in("id", eventIds);
+        if (error) return json({ error: error.message }, 502);
+        events = data || [];
+      }
+
+      const eventById = new Map(events.map((event: any) => [event.id, event]));
+      const rows = registrationResult.rows.map((row: any) => ({
+        ...row,
+        event: eventById.get(row.event_id) || null,
+      }));
+      return json({ connection_id: body.connection_id, name: resolved.conn.name, rows, errors: [] });
     }
 
     // ── bible_passage: RUNTIME Berean Standard Bible verse lookup ─────

@@ -15,7 +15,7 @@ export interface SegmentField {
   id: string;
   label: string;
   type: SegmentFieldType;
-  category: 'profile' | 'orders' | 'products' | 'location' | 'demographics' | 'engagement';
+  category: 'profile' | 'orders' | 'products' | 'location' | 'demographics' | 'engagement' | 'events';
   path: string;
 }
 
@@ -70,6 +70,13 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   // Classification tags carried from the spoke's customer_tags (ATL). Use the
   // 'includes'/'does not include' operators with a tag name, e.g. "School Partner".
   { id: 'customer_tags', label: 'Customer Tag', type: 'array', category: 'profile', path: 'tags' },
+
+  // ATL event registration intent — read live from event_registrations.
+  { id: 'event_notice_consent', label: 'Event Notice Consent', type: 'boolean', category: 'events', path: 'event_notice_consent' },
+  { id: 'event_registration_count', label: 'Event Registration Count', type: 'number', category: 'events', path: 'event_registrations.length' },
+  { id: 'event_titles', label: 'Registered Event', type: 'array', category: 'events', path: 'event_titles' },
+  { id: 'event_statuses', label: 'Event Registration Status', type: 'array', category: 'events', path: 'event_statuses' },
+  { id: 'last_event_registration_at', label: 'Last Event Registration', type: 'date', category: 'events', path: 'last_event_registration_at' },
 
   // Order fields
   { id: 'ltv', label: 'Lifetime Value ($)', type: 'number', category: 'orders', path: 'order_stats.ltv' },
@@ -320,4 +327,24 @@ export const PRESET_SEGMENTS: Omit<Segment, 'id' | 'created_at' | 'updated_at'>[
       ]
     }]
   },
+  {
+    name: 'ATL Event Registrants',
+    description: 'People who registered or pre-registered for an ATL Urban Farms event',
+    icon: 'calendar',
+    color: 'teal',
+    is_preset: true,
+    rule_groups: [{
+      id: 'atl-event-registrants-group',
+      join: 'AND',
+      rules: [
+        { id: 'atl-event-registration-count', field: 'event_registration_count', operator: 'greater_or_equal', value: 1 },
+        { id: 'atl-event-notice-consent', field: 'event_notice_consent', operator: 'is_true', value: true }
+      ]
+    }]
+  },
 ];
+
+export const isEventAudienceSegment = (segment: Pick<Segment, 'rule_groups'>): boolean => {
+  const eventFieldIds = new Set(SEGMENT_FIELDS.filter((field) => field.category === 'events').map((field) => field.id));
+  return segment.rule_groups.some((group) => group.rules.some((rule) => eventFieldIds.has(rule.field)));
+};

@@ -215,6 +215,29 @@ export interface ProfileAddress {
   country?: string;
 }
 
+export interface FederatedEventRegistration {
+  id: string;
+  event_id: string;
+  name: string;
+  email: string;
+  status: string;
+  amount_paid: number | null;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
+  event: {
+    id: string;
+    title: string;
+    event_type?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+    start_time?: string | null;
+    end_time?: string | null;
+    location?: string | null;
+    is_active?: boolean | null;
+  } | null;
+}
+
 export interface NormalizedSpokeProfile {
   id?: string;           // Customer ID for linking to orders
   email: string;
@@ -237,6 +260,13 @@ export interface NormalizedSpokeProfile {
   // present when the connection's customers feed exposes a `tags` column.
   // Segmentable via the 'customer_tags' field (see segmentTypes.ts).
   tags?: string[];
+  // ATL event intent remains spoke-owned. These fields are populated by the
+  // read-only event_audience gateway and never written into the Hub database.
+  event_notice_consent?: boolean;
+  event_registrations?: FederatedEventRegistration[];
+  event_titles?: string[];
+  event_statuses?: string[];
+  last_event_registration_at?: string;
   _spoke_id: string;
   _spoke_name: string;
 }

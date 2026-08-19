@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { supabase as hubClient } from './lib/supabase';
 import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress } from './types';
 import { loadNameCache, predictDemographicsSync } from './demographicsService';
+import { EventRegistrationRecord, fetchEventAudience, isEventNoticeEligibleStatus } from './services/eventAudienceService';
 
 // ── Server-side spoke reads ─────────────────────────────────────────
 // All runtime data reads go through the `spoke-query` Edge Function so the
@@ -889,15 +890,20 @@ export const fetchEnrichedProfiles = async (
   connections: SpokeConnection[]
 ): Promise<{ profiles: EnrichedProfile[]; errors: string[] }> => {
   const newsletterConnections = connections.filter(c => c.status === 'active' && supportsAtlNewsletterAudience(c));
+  const eventConnections = newsletterConnections;
 
-  // Fetch profiles, orders, order items, and authoritative ATL newsletter audience in parallel.
-  const [profilesResult, ordersResult, itemsResult, newsletterResults] = await Promise.all([
+  // Fetch profiles, commerce, newsletter consent, and ATL event intent in parallel.
+  const [profilesResult, ordersResult, itemsResult, newsletterResults, eventResults] = await Promise.all([
     fetchAllSpokesProfiles(connections),
     fetchAllSpokesOrders(connections),
     fetchAllSpokesOrderItems(connections),
     Promise.allSettled(newsletterConnections.map(async connection => ({
       connection,
       rows: await fetchNewsletterAudience(connection.id),
+    }))),
+    Promise.allSettled(eventConnections.map(async connection => ({
+      connection,
+      rows: await fetchEventAudience(connection.id),
     }))),
   ]);
 
@@ -912,6 +918,7 @@ export const fetchEnrichedProfiles = async (
   const newsletterRowsByKey = new Map<string, NewsletterAudienceRow>();
   const newsletterConnectionIds = new Set(newsletterConnections.map(c => c.id));
   const authoritativeNewsletterConnectionIds = new Set<string>();
+  const eventRowsByKey = new Map<string, EventRegistrationRecord[]>();
 
   newsletterResults.forEach((result, index) => {
     if (result.status === 'rejected') {
@@ -925,6 +932,20 @@ export const fetchEnrichedProfiles = async (
       if (!key) continue;
       activeNewsletterKeys.add(key);
       newsletterRowsByKey.set(key, row);
+    }
+  });
+
+  eventResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      errors.push(`${eventConnections[index].name}: ${result.reason?.message || 'Failed to fetch event audience'}`);
+      return;
+    }
+    for (const row of result.value.rows) {
+      const key = audienceKey(result.value.connection.id, row.email);
+      if (!key) continue;
+      const existing = eventRowsByKey.get(key) || [];
+      existing.push(row);
+      eventRowsByKey.set(key, existing);
     }
   });
 
@@ -971,6 +992,31 @@ export const fetchEnrichedProfiles = async (
     profilesByEmail.set(key, profile);
   }
 
+  // Include event-only people without turning event consent into newsletter
+  // consent. Today ATL's five registrants all resolve to another identity
+  // source, but this protects future event-only signups.
+  const eventOnlyProfiles: NormalizedSpokeProfile[] = [];
+  for (const [key, rows] of eventRowsByKey) {
+    if (profilesByEmail.has(key)) continue;
+    const [spokeId] = key.split(':');
+    const connection = eventConnections.find(c => c.id === spokeId);
+    if (!connection || rows.length === 0) continue;
+    const fullName = rows.find(row => row.name)?.name.trim() || '';
+    const [firstName, ...lastParts] = fullName.split(/\s+/).filter(Boolean);
+    const email = rows[0].email.toLowerCase().trim();
+    const profile: NormalizedSpokeProfile = {
+      id: generateIdFromEmail(email, spokeId),
+      email,
+      first_name: firstName || undefined,
+      last_name: lastParts.join(' ') || undefined,
+      subscribed: false,
+      _spoke_id: spokeId,
+      _spoke_name: connection.name,
+    };
+    eventOnlyProfiles.push(profile);
+    profilesByEmail.set(key, profile);
+  }
+
   // Extract unique identities from orders
   const orderIdentities = extractOrderIdentities(ordersResult.orders);
 
@@ -1001,7 +1047,24 @@ export const fetchEnrichedProfiles = async (
   }
 
   // Combine customer profiles + active subscriber-only profiles + order-only profiles
-  const allProfiles = [...profilesResult.profiles, ...newsletterOnlyProfiles, ...orderOnlyProfiles];
+  const allProfiles = [...profilesResult.profiles, ...newsletterOnlyProfiles, ...eventOnlyProfiles, ...orderOnlyProfiles];
+
+  // Attach event intent to the matching federated identity. This stays
+  // transient/client-side and is never copied into Hub profile storage.
+  for (const profile of allProfiles) {
+    const key = audienceKey(profile._spoke_id, profile.email);
+    const registrations = key ? eventRowsByKey.get(key) || [] : [];
+    if (registrations.length === 0) continue;
+    profile.event_registrations = registrations;
+    profile.event_notice_consent = registrations.some(row => isEventNoticeEligibleStatus(row.status));
+    profile.event_titles = Array.from(new Set(registrations.map(row => row.event?.title).filter(Boolean) as string[]));
+    profile.event_statuses = Array.from(new Set(registrations.map(row => row.status).filter(Boolean)));
+    profile.last_event_registration_at = registrations
+      .map(row => row.created_at)
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+  }
 
   // Enrich profiles with order data and order items
   const enrichedProfiles = enrichProfilesWithOrders(
@@ -1013,6 +1076,7 @@ export const fetchEnrichedProfiles = async (
   // Mark order-only profiles with special tags/metadata
   const orderOnlyEmails = new Set(orderOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
   const newsletterOnlyEmails = new Set(newsletterOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
+  const eventOnlyEmails = new Set(eventOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
 
   enrichedProfiles.forEach(profile => {
     const key = `${profile._spoke_id}:${profile.email.toLowerCase()}`;
@@ -1026,6 +1090,10 @@ export const fetchEnrichedProfiles = async (
     if (newsletterOnlyEmails.has(key)) {
       (profile as any)._subscriber_only = true;
       (profile as any)._source = 'newsletter_subscribers';
+    }
+    if (eventOnlyEmails.has(key)) {
+      (profile as any)._event_only = true;
+      (profile as any)._source = 'event_registrations';
     }
   });
 

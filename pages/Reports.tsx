@@ -6,17 +6,19 @@ import EmailPerformancePanel from '../components/EmailPerformancePanel';
 import PostHogAnalyticsPanel from '../components/PostHogAnalyticsPanel';
 import YouTubePerformancePanel from '../components/YouTubePerformancePanel';
 import SocialPerformancePanel from '../components/SocialPerformancePanel';
+import EventRegistrationPanel from '../components/EventRegistrationPanel';
 import {
   BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity, Share2,
   ShieldCheck, AlertTriangle, Crown,
-  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe
+  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe, CalendarDays
 } from 'lucide-react';
 
-type ReportsTab = 'audience' | 'social' | 'email' | 'youtube' | 'product' | 'blueprints';
+type ReportsTab = 'audience' | 'social' | 'email' | 'events' | 'youtube' | 'product' | 'blueprints';
 const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
   { id: 'audience', label: 'Audience', icon: Users },
   { id: 'social', label: 'Social', icon: Share2 },
   { id: 'email', label: 'Email', icon: Mail },
+  { id: 'events', label: 'Events', icon: CalendarDays },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
   { id: 'product', label: 'Product', icon: Activity },
   { id: 'blueprints', label: 'Blueprints', icon: FileText },
@@ -279,6 +281,10 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
           branches={branchContext?.allBranches || []}
           profiles={profiles}
         />
+      )}
+
+      {activeTab === 'events' && (
+        <EventRegistrationPanel spokeConnections={spokeConnections} branchContext={branchContext} />
       )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}

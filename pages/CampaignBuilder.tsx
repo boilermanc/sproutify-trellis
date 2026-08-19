@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult } from '../types';
-import { Segment, PRESET_SEGMENTS } from '../segmentTypes';
+import { Segment, PRESET_SEGMENTS, isEventAudienceSegment } from '../segmentTypes';
 import { evaluateSegment } from '../segmentEngine';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
@@ -631,6 +631,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     );
   }, [scopedProfiles, selectedBranches, suppressedEmails]);
 
+  const eventConsentFiltered = useMemo(() => scopedProfiles.filter((profile) => {
+    const email = (profile.email || '').toLowerCase();
+    return profile.metadata?.event_notice_consent === true && !suppressedEmails.has(email);
+  }), [scopedProfiles, suppressedEmails]);
+
   useEffect(() => {
     let cancelled = false;
     setAuthoritativeNewsletterAudience(null);
@@ -739,20 +744,44 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     return map;
   }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail]);
 
+  const eventSegmentIds = useMemo(() => new Set(
+    savedSegments.filter(isEventAudienceSegment).map((segment) => segment.id),
+  ), [savedSegments]);
+  const isEventAudienceSelected = selectedSavedSegments.some((id) => eventSegmentIds.has(id));
+
   const segmentProfiles = useMemo(() => {
     if (authoritativeNewsletterAudience && selectedSegments.length === 0 && selectedSavedSegments.length === 0) {
       return authoritativeNewsletterProfiles;
     }
     if (selectedSegments.length === 0 && selectedSavedSegments.length === 0) return consentFiltered;
     const activeFilters = CAMPAIGN_PRESETS.filter(p => selectedSegments.includes(p.id));
-    const activeSavedSets = selectedSavedSegments.map(id => savedSegmentEmails[id]).filter(Boolean);
+    const activeEventSets = selectedSavedSegments
+      .filter((id) => eventSegmentIds.has(id))
+      .map((id) => savedSegmentEmails[id])
+      .filter(Boolean);
+    const activeRegularSets = selectedSavedSegments
+      .filter((id) => !eventSegmentIds.has(id))
+      .map((id) => savedSegmentEmails[id])
+      .filter(Boolean);
     const sourceProfiles = authoritativeNewsletterAudience ? authoritativeNewsletterProfiles : consentFiltered;
+    if (activeEventSets.length > 0) {
+      const newsletterEligible = new Set(sourceProfiles.map((profile) => (profile.email || '').toLowerCase()));
+      return scopedProfiles.filter((profile) => {
+        const email = (profile.email || '').toLowerCase();
+        if (!email || suppressedEmails.has(email)) return false;
+        const matchesEvent = activeEventSets.some((set) => set.has(email));
+        const matchesRegular = activeFilters.some((preset) => preset.filter(profile))
+          || activeRegularSets.some((set) => set.has(email));
+        const eventEligible = profile.metadata?.event_notice_consent === true;
+        return (matchesEvent && eventEligible) || (matchesRegular && newsletterEligible.has(email));
+      });
+    }
     return sourceProfiles.filter(profile => {
       const matchesQuick = activeFilters.some(preset => preset.filter(profile));
-      const matchesSaved = activeSavedSets.some(set => set.has((profile.email || '').toLowerCase()));
+      const matchesSaved = activeRegularSets.some(set => set.has((profile.email || '').toLowerCase()));
       return matchesQuick || matchesSaved;
     });
-  }, [authoritativeNewsletterAudience, authoritativeNewsletterProfiles, consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
+  }, [authoritativeNewsletterAudience, authoritativeNewsletterProfiles, consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails, eventSegmentIds, scopedProfiles, suppressedEmails]);
 
   // Static test-list addresses from any selected 'email_list' segment. These bypass
   // branch scope + consent entirely and are emailed directly (QA sends).
@@ -1814,6 +1843,12 @@ Return ONLY the post content, no explanations or labels.`,
                     </span>
                   </div>
                 )}
+                {isEventAudienceSelected && (
+                  <div className="mt-3 flex items-start gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-[11px] font-semibold text-teal-800">
+                    <Calendar size={15} className="mt-0.5 shrink-0" />
+                    <span><b>Event audience active.</b> Event-specific consent is valid only for notices about the event(s) these people registered for. Do not use this audience for general promotions or newsletters.</span>
+                  </div>
+                )}
               </div>
 
               {/* Audience Preview — see who's actually in the segment (no more selecting blind) */}
@@ -2712,8 +2747,8 @@ Return ONLY the post content, no explanations or labels.`,
               <div className="p-8 space-y-5">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                    <p className="text-2xl font-black text-emerald-700">{consentFiltered.length}</p>
-                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mt-1">Opted-In</p>
+                    <p className="text-2xl font-black text-emerald-700">{isEventAudienceSelected ? eventConsentFiltered.length : consentFiltered.length}</p>
+                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mt-1">{isEventAudienceSelected ? 'Event Eligible' : 'Opted-In'}</p>
                   </div>
                   <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-center">
                     <p className="text-2xl font-black text-amber-700">{scopedProfiles.filter(p => selectedBranches.some(slug => { const entry = p.branch_consent?.[slug]; return entry ? entry.paused : p.marketing_pause; })).length}</p>
@@ -2736,8 +2771,8 @@ Return ONLY the post content, no explanations or labels.`,
                     className="mt-0.5 w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                   />
                   <div>
-                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight">I confirm this campaign targets opted-in recipients only</p>
-                    <p className="text-[11px] text-slate-500 mt-1">The delivery gateway will enforce subscription status at send time.</p>
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight">{isEventAudienceSelected ? 'I confirm this message is specifically about the registered event(s)' : 'I confirm this campaign targets opted-in recipients only'}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">{isEventAudienceSelected ? 'Event registration consent must not be reused for general marketing.' : 'The delivery gateway will enforce subscription status at send time.'}</p>
                   </div>
                 </label>
               </div>
