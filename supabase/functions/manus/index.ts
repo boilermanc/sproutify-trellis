@@ -46,6 +46,21 @@ async function getSecrets(db: ReturnType<typeof createClient>) {
   };
 }
 
+async function taskIsReadable(taskId: string, key: string): Promise<boolean> {
+  // Manus task creation is asynchronous, but the task must become readable by
+  // the same API key. A short retry window avoids recording jobs that can never
+  // be polled and would otherwise sit in Trellis for three hours.
+  for (const delay of [250, 750, 1500]) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    const response = await fetch(`${MANUS_BASE}/v2/task.detail?task_id=${encodeURIComponent(taskId)}`, {
+      headers: { "x-manus-api-key": key },
+    });
+    if (response.ok) return true;
+    if (response.status !== 404) return true; // Let the poller retry transient failures.
+  }
+  return false;
+}
+
 // Build the deep-dive research prompt from a lead + its resolved profile.
 function buildResearchPrompt(lead: any): string {
   const p = lead.profile || {};
@@ -159,6 +174,12 @@ Deno.serve(async (req: Request) => {
       }
       taskId = payload.task_id;
       taskUrl = payload.task_url || "";
+      if (!(await taskIsReadable(taskId, key))) {
+        return json({
+          ok: false,
+          error: "Manus created the task but cannot read it with the saved API key. Reconnect the Manus API key in Settings, then retry.",
+        });
+      }
     } catch (e) {
       return json({ ok: false, error: `Could not reach Manus: ${(e as Error).message}` });
     }

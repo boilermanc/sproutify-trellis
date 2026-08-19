@@ -26,6 +26,12 @@ test('uses exact Resend IDs and idempotency keys for outbound attribution', () =
   assert.match(webhook, /eq\("resend_email_id", data\.email_id\)/);
 });
 
+test('supports authenticated browser invocation of the sequence worker', () => {
+  assert.match(worker, /req\.method === "OPTIONS"/);
+  assert.match(worker, /Access-Control-Allow-Origin/);
+  assert.match(worker, /authorization, apikey, content-type, x-client-info, x-supabase-api-version/);
+});
+
 test('replies and negative delivery outcomes stop the sequence', () => {
   assert.match(webhook, /evt\?\.type === "email\.received"/);
   assert.match(webhook, /exit_reason: "replied"/);
