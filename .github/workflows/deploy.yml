@@ -120,7 +120,10 @@ jobs:
           IONOS_TRELLIS_PATH: ${{ secrets.IONOS_TRELLIS_PATH }}
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y lftp
+          # GitHub-hosted runners already ship with a current apt index. A full
+          # `apt-get update` can hang on an unhealthy Azure mirror and prevent
+          # the deployment from ever reaching SFTP.
+          sudo apt-get install -y lftp
           # The IONOS_TRELLIS_PATH secret has carried stray whitespace before, which made
           # lftp upload into a phantom "/.../<space>trellis.sproutify.app" dir Apache never
           # served — freezing the live site. Strip all whitespace defensively (server paths
