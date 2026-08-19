@@ -50,9 +50,9 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, onS
         {enrollment.steps.map(step => {
           const message = latestByStep.get(step.id);
           const isNext = step.step_number === enrollment.next_step_number && active;
-          return <div key={step.id} className="flex items-center gap-3 rounded-xl bg-[#10142e]/80 px-3 py-2.5">
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-black ${message?.sent_at ? 'bg-emerald-400/15 text-emerald-300' : isNext ? 'bg-cyan-400/15 text-cyan-300' : 'bg-white/5 text-slate-600'}`}>{message?.sent_at ? <Check size={12} /> : step.step_number}</span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-bold text-slate-300">{step.name}</span><span className="block text-[9px] text-slate-600">{message ? `${message.status}${message.resend_email_id ? ' · tracked' : ''}` : isNext ? formatWhen(enrollment.next_run_at) : `+${step.delay_days} days`}</span></span>
+          return <div key={step.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+            <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-black ${message?.sent_at ? 'bg-emerald-100 text-emerald-700' : isNext ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-600'}`}>{message?.sent_at ? <Check size={12} /> : step.step_number}</span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-bold text-slate-700">{step.name}</span><span className="block text-[9px] text-slate-500">{message ? `${message.status}${message.resend_email_id ? ' · tracked' : ''}` : isNext ? formatWhen(enrollment.next_run_at) : `+${step.delay_days} days`}</span></span>
           </div>;
         })}
       </div>
