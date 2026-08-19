@@ -322,10 +322,8 @@ export async function fetchEmailActivity(email: string): Promise<EmailEventRow[]
   }
 }
 
-// Delivery/engagement rollup for one recipient, keyed by email SUBJECT (lowercased),
-// so a specific sent email (e.g. a lead's welcome) can show its own status. Same
-// subject-keying campaign stats use. Timestamps are the latest of each event type
-// (fetchEmailActivity returns rows newest-first).
+// Delivery/engagement rollup for one recipient. Exact Resend IDs are primary;
+// lowercased subjects remain as a fallback for historical lead sends.
 export interface EmailEngagementStatus {
   sent: boolean;
   delivered: boolean;
@@ -343,19 +341,20 @@ export async function fetchLeadEmailEngagement(
   const rows = await fetchEmailActivity(email);
   const map: Record<string, EmailEngagementStatus> = {};
   for (const r of rows) {
-    const key = (r.campaign_subject || '').trim().toLowerCase();
-    if (!key) continue;
-    const s = map[key] || (map[key] = {
-      sent: false, delivered: false, opened: false, clicked: false,
-      bounced: false, complained: false, openedAt: null, clickedAt: null,
-    });
-    switch (r.event_type) {
-      case 'sent': s.sent = true; break;
-      case 'delivered': s.delivered = true; break;
-      case 'opened': s.opened = true; if (!s.openedAt) s.openedAt = r.occurred_at; break;
-      case 'clicked': s.clicked = true; if (!s.clickedAt) s.clickedAt = r.occurred_at; break;
-      case 'bounced': s.bounced = true; break;
-      case 'complained': s.complained = true; break;
+    const keys = [...new Set([r.resend_email_id, (r.campaign_subject || '').trim().toLowerCase()].filter(Boolean) as string[])];
+    for (const key of keys) {
+      const s = map[key] || (map[key] = {
+        sent: false, delivered: false, opened: false, clicked: false,
+        bounced: false, complained: false, openedAt: null, clickedAt: null,
+      });
+      switch (r.event_type) {
+        case 'sent': s.sent = true; break;
+        case 'delivered': s.delivered = true; break;
+        case 'opened': s.opened = true; if (!s.openedAt) s.openedAt = r.occurred_at; break;
+        case 'clicked': s.clicked = true; if (!s.clickedAt) s.clickedAt = r.occurred_at; break;
+        case 'bounced': s.bounced = true; break;
+        case 'complained': s.complained = true; break;
+      }
     }
   }
   return map;

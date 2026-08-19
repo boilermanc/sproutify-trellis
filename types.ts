@@ -507,6 +507,7 @@ export type LeadActivityType =
   | 'lead_note'
   | 'lead_call'
   | 'lead_email'
+  | 'lead_reply'
   | 'lead_meeting'
   | 'lead_quote'
   | 'lead_converted';
@@ -525,6 +526,50 @@ export interface LeadEmailEligibility {
   hardBlockReasons: string[];
   marketingUnsubscribed: boolean;
   fieldsChecked: Array<'profiles.is_subscribed' | 'profiles.marketing_pause' | 'email_suppressions.reason'>;
+}
+
+export type LeadSequenceMode = 'approval' | 'automatic';
+export type LeadSequenceStatus = 'active' | 'awaiting_approval' | 'paused' | 'completed' | 'exited';
+
+export interface LeadEmailSequenceStep {
+  id: string;
+  step_number: number;
+  delay_days: number;
+  name: string;
+  subject_template: string;
+  template_key: string;
+}
+
+export interface LeadEmailMessage {
+  id: string;
+  enrollment_id: string | null;
+  step_id: string | null;
+  direction: 'outbound' | 'inbound';
+  status: string;
+  subject: string;
+  resend_email_id: string | null;
+  body_preview: string | null;
+  created_at: string;
+  sent_at: string | null;
+  provider_event_at: string | null;
+  last_error: string | null;
+}
+
+export interface LeadEmailSequenceEnrollment {
+  id: string;
+  sequence_id: string;
+  lead_id: string;
+  profile_id: string;
+  mode: LeadSequenceMode;
+  status: LeadSequenceStatus;
+  next_step_number: number;
+  next_run_at: string | null;
+  exit_reason: string | null;
+  started_at: string;
+  completed_at: string | null;
+  sequence: { id: string; name: string; slug: string };
+  steps: LeadEmailSequenceStep[];
+  messages: LeadEmailMessage[];
 }
 
 export type TaskType = 'copywriting' | 'design' | 'audience' | 'technical' | 'analysis' | 'social';

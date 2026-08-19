@@ -573,8 +573,9 @@ export function buildLeadEmailHtml(input: {
   return `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#0f172a">${formatLeadBody(input.body)}${footer}</div>`;
 }
 
-/** Send one inquiry-specific email through the existing server-side Resend RPC. */
+/** Send one inquiry-specific email through the authenticated, attributable Edge Function. */
 export async function sendLeadEmail(input: {
+  leadId: string;
   to: string;
   subject: string;
   body: string;
@@ -583,28 +584,45 @@ export async function sendLeadEmail(input: {
   cc?: readonly string[];
   brandName?: string;
   scope?: string;
-}): Promise<{ id: string }> {
-  const to = input.to.trim().toLowerCase();
-  const { data, error } = await supabase.rpc('send_resend_email', {
-    p_to: to,
-    p_subject: input.subject.trim(),
-    p_html: buildLeadEmailHtml({
+  test?: boolean;
+}): Promise<{ id: string; messageId?: string }> {
+  const { data, error } = await supabase.functions.invoke('lead-email-send', {
+    body: {
+      leadId: input.leadId,
+      subject: input.subject.trim(),
       body: input.body,
-      bodyFormat: input.bodyFormat,
-      recipientEmail: to,
-      brandName: input.brandName,
+      bodyFormat: input.bodyFormat || 'text',
+      cc: input.cc?.map(address => address.trim()).filter(Boolean),
       scope: input.scope,
-    }),
-    p_from: input.from || LEAD_EMAIL_FROM,
-    p_cc: input.cc?.map(address => address.trim()).filter(Boolean).join(',') || null,
+      test: input.test === true,
+    },
   });
 
   if (error) throw new Error(`Email send failed: ${error.message}`);
-  const result = typeof data === 'string' ? JSON.parse(data) : data;
-  if (result?.statusCode && result.statusCode >= 400) {
-    throw new Error(`Resend error (${result.statusCode}): ${result.message || 'Unknown error'}`);
+  if (data?.error) throw new Error(data.error);
+  return { id: data?.id || 'unknown', messageId: data?.messageId };
+}
+
+/** Resolve the newest CRM event for each lead so the list is useful at a glance. */
+export async function fetchLatestLeadActivities(leadIds: string[]): Promise<Record<string, TimelineEntry>> {
+  const uniqueIds = [...new Set(leadIds.filter(Boolean))];
+  const latest: Record<string, TimelineEntry> = {};
+  const batchSize = 100;
+  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
+    const batch = uniqueIds.slice(offset, offset + batchSize);
+    const { data, error } = await supabase
+      .from('marketing_events')
+      .select('id,profile_id,event_type,source,payload,created_at')
+      .like('event_type', 'lead_%')
+      .in('payload->>lead_id', batch)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    for (const event of data || []) {
+      const leadId = event.payload?.lead_id;
+      if (typeof leadId === 'string' && !latest[leadId]) latest[leadId] = event as TimelineEntry;
+    }
   }
-  return { id: result?.id || 'unknown' };
+  return latest;
 }
 
 /** Move a lead to another stage and record the transition. */

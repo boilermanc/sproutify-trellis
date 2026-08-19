@@ -41,7 +41,7 @@ Co-Founder, Sproutify`,
   {
     id: 'new-farm-partnership-html',
     name: 'Introducing Sproutify Farm — HTML',
-    subject: 'Your Farm Just Got a Head Start',
+    subject: 'Congrats on your new Tower Farm — meet Sproutify Farm! 🎉',
     bodyFormat: 'html',
     body: SPROUTIFY_FARM_PARTNERSHIP_HTML,
   },

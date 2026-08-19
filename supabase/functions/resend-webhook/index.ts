@@ -3,8 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-// Optional: set RESEND_WEBHOOK_SECRET (whsec_...) in Edge Function secrets to enforce
-// Svix signature verification. If unset, events are accepted without verification.
+// Required in production: Resend's Svix signing secret. Never accept an unsigned
+// event because webhook actions can suppress recipients and stop lead sequences.
 const SIGNING_SECRET = Deno.env.get("RESEND_WEBHOOK_SECRET") || "";
 
 // ATL spoke write-back (optional). When these are set, Resend engagement events
@@ -49,10 +49,91 @@ const TYPE_MAP: Record<string, string> = {
   "email.bounced": "bounced",
   "email.complained": "complained",
   "email.failed": "failed",
+  "email.suppressed": "suppressed",
 };
 
+const htmlEscape = (value: string) => value
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+async function processInboundReply(supabase: any, evt: any): Promise<void> {
+  const data = evt?.data || {};
+  const destinations = Array.isArray(data.to) ? data.to.map(String) : [String(data.to || "")];
+  const tokenMatch = destinations.join(" ").match(/lead\+([0-9a-f-]{36})@/i);
+  if (!tokenMatch || !data.email_id) return;
+  const replyToken = tokenMatch[1].toLowerCase();
+
+  const { data: enrollment } = await supabase.from("lead_email_sequence_enrollments")
+    .select("id,lead_id,profile_id").eq("reply_token", replyToken).maybeSingle();
+  let leadId = enrollment?.lead_id || null;
+  let profileId = enrollment?.profile_id || null;
+  let enrollmentId = enrollment?.id || null;
+
+  if (!leadId) {
+    const { data: manualMessage } = await supabase.from("lead_email_messages")
+      .select("lead_id,profile_id").contains("metadata", { reply_token: replyToken }).maybeSingle();
+    leadId = manualMessage?.lead_id || null;
+    profileId = manualMessage?.profile_id || null;
+  }
+  if (!leadId || !profileId) return;
+
+  const { data: secret } = await supabase.from("tenant_secrets").select("resend_token").limit(1).single();
+  const token = secret?.resend_token;
+  let received: any = {};
+  if (token) {
+    const response = await fetch(`https://api.resend.com/emails/receiving/${data.email_id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) received = await response.json().catch(() => ({}));
+  }
+
+  const from = String(data.from || "").trim().toLowerCase();
+  const subject = String(data.subject || "Reply from lead");
+  const bodyText = String(received.text || "").trim();
+  const preview = (bodyText || String(received.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
+    .trim().slice(0, 4000);
+
+  const { error: insertError } = await supabase.from("lead_email_messages").insert({
+    enrollment_id: enrollmentId, lead_id: leadId, profile_id: profileId,
+    direction: "inbound", status: "received", recipient_email: from,
+    sender_email: from, subject, body_preview: preview,
+    resend_email_id: data.email_id, provider_event_at: evt.created_at || new Date().toISOString(),
+    metadata: { inbound_to: destinations, message_id: data.message_id || null },
+  });
+  if (insertError && insertError.code !== "23505") console.error("inbound message insert failed:", insertError.message);
+
+  if (enrollmentId) {
+    await supabase.from("lead_email_sequence_enrollments").update({
+      status: "exited", exit_reason: "replied", next_run_at: null,
+      completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq("id", enrollmentId).in("status", ["active", "awaiting_approval", "paused"]);
+  }
+  await supabase.from("marketing_events").insert({
+    profile_id: profileId, event_type: "lead_reply", source: "resend",
+    payload: { lead_id: leadId, direction: "inbound", from, subject, preview, resend_email_id: data.email_id },
+  });
+
+  // Receiving domains route to Resend, so forward the human-readable reply to Sheree.
+  if (token) {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+        "Idempotency-Key": `lead-reply-forward/${data.email_id}`,
+      },
+      body: JSON.stringify({
+        from: "Sproutify Farm Replies <sheree@sproutify.app>",
+        to: ["sheree@sproutify.app"],
+        reply_to: from || undefined,
+        subject: `Lead reply: ${subject}`,
+        html: `<p><strong>From:</strong> ${htmlEscape(from)}</p><p><strong>Subject:</strong> ${htmlEscape(subject)}</p><hr><div style="white-space:pre-wrap">${htmlEscape(preview || "No text body supplied.")}</div>`,
+      }),
+    });
+  }
+}
+
 async function verifySvix(payload: string, headers: Headers): Promise<boolean> {
-  if (!SIGNING_SECRET) return true; // verification disabled
+  if (!SIGNING_SECRET) return false;
   const id = headers.get("svix-id");
   const ts = headers.get("svix-timestamp");
   const sig = headers.get("svix-signature");
@@ -74,12 +155,24 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("ok", { status: 200 });
   const raw = await req.text();
 
+  if (!SIGNING_SECRET) {
+    console.error("RESEND_WEBHOOK_SECRET is not configured");
+    return new Response("webhook verification is not configured", { status: 503 });
+  }
+
   if (!(await verifySvix(raw, req.headers))) {
     return new Response("invalid signature", { status: 401 });
   }
 
   let evt: any;
   try { evt = JSON.parse(raw); } catch { return new Response("bad json", { status: 400 }); }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+  if (evt?.type === "email.received") {
+    try { await processInboundReply(supabase, evt); }
+    catch (error) { console.error("inbound reply processing failed:", (error as Error).message); }
+    return new Response("ok", { status: 200 });
+  }
 
   const type = TYPE_MAP[evt?.type];
   const data = evt?.data || {};
@@ -88,8 +181,6 @@ Deno.serve(async (req: Request) => {
     : String(data.to || data.email || "").toLowerCase();
 
   if (!type || !email) return new Response("ignored", { status: 200 });
-
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
   // Resolve campaign attribution via the send-time mapping recorded by the
   // campaign-sender worker when it writes campaign_sends. Older/transactional
@@ -108,6 +199,15 @@ Deno.serve(async (req: Request) => {
       campaignId = sendRow.campaign_id ?? null;
       mappedSubject = sendRow.subject ?? null;
     }
+  }
+
+  // Lead emails are attributed by exact Resend ID, independent of subject reuse.
+  let leadMessage: { id: string; enrollment_id: string | null; lead_id: string; profile_id: string } | null = null;
+  if (data.email_id) {
+    const { data: message, error: messageError } = await supabase.from("lead_email_messages")
+      .select("id,enrollment_id,lead_id,profile_id").eq("resend_email_id", data.email_id).maybeSingle();
+    if (messageError) console.error("lead email message lookup failed:", messageError.message);
+    else leadMessage = message;
   }
 
   // Resolve the campaign's single-brand scope once — used both to scope an
@@ -131,6 +231,23 @@ Deno.serve(async (req: Request) => {
   });
   // 23505 = duplicate (webhook retry) — safe to ignore
   if (insErr && insErr.code !== "23505") console.error("event insert failed:", insErr.message);
+
+  if (leadMessage) {
+    await supabase.from("lead_email_messages").update({
+      status: type,
+      provider_event_at: evt?.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      metadata: data,
+      last_error: type === "failed" ? String(data?.failed?.reason || data?.reason || "Delivery failed").slice(0, 1000) : null,
+    }).eq("id", leadMessage.id);
+
+    if (["bounced", "complained", "failed", "suppressed"].includes(type) && leadMessage.enrollment_id) {
+      await supabase.from("lead_email_sequence_enrollments").update({
+        status: "exited", exit_reason: `email_${type}`, next_run_at: null,
+        completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq("id", leadMessage.enrollment_id).in("status", ["active", "awaiting_approval", "paused"]);
+    }
+  }
 
   const occurredAt = evt?.created_at || new Date().toISOString();
 

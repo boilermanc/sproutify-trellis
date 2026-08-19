@@ -68,8 +68,12 @@ test('offers a cleaned Sproutify Farm HTML partnership template with the real lo
   const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === 'new-farm-partnership-html');
   assert.ok(template);
   assert.equal(template.name, 'Introducing Sproutify Farm — HTML');
+  assert.equal(template.subject, 'Congrats on your new Tower Farm — meet Sproutify Farm! 🎉');
   assert.equal(template.bodyFormat, 'html');
   assert.match(template.body, />Introducing Sproutify Farm<\/p>/);
+  assert.match(template.body, /Tower &amp; port management/);
+  assert.match(template.body, /Reply to Schedule a Demo/);
+  assert.doesNotMatch(template.body, /and we\.<\/p>|\(link to farm\.sproutify\.app\)/);
   assert.match(template.body, /https:\/\/www\.sproutify\.app\/images\/sproutify-farm-white\.png/);
   assert.match(template.body, /<!-- SPROUTIFY_COMPLIANCE_FOOTER -->/);
   assert.doesNotMatch(template.body, /\{\{body_copy\}\}|#8217;|href="#"/);

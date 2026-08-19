@@ -23,8 +23,8 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { BranchContext, Lead, LeadEmailEligibility, LeadPipeline, NewLeadInput, TimelineEntry } from '../types';
-import LeadTimeline from '../components/leads/LeadTimeline';
+import { BranchContext, Lead, LeadEmailEligibility, LeadEmailSequenceEnrollment, LeadPipeline, LeadSequenceMode, NewLeadInput, TimelineEntry } from '../types';
+import LeadTimeline, { formatRelativeTime, summarizeTimelineEntry } from '../components/leads/LeadTimeline';
 import LeadActivityModal, { ActivitySubmission, QuickActivityKind } from '../components/leads/LeadActivityModal';
 import LeadEmailModal from '../components/leads/LeadEmailModal';
 import LeadQuoteModal, { QuoteStatus } from '../components/leads/LeadQuoteModal';
@@ -38,6 +38,8 @@ import { buildLeadCsv } from '../components/leads/leadCsv';
 import LeadBulkBar from '../components/leads/LeadBulkBar';
 import { runSequentialBulk } from '../components/leads/leadBulk';
 import CrmModal from '../components/leads/CrmModal';
+import LeadSequencePanel from '../components/leads/LeadSequencePanel';
+import { controlLeadSequence, fetchLeadSequence, startLeadSequence } from '../services/leadSequenceService';
 import {
   checkExistingLeads,
   createLead,
@@ -45,6 +47,7 @@ import {
   fetchLeads,
   fetchLeadTimeline,
   fetchLeadEmailEligibility,
+  fetchLatestLeadActivities,
   fetchLeadStageDates,
   fetchPipelines,
   LeadExistenceStatus,
@@ -151,7 +154,10 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [savingDetail, setSavingDetail] = useState<string | null>(null);
   const [stageSavingId, setStageSavingId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, TimelineEntry[]>>({});
+  const [latestActivities, setLatestActivities] = useState<Record<string, TimelineEntry>>({});
   const [emailEngagement, setEmailEngagement] = useState<Record<string, Record<string, EmailEngagementStatus>>>({});
+  const [leadSequences, setLeadSequences] = useState<Record<string, LeadEmailSequenceEnrollment | null>>({});
+  const [sequenceLoadingId, setSequenceLoadingId] = useState<string | null>(null);
   const [timelineLoadingId, setTimelineLoadingId] = useState<string | null>(null);
   const [quickActivity, setQuickActivity] = useState<{ lead: Lead; kind: QuickActivityKind } | null>(null);
   const [savingActivity, setSavingActivity] = useState(false);
@@ -243,6 +249,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
         stage: undefined,
       });
       setLeads(data);
+      try {
+        setLatestActivities(await fetchLatestLeadActivities(data.map(lead => lead.id)));
+      } catch (activityError) {
+        console.error('Failed to load latest lead activities:', activityError);
+        setLatestActivities({});
+      }
       try {
         setStageDates(await fetchLeadStageDates(data.map(lead => lead.id)));
       } catch (stageDateError) {
@@ -428,6 +440,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     try {
       const entries = await fetchLeadTimeline(lead.id, lead.profile_id);
       setTimelines(current => ({ ...current, [lead.id]: entries }));
+      if (entries[0]) setLatestActivities(current => ({ ...current, [lead.id]: entries[0] }));
       if (lead.profile?.email) {
         try {
           const engagement = await fetchLeadEmailEngagement(lead.profile.email);
@@ -436,6 +449,15 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           console.error('Failed to load lead email engagement:', engagementError);
         }
       }
+      try {
+        setSequenceLoadingId(lead.id);
+        const sequence = await fetchLeadSequence(lead.id);
+        setLeadSequences(current => ({ ...current, [lead.id]: sequence }));
+      } catch (sequenceError) {
+        console.error('Failed to load lead sequence:', sequenceError);
+      } finally {
+        setSequenceLoadingId(current => current === lead.id ? null : current);
+      }
     } catch (error) {
       console.error('Failed to load lead timeline:', error);
       addToast('Could not load lead activity.', 'error');
@@ -443,6 +465,32 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       setTimelineLoadingId(current => current === lead.id ? null : current);
     }
   }, [addToast]);
+
+  const startSequenceForLead = async (lead: Lead, mode: LeadSequenceMode) => {
+    try {
+      await startLeadSequence(lead.id, mode);
+      await loadTimeline(lead);
+      addToast(mode === 'automatic' ? 'Sequence started and first email sent.' : 'Sequence created. Approve the first email when ready.', 'success');
+    } catch (error) {
+      console.error('Failed to start lead sequence:', error);
+      addToast(error instanceof Error ? error.message : 'Could not start the sequence.', 'error');
+      throw error;
+    }
+  };
+
+  const actOnSequence = async (lead: Lead, action: 'approve_next' | 'pause' | 'resume' | 'stop') => {
+    const enrollment = leadSequences[lead.id];
+    if (!enrollment) return;
+    try {
+      await controlLeadSequence(enrollment.id, action);
+      await loadTimeline(lead);
+      addToast(action === 'approve_next' ? 'Email approved and sent.' : `Sequence ${action === 'stop' ? 'stopped' : `${action}d`}.`, 'success');
+    } catch (error) {
+      console.error('Failed to control lead sequence:', error);
+      addToast(error instanceof Error ? error.message : 'Could not update the sequence.', 'error');
+      throw error;
+    }
+  };
 
   const toggleLeadDetails = (lead: Lead) => {
     if (expandedLeadId === lead.id) {
@@ -503,36 +551,15 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     setSendingEmail(true);
     try {
       await sendLeadEmail({
+        leadId: emailLead.id,
         to: emailLead.profile.email,
         cc: LEAD_CC_RECIPIENTS,
         scope: activeBranch?.slug,
         ...input,
       });
-      try {
-        await logLeadActivity({
-          leadId: emailLead.id,
-          profileId: emailLead.profile_id,
-          type: 'lead_email',
-          payload: { subject: input.subject, to: emailLead.profile.email, cc: [...LEAD_CC_RECIPIENTS], direction: 'outbound', body: input.body, body_format: input.bodyFormat },
-        });
-        await loadTimeline(emailLead);
-        addToast('Email sent and activity logged.', 'success');
-      } catch (activityError) {
-        console.error('Email sent but activity logging failed:', activityError);
-        addToast('Email sent, but the timeline could not be updated.', 'info');
-      }
-      // First outbound contact advances a brand-new lead to "contacted". Leads
-      // already further along the pipeline are left where they are.
-      if (emailLead.stage === 'new') {
-        try {
-          const advanced = await updateLeadStage(emailLead.id, 'contacted');
-          setLeads(current => current.map(item => (
-            item.id === emailLead.id ? { ...advanced, profile: emailLead.profile } : item
-          )));
-        } catch (stageError) {
-          console.error('Email sent but stage auto-advance failed:', stageError);
-        }
-      }
+      await loadTimeline(emailLead);
+      if (emailLead.stage === 'new') setLeads(current => current.map(item => item.id === emailLead.id ? { ...item, stage: 'contacted' } : item));
+      addToast('Email sent, tracked, and activity logged.', 'success');
       setEmailLead(null);
     } catch (error) {
       console.error('Failed to send lead email:', error);
@@ -550,10 +577,12 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     setSendingTestEmail(true);
     try {
       await sendLeadEmail({
+        leadId: emailLead.id,
         to: LEAD_TEST_RECIPIENT,
-        subject: `[TEST] ${input.subject}`,
+        subject: input.subject,
         body: input.body,
         scope: activeBranch?.slug,
+        test: true,
       });
       addToast(`Test email sent to ${LEAD_TEST_RECIPIENT}.`, 'success');
     } catch (error) {
@@ -893,6 +922,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                       <th className="px-4 py-4">Source</th>
                       <th className="px-4 py-4">Stage</th>
                       <th className="px-4 py-4">Next Action</th>
+                      <th className="px-4 py-4">Last Touch</th>
                       <th className="px-4 py-4">Created</th>
                       <th className="px-4 py-4"><span className="sr-only">Expand</span></th>
                     </tr>
@@ -935,12 +965,15 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                               </div>
                             </td>
                             <td className={`px-4 py-5 text-xs ${followUpState(lead) === 'overdue' ? 'font-black text-amber-300' : 'text-slate-400'}`}>{formatDate(lead.next_action_at)}{followUpState(lead) === 'overdue' && <span className="ml-2 rounded-full bg-amber-400/10 px-2 py-0.5 text-[8px] uppercase tracking-wider">Overdue</span>}</td>
+                            <td className="max-w-[220px] px-4 py-5">
+                              {latestActivities[lead.id] ? <><p className="truncate text-[11px] font-bold text-slate-300" title={summarizeTimelineEntry(latestActivities[lead.id])}>{summarizeTimelineEntry(latestActivities[lead.id])}</p><p className="mt-1 text-[9px] text-slate-600">{formatRelativeTime(latestActivities[lead.id].created_at)}</p></> : <span className="text-xs text-slate-600">No activity</span>}
+                            </td>
                             <td className="px-4 py-5 text-xs text-slate-400">{formatDate(lead.created_at)}</td>
                             <td className="px-4 py-5 text-slate-500"><ChevronRight className={`h-4 w-4 transition ${isExpanded ? 'rotate-90 text-cyan-300' : ''}`} /></td>
                           </tr>
                           {isExpanded && (
                             <tr>
-                              <td colSpan={8} className="bg-[#0A0E27]/70 px-6 py-6">
+                              <td colSpan={9} className="bg-[#0A0E27]/70 px-6 py-6">
                                 <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
                                   <div className="space-y-4">
                                     <div className="flex flex-wrap gap-2">
@@ -983,6 +1016,13 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                         <p className="mt-1 text-sm font-black text-white">{lead.assigned_to || 'Unassigned'}</p>
                                       </div>
                                     </div>
+                                    <LeadSequencePanel
+                                      enrollment={leadSequences[lead.id]}
+                                      loading={sequenceLoadingId === lead.id}
+                                      disabled={!lead.profile?.email}
+                                      onStart={(mode) => startSequenceForLead(lead, mode)}
+                                      onAction={(action) => actOnSequence(lead, action)}
+                                    />
                                     <label className="block rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <span className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
                                         <Calendar size={13} /> Next Action {savingDetail === 'next_action_at' && <Loader2 className="h-3 w-3 animate-spin text-cyan-300" />}

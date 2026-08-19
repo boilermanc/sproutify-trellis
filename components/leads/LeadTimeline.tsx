@@ -15,6 +15,7 @@ const EVENT_STYLES: Record<string, { icon: React.ElementType; color: string; bg:
   lead_note: { icon: StickyNote, color: 'text-slate-300', bg: 'bg-slate-400/10' },
   lead_call: { icon: Phone, color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
   lead_email: { icon: Mail, color: 'text-rose-300', bg: 'bg-rose-400/10' },
+  lead_reply: { icon: Mail, color: 'text-emerald-300', bg: 'bg-emerald-400/10' },
   lead_meeting: { icon: CalendarDays, color: 'text-indigo-300', bg: 'bg-indigo-400/10' },
   lead_quote: { icon: FileText, color: 'text-amber-300', bg: 'bg-amber-400/10' },
   lead_stage_change: { icon: ArrowRight, color: 'text-slate-400', bg: 'bg-white/5' },
@@ -58,6 +59,8 @@ export function summarizeTimelineEntry(entry: TimelineEntry): string {
     }
     case 'lead_email':
       return textValue(payload, 'subject') || 'Email sent';
+    case 'lead_reply':
+      return `Reply received${textValue(payload, 'subject') ? `: ${textValue(payload, 'subject')}` : ''}`;
     case 'lead_meeting': {
       const date = textValue(payload, 'meeting_at', 'date');
       const summary = textValue(payload, 'summary');
@@ -111,14 +114,16 @@ const renderEmailDetail = (payload: Record<string, unknown>) => {
   );
 };
 
-// Compact delivery/engagement chips for a sent email, matched by subject.
+// Compact delivery/engagement chips. Exact Resend ID wins; subject is retained
+// only for messages sent before Trellis stored provider attribution.
 const renderEngagementChips = (
   payload: Record<string, unknown>,
   engagement?: Record<string, { delivered: boolean; opened: boolean; clicked: boolean; bounced: boolean; complained: boolean }>,
 ) => {
   if (!engagement) return null; // not loaded yet
+  const resendId = textValue(payload, 'resend_email_id');
   const subject = textValue(payload, 'subject').toLowerCase();
-  const eng = engagement[subject];
+  const eng = engagement[resendId] || engagement[subject];
   const pill = (label: string, active: boolean, activeCls: string) => (
     <span key={label} className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${active ? activeCls : 'bg-white/[0.04] text-slate-500'}`}>{label}</span>
   );
