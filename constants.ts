@@ -728,6 +728,12 @@ BEGIN
 END;
 $$;
 
+-- This returns DECRYPTED access tokens. Only the meta-insights Edge Function calls
+-- it, on service_role. Without these lines a fresh stamp leaves the default PUBLIC
+-- EXECUTE in place, which puts live Meta tokens behind the browser's anon key.
+REVOKE ALL ON FUNCTION get_meta_insight_credentials(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_meta_insight_credentials(TEXT) TO service_role;
+
 -- ═══════════════════════════════════════════════════════════
 -- 10b. NEWSLETTER AUDIENCE RPC (ATL Spoke — launch-phase shortcut)
 -- TODO: Once all spokes sync subscribers to Hub profiles table,
@@ -1807,7 +1813,14 @@ CREATE TABLE IF NOT EXISTS email_templates (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE email_templates DISABLE ROW LEVEL SECURITY;
+-- RLS on: the anon key ships in the browser bundle, and template bodies are the
+-- content that goes out over the sending domain. Signed-in operators hit Postgres
+-- as the authenticated role, so it keeps full access; service_role bypasses RLS.
+ALTER TABLE email_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trellis_operators_all ON email_templates;
+CREATE POLICY trellis_operators_all ON email_templates
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+REVOKE ALL ON email_templates FROM anon;
 
 CREATE INDEX IF NOT EXISTS idx_email_templates_branch ON email_templates (branch_id);
 CREATE INDEX IF NOT EXISTS idx_email_templates_brand ON email_templates (brand_identity_id);
@@ -1977,7 +1990,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION claim_trellis_music_track(UUID, UUID) TO anon, authenticated, service_role;
+-- Claimed only by the generate-session-track Edge Function (service_role). Functions
+-- grant EXECUTE to PUBLIC by default, so PUBLIC must be revoked explicitly — revoking
+-- anon alone is a no-op while PUBLIC still holds it.
+REVOKE ALL ON FUNCTION claim_trellis_music_track(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION claim_trellis_music_track(UUID, UUID) TO service_role;
 
 -- 17b. STUDIO ALBUMS (isolated production pipeline; does not alter legacy sessions)
 CREATE TABLE IF NOT EXISTS studio_feature_flags (

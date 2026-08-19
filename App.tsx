@@ -41,7 +41,6 @@ import ResetPassword from './pages/ResetPassword';
 import SetPassword from './pages/SetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getProfileByEmail, fetchAllBranches, hubSlugFromSpokeId } from './lib/supabaseService';
-import { supabase } from './lib/supabase';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { fetchSpokeConnections, migrateLocalStorageToSupabase } from './services/spokeConnectionsService';
@@ -181,30 +180,35 @@ const AppContent: React.FC = () => {
 
   // Branch records from Supabase — needed to resolve connectionId → branch slug
   const [branches, setBranches] = useState<Branch[]>([]);
-  useEffect(() => {
-    fetchAllBranches().then(setBranches).catch(() => {});
+
+  // Keep the branch registry and the global branch picker on one refresh path.
+  // BranchCommandCenter calls this after mutations so downstream modules (Brand
+  // DNA, Campaign Builder, etc.) see a newly-created branch without a page reload.
+  const refreshBranches = useCallback(async () => {
+    const branchData = await fetchAllBranches();
+    const activeBranches = branchData.filter(branch => branch.is_active);
+    const activeSlugs = activeBranches.map(branch => branch.slug);
+
+    setBranches(branchData);
+    setAllBranches(previousBranches => {
+      setActiveBranchSlugs(previousSelection => {
+        const previousSlugs = previousBranches.map(branch => branch.slug);
+        const previouslySelectedAll = previousSelection.length === previousSlugs.length
+          && previousSlugs.every(slug => previousSelection.includes(slug));
+
+        // The initial load and an existing "All branches" scope should include
+        // newly-created branches. A deliberate partial scope stays partial.
+        return previousBranches.length === 0 || previouslySelectedAll
+          ? activeSlugs
+          : previousSelection.filter(slug => activeSlugs.includes(slug));
+      });
+      return activeBranches;
+    });
   }, []);
 
-  // Fetch active branches for the global branch context picker
   useEffect(() => {
-    const loadBranches = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('branches')
-          .select('id, name, slug, type, is_active, primary_color, secondary_color, accent_color, font_family, website_url, logo_url')
-          .eq('is_active', true)
-          .order('name');
-        if (data && !error) {
-          setAllBranches(data);
-          // Default: all branches are active (no filtering)
-          setActiveBranchSlugs(data.map((b: BranchInfo) => b.slug));
-        }
-      } catch (err) {
-        console.error('Failed to load branches:', err);
-      }
-    };
-    loadBranches();
-  }, []);
+    refreshBranches().catch(err => console.error('Failed to load branches:', err));
+  }, [refreshBranches]);
 
   const branchContext: BranchContext = {
     allBranches,
@@ -453,7 +457,7 @@ const AppContent: React.FC = () => {
       case 'leads': return <Leads branchContext={branchContext} addToast={addToast} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setCampaignDraftId(null); setActiveView('campaign-builder'); }} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
-      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
+      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onBranchesChange={refreshBranches} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
       case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
       case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;

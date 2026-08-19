@@ -20,6 +20,8 @@ import { replaceBranchSocialAccounts } from '../services/branchSocialAccountsSer
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 const FONT_OPTIONS = ['Inter', 'Poppins', 'Roboto', 'System'];
 const TONE_OPTIONS = ['friendly', 'professional', 'playful', 'authoritative'];
+const DEFAULT_BRANCH_PRIMARY_COLOR = '#10b981';
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
 interface BranchCommandCenterProps {
   branchStats: BranchStatsResult;
@@ -27,10 +29,11 @@ interface BranchCommandCenterProps {
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branchSocialAccounts?: BranchSocialAccountsMap;
   onBranchSocialAccountsChange?: (accounts: BranchSocialAccountsMap) => void;
+  onBranchesChange?: () => Promise<void>;
   onAddConnection?: (prefillName?: string) => void;
 }
 
-export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange, branchSocialAccounts, onBranchSocialAccountsChange, onAddConnection }: BranchCommandCenterProps) {
+export default function BranchCommandCenter({ branchStats, spokeConnections, onSpokeConnectionsChange, branchSocialAccounts, onBranchSocialAccountsChange, onBranchesChange, onAddConnection }: BranchCommandCenterProps) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [brands, setBrands] = useState<BrandIdentity[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
@@ -57,13 +60,14 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   const [isCreating, setIsCreating] = useState(false);
   const [newBranch, setNewBranch] = useState<Partial<Branch>>({
     type: 'external',
-    primary_color: '#10b981',
+    primary_color: DEFAULT_BRANCH_PRIMARY_COLOR,
     secondary_color: '#1e293b',
     accent_color: '#f59e0b',
     font_family: 'Inter',
     tone: 'friendly',
     is_active: true,
   });
+  const [newBranchPrimaryColorInput, setNewBranchPrimaryColorInput] = useState(DEFAULT_BRANCH_PRIMARY_COLOR);
 
   // Link dropdown state
   const [linkingCardId, setLinkingCardId] = useState<string | null>(null);
@@ -92,6 +96,17 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       // Branch data load failed — graceful degradation
     } finally {
       setIsLoadingBranches(false);
+    }
+  }
+
+  async function refreshBranchConsumers() {
+    await loadBranchData();
+    try {
+      await onBranchesChange?.();
+    } catch (err) {
+      // The branch mutation already succeeded. Keep the local view current and
+      // allow the shared context to recover on its next refresh.
+      console.warn('Failed to refresh shared branch context:', err);
     }
   }
 
@@ -195,7 +210,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   const handleLinkBranch = async (branchId: string, spokeConnectionId: string) => {
     try {
       await linkConnectionToBranch(branchId, spokeConnectionId);
-      await loadBranchData();
+      await refreshBranchConsumers();
       setLinkingCardId(null);
       showToast('Branch linked to connection', 'success');
     } catch (err) {
@@ -206,7 +221,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
   const handleUnlink = async (branchId: string) => {
     try {
       await unlinkConnectionFromBranch(branchId);
-      await loadBranchData();
+      await refreshBranchConsumers();
       showToast('Branch unlinked', 'success');
     } catch (err) {
       showToast('Failed to unlink branch', 'error');
@@ -291,7 +306,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
         [editingBranch.branchId]: savedSocialAccounts,
       });
       showToast('Branch updated', 'success');
-      await loadBranchData();
+      await refreshBranchConsumers();
       setEditingBranch(null);
     } catch (err) {
       showToast('Failed to update branch', 'error');
@@ -308,7 +323,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       await deleteBranch(editingBranch.branchId);
       showToast('Branch archived', 'success');
       setEditingBranch(null);
-      await loadBranchData();
+      await refreshBranchConsumers();
     } catch (err) {
       showToast('Failed to archive branch', 'error');
     } finally {
@@ -321,20 +336,37 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       showToast('Branch name is required', 'error');
       return;
     }
+    if (!HEX_COLOR_PATTERN.test(newBranchPrimaryColorInput)) {
+      showToast('Primary color must be a 6-digit hex value', 'error');
+      return;
+    }
     setIsSaving(true);
     try {
-      const created = await createBranch({
+      await createBranch({
         ...newBranch,
         spoke_connection_id: spokeConnectionId || null,
       });
       showToast('Branch created', 'success');
       setIsCreating(false);
-      setNewBranch({ type: 'external', primary_color: '#10b981', secondary_color: '#1e293b', accent_color: '#f59e0b', font_family: 'Inter', tone: 'friendly', is_active: true });
-      await loadBranchData();
+      setNewBranch({ type: 'external', primary_color: DEFAULT_BRANCH_PRIMARY_COLOR, secondary_color: '#1e293b', accent_color: '#f59e0b', font_family: 'Inter', tone: 'friendly', is_active: true });
+      setNewBranchPrimaryColorInput(DEFAULT_BRANCH_PRIMARY_COLOR);
+      await refreshBranchConsumers();
     } catch (err) {
       showToast('Failed to create branch', 'error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handlePrimaryColorPickerChange = (value: string) => {
+    setNewBranchPrimaryColorInput(value);
+    setNewBranch((current) => ({ ...current, primary_color: value }));
+  };
+
+  const handlePrimaryColorTextChange = (value: string) => {
+    setNewBranchPrimaryColorInput(value);
+    if (HEX_COLOR_PATTERN.test(value)) {
+      setNewBranch((current) => ({ ...current, primary_color: value.toLowerCase() }));
     }
   };
 
@@ -1251,10 +1283,11 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Primary Color</label>
                 <div className="flex items-center gap-3">
-                  <input type="color" value={newBranch.primary_color || '#10b981'} onChange={(e) => setNewBranch({ ...newBranch, primary_color: e.target.value })}
+                  <input type="color" value={newBranch.primary_color || DEFAULT_BRANCH_PRIMARY_COLOR} onChange={(e) => handlePrimaryColorPickerChange(e.target.value)}
                     className="w-12 h-12 rounded-xl cursor-pointer border border-slate-200" />
-                  <input type="text" value={newBranch.primary_color || '#10b981'} onChange={(e) => setNewBranch({ ...newBranch, primary_color: e.target.value })}
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  <input type="text" value={newBranchPrimaryColorInput} onChange={(e) => handlePrimaryColorTextChange(e.target.value)}
+                    aria-invalid={!HEX_COLOR_PATTERN.test(newBranchPrimaryColorInput)} maxLength={7} spellCheck={false}
+                    className={`flex-1 px-4 py-3 bg-slate-50 border rounded-xl text-slate-800 font-mono focus:outline-none focus:ring-2 ${HEX_COLOR_PATTERN.test(newBranchPrimaryColorInput) ? 'border-slate-200 focus:ring-emerald-500' : 'border-red-300 focus:ring-red-400'}`} />
                 </div>
               </div>
             </div>
