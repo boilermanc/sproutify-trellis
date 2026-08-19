@@ -21,6 +21,8 @@ import {
 import { CampaignRecipientsModal } from './CampaignRecipientsModal';
 import { LinkClickSummaryModal } from './LinkClickSummaryModal';
 import { SuppressionListModal } from './SuppressionListModal';
+import EmailEngagementCohorts from './EmailEngagementCohorts';
+import { BranchInfo, EnrichedProfile } from '../types';
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
 const CAMPAIGNS_PER_PAGE = 10;
@@ -30,9 +32,14 @@ const fmtDate = (iso: string | null) => {
   catch { return '—'; }
 };
 
-// Live email delivery + engagement reporting, sourced from Resend webhook events
-// (email_events) and the Hub suppression list. Self-contained; safe to drop anywhere.
-export const EmailPerformancePanel: React.FC = () => {
+interface EmailPerformancePanelProps {
+  branches: BranchInfo[];
+  profiles: EnrichedProfile[];
+}
+
+// Live email delivery + engagement reporting, sourced from Resend webhook events,
+// the Hub suppression list, and federated order summaries for correlation.
+export const EmailPerformancePanel: React.FC<EmailPerformancePanelProps> = ({ branches, profiles }) => {
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [suppression, setSuppression] = useState<SuppressionSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +111,8 @@ export const EmailPerformancePanel: React.FC = () => {
           Refresh
         </button>
       </div>
+
+      <EmailEngagementCohorts branches={branches} profiles={profiles} />
 
       {/* Suppression summary — click any tile to see who's in it */}
       {suppression && (

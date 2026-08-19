@@ -507,9 +507,22 @@ SELECT
   COUNT(*) FILTER (WHERE event_type = 'opened')  AS opened,
   COUNT(*) FILTER (WHERE event_type = 'clicked') AS clicked,
   MAX(occurred_at) FILTER (WHERE event_type = 'opened')  AS last_opened_at,
-  MAX(occurred_at) FILTER (WHERE event_type = 'clicked') AS last_clicked_at
+  MAX(occurred_at) FILTER (WHERE event_type = 'clicked') AS last_clicked_at,
+  COUNT(DISTINCT campaign_id) FILTER (
+    WHERE event_type = 'delivered' AND campaign_id IS NOT NULL
+  ) AS campaigns_delivered,
+  COUNT(DISTINCT campaign_id) FILTER (
+    WHERE event_type = 'opened' AND campaign_id IS NOT NULL
+  ) AS campaigns_opened,
+  COUNT(DISTINCT campaign_id) FILTER (
+    WHERE event_type = 'clicked'
+      AND campaign_id IS NOT NULL
+      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+  ) AS campaigns_clicked
 FROM email_events
 GROUP BY email;
+REVOKE ALL ON email_engagement_summary FROM PUBLIC;
+REVOKE ALL ON email_engagement_summary FROM anon;
 GRANT SELECT ON email_engagement_summary TO authenticated, service_role;
 
 -- 7. PERFORMANCE INDEXING

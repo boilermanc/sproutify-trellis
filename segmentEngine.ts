@@ -35,6 +35,12 @@ const getEngagementValue = (
       return summary?.opened ?? 0;
     case 'emails_clicked':
       return summary?.clicked ?? 0;
+    case 'campaigns_delivered':
+      return summary?.campaigns_delivered ?? 0;
+    case 'campaigns_opened':
+      return summary?.campaigns_opened ?? 0;
+    case 'campaigns_clicked':
+      return summary?.campaigns_clicked ?? 0;
     case 'last_opened_days_ago':
       return daysSince(summary?.last_opened_at);
     case 'last_clicked_days_ago':

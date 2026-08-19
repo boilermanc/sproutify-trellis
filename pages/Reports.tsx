@@ -274,7 +274,12 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* LIVE EMAIL PERFORMANCE (Resend delivery events + suppression)    */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'email' && <EmailPerformancePanel />}
+      {activeTab === 'email' && (
+        <EmailPerformancePanel
+          branches={branchContext?.allBranches || []}
+          profiles={profiles}
+        />
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* YOUTUBE PERFORMANCE (Episodes + Studio Albums, E9 sync)          */}

@@ -68,6 +68,204 @@ export async function fetchCampaignEmailStats(): Promise<CampaignEmailStat[]> {
   }
 }
 
+export interface RecentCampaignPerformance {
+  id: string;
+  subject: string;
+  name: string;
+  launchedAt: string;
+  audienceSize: number;
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  bounced: number;
+  complained: number;
+}
+
+export interface RecentCampaignPerformanceResult {
+  campaigns: RecentCampaignPerformance[];
+  error: string | null;
+}
+
+export interface SharedCampaignOpenersResult {
+  emails: string[];
+  error: string | null;
+}
+
+export interface CampaignEngagementRecipient {
+  email: string;
+  deliveredAt: string | null;
+  firstOpenedAt: string | null;
+  firstClickedAt: string | null;
+}
+
+export interface RecentCampaignEngagementResult {
+  campaigns: RecentCampaignPerformance[];
+  recipientsByCampaign: Record<string, CampaignEngagementRecipient[]>;
+  error: string | null;
+}
+
+// Sage uses this for factual questions such as "how many people read the last
+// two ATL emails?". Campaign selection is branch-aware; metrics are keyed by
+// campaign_id so two campaigns with the same subject cannot contaminate each
+// other's counts. Profile/customer data never leaves its spoke.
+export async function fetchRecentCampaignPerformance(
+  branchQuery: string,
+  limit = 2,
+): Promise<RecentCampaignPerformanceResult> {
+  try {
+    const { data: rows, error: campaignsError } = await supabase
+      .from('campaigns')
+      .select('id,name,subject,branches,audience_size,launched_at,created_at,send_status,status')
+      .not('launched_at', 'is', null)
+      .order('launched_at', { ascending: false })
+      .limit(100);
+    if (campaignsError) throw campaignsError;
+
+    const normalizedQuery = branchQuery.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/com$/, '');
+    const matchesBranch = (branches: unknown): boolean => {
+      if (!normalizedQuery || !Array.isArray(branches)) return false;
+      return branches.some((branch) => {
+        const normalizedBranch = String(branch).toLowerCase().replace(/[^a-z0-9]/g, '').replace(/com$/, '');
+        return normalizedBranch === normalizedQuery
+          || normalizedBranch.includes(normalizedQuery)
+          || normalizedQuery.includes(normalizedBranch);
+      });
+    };
+
+    const campaigns = (rows || [])
+      .filter((row: any) => row.subject && matchesBranch(row.branches))
+      .slice(0, Math.max(1, limit));
+
+    if (campaigns.length === 0) return { campaigns: [], error: null };
+
+    const { data: statsRows, error: statsError } = await supabase
+      .from('campaign_stats_by_id')
+      .select('campaign_id,sent,delivered,opened,clicked,bounced,complained')
+      .in('campaign_id', campaigns.map((campaign: any) => campaign.id));
+    if (statsError) throw statsError;
+
+    const statsById = new Map((statsRows || []).map((row: any) => [row.campaign_id, row]));
+    return {
+      campaigns: campaigns.map((campaign: any) => {
+        const stats: any = statsById.get(campaign.id) || {};
+        return {
+          id: campaign.id,
+          subject: campaign.subject,
+          name: campaign.name || campaign.subject,
+          launchedAt: campaign.launched_at || campaign.created_at,
+          audienceSize: campaign.audience_size || 0,
+          sent: Number(stats.sent || 0),
+          delivered: Number(stats.delivered || 0),
+          opened: Number(stats.opened || 0),
+          clicked: Number(stats.clicked || 0),
+          bounced: Number(stats.bounced || 0),
+          complained: Number(stats.complained || 0),
+        };
+      }),
+      error: null,
+    };
+  } catch (e) {
+    console.error('fetchRecentCampaignPerformance failed:', e);
+    return {
+      campaigns: [],
+      error: e instanceof Error ? e.message : 'Email reporting query failed',
+    };
+  }
+}
+
+// Returns the email-key intersection for recipient-level opens across every
+// supplied campaign. Repeated opens collapse to one person per campaign before
+// intersecting, so the result answers "opened BOTH" rather than adding the two
+// campaign totals together.
+export async function fetchSharedCampaignOpeners(
+  campaignIds: string[],
+): Promise<SharedCampaignOpenersResult> {
+  const ids = [...new Set(campaignIds.filter(Boolean))];
+  if (ids.length < 2) return { emails: [], error: 'At least two campaigns are required' };
+
+  try {
+    const openerSets: Set<string>[] = [];
+    for (const campaignId of ids) {
+      const rows = await fetchAllPages<{ email: string }>(
+        'email_events',
+        'email',
+        (query) => query.eq('campaign_id', campaignId).eq('event_type', 'opened'),
+        'email',
+      );
+      openerSets.push(new Set(rows.map((row) => (row.email || '').trim().toLowerCase()).filter(Boolean)));
+    }
+
+    const [first, ...rest] = openerSets;
+    const emails = [...first]
+      .filter((email) => rest.every((set) => set.has(email)))
+      .sort((a, b) => a.localeCompare(b));
+    return { emails, error: null };
+  } catch (e) {
+    console.error('fetchSharedCampaignOpeners failed:', e);
+    return {
+      emails: [],
+      error: e instanceof Error ? e.message : 'Shared opener query failed',
+    };
+  }
+}
+
+// Branch-scoped recipient activity for the latest campaigns. Reports uses this
+// to calculate repeat-engagement cohorts (opened both, 2 of 3, 3 of 5) without
+// storing any spoke profile data in the Hub. Every campaign/email pair collapses
+// repeated webhook events into one recipient record.
+export async function fetchRecentCampaignEngagement(
+  branchQuery: string,
+  limit = 5,
+): Promise<RecentCampaignEngagementResult> {
+  const recent = await fetchRecentCampaignPerformance(branchQuery, limit);
+  if (recent.error || recent.campaigns.length === 0) {
+    return { campaigns: recent.campaigns, recipientsByCampaign: {}, error: recent.error };
+  }
+
+  try {
+    const recipientsByCampaign: Record<string, CampaignEngagementRecipient[]> = {};
+    for (const campaign of recent.campaigns) {
+      const rows = await fetchAllPages<{
+        email: string;
+        event_type: string;
+        occurred_at: string;
+      }>(
+        'email_events',
+        'email,event_type,occurred_at',
+        (query) => query.eq('campaign_id', campaign.id).in('event_type', ['delivered', 'opened', 'clicked']),
+        'occurred_at',
+      );
+
+      const byEmail = new Map<string, CampaignEngagementRecipient>();
+      for (const row of rows) {
+        const email = (row.email || '').trim().toLowerCase();
+        if (!email) continue;
+        const recipient = byEmail.get(email) || {
+          email,
+          deliveredAt: null,
+          firstOpenedAt: null,
+          firstClickedAt: null,
+        };
+        if (row.event_type === 'delivered' && !recipient.deliveredAt) recipient.deliveredAt = row.occurred_at;
+        if (row.event_type === 'opened' && !recipient.firstOpenedAt) recipient.firstOpenedAt = row.occurred_at;
+        if (row.event_type === 'clicked' && !recipient.firstClickedAt) recipient.firstClickedAt = row.occurred_at;
+        byEmail.set(email, recipient);
+      }
+      recipientsByCampaign[campaign.id] = [...byEmail.values()];
+    }
+
+    return { campaigns: recent.campaigns, recipientsByCampaign, error: null };
+  } catch (e) {
+    console.error('fetchRecentCampaignEngagement failed:', e);
+    return {
+      campaigns: recent.campaigns,
+      recipientsByCampaign: {},
+      error: e instanceof Error ? e.message : 'Campaign engagement query failed',
+    };
+  }
+}
+
 export async function fetchSuppressionSummary(): Promise<SuppressionSummary> {
   const empty: SuppressionSummary = { total: 0, unsubscribe: 0, bounce: 0, complaint: 0, manual: 0 };
   try {
@@ -478,6 +676,9 @@ export interface EngagementSummary {
   clicked: number; // count of 'clicked' events for this address
   last_opened_at: string | null;
   last_clicked_at: string | null;
+  campaigns_delivered: number; // distinct campaigns delivered to this address
+  campaigns_opened: number; // distinct campaigns opened at least once
+  campaigns_clicked: number; // distinct campaigns with a non-unsubscribe click
 }
 
 // Bulk engagement aggregate for segment targeting, sourced from
@@ -489,11 +690,21 @@ export async function fetchEngagementByEmail(): Promise<Map<string, EngagementSu
   try {
     const data = await fetchAllPages<{
       email: string; opened: number; clicked: number; last_opened_at: string | null; last_clicked_at: string | null;
-    }>('email_engagement_summary', 'email,opened,clicked,last_opened_at,last_clicked_at', (q) => q, 'email');
+      campaigns_delivered: number; campaigns_opened: number; campaigns_clicked: number;
+    }>('email_engagement_summary', 'email,opened,clicked,last_opened_at,last_clicked_at,campaigns_delivered,campaigns_opened,campaigns_clicked', (q) => q, 'email');
     for (const row of data) {
       const key = (row.email || '').toLowerCase();
       if (!key || (!row.opened && !row.clicked)) continue;
-      result.set(key, { email: key, opened: row.opened, clicked: row.clicked, last_opened_at: row.last_opened_at, last_clicked_at: row.last_clicked_at });
+      result.set(key, {
+        email: key,
+        opened: row.opened,
+        clicked: row.clicked,
+        last_opened_at: row.last_opened_at,
+        last_clicked_at: row.last_clicked_at,
+        campaigns_delivered: row.campaigns_delivered || 0,
+        campaigns_opened: row.campaigns_opened || 0,
+        campaigns_clicked: row.campaigns_clicked || 0,
+      });
     }
     return result;
   } catch (e) {
@@ -523,7 +734,8 @@ export async function fetchEngagementIndex(): Promise<{
   try {
     const data = await fetchAllPages<{
       email: string; opened: number; clicked: number; last_opened_at: string | null; last_clicked_at: string | null;
-    }>('email_engagement_summary', 'email,opened,clicked,last_opened_at,last_clicked_at', (q) => q, 'email');
+      campaigns_delivered: number; campaigns_opened: number; campaigns_clicked: number;
+    }>('email_engagement_summary', 'email,opened,clicked,last_opened_at,last_clicked_at,campaigns_delivered,campaigns_opened,campaigns_clicked', (q) => q, 'email');
 
     for (const row of data) {
       const key = (row.email || '').toLowerCase();
@@ -532,7 +744,16 @@ export async function fetchEngagementIndex(): Promise<{
       // in this view is itself the "we've contacted this address" signal.
       contacted.add(key);
       if (!row.opened && !row.clicked) continue;
-      summaries.set(key, { email: key, opened: row.opened, clicked: row.clicked, last_opened_at: row.last_opened_at, last_clicked_at: row.last_clicked_at });
+      summaries.set(key, {
+        email: key,
+        opened: row.opened,
+        clicked: row.clicked,
+        last_opened_at: row.last_opened_at,
+        last_clicked_at: row.last_clicked_at,
+        campaigns_delivered: row.campaigns_delivered || 0,
+        campaigns_opened: row.campaigns_opened || 0,
+        campaigns_clicked: row.campaigns_clicked || 0,
+      });
     }
     return { summaries, contacted };
   } catch (e) {

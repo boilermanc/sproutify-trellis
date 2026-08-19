@@ -102,6 +102,9 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   // never match (see segmentEngine.ts).
   { id: 'emails_opened', label: 'Emails Opened', type: 'number', category: 'engagement', path: 'emails_opened' },
   { id: 'emails_clicked', label: 'Emails Clicked', type: 'number', category: 'engagement', path: 'emails_clicked' },
+  { id: 'campaigns_delivered', label: 'Distinct Campaigns Delivered', type: 'number', category: 'engagement', path: 'campaigns_delivered' },
+  { id: 'campaigns_opened', label: 'Distinct Campaigns Opened', type: 'number', category: 'engagement', path: 'campaigns_opened' },
+  { id: 'campaigns_clicked', label: 'Distinct Campaigns Clicked', type: 'number', category: 'engagement', path: 'campaigns_clicked' },
   // "Never opened/clicked" resolves to a large sentinel (see NEVER_ENGAGED_DAYS in
   // segmentEngine.ts) so "at least/more than N days ago" rules correctly include
   // never-engaged profiles, while "in the last N days" style rules exclude them.
@@ -300,6 +303,21 @@ export const PRESET_SEGMENTS: Omit<Segment, 'id' | 'created_at' | 'updated_at'>[
       id: 'school-partners-group',
       join: 'AND',
       rules: [{ id: 'school-partners-rule', field: 'customer_tags', operator: 'contains', value: 'School Partner' }]
+    }]
+  },
+  {
+    name: 'Frequent Email Openers',
+    description: 'Opened 2+ distinct campaigns and opened within the last 60 days',
+    icon: 'activity',
+    color: 'violet',
+    is_preset: true,
+    rule_groups: [{
+      id: 'frequent-email-openers-group',
+      join: 'AND',
+      rules: [
+        { id: 'frequent-email-openers-frequency', field: 'campaigns_opened', operator: 'greater_or_equal', value: 2 },
+        { id: 'frequent-email-openers-recency', field: 'last_opened_days_ago', operator: 'less_or_equal', value: 60 }
+      ]
     }]
   },
 ];

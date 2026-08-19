@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import { ChatMessage, LlmProvider, Brand, Ticket, Profile, ApiKeyConfig } from '../types';
 import { chatWithSage } from '../services/aiService';
-import { MOCK_TICKETS } from '../constants';
+import {
+  fetchRecentCampaignPerformance,
+  fetchSharedCampaignOpeners,
+  RecentCampaignPerformance,
+} from '../services/emailReportingService';
 
 interface SageChatProps {
   provider?: LlmProvider;
@@ -32,12 +36,88 @@ const SageIcon = ({ size = 24, className = "" }: { size?: number, className?: st
   </div>
 );
 
+const isRecentEmailOpenQuestion = (text: string): boolean => {
+  const normalized = text.toLowerCase();
+  return /\b(email|emails|campaign|campaigns)\b/.test(normalized)
+    && /\b(read|reads|opened|opens|open rate|open rates)\b/.test(normalized)
+    && /\b(last|latest|recent|most recent)\b/.test(normalized);
+};
+
+const requestedEmailBranch = (text: string): { query: string; label: string } | null => {
+  const normalized = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (normalized.includes('atlurbanfarms') || normalized.includes('atlurbanfarm')) {
+    return { query: 'atlurbanfarms.com', label: 'ATL Urban Farms' };
+  }
+  if (normalized.includes('micro')) return { query: 'micro.sproutify.app', label: 'Micro' };
+  if (normalized.includes('school')) return { query: 'school.sproutify.app', label: 'Sproutify School' };
+  if (normalized.includes('letsrejoice')) return { query: 'letsrejoice.app', label: "Let's Rejoice" };
+  if (normalized.includes('farmsproutify')) return { query: 'farm.sproutify.app', label: 'Sproutify Farm' };
+  return null;
+};
+
+const formatCampaignOpenLine = (campaign: RecentCampaignPerformance, index: number): string => {
+  const denominator = campaign.delivered || campaign.sent;
+  const rate = denominator > 0 ? ` (${((campaign.opened / denominator) * 100).toFixed(1)}%)` : '';
+  const delivery = denominator > 0 ? ` out of ${denominator.toLocaleString()} delivered` : '';
+  const date = campaign.launchedAt
+    ? new Date(campaign.launchedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'send date unavailable';
+  return `${index + 1}. “${campaign.subject}” — ${campaign.opened.toLocaleString()} unique opens${delivery}${rate} · ${date}`;
+};
+
+const answerRecentEmailOpenQuestion = async (text: string, profiles: Profile[]): Promise<string | null> => {
+  if (!isRecentEmailOpenQuestion(text)) return null;
+  const branch = requestedEmailBranch(text);
+  if (!branch) {
+    return 'Which branch should I check? I can look up the latest tracked Trellis email campaigns by branch.';
+  }
+
+  const result = await fetchRecentCampaignPerformance(branch.query, 2);
+  if (result.error) {
+    return `I couldn’t read the live email report for ${branch.label}. The reporting query failed, so I won’t guess at the numbers. Open Campaigns → Performance to view the tracked sends, or retry here.`;
+  }
+  if (result.campaigns.length === 0) {
+    return `I couldn’t find any tracked ${branch.label} campaigns with a send date. I won’t invent open counts. Check Campaigns → Performance to confirm the emails were sent through Trellis and that Resend webhooks are connected.`;
+  }
+
+  if (/\bboth\b/i.test(text)) {
+    if (result.campaigns.length < 2) {
+      return `I found only one recent tracked ${branch.label} campaign, so I can’t calculate who opened both emails.`;
+    }
+    const overlap = await fetchSharedCampaignOpeners(result.campaigns.map((campaign) => campaign.id));
+    if (overlap.error) {
+      return `I found the two campaigns, but I couldn’t calculate their shared opener list. I won’t estimate it. Retry here or compare the recipient lists in Campaigns → Performance.`;
+    }
+
+    const profilesByEmail = new Map(profiles.map((profile) => [profile.email.toLowerCase(), profile]));
+    const previewLimit = 25;
+    const people = overlap.emails.map((email) => {
+      const profile = profilesByEmail.get(email);
+      const name = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim() : '';
+      return { email, name };
+    }).sort((a, b) => {
+      if (!!a.name !== !!b.name) return a.name ? -1 : 1;
+      return (a.name || a.email).localeCompare(b.name || b.email);
+    }).slice(0, previewLimit).map(({ email, name }) => `- ${name ? `${name} — ` : ''}${email}`);
+    const remaining = overlap.emails.length - people.length;
+    const subjects = result.campaigns.map((campaign) => `“${campaign.subject}”`).join(' and ');
+    const list = people.length > 0 ? `\n\n${people.join('\n')}` : '';
+    const more = remaining > 0 ? `\n\n…and ${remaining.toLocaleString()} more.` : '';
+    return `${overlap.emails.length.toLocaleString()} unique recipients opened both ${subjects}.${list}${more}\n\nThis is an exact email-address intersection of tracked open events—not the two open counts added together. Open tracking can still undercount readers whose clients block tracking pixels.`;
+  }
+
+  const heading = result.campaigns.length === 1
+    ? `I found one recent tracked ${branch.label} email:`
+    : `Here are the two most recent tracked ${branch.label} emails:`;
+  return `${heading}\n\n${result.campaigns.map(formatCampaignOpenLine).join('\n')}\n\n“Opened” means unique recipients whose email client reported an open. Privacy protections and blocked images can make this lower than the true readership.`;
+};
+
 const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [], apiKeys }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'sage', content: `Hello! I'm Sage, the strategic engine for ${brand?.name || 'this brand'}. How can I help you orchestrate your marketing and support today?`, timestamp: new Date().toISOString() }
+    { role: 'sage', content: `Hi — I’m Sage. Ask me about ${brand?.name || 'this brand'} campaigns, email performance, profiles, or support. I’ll use live data where it’s connected and tell you when it isn’t.`, timestamp: new Date().toISOString() }
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -50,25 +130,32 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
 
   // DERIVED CONTEXTUAL DATA
   const contextualInsights = useMemo(() => {
-    const fullText = messages.map(m => m.content.toLowerCase()).join(' ');
+    // Only user-authored text can identify a mentioned profile. Including Sage's
+    // own greeting (which says "Sproutify") caused false matches on profiles
+    // whose first_name happened to be "Sproutify".
+    const fullText = messages
+      .filter(m => m.role === 'user')
+      .map(m => m.content.toLowerCase())
+      .join(' ');
+    const words = new Set(fullText.split(/[^a-z0-9@.]+/).filter(Boolean));
     
-    const relevantTickets = MOCK_TICKETS.filter(t => {
-      const keywords = [...t.subject.toLowerCase().split(' '), ...t.description.toLowerCase().split(' ')];
-      return keywords.some(k => k.length > 3 && fullText.includes(k));
+    // Sage must not present demo tickets as live operational data. Real ticket
+    // context can be wired here when Layout receives it from Support Hub.
+    const relevantTickets: Ticket[] = [];
+
+    const relevantProfiles = profiles.filter(p => {
+      const firstName = (p.first_name || '').trim().toLowerCase();
+      const email = (p.email || '').trim().toLowerCase();
+      return (firstName.length >= 3 && words.has(firstName)) || (!!email && words.has(email));
     });
 
-    const relevantProfiles = profiles.filter(p =>
-      (p.first_name && fullText.includes(p.first_name.toLowerCase())) ||
-      fullText.includes(p.email.toLowerCase())
-    );
-
     let dynamicQuestions = [
-      "Analyze cross-site behavior for these users",
-      "Draft a recovery email for recent ticket issues",
-      "Predict LTV impact of this conversation"
+      "How many people opened the last two ATL Urban Farms emails?",
+      "What live data can you access?",
+      "Where can I review campaign performance?"
     ];
 
-    if (fullText.includes('farm')) dynamicQuestions.unshift("Check Farm spoke inventory for these customers");
+    if (words.has('farm')) dynamicQuestions.unshift("Check Farm activity for these customers");
     if (fullText.includes('refund') || fullText.includes('problem')) dynamicQuestions.unshift("Calculate refund rate impact on Sproutify Hub");
     if (fullText.includes('mike') || fullText.includes('sarah')) dynamicQuestions.unshift("Compare purchase history for mentioned identities");
 
@@ -98,8 +185,9 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
       n8n_webhooks: { chat: '', workflow: '' }, slack_webhook: '', resend_token: '',
       twilio_sid: '', twilio_token: '', woo_consumer_key: '', woo_consumer_secret: '',
     };
-    const response = await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
-      tickets: MOCK_TICKETS,
+    const factualEmailResponse = await answerRecentEmailOpenQuestion(text, profiles);
+    const response = factualEmailResponse || await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
+      tickets: [],
       brandName: brand?.name || 'Trellis'
     });
     
@@ -132,11 +220,11 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
             <div className="flex items-center space-x-3 sm:space-x-6">
               <SageIcon size={24} />
               <div>
-                <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Strategic Hub</h2>
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Sage</h2>
                 <div className="flex items-center space-x-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <span className="flex items-center text-emerald-600"><Zap size={10} className="mr-1" /> {provider.toUpperCase()} Engine Active</span>
+                  <span className="flex items-center text-emerald-600"><Zap size={10} className="mr-1" /> {provider.toUpperCase()} connected</span>
                   <span>•</span>
-                  <span>Contextual Analysis Engaged</span>
+                  <span>Live Trellis data when available</span>
                 </div>
               </div>
             </div>
@@ -158,7 +246,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                       }`} style={m.role === 'user' ? { backgroundColor: brand?.primaryColor || '#1e293b' } : {}}>
                         <p className="font-semibold whitespace-pre-wrap">{m.content}</p>
                         <p className={`text-[8px] mt-3 font-black uppercase opacity-40 ${m.role === 'user' ? 'text-white' : 'text-slate-400'}`}>
-                          {m.role === 'user' ? 'Strategic Query' : 'Intelligence Response'} • {new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          {m.role === 'user' ? 'You' : 'Sage'} • {new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                         </p>
                       </div>
                     </div>
@@ -171,7 +259,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]"></div>
                           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]"></div>
                         </div>
-                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Sage is Thinking...</span>
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Checking...</span>
                       </div>
                     </div>
                   )}
@@ -202,7 +290,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
               <div className="space-y-4">
                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
                     <Activity size={12} className="mr-2 text-rose-500" />
-                    Relevant Support Context
+                    Support context
                  </h4>
                  {contextualInsights.tickets.length > 0 ? (
                     <div className="space-y-3">
@@ -222,7 +310,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                  ) : (
                     <div className="p-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 opacity-60">
                        <HelpCircle size={24} className="mx-auto text-slate-300 mb-2" />
-                       <p className="text-[10px] font-black text-slate-400 uppercase">No direct ticket overlap found</p>
+                       <p className="text-[10px] font-black text-slate-400 uppercase">No live support context connected</p>
                     </div>
                  )}
               </div>
@@ -230,7 +318,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
               <div className="space-y-4">
                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
                     <Target size={12} className="mr-2 text-indigo-500" />
-                    Conversation Identities
+                    Mentioned profiles
                  </h4>
                  {contextualInsights.profiles.length > 0 ? (
                     <div className="space-y-3">
@@ -251,10 +339,10 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                     <div className="bg-indigo-50/30 p-5 rounded-2xl border border-indigo-100/50">
                        <div className="flex items-center space-x-3 mb-2">
                           <ShieldCheck size={16} className="text-indigo-600" />
-                          <span className="text-[10px] font-black text-indigo-900 uppercase">Identity Guard Active</span>
+                          <span className="text-[10px] font-black text-indigo-900 uppercase">No profile mentioned</span>
                        </div>
                        <p className="text-[11px] text-indigo-700 leading-relaxed font-medium">
-                          Monitoring for profile mentions. Ask about specific customers like "Sarah" or "Mike" for drill-down context.
+                          Mention a full first name or email address to match a profile in this conversation.
                        </p>
                     </div>
                  )}
@@ -263,7 +351,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
               <div className="space-y-4 flex-1">
                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">
                     <MessageSquare size={12} className="mr-2 text-amber-500" />
-                    Strategic Extensions
+                    Try asking
                  </h4>
                  <div className="space-y-2">
                     {contextualInsights.questions.map((q, i) => (
@@ -283,7 +371,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                  <div className="p-4 bg-slate-900 rounded-2xl text-white shadow-xl flex items-center justify-between group cursor-pointer hover:bg-emerald-950 transition">
                     <div className="flex items-center space-x-3">
                        <BarChart3 size={18} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-                       <span className="text-[10px] font-black uppercase tracking-widest">Ecosystem Report</span>
+                       <span className="text-[10px] font-black uppercase tracking-widest">View reports</span>
                     </div>
                     <ArrowRight size={14} className="text-emerald-400" />
                  </div>
@@ -363,7 +451,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
              onClick={toggleMaximize}
              className="text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600 transition flex items-center"
            >
-              <Info size={10} className="mr-1" /> Open Full Strategic Hub
+              <Info size={10} className="mr-1" /> Open Sage
            </button>
         </div>
       </form>

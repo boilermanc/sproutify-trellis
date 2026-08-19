@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Plus, Search, Filter, Crown, Sparkles, Clock, Repeat, Mail,
   UserX, MapPin, Package, Trash2, Edit2, Play, X, ChevronDown, ChevronRight,
-  Save, Layers, FlaskConical, AlertTriangle
+  Save, Layers, FlaskConical, AlertTriangle, Activity
 } from 'lucide-react';
-import { BranchStatsResult } from './types';
+import { BranchStatsResult, EnrichedProfile } from './types';
 import { SpokeConnection } from './types';
 import { BranchContext } from './types';
 import {
@@ -18,8 +18,6 @@ import {
 } from './segmentTypes';
 import {
   filterProfilesBySegment,
-  countProfilesInSegment,
-  evaluateSegment,
 } from './segmentEngine';
 import { fetchEngagementByEmail, EngagementSummary } from './services/emailReportingService';
 import { SegmentProfilesModal } from './SegmentProfilesModal';
@@ -43,6 +41,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'package': <Package className="w-5 h-5" />,
   'layers': <Layers className="w-5 h-5" />,
   'flask': <FlaskConical className="w-5 h-5" />,
+  'activity': <Activity className="w-5 h-5" />,
 };
 
 // Parse a raw textarea blob (commas / spaces / newlines / semicolons) into a
@@ -59,6 +58,18 @@ const parseEmailList = (raw: string): string[] => {
     out.push(email);
   }
   return out;
+};
+
+// A person can arrive from more than one federated spoke. Segment membership
+// is email-based (the ecosystem identity key), so reporting the raw matching
+// profile rows inflates both sidebar counts and recipient previews.
+const dedupeProfilesByEmail = (profiles: EnrichedProfile[]): EnrichedProfile[] => {
+  const unique = new Map<string, EnrichedProfile>();
+  for (const profile of profiles) {
+    const key = (profile.email || '').trim().toLowerCase() || profile.id;
+    if (!unique.has(key)) unique.set(key, profile);
+  }
+  return [...unique.values()];
 };
 
 // Color map for segments
@@ -149,8 +160,12 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
   // Get matching profiles for selected segment
   const matchingProfiles = useMemo(() => {
     if (!selectedSegment) return [];
-    return filterProfilesBySegment(profiles, selectedSegment, engagementByEmail);
+    return dedupeProfilesByEmail(filterProfilesBySegment(profiles, selectedSegment, engagementByEmail));
   }, [selectedSegment, profiles, engagementByEmail]);
+
+  const countUniqueProfilesInSegment = (segment: Segment) => dedupeProfilesByEmail(
+    filterProfilesBySegment(profiles, segment, engagementByEmail),
+  ).length;
 
   // Add a new rule to the form
   const addRule = () => {
@@ -289,8 +304,8 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
       created_at: '',
       updated_at: '',
     };
-    return countProfilesInSegment(profiles, previewSegment, engagementByEmail);
-  }, [newSegmentRules, newSegmentJoin, profiles]);
+    return dedupeProfilesByEmail(filterProfilesBySegment(profiles, previewSegment, engagementByEmail)).length;
+  }, [newSegmentRules, newSegmentJoin, profiles, engagementByEmail]);
 
   // Render rule editor row
   const renderRuleEditor = (rule: SegmentRule, index: number) => {
@@ -448,7 +463,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900 truncate">{segment.name}</div>
                   <div className="text-sm text-gray-500">
-                    {countProfilesInSegment(profiles, segment, engagementByEmail).toLocaleString()} profiles
+                    {countUniqueProfilesInSegment(segment).toLocaleString()} profiles
                   </div>
                 </div>
               </button>
@@ -487,7 +502,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                       <div className="text-sm text-gray-500">
                         {segment.kind === 'email_list'
                           ? `${(segment.email_list?.length || 0).toLocaleString()} test emails`
-                          : `${countProfilesInSegment(profiles, segment, engagementByEmail).toLocaleString()} profiles`}
+                          : `${countUniqueProfilesInSegment(segment).toLocaleString()} profiles`}
                       </div>
                     </div>
                   </button>

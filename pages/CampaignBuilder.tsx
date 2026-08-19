@@ -14,6 +14,7 @@ import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
+import { EngagementSummary, fetchEngagementByEmail } from '../services/emailReportingService';
 import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
 import { BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import CampaignBrandAssetLibrary from '../components/CampaignBrandAssetLibrary';
@@ -214,6 +215,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [selectedSavedSegments, setSelectedSavedSegments] = useState<string[]>([]);
   const [showAudiencePreview, setShowAudiencePreview] = useState(false);
   const [suppressedEmails, setSuppressedEmails] = useState<Set<string>>(new Set());
+  const [engagementByEmail, setEngagementByEmail] = useState<Map<string, EngagementSummary>>(new Map());
   const [selectedTags] = useState<string[]>([]);
   const [triggerType, setTriggerType] = useState<'immediate' | 'scheduled' | 'staggered'>('immediate');
 
@@ -337,6 +339,18 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       setSavedCampaigns(campaigns);
     };
     loadCampaigns();
+  }, []);
+
+  // Saved engagement segments depend on Hub email-event aggregates. Load the
+  // map once in bulk so Campaign Builder evaluates the same membership shown
+  // on the Segments page instead of silently treating every engagement rule as
+  // unmatched.
+  useEffect(() => {
+    let cancelled = false;
+    fetchEngagementByEmail().then((engagement) => {
+      if (!cancelled) setEngagementByEmail(engagement);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // Restore a saved draft into the wizard. Audience and consent are deliberately
@@ -718,12 +732,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       if (seg.kind === 'email_list') continue;
       const emails = new Set<string>();
       for (const ep of enriched) {
-        if (ep.email && evaluateSegment(ep, seg)) emails.add(ep.email.toLowerCase());
+        if (ep.email && evaluateSegment(ep, seg, engagementByEmail)) emails.add(ep.email.toLowerCase());
       }
       map[seg.id] = emails;
     }
     return map;
-  }, [savedSegments, branchStats?.enrichedProfiles]);
+  }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail]);
 
   const segmentProfiles = useMemo(() => {
     if (authoritativeNewsletterAudience && selectedSegments.length === 0 && selectedSavedSegments.length === 0) {
