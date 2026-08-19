@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ViewState, User, Brand, Profile, BranchContext, ApiKeyConfig } from '../types';
+import { ViewState, User, Brand, Profile, BranchContext, ApiKeyConfig, SpokeConnection } from '../types';
 import { Article } from '../src/data/helpContent';
 import { PAGE_INFO } from '../src/data/pageInfo';
 import SageChat from './SageChat';
@@ -23,6 +23,7 @@ interface LayoutProps {
   onLogout?: () => void;
   branchContext: BranchContext;
   apiKeys?: ApiKeyConfig;
+  spokeConnections?: SpokeConnection[];
   onOpenHelpArticle: (article: Article) => void;
   onOpenHelpCenter: () => void;
 }
@@ -89,7 +90,7 @@ const NAV_GROUPS = [
   },
 ];
 
-const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, onOpenHelpArticle, onOpenHelpCenter }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, spokeConnections = [], onOpenHelpArticle, onOpenHelpCenter }) => {
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const branchPickerRef = useRef<HTMLDivElement>(null);
@@ -428,7 +429,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
         {/* Global Overlays */}
         <ContextAwareHelp activeView={activeView} onOpenArticle={onOpenHelpArticle} onOpenHelpCenter={onOpenHelpCenter} />
-        <SageChat brand={brand} profiles={profiles} apiKeys={apiKeys} />
+        <SageChat brand={brand} profiles={profiles} apiKeys={apiKeys} spokeConnections={spokeConnections} />
       </main>
     </div>
   );

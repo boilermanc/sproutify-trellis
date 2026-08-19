@@ -7,8 +7,9 @@ import {
   ShieldCheck, Zap, ChevronRight, BarChart3,
   Search, ExternalLink, HelpCircle
 } from 'lucide-react';
-import { ChatMessage, LlmProvider, Brand, Ticket, Profile, ApiKeyConfig } from '../types';
+import { ChatMessage, LlmProvider, Brand, Ticket, Profile, ApiKeyConfig, SpokeConnection } from '../types';
 import { chatWithSage } from '../services/aiService';
+import { answerEventRegistrationQuestion } from '../services/sageEventReportingService';
 import {
   fetchRecentCampaignPerformance,
   fetchSharedCampaignOpeners,
@@ -20,6 +21,7 @@ interface SageChatProps {
   brand?: Brand;
   profiles?: Profile[];
   apiKeys?: ApiKeyConfig;
+  spokeConnections?: SpokeConnection[];
 }
 
 // Stylized Icon Component with Purple-Pink Gradient Background
@@ -112,12 +114,12 @@ const answerRecentEmailOpenQuestion = async (text: string, profiles: Profile[]):
   return `${heading}\n\n${result.campaigns.map(formatCampaignOpenLine).join('\n')}\n\n“Opened” means unique recipients whose email client reported an open. Privacy protections and blocked images can make this lower than the true readership.`;
 };
 
-const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [], apiKeys }) => {
+const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [], apiKeys, spokeConnections = [] }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'sage', content: `Hi — I’m Sage. Ask me about ${brand?.name || 'this brand'} campaigns, email performance, profiles, or support. I’ll use live data where it’s connected and tell you when it isn’t.`, timestamp: new Date().toISOString() }
+    { role: 'sage', content: `Hi — I’m Sage. Ask me about ${brand?.name || 'this brand'} campaigns, email performance, ATL event registrations, profiles, or support. I’ll use live data where it’s connected and tell you when it isn’t.`, timestamp: new Date().toISOString() }
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -151,6 +153,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
 
     let dynamicQuestions = [
       "How many people opened the last two ATL Urban Farms emails?",
+      "How many people registered for ATL events?",
       "What live data can you access?",
       "Where can I review campaign performance?"
     ];
@@ -185,8 +188,12 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
       n8n_webhooks: { chat: '', workflow: '' }, slack_webhook: '', resend_token: '',
       twilio_sid: '', twilio_token: '', woo_consumer_key: '', woo_consumer_secret: '',
     };
-    const factualEmailResponse = await answerRecentEmailOpenQuestion(text, profiles);
-    const response = factualEmailResponse || await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
+    const atlConnection = spokeConnections.find((connection) =>
+      connection.status === 'active' && connection.supabase_url.includes('povudgtvzggnxwgtjexa')
+    );
+    const factualEventResponse = await answerEventRegistrationQuestion(text, atlConnection?.id || null, profiles);
+    const factualEmailResponse = factualEventResponse ? null : await answerRecentEmailOpenQuestion(text, profiles);
+    const response = factualEventResponse || factualEmailResponse || await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
       tickets: [],
       brandName: brand?.name || 'Trellis'
     });

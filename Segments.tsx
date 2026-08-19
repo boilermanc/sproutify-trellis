@@ -146,6 +146,18 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     localStorage.setItem('trellis_custom_segments', JSON.stringify(customSegments));
   }, [customSegments]);
 
+  useEffect(() => {
+    const reloadSavedSegments = () => {
+      try {
+        setCustomSegments(JSON.parse(localStorage.getItem('trellis_custom_segments') || '[]'));
+      } catch {
+        // Keep the current in-memory segments if browser storage is malformed.
+      }
+    };
+    window.addEventListener('trellis:segments-updated', reloadSavedSegments);
+    return () => window.removeEventListener('trellis:segments-updated', reloadSavedSegments);
+  }, []);
+
   // Email engagement (opens/clicks per address) so the "Email Engagement"
   // rule category can actually evaluate. Loaded once; rules resolve to false
   // until it arrives, which is the same as having no engagement history.
