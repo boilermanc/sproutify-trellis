@@ -501,6 +501,8 @@ export function formatLeadBody(body: string): string {
     .join('');
 }
 
+export type LeadEmailBodyFormat = 'text' | 'html';
+
 // Sender + compliance footer for Sproutify Farm lead correspondence. From uses the
 // verified sproutify.app domain; the mailing address + unsubscribe link keep bulk
 // lead outreach CAN-SPAM compliant. The unsubscribe endpoint is the same one the
@@ -508,8 +510,11 @@ export function formatLeadBody(body: string): string {
 // then honors on future sends).
 export const LEAD_EMAIL_FROM = 'Sheree | Sproutify Farm <sheree@sproutify.app>';
 export const LEAD_TEST_RECIPIENT = 'boilermanc@gmail.com';
-// Tower Farm Corp partner copied on outbound lead correspondence.
-export const LEAD_CC_RECIPIENT = 'bret.bowlin@towerfarms.com';
+// Internal partners copied on outbound lead correspondence.
+export const LEAD_CC_RECIPIENTS = [
+  'bret.bowlin@towerfarms.com',
+  'sheree@sproutify.app',
+] as const;
 const LEAD_CONTACT_EMAIL = 'sheree@sproutify.app';
 const LEAD_MAILING_ADDRESS = '1295 Smithdale Heights Drive, Cumming, GA 30040';
 const LEAD_WEBSITE_URL = 'https://farm.sproutify.app/';
@@ -543,6 +548,7 @@ function buildLeadFooter(recipientEmail: string, brandName: string, tagline: str
 /** Compose the full lead email HTML: escaped body + branded compliance footer. */
 export function buildLeadEmailHtml(input: {
   body: string;
+  bodyFormat?: LeadEmailBodyFormat;
   recipientEmail: string;
   brandName?: string;
   tagline?: string;
@@ -554,6 +560,12 @@ export function buildLeadEmailHtml(input: {
     input.tagline ?? LEAD_DEFAULT_TAGLINE,
     input.scope || LEAD_DEFAULT_SCOPE,
   );
+  if (input.bodyFormat === 'html') {
+    const closingBody = /<\/body\s*>/i;
+    return closingBody.test(input.body)
+      ? input.body.replace(closingBody, `${footer}</body>`)
+      : `${input.body}${footer}`;
+  }
   return `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#0f172a">${formatLeadBody(input.body)}${footer}</div>`;
 }
 
@@ -562,8 +574,9 @@ export async function sendLeadEmail(input: {
   to: string;
   subject: string;
   body: string;
+  bodyFormat?: LeadEmailBodyFormat;
   from?: string;
-  cc?: string;
+  cc?: readonly string[];
   brandName?: string;
   scope?: string;
 }): Promise<{ id: string }> {
@@ -573,12 +586,13 @@ export async function sendLeadEmail(input: {
     p_subject: input.subject.trim(),
     p_html: buildLeadEmailHtml({
       body: input.body,
+      bodyFormat: input.bodyFormat,
       recipientEmail: to,
       brandName: input.brandName,
       scope: input.scope,
     }),
     p_from: input.from || LEAD_EMAIL_FROM,
-    p_cc: input.cc?.trim() || null,
+    p_cc: input.cc?.map(address => address.trim()).filter(Boolean).join(',') || null,
   });
 
   if (error) throw new Error(`Email send failed: ${error.message}`);

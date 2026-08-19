@@ -53,7 +53,7 @@ import {
   parseLeadRows,
   sendLeadEmail,
   LEAD_TEST_RECIPIENT,
-  LEAD_CC_RECIPIENT,
+  LEAD_CC_RECIPIENTS,
   updateLead,
   updateLeadStage,
 } from '../leadService';
@@ -498,13 +498,13 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
   };
 
-  const submitLeadEmail = async (input: { subject: string; body: string }) => {
+  const submitLeadEmail = async (input: { subject: string; body: string; bodyFormat: 'text' | 'html' }) => {
     if (!emailLead?.profile?.email || emailEligibility?.hardBlocked || emailEligibilityError) return;
     setSendingEmail(true);
     try {
       await sendLeadEmail({
         to: emailLead.profile.email,
-        cc: LEAD_CC_RECIPIENT,
+        cc: LEAD_CC_RECIPIENTS,
         scope: activeBranch?.slug,
         ...input,
       });
@@ -513,7 +513,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           leadId: emailLead.id,
           profileId: emailLead.profile_id,
           type: 'lead_email',
-          payload: { subject: input.subject, to: emailLead.profile.email, direction: 'outbound', body: input.body },
+          payload: { subject: input.subject, to: emailLead.profile.email, cc: [...LEAD_CC_RECIPIENTS], direction: 'outbound', body: input.body, body_format: input.bodyFormat },
         });
         await loadTimeline(emailLead);
         addToast('Email sent and activity logged.', 'success');
@@ -545,7 +545,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   // Test send: same From address, footer, and branding as the real send, but always
   // to the operator's own inbox. It never logs a timeline activity and is not gated
   // by the lead's consent/suppression status (nothing reaches the lead).
-  const submitLeadTestEmail = async (input: { subject: string; body: string }) => {
+  const submitLeadTestEmail = async (input: { subject: string; body: string; bodyFormat: 'text' | 'html' }) => {
     if (!emailLead) return;
     setSendingTestEmail(true);
     try {
@@ -1075,7 +1075,8 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
           pending={sendingEmail}
           testPending={sendingTestEmail}
           testRecipient={LEAD_TEST_RECIPIENT}
-          ccRecipient={LEAD_CC_RECIPIENT}
+          ccRecipient={LEAD_CC_RECIPIENTS.join(', ')}
+          scope={activeBranch?.slug}
           onClose={() => !sendingEmail && !sendingTestEmail && setEmailLead(null)}
           onSubmit={submitLeadEmail}
           onSendTest={submitLeadTestEmail}
