@@ -81,6 +81,12 @@ test('approved publications import append-only social insight history inside the
   assert.match(service, /linkedExperiments\.length === 1/);
   assert.match(page, /Automated platform history/);
   assert.match(page, /Refresh snapshots/);
+  assert.match(page, /Asset summaries stay compact/);
+  assert.match(page, /Changes only/);
+  assert.match(page, /Daily latest/);
+  assert.match(page, /All snapshots/);
+  assert.match(page, /View history/);
+  assert.match(page, /PERFORMANCE_PAGE_SIZE = 10/);
 });
 
 test('running experiments expose deterministic review reminders', () => {

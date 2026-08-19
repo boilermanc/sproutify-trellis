@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState, type FC } from 'react';
 import {
   Activity,
   BadgeCheck,
+  BarChart3,
   Beaker,
   BookOpen,
   BrainCircuit,
   Check,
+  ChevronDown,
+  ChevronUp,
   CircleHelp,
   Clipboard,
   Copy,
@@ -267,7 +270,110 @@ function PublishedCandidateReview({
 
 function PerformanceList({ events }: { events: ContentPerformanceEvent[] }) {
   if (!events.length) return <EmptyState icon={Activity} title="No performance history" detail="Append snapshots rather than replacing them. Each event preserves the metric date, capture time, source, post, and experiment provenance." command="npm run content -- append-performance --project …" />;
-  return <div className="space-y-3">{[...events].sort((a, b) => b.metric_date.localeCompare(a.metric_date)).map(event => <article key={event.event_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black text-slate-800">{event.post_id}</p><code className="text-[10px] text-slate-400">{event.event_id}</code></div><div className="text-right"><p className="text-xs font-bold text-slate-700">{event.metric_date}</p><p className="text-[10px] uppercase tracking-wider text-slate-400">{event.platform} · {event.source.replace('_', ' ')}</p></div></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(event.metrics).map(([metric, value]) => <span key={metric} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span></span>)}</div></article>)}</div>;
+  return <GroupedPerformanceList events={events} />;
+}
+
+type HistoryMode = 'changes' | 'daily' | 'all';
+
+const PERFORMANCE_PAGE_SIZE = 10;
+
+function eventTime(event: ContentPerformanceEvent) {
+  return event.captured_at || event.metric_date;
+}
+
+function metricSignature(event: ContentPerformanceEvent) {
+  return Object.keys(event.metrics).sort().map(key => `${key}:${String(event.metrics[key])}`).join('|');
+}
+
+function filterPerformanceHistory(events: ContentPerformanceEvent[], mode: HistoryMode) {
+  const chronological = [...events].sort((a, b) => eventTime(a).localeCompare(eventTime(b)));
+  if (mode === 'all') return chronological.reverse();
+  if (mode === 'daily') {
+    const latestByDay = new Map<string, ContentPerformanceEvent>();
+    chronological.forEach(event => latestByDay.set(event.metric_date, event));
+    return [...latestByDay.values()].reverse();
+  }
+  return chronological.filter((event, index) => index === 0 || metricSignature(event) !== metricSignature(chronological[index - 1])).reverse();
+}
+
+function numericMetric(metrics: Record<string, unknown>, key: string) {
+  const value = metrics[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function preferredTrendMetric(events: ContentPerformanceEvent[]) {
+  const preferred = ['impressions', 'views', 'reach', 'clicks', 'likes'];
+  const keys = new Set(events.flatMap(event => Object.keys(event.metrics)));
+  return preferred.find(key => keys.has(key)) || [...keys].find(key => events.some(event => numericMetric(event.metrics, key) !== null)) || '';
+}
+
+function MetricTrend({ events }: { events: ContentPerformanceEvent[] }) {
+  const metric = preferredTrendMetric(events);
+  const values = [...events]
+    .sort((a, b) => eventTime(a).localeCompare(eventTime(b)))
+    .map(event => numericMetric(event.metrics, metric))
+    .filter((value): value is number => value !== null);
+  if (!metric || values.length < 2) return null;
+  const sampled = values.length <= 24 ? values : values.filter((_, index) => index % Math.ceil(values.length / 24) === 0 || index === values.length - 1);
+  const min = Math.min(...sampled);
+  const max = Math.max(...sampled);
+  return <div className="min-w-44 rounded-2xl border border-slate-100 bg-slate-50 p-3" aria-label={`${metric} trend from ${values[0]} to ${values[values.length - 1]}`}>
+    <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-wider text-slate-400"><span>{metric} trend</span><span>{values[0]} → {values[values.length - 1]}</span></div>
+    <div className="mt-3 flex h-10 items-end gap-1">{sampled.map((value, index) => {
+      const height = max === min ? 55 : 20 + ((value - min) / (max - min)) * 80;
+      return <span key={`${index}-${value}`} className="min-w-1 flex-1 rounded-t bg-sky-400" style={{ height: `${height}%` }} title={`${value} ${metric}`} />;
+    })}</div>
+  </div>;
+}
+
+function GroupedPerformanceList({ events }: { events: ContentPerformanceEvent[] }) {
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [historyMode, setHistoryMode] = useState<HistoryMode>('changes');
+  const [historyPages, setHistoryPages] = useState<Record<string, number>>({});
+  const groups = useMemo(() => {
+    const grouped = new Map<string, ContentPerformanceEvent[]>();
+    events.forEach(event => {
+      const existing = grouped.get(event.post_id);
+      if (existing) existing.push(event);
+      else grouped.set(event.post_id, [event]);
+    });
+    return [...grouped.entries()].map(([postId, snapshots]) => ({
+      postId,
+      snapshots: [...snapshots].sort((a, b) => eventTime(b).localeCompare(eventTime(a))),
+    })).sort((a, b) => eventTime(b.snapshots[0]).localeCompare(eventTime(a.snapshots[0])));
+  }, [events]);
+
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+      <div><p className="text-xs font-black text-slate-800">{groups.length} asset{groups.length === 1 ? '' : 's'} · {events.length} raw snapshots</p><p className="mt-1 text-xs text-slate-500">Asset summaries stay compact. Expand only when you need the immutable audit history.</p></div>
+      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">History view<select value={historyMode} onChange={event => { setHistoryMode(event.target.value as HistoryMode); setHistoryPages({}); }} className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold normal-case tracking-normal text-slate-700"><option value="changes">Changes only</option><option value="daily">Daily latest</option><option value="all">All snapshots</option></select></label>
+    </div>
+    {groups.map(({ postId, snapshots }) => {
+      const latest = snapshots[0];
+      const oldest = snapshots[snapshots.length - 1];
+      const filtered = filterPerformanceHistory(snapshots, historyMode);
+      const page = historyPages[postId] || 1;
+      const pageCount = Math.max(1, Math.ceil(filtered.length / PERFORMANCE_PAGE_SIZE));
+      const visible = filtered.slice((page - 1) * PERFORMANCE_PAGE_SIZE, page * PERFORMANCE_PAGE_SIZE);
+      const expanded = expandedPostId === postId;
+      return <article key={postId} className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+        <div className="p-5 lg:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><BarChart3 size={16} className="text-sky-600" /><p className="text-sm font-black text-slate-800">{postId}</p></div><p className="mt-1 text-xs text-slate-400">{latest.platform} · latest capture {new Date(eventTime(latest)).toLocaleString()}</p></div><MetricTrend events={snapshots} /></div>
+          <div className="mt-5 flex flex-wrap gap-2">{Object.entries(latest.metrics).map(([metric, value]) => {
+            const current = numericMetric(latest.metrics, metric);
+            const start = numericMetric(oldest.metrics, metric);
+            const delta = current !== null && start !== null ? current - start : null;
+            return <span key={metric} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span>{delta !== null && delta !== 0 && <span className={`ml-1.5 font-black ${delta > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{delta > 0 ? '+' : ''}{delta}</span>}</span>;
+          })}</div>
+          <button type="button" onClick={() => setExpandedPostId(expanded ? null : postId)} className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">{expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{expanded ? 'Hide history' : `View history (${filtered.length} ${historyMode === 'changes' ? 'changes' : historyMode === 'daily' ? 'days' : 'snapshots'})`}</button>
+        </div>
+        {expanded && <div className="border-t border-slate-100 bg-slate-50/60 p-4 lg:p-5">
+          <div className="space-y-3">{visible.map(event => <div key={event.event_id} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{event.event_id}</code><div className="text-right"><p className="text-xs font-bold text-slate-700">{new Date(eventTime(event)).toLocaleString()}</p><p className="text-[10px] uppercase tracking-wider text-slate-400">{event.platform} · {event.source.replace('_', ' ')}</p></div></div><div className="mt-3 flex flex-wrap gap-2">{Object.entries(event.metrics).map(([metric, value]) => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px]"><strong className="text-slate-800">{String(value)}</strong> <span className="text-slate-400">{metric}</span></span>)}</div></div>)}</div>
+          {pageCount > 1 && <div className="mt-4 flex items-center justify-between gap-3"><button type="button" disabled={page === 1} onClick={() => setHistoryPages(current => ({ ...current, [postId]: Math.max(1, page - 1) }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40">Previous</button><span className="text-xs font-bold text-slate-500">Page {page} of {pageCount}</span><button type="button" disabled={page === pageCount} onClick={() => setHistoryPages(current => ({ ...current, [postId]: Math.min(pageCount, page + 1) }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40">Next</button></div>}
+        </div>}
+      </article>;
+    })}
+  </div>;
 }
 
 function PerformanceRegistry({ events, importedCount, loading, error, onRefresh }: { events: ContentPerformanceEvent[]; importedCount: number; loading: boolean; error: string | null; onRefresh: () => void }) {
