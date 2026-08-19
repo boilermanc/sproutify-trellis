@@ -3,12 +3,15 @@
 // light formatting the sender understands: blank lines separate paragraphs, single
 // newlines become line breaks, **double-asterisks** render bold, and {{first_name}}
 // is substituted with the lead's first name (falling back to "there") on selection.
+import type { LeadEmailBodyFormat } from '../../leadService';
+import { SPROUTIFY_FARM_PARTNERSHIP_HTML } from './templates/sproutifyFarmPartnershipHtml';
 
 export interface LeadEmailTemplate {
   id: string;
   name: string;
   subject: string;
   body: string;
+  bodyFormat: LeadEmailBodyFormat;
 }
 
 export const LEAD_EMAIL_TEMPLATES: LeadEmailTemplate[] = [
@@ -16,6 +19,7 @@ export const LEAD_EMAIL_TEMPLATES: LeadEmailTemplate[] = [
     id: 'new-tower-farm-welcome',
     name: 'New Tower Farm — Welcome',
     subject: 'Welcome to your new Tower Farm — your first 3 months are on us',
+    bodyFormat: 'text',
     body: `Congratulations on your new Tower Farm! I wanted to personally reach out to introduce [Sproutify Farm](https://farm.sproutify.app/), the operational software Tower Farm Corp partners with to help new aeroponic farms get up and running successfully.
 
 **What Sproutify does:** We've built farm management software specifically for aeroponic tower operations — tower capacity planning, port management, seed-to-harvest workflows, and task coordination that generic farm tools simply can't handle. Tower Farm gives you great equipment; Sproutify gives you the operational system to run it profitably day-to-day.
@@ -34,13 +38,21 @@ With blessings,
 Sheree
 Co-Founder, Sproutify`,
   },
+  {
+    id: 'new-farm-partnership-html',
+    name: 'New Farm Partnership — HTML',
+    subject: 'Your Farm Just Got a Head Start',
+    bodyFormat: 'html',
+    body: SPROUTIFY_FARM_PARTNERSHIP_HTML,
+  },
 ];
 
 /** Fill {{first_name}} with the lead's first name, or a friendly fallback. */
-export function applyLeadTemplate(template: LeadEmailTemplate, firstName?: string | null): { subject: string; body: string } {
+export function applyLeadTemplate(template: LeadEmailTemplate, firstName?: string | null): { subject: string; body: string; bodyFormat: LeadEmailBodyFormat } {
   const name = (firstName || '').trim() || 'there';
   return {
     subject: template.subject,
     body: template.body.replace(/\{\{\s*first_name\s*\}\}/g, name),
+    bodyFormat: template.bodyFormat,
   };
 }

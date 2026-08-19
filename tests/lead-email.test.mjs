@@ -7,10 +7,13 @@ let classifyLeadEmailEligibility;
 let leadPlainTextToHtml;
 let buildLeadEmailHtml;
 let LEAD_CC_RECIPIENTS;
+let LEAD_EMAIL_TEMPLATES;
+let applyLeadTemplate;
 
 before(async () => {
   server = await createServer({ appType: 'custom', configFile: false, logLevel: 'silent', root: process.cwd(), server: { middlewareMode: true } });
   ({ classifyLeadEmailEligibility, leadPlainTextToHtml, buildLeadEmailHtml, LEAD_CC_RECIPIENTS } = await server.ssrLoadModule('/leadService.ts'));
+  ({ LEAD_EMAIL_TEMPLATES, applyLeadTemplate } = await server.ssrLoadModule('/components/leads/leadEmailTemplates.ts'));
 });
 
 after(async () => { await server?.close(); });
@@ -59,4 +62,26 @@ test('continues escaping markup in plain-text mode', () => {
   });
   assert.match(html, /&lt;h1&gt;Not HTML&lt;\/h1&gt;/);
   assert.doesNotMatch(html, /<h1>Not HTML<\/h1>/);
+});
+
+test('offers a cleaned Sproutify Farm HTML partnership template with the real logo', () => {
+  const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === 'new-farm-partnership-html');
+  assert.ok(template);
+  assert.equal(template.bodyFormat, 'html');
+  assert.match(template.body, /https:\/\/www\.sproutify\.app\/images\/sproutify-farm-white\.png/);
+  assert.match(template.body, /<!-- SPROUTIFY_COMPLIANCE_FOOTER -->/);
+  assert.doesNotMatch(template.body, /\{\{body_copy\}\}|#8217;|href="#"/);
+});
+
+test('personalizes the HTML template and places one compliance footer at its marker', () => {
+  const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === 'new-farm-partnership-html');
+  const filled = applyLeadTemplate(template, 'Diana');
+  const html = buildLeadEmailHtml({
+    body: filled.body,
+    bodyFormat: filled.bodyFormat,
+    recipientEmail: 'diana@example.com',
+  });
+  assert.match(html, /Hi Diana,/);
+  assert.doesNotMatch(html, /SPROUTIFY_COMPLIANCE_FOOTER/);
+  assert.equal((html.match(/>Unsubscribe</g) || []).length, 1);
 });

@@ -522,6 +522,7 @@ const LEAD_WEBSITE_LABEL = 'farm.sproutify.app';
 const LEAD_DEFAULT_BRAND = 'Sproutify Farm';
 const LEAD_DEFAULT_TAGLINE = 'Manage Your Tower Farm Like a Pro';
 const LEAD_DEFAULT_SCOPE = 'sproutify-farm';
+const LEAD_COMPLIANCE_FOOTER_MARKER = '<!-- SPROUTIFY_COMPLIANCE_FOOTER -->';
 const HUB_FUNCTIONS_URL = (
   (import.meta as any).env?.VITE_SUPABASE_URL || 'https://horvjqqifgrzxesuxtfm.supabase.co'
 ).replace(/\/$/, '');
@@ -561,6 +562,9 @@ export function buildLeadEmailHtml(input: {
     input.scope || LEAD_DEFAULT_SCOPE,
   );
   if (input.bodyFormat === 'html') {
+    if (input.body.includes(LEAD_COMPLIANCE_FOOTER_MARKER)) {
+      return input.body.replace(LEAD_COMPLIANCE_FOOTER_MARKER, footer);
+    }
     const closingBody = /<\/body\s*>/i;
     return closingBody.test(input.body)
       ? input.body.replace(closingBody, `${footer}</body>`)

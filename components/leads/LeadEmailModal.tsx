@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Code2, Eye, FileText, Loader2, Mail, Send, ShieldAlert } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Code2, Eye, FileText, Image as ImageIcon, Loader2, Mail, Send, ShieldAlert } from 'lucide-react';
 import { Lead, LeadEmailEligibility } from '../../types';
 import { buildLeadEmailHtml, LeadEmailBodyFormat } from '../../leadService';
 import CrmModal from './CrmModal';
 import { LEAD_EMAIL_TEMPLATES, applyLeadTemplate } from './leadEmailTemplates';
+import LeadEmailAssetGallery from './LeadEmailAssetGallery';
+import type { BrandGalleryAsset } from '../../services/brandAssetLibraryService';
 
 interface LeadEmailModalProps {
   lead: Lead;
@@ -39,6 +41,8 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
   const [templateId, setTemplateId] = useState('');
   const [bodyFormat, setBodyFormat] = useState<LeadEmailBodyFormat>('text');
   const [showPreview, setShowPreview] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setSubject('');
@@ -46,6 +50,7 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
     setTemplateId('');
     setBodyFormat('text');
     setShowPreview(false);
+    setShowGallery(false);
   }, [lead.id]);
 
   const applyTemplate = (id: string) => {
@@ -53,7 +58,7 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
     const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === id);
     if (!template) return;
     const filled = applyLeadTemplate(template, lead.profile?.first_name);
-    setBodyFormat('text');
+    setBodyFormat(filled.bodyFormat);
     setSubject(filled.subject);
     setBody(filled.body);
   };
@@ -70,6 +75,28 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
   const previewHtml = hasBody
     ? buildLeadEmailHtml({ body: message.body, bodyFormat, recipientEmail: lead.profile?.email || '', scope })
     : '';
+
+  const insertGalleryAsset = (asset: BrandGalleryAsset) => {
+    const alt = asset.name.replace(/[&<>"']/g, '');
+    const snippet = `\n<img src="${asset.url}" alt="${alt}" width="560" style="display:block;width:100%;max-width:560px;height:auto;border:0;margin:16px auto;" />\n`;
+    const field = bodyRef.current;
+    let start = field?.selectionStart ?? body.length;
+    let end = field?.selectionEnd ?? start;
+    if (start === body.length && end === body.length) {
+      const closingBody = body.toLowerCase().lastIndexOf('</body>');
+      if (closingBody >= 0) start = end = closingBody;
+    }
+    const next = `${body.slice(0, start)}${snippet}${body.slice(end)}`;
+    setBodyFormat('html');
+    setTemplateId('');
+    setBody(next);
+    setShowGallery(false);
+    setShowPreview(true);
+    requestAnimationFrame(() => {
+      bodyRef.current?.focus();
+      bodyRef.current?.setSelectionRange(start + snippet.length, start + snippet.length);
+    });
+  };
 
   return (
     <CrmModal title="Send Email" subtitle="One-to-one inquiry correspondence" icon={Mail} pending={busy} onClose={onClose} maxWidth="max-w-5xl">
@@ -99,10 +126,14 @@ const LeadEmailModal: React.FC<LeadEmailModalProps> = ({
               <button type="button" onClick={() => setBodyFormat('text')} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider transition ${bodyFormat === 'text' ? 'bg-cyan-400/15 text-cyan-200' : 'text-slate-500 hover:text-slate-300'}`}><FileText size={13} />Plain text</button>
               <button type="button" onClick={() => { setBodyFormat('html'); setTemplateId(''); }} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider transition ${bodyFormat === 'html' ? 'bg-cyan-400/15 text-cyan-200' : 'text-slate-500 hover:text-slate-300'}`}><Code2 size={13} />HTML</button>
             </div>
-            <button type="button" onClick={() => setShowPreview(current => !current)} disabled={!hasBody} className="flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-cyan-200 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-40"><Eye size={14} />{showPreview ? 'Hide preview' : 'Preview email'}</button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => { setBodyFormat('html'); setTemplateId(''); setShowGallery(current => !current); }} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-300 transition hover:border-cyan-400/25 hover:text-cyan-200"><ImageIcon size={14} />Image gallery</button>
+              <button type="button" onClick={() => setShowPreview(current => !current)} disabled={!hasBody} className="flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-cyan-200 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-40"><Eye size={14} />{showPreview ? 'Hide preview' : 'Preview email'}</button>
+            </div>
           </div>
+          {showGallery && <LeadEmailAssetGallery branchSlug={scope || 'sproutify-farm'} onInsert={insertGalleryAsset} />}
           <div className={showPreview ? 'grid gap-4 lg:grid-cols-2' : ''}>
-            <label className="block space-y-2 text-xs font-bold text-slate-300">Message *<textarea rows={showPreview ? 18 : 9} value={body} onChange={event => setBody(event.target.value)} disabled={blocked} spellCheck={bodyFormat === 'text'} className={`w-full resize-y rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50 disabled:opacity-40 ${bodyFormat === 'html' ? 'font-mono text-[12px] leading-5' : ''}`} placeholder={bodyFormat === 'html' ? 'Paste your email HTML here…' : 'Write a plain-text message about this inquiry…'} /></label>
+            <label className="block space-y-2 text-xs font-bold text-slate-300">Message *<textarea ref={bodyRef} rows={showPreview ? 18 : 9} value={body} onChange={event => setBody(event.target.value)} disabled={blocked} spellCheck={bodyFormat === 'text'} className={`w-full resize-y rounded-xl border border-white/10 bg-[#0A0E27] p-3 text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50 disabled:opacity-40 ${bodyFormat === 'html' ? 'font-mono text-[12px] leading-5' : ''}`} placeholder={bodyFormat === 'html' ? 'Paste your email HTML here…' : 'Write a plain-text message about this inquiry…'} /></label>
             {showPreview && <div className="space-y-2"><p className="text-xs font-bold text-slate-300">Preview</p><iframe title="Lead email preview" sandbox="" srcDoc={previewHtml} className="h-[28rem] w-full rounded-xl border border-slate-200 bg-white" /></div>}
           </div>
         </section>
