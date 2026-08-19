@@ -21,4 +21,6 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xhH6r_RnjW_UmSuqCUI_OQ
 
 ## Content intelligence workflow
 
-Repository-native content experiments, project-partitioned canonical records, task templates, and helper commands live in [`.trellis/README.md`](.trellis/README.md). Rejoice and Rekkrd share the workflow while keeping topics, posts, performance, and learned strategy separate.
+Start with the plain-language [Content Intelligence operator guide](docs/CONTENT_INTELLIGENCE_GUIDE.md) for what the system does, what each tab means, and the complete day-to-day workflow.
+
+Repository-native schemas, project-partitioned records, task templates, and helper internals live in [`.trellis/README.md`](.trellis/README.md). Every configured branch shares the workflow while keeping topics, posts, performance, and learned strategy separate.
