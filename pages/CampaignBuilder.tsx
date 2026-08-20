@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult } from '../types';
+import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult, EnrichedProfile } from '../types';
 import { Segment, PRESET_SEGMENTS, isEventAudienceSegment } from '../segmentTypes';
 import { evaluateSegment } from '../segmentEngine';
 import { Article } from '../src/data/helpContent';
@@ -14,7 +14,9 @@ import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
-import { EngagementSummary, fetchEngagementByEmail } from '../services/emailReportingService';
+import {
+  EngagementSummary, fetchEngagementByEmail, fetchLinkInterestByEmail, LinkInterestClickSummary,
+} from '../services/emailReportingService';
 import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
 import { BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import CampaignBrandAssetLibrary from '../components/CampaignBrandAssetLibrary';
@@ -216,6 +218,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [showAudiencePreview, setShowAudiencePreview] = useState(false);
   const [suppressedEmails, setSuppressedEmails] = useState<Set<string>>(new Set());
   const [engagementByEmail, setEngagementByEmail] = useState<Map<string, EngagementSummary>>(new Map());
+  const [linkInterestByEmail, setLinkInterestByEmail] = useState<Map<string, LinkInterestClickSummary[]>>(new Map());
   const [selectedTags] = useState<string[]>([]);
   const [triggerType, setTriggerType] = useState<'immediate' | 'scheduled' | 'staggered'>('immediate');
 
@@ -341,14 +344,15 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     loadCampaigns();
   }, []);
 
-  // Saved engagement segments depend on Hub email-event aggregates. Load the
-  // map once in bulk so Campaign Builder evaluates the same membership shown
-  // on the Segments page instead of silently treating every engagement rule as
-  // unmatched.
+  // Saved engagement and link-interest segments depend on Hub email-event
+  // aggregates. Load both maps in bulk so Campaign Builder evaluates the same
+  // dynamic membership shown on the Segments page.
   useEffect(() => {
     let cancelled = false;
-    fetchEngagementByEmail().then((engagement) => {
-      if (!cancelled) setEngagementByEmail(engagement);
+    Promise.all([fetchEngagementByEmail(), fetchLinkInterestByEmail()]).then(([engagement, linkInterest]) => {
+      if (cancelled) return;
+      setEngagementByEmail(engagement);
+      setLinkInterestByEmail(linkInterest);
     });
     return () => { cancelled = true; };
   }, []);
@@ -726,6 +730,20 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     return [...presets, ...custom];
   }, []);
 
+  // Freeze the selected audience definitions onto every draft/launch. Segment
+  // membership stays live, but historical campaign attribution must still say
+  // exactly which intent rule Sheree selected at send time.
+  const selectedSavedSegmentSnapshot = useMemo(() => selectedSavedSegments
+    .map((id) => savedSegments.find((segment) => segment.id === id))
+    .filter((segment): segment is Segment => Boolean(segment))
+    .map((segment) => ({
+      id: segment.id,
+      name: segment.name,
+      kind: segment.kind || 'rules',
+      link_interest: segment.link_interest || null,
+      recommended_branches: segment.recommended_branches || [],
+    })), [selectedSavedSegments, savedSegments]);
+
   // For each saved segment, the lowercased set of emails that qualify (evaluated once
   // over every enriched profile). Membership is then intersected with the scoped,
   // consent-filtered audience below — so branch scope + consent are still enforced.
@@ -737,12 +755,25 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       if (seg.kind === 'email_list') continue;
       const emails = new Set<string>();
       for (const ep of enriched) {
-        if (ep.email && evaluateSegment(ep, seg, engagementByEmail)) emails.add(ep.email.toLowerCase());
+        if (ep.email && evaluateSegment(ep, seg, engagementByEmail, linkInterestByEmail)) emails.add(ep.email.toLowerCase());
+      }
+      // Newsletter-only clickers are intentionally absent from the federated
+      // customer profile feed. Seed link-interest membership from the Hub event
+      // aggregate, then intersect it with live newsletter consent below.
+      if (seg.kind === 'link_interest') {
+        for (const email of linkInterestByEmail.keys()) {
+          const clickOnlyIdentity: EnrichedProfile = {
+            email,
+            _spoke_id: 'hub-link-interest',
+            _spoke_name: 'Email engagement',
+          };
+          if (evaluateSegment(clickOnlyIdentity, seg, engagementByEmail, linkInterestByEmail)) emails.add(email);
+        }
       }
       map[seg.id] = emails;
     }
     return map;
-  }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail]);
+  }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail, linkInterestByEmail]);
 
   const eventSegmentIds = useMemo(() => new Set(
     savedSegments.filter(isEventAudienceSegment).map((segment) => segment.id),
@@ -832,13 +863,14 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Count of each saved segment WITHIN the currently scoped branches (reflects reach here)
   const savedSegmentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
+    const countProfiles = authoritativeNewsletterAudience ? authoritativeNewsletterProfiles : scopedProfiles;
     for (const seg of savedSegments) {
       if (seg.kind === 'email_list') { counts[seg.id] = seg.email_list?.length || 0; continue; }
       const set = savedSegmentEmails[seg.id];
-      counts[seg.id] = set ? scopedProfiles.filter(p => set.has((p.email || '').toLowerCase())).length : 0;
+      counts[seg.id] = set ? countProfiles.filter(p => set.has((p.email || '').toLowerCase())).length : 0;
     }
     return counts;
-  }, [savedSegments, savedSegmentEmails, scopedProfiles]);
+  }, [savedSegments, savedSegmentEmails, scopedProfiles, authoritativeNewsletterAudience, authoritativeNewsletterProfiles]);
 
   const enabledChannelCount = enabledChannels.size;
 
@@ -910,6 +942,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
           branches: selectedBranches,
           presets: selectedSegments,
           saved_segments: selectedSavedSegments,
+          saved_segment_snapshot: selectedSavedSegmentSnapshot,
           branch_content: branchContent,
         },
         channels: channelList,
@@ -939,7 +972,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     isDraftHydrated, isLaunching, triggerType, scheduledDate, scheduledTime,
     draftId, campaignName, emailTemplate, emailSubject, selectedSegments,
     selectedTags, selectedBranches, audienceSize, draftSnapshot,
-    selectedSavedSegments, branchContent, channelList, timingRules,
+    selectedSavedSegments, selectedSavedSegmentSnapshot, branchContent, channelList, timingRules,
     channelContents, addToast, onDraftIdChange,
   ]);
 
@@ -994,8 +1027,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     fetchSuppressedEmails(scopes).then(setSuppressedEmails);
   }, [selectedBranches]);
 
-  // One-time handoff from the Segments page "Send Campaign" button: pre-select the
-  // handed-off segment and scope to all branches so it's immediately addressable.
+  // One-time handoff from the Segments page "Send Campaign" button. Segments may
+  // recommend a consent-bearing origin branch; otherwise preserve the established
+  // all-branches fallback.
   const handoffAppliedRef = useRef(false);
   useEffect(() => {
     if (handoffAppliedRef.current) return;
@@ -1007,9 +1041,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     if (savedSegments.length === 0 || availableBranches.length === 0) return;
     handoffAppliedRef.current = true;
     try { localStorage.removeItem('trellis_pending_campaign_segment'); } catch { /* ignore */ }
-    if (savedSegments.some(s => s.id === pending)) {
+    const handedOffSegment = savedSegments.find(s => s.id === pending);
+    if (handedOffSegment) {
       setSelectedSavedSegments([pending]);
-      setSelectedBranches([...availableBranches]);
+      const recommended = (handedOffSegment.recommended_branches || [])
+        .filter((slug) => availableBranches.includes(slug));
+      setSelectedBranches(recommended.length > 0 ? recommended : [...availableBranches]);
       setCurrentStep(0);
       setShowAudiencePreview(true);
     }
@@ -1017,8 +1054,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
 
   // Seed the branch scope from the global Branch Scope picker (top bar) so
   // narrowing the global scope pre-selects those branches here. Runs once, is
-  // skipped while a Segments "Send Campaign" handoff is pending (that flow
-  // scopes to all branches), and never overwrites manual changes afterward.
+  // skipped while a Segments "Send Campaign" handoff is pending, and never
+  // overwrites manual changes afterward.
   const scopeSeededRef = useRef(false);
   useEffect(() => {
     if (scopeSeededRef.current) return;
@@ -1268,6 +1305,7 @@ Return ONLY the post content, no explanations or labels.`,
           branches: selectedBranches,
           presets: selectedSegments,
           saved_segments: selectedSavedSegments,
+          saved_segment_snapshot: selectedSavedSegmentSnapshot,
           branch_content: branchContent,
         },
         channels: channels,
@@ -1819,6 +1857,8 @@ Return ONLY the post content, no explanations or labels.`,
                                 {seg.name}
                                 {seg.kind === 'email_list'
                                   ? <span className="ml-2 text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full align-middle tracking-normal">TEST</span>
+                                  : seg.kind === 'link_interest'
+                                    ? <span className="ml-2 text-[8px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full align-middle tracking-normal">INTENT</span>
                                   : !isPreset && <span className="ml-2 text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full align-middle tracking-normal">CUSTOM</span>}
                               </p>
                               {seg.description && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{seg.description}</p>}

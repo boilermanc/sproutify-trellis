@@ -6,7 +6,7 @@ import {
   SEGMENT_FIELDS,
   SegmentOperator
 } from './segmentTypes';
-import { EngagementSummary } from './services/emailReportingService';
+import { EngagementSummary, LinkInterestClickSummary } from './services/emailReportingService';
 
 // Sentinel for last_opened_days_ago / last_clicked_days_ago when a profile has never
 // opened/clicked (see SEGMENT_FIELDS 'engagement' category in segmentTypes.ts).
@@ -15,6 +15,55 @@ import { EngagementSummary } from './services/emailReportingService';
 // exclude them. Kept as a large finite number (not Infinity) so `between` upper
 // bounds still behave.
 const NEVER_ENGAGED_DAYS = 999999;
+
+const normalizeInterestUrl = (raw: string): { canonical: string; hostname: string } | null => {
+  try {
+    const url = new URL(raw.trim());
+    url.hash = '';
+    const pathname = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+    return {
+      canonical: `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ''}${pathname}${url.search}`,
+      hostname: url.hostname.toLowerCase().replace(/^www\./, ''),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const matchesLinkInterest = (
+  email: string,
+  segment: Segment,
+  linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
+): boolean => {
+  const definition = segment.link_interest;
+  if (!definition || !linkInterestByEmail) return false;
+  const target = normalizeInterestUrl(definition.url);
+  if (!target) return false;
+
+  const campaignIds = new Set(definition.campaign_ids || []);
+  const campaignSubjects = new Set((definition.campaign_subjects || []).map((subject) => subject.toLowerCase()));
+  const cutoff = definition.lookback_days && definition.lookback_days > 0
+    ? Date.now() - definition.lookback_days * 86400000
+    : null;
+
+  let clicks = 0;
+  for (const row of linkInterestByEmail.get(email.trim().toLowerCase()) || []) {
+    const candidate = normalizeInterestUrl(row.link_url);
+    if (!candidate) continue;
+    const urlMatches = definition.match_type === 'domain'
+      ? candidate.hostname === target.hostname
+      : definition.match_type === 'prefix'
+        ? candidate.canonical.startsWith(target.canonical)
+        : candidate.canonical === target.canonical;
+    if (!urlMatches) continue;
+    if (campaignIds.size > 0 && (!row.campaign_id || !campaignIds.has(row.campaign_id))) continue;
+    if (campaignSubjects.size > 0 && (!row.campaign_subject || !campaignSubjects.has(row.campaign_subject.toLowerCase()))) continue;
+    if (cutoff !== null && new Date(row.last_click_at).getTime() < cutoff) continue;
+    clicks += Number(row.clicks || 0);
+    if (clicks >= Math.max(1, definition.min_clicks || 1)) return true;
+  }
+  return false;
+};
 
 const daysSince = (iso: string | null | undefined): number => {
   if (!iso) return NEVER_ENGAGED_DAYS;
@@ -243,12 +292,17 @@ const evaluateRuleGroup = (
 export const evaluateSegment = (
   profile: EnrichedProfile,
   segment: Segment,
-  engagementByEmail?: Map<string, EngagementSummary>
+  engagementByEmail?: Map<string, EngagementSummary>,
+  linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
 ): boolean => {
   // Static test list: membership is the explicit set of addresses.
   if (segment.kind === 'email_list') {
     const list = segment.email_list || [];
     return list.includes((profile.email || '').toLowerCase());
+  }
+
+  if (segment.kind === 'link_interest') {
+    return matchesLinkInterest(profile.email || '', segment, linkInterestByEmail);
   }
 
   if (segment.rule_groups.length === 0) return true;
@@ -261,27 +315,30 @@ export const evaluateSegment = (
 export const filterProfilesBySegment = (
   profiles: EnrichedProfile[],
   segment: Segment,
-  engagementByEmail?: Map<string, EngagementSummary>
+  engagementByEmail?: Map<string, EngagementSummary>,
+  linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
 ): EnrichedProfile[] => {
-  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail));
+  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail, linkInterestByEmail));
 };
 
 // Get count of profiles matching a segment
 export const countProfilesInSegment = (
   profiles: EnrichedProfile[],
   segment: Segment,
-  engagementByEmail?: Map<string, EngagementSummary>
+  engagementByEmail?: Map<string, EngagementSummary>,
+  linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
 ): number => {
-  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail)).length;
+  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail, linkInterestByEmail)).length;
 };
 
 // Get all segments a profile belongs to
 export const getProfileSegments = (
   profile: EnrichedProfile,
   segments: Segment[],
-  engagementByEmail?: Map<string, EngagementSummary>
+  engagementByEmail?: Map<string, EngagementSummary>,
+  linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
 ): Segment[] => {
-  return segments.filter(segment => evaluateSegment(profile, segment, engagementByEmail));
+  return segments.filter(segment => evaluateSegment(profile, segment, engagementByEmail, linkInterestByEmail));
 };
 
 // Create a product-based segment dynamically

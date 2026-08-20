@@ -680,6 +680,41 @@ export interface EngagementSummary {
   campaigns_clicked: number; // distinct campaigns with a non-unsubscribe click
 }
 
+export interface LinkInterestClickSummary {
+  email: string;
+  link_url: string;
+  campaign_id: string | null;
+  campaign_subject: string | null;
+  click_date: string;
+  clicks: number;
+  first_click_at: string;
+  last_click_at: string;
+}
+
+// One row per address/link/campaign/day from link_interest_clicks. Daily buckets
+// keep all-time intent reads compact while preserving accurate recency filters.
+export async function fetchLinkInterestByEmail(): Promise<Map<string, LinkInterestClickSummary[]>> {
+  const result = new Map<string, LinkInterestClickSummary[]>();
+  try {
+    const rows = await fetchAllPages<LinkInterestClickSummary>(
+      'link_interest_clicks',
+      'email,link_url,campaign_id,campaign_subject,click_date,clicks,first_click_at,last_click_at',
+      (query) => query,
+      'email',
+    );
+    for (const row of rows) {
+      const email = (row.email || '').trim().toLowerCase();
+      if (!email || !row.link_url) continue;
+      const existing = result.get(email) || [];
+      existing.push({ ...row, email, clicks: Number(row.clicks || 0) });
+      result.set(email, existing);
+    }
+  } catch (e) {
+    console.error('fetchLinkInterestByEmail failed:', e);
+  }
+  return result;
+}
+
 // Bulk engagement aggregate for segment targeting, sourced from
 // email_engagement_summary — grouped server-side to one row per email (bounded
 // by audience size), not one row per open/click event (bounded by all-time

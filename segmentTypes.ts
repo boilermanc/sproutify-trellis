@@ -35,6 +35,20 @@ export interface SegmentRuleGroup {
   rules: SegmentRule[];
 }
 
+export type LinkInterestMatchType = 'exact' | 'domain' | 'prefix';
+
+// A reusable intent signal derived from Resend click events. Membership stays
+// dynamic: historical clicks qualify immediately and future clicks appear as
+// soon as the webhook records them.
+export interface LinkInterestDefinition {
+  url: string;
+  match_type: LinkInterestMatchType;
+  min_clicks: number;
+  lookback_days?: number | null;
+  campaign_ids?: string[];
+  campaign_subjects?: string[];
+}
+
 // A saved segment
 export interface Segment {
   id: string;
@@ -48,8 +62,10 @@ export interface Segment {
   // 'email_list' is a static test list — membership is the explicit set of
   // addresses in `email_list`, which are emailed directly (bypassing branch
   // scope + consent) when used as a campaign audience.
-  kind?: 'rules' | 'email_list';
+  kind?: 'rules' | 'email_list' | 'link_interest';
   email_list?: string[]; // lowercased addresses when kind === 'email_list'
+  link_interest?: LinkInterestDefinition;
+  recommended_branches?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -341,6 +357,23 @@ export const PRESET_SEGMENTS: Omit<Segment, 'id' | 'created_at' | 'updated_at'>[
         { id: 'atl-event-notice-consent', field: 'event_notice_consent', operator: 'is_true', value: true }
       ]
     }]
+  },
+  // Keep new presets appended so existing preset-<index> handoff ids remain stable.
+  {
+    name: 'Home App Leads',
+    description: 'People who clicked a sproutify.app link in a tracked email',
+    icon: 'mouse-pointer-click',
+    color: 'violet',
+    is_preset: true,
+    kind: 'link_interest',
+    link_interest: {
+      url: 'https://sproutify.app',
+      match_type: 'domain',
+      min_clicks: 1,
+      lookback_days: null,
+    },
+    recommended_branches: ['atlurbanfarms'],
+    rule_groups: [],
   },
 ];
 
