@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, MailCheck, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, MailCheck, RefreshCw, Search } from 'lucide-react';
 import { Lead } from '../../types';
 import { fetchLeadEmailOutbox, LeadEmailOutboxMessage } from '../../services/leadSequenceService';
 import CrmModal from './CrmModal';
@@ -34,6 +34,27 @@ const statusClass = (status: string, active: boolean): string => {
   if (status === 'clicked') return 'border-indigo-200 bg-indigo-50 text-indigo-600';
   if (status === 'opened') return 'border-cyan-200 bg-cyan-50 text-cyan-600';
   return 'border-emerald-200 bg-emerald-50 text-emerald-600';
+};
+
+const hasOpened = (message: LeadEmailOutboxMessage): boolean =>
+  message.events.includes('opened') || message.events.includes('opened_inferred');
+
+const safeClickUrl = (value: string): string | null => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+const clickUrlLabel = (value: string): string => {
+  try {
+    const url = new URL(value);
+    return `${url.hostname}${url.pathname}${url.search}`;
+  } catch {
+    return value;
+  }
 };
 
 interface Props {
@@ -78,7 +99,7 @@ const LeadEmailOutboxModal: React.FC<Props> = ({ leads, scopeLabel, onClose }) =
     all: messages.length,
     sent: messages.filter(message => message.events.includes('sent')).length,
     delivered: messages.filter(message => message.events.includes('delivered')).length,
-    opened: messages.filter(message => message.events.includes('opened')).length,
+    opened: messages.filter(hasOpened).length,
     clicked: messages.filter(message => message.events.includes('clicked')).length,
     replied: messages.filter(message => message.events.includes('replied')).length,
     issues: messages.filter(message => message.events.some(status => ISSUE_STATUSES.includes(status))).length,
@@ -91,6 +112,7 @@ const LeadEmailOutboxModal: React.FC<Props> = ({ leads, scopeLabel, onClose }) =
       if (query && !`${name} ${message.recipient_email} ${message.subject}`.toLowerCase().includes(query)) return false;
       if (filter === 'all') return true;
       if (filter === 'issues') return message.events.some(status => ISSUE_STATUSES.includes(status));
+      if (filter === 'opened') return hasOpened(message);
       return message.events.includes(filter);
     });
   }, [filter, leadNames, messages, search]);
@@ -134,17 +156,22 @@ const LeadEmailOutboxModal: React.FC<Props> = ({ leads, scopeLabel, onClose }) =
                     <td className="max-w-md px-4 py-4"><p className="truncate text-xs font-bold text-slate-200" title={message.subject}>{message.subject}</p><p className="mt-1 text-[10px] text-slate-500">{message.step ? `Step ${message.step.step_number} · ${message.step.name}` : 'Manual email'}</p>{message.last_error && <p className="mt-1 text-[10px] text-rose-300" title={message.last_error}>{message.last_error}</p>}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-[10px] text-slate-400">{formatWhen(message.sent_at || message.created_at)}</td>
                     <td className="px-4 py-4"><div className="flex flex-wrap gap-1.5">{[...POSITIVE_STATUSES, ...ISSUE_STATUSES].map(status => {
-                      const active = message.events.includes(status);
+                      const inferredOpen = status === 'opened' && message.events.includes('opened_inferred');
+                      const active = status === 'opened' ? hasOpened(message) : message.events.includes(status);
                       if (ISSUE_STATUSES.includes(status) && !active) return null;
-                      return <span key={status} className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-wider ${statusClass(status, active)}`}>{active && <CheckCircle2 size={9} />}{status}</span>;
-                    })}</div></td>
+                      return <span key={status} title={inferredOpen ? 'Open inferred from a click by this lead; the tracking pixel was not loaded.' : undefined} className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[8px] font-black uppercase tracking-wider ${statusClass(status, active)}`}>{active && <CheckCircle2 size={9} />}{inferredOpen ? 'opened*' : status}</span>;
+                    })}</div>{message.clicked_links.length > 0 && <div className="mt-3 space-y-1.5"><p className="text-[8px] font-black uppercase tracking-wider text-slate-500">Links clicked</p>{message.clicked_links.map(link => {
+                      const safeUrl = safeClickUrl(link.url);
+                      const content = <><span className="max-w-[280px] truncate">{clickUrlLabel(link.url)}</span>{link.count > 1 && <span className="shrink-0 text-[8px] font-black text-indigo-500">×{link.count}</span>}<span className="shrink-0 text-[8px] text-slate-500">{formatWhen(link.clicked_at)}</span>{safeUrl && <ExternalLink size={10} className="shrink-0" />}</>;
+                      return safeUrl ? <a key={link.url} href={safeUrl} target="_blank" rel="noopener noreferrer" title={link.url} className="flex max-w-lg items-center gap-1.5 text-[9px] text-indigo-500 hover:text-indigo-400 hover:underline">{content}</a> : <div key={link.url} title={link.url} className="flex max-w-lg items-center gap-1.5 text-[9px] text-slate-500">{content}</div>;
+                    })}</div>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        <p className="text-right text-[10px] text-slate-500">Showing {filtered.length} of {messages.length} outbound lead emails</p>
+        <div className="flex flex-col gap-1 text-right text-[10px] text-slate-500"><p>Showing {filtered.length} of {messages.length} outbound lead emails</p>{messages.some(message => message.events.includes('opened_inferred')) && <p>* Open inferred from a click by the lead when the tracking pixel was not loaded.</p>}</div>
       </div>
     </CrmModal>
   );

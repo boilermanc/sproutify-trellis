@@ -202,10 +202,10 @@ Deno.serve(async (req: Request) => {
   }
 
   // Lead emails are attributed by exact Resend ID, independent of subject reuse.
-  let leadMessage: { id: string; enrollment_id: string | null; lead_id: string; profile_id: string } | null = null;
+  let leadMessage: { id: string; enrollment_id: string | null; lead_id: string; profile_id: string; recipient_email: string } | null = null;
   if (data.email_id) {
     const { data: message, error: messageError } = await supabase.from("lead_email_messages")
-      .select("id,enrollment_id,lead_id,profile_id").eq("resend_email_id", data.email_id).maybeSingle();
+      .select("id,enrollment_id,lead_id,profile_id,recipient_email").eq("resend_email_id", data.email_id).maybeSingle();
     if (messageError) console.error("lead email message lookup failed:", messageError.message);
     else leadMessage = message;
   }
@@ -232,7 +232,12 @@ Deno.serve(async (req: Request) => {
   // 23505 = duplicate (webhook retry) — safe to ignore
   if (insErr && insErr.code !== "23505") console.error("event insert failed:", insErr.message);
 
-  if (leadMessage) {
+  // A Resend email ID is shared by the primary recipient and every CC. Only
+  // the primary lead recipient may advance this lead message's status.
+  const isLeadRecipientEvent = leadMessage
+    ? email === String(leadMessage.recipient_email || "").trim().toLowerCase()
+    : false;
+  if (leadMessage && isLeadRecipientEvent) {
     await supabase.from("lead_email_messages").update({
       status: type,
       provider_event_at: evt?.created_at || new Date().toISOString(),

@@ -57,9 +57,18 @@ test('provides a live lead email outbox with recipient-level tracking statuses',
   assert.match(sequenceService, /fetchLeadEmailOutbox/);
   assert.match(sequenceService, /\.from\('lead_email_messages'\)/);
   assert.match(sequenceService, /\.from\('email_events'\)/);
+  assert.match(sequenceService, /select\('resend_email_id,event_type,email,link_url,occurred_at'\)/);
+  assert.match(sequenceService, /recipientByResendId/);
+  assert.match(sequenceService, /opened_inferred/);
+  assert.match(sequenceService, /clickedLinksByMessage/);
   assert.match(sequenceService, /\.range\(from, from \+ OUTBOX_PAGE_SIZE - 1\)/);
   assert.match(outbox, /refreshes every 15 seconds/);
   assert.match(outbox, /'sent'.*'delivered'.*'opened'.*'clicked'.*'replied'/s);
+  assert.match(outbox, /Open inferred from a click by the lead/);
+  assert.match(outbox, /Links clicked/);
+  assert.match(outbox, /target="_blank"/);
+  assert.match(webhook, /isLeadRecipientEvent/);
+  assert.match(webhook, /recipient_email/);
 });
 
 test('replies and negative delivery outcomes stop the sequence', () => {

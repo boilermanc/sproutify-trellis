@@ -16,6 +16,7 @@ export interface LeadEmailOutboxMessage {
   step: { step_number: number; name: string } | null;
   enrollment: { exit_reason: string | null } | null;
   events: string[];
+  clicked_links: Array<{ url: string; clicked_at: string; count: number }>;
 }
 
 const OUTBOX_BATCH_SIZE = 200;
@@ -43,12 +44,19 @@ export async function fetchLeadEmailOutbox(leadIds: string[]): Promise<LeadEmail
         step: Array.isArray(row.step) ? row.step[0] || null : row.step || null,
         enrollment: Array.isArray(row.enrollment) ? row.enrollment[0] || null : row.enrollment || null,
         events: [],
+        clicked_links: [],
       })));
       if ((data || []).length < OUTBOX_PAGE_SIZE) break;
     }
   }
 
   const eventsByMessage = new Map<string, Set<string>>();
+  const clickedLinksByMessage = new Map<string, Map<string, { url: string; clicked_at: string; count: number }>>();
+  const recipientByResendId = new Map(
+    messages
+      .filter(message => message.resend_email_id)
+      .map(message => [message.resend_email_id as string, message.recipient_email.trim().toLowerCase()]),
+  );
   const resendIds = [...new Set(messages.map(message => message.resend_email_id).filter((id): id is string => !!id))];
   for (let offset = 0; offset < resendIds.length; offset += OUTBOX_BATCH_SIZE) {
     const batch = resendIds.slice(offset, offset + OUTBOX_BATCH_SIZE);
@@ -56,31 +64,52 @@ export async function fetchLeadEmailOutbox(leadIds: string[]): Promise<LeadEmail
       const from = page * OUTBOX_PAGE_SIZE;
       const { data, error } = await supabase
         .from('email_events')
-        .select('resend_email_id,event_type')
+        .select('resend_email_id,event_type,email,link_url,occurred_at')
         .in('resend_email_id', batch)
         .order('occurred_at', { ascending: true })
         .range(from, from + OUTBOX_PAGE_SIZE - 1);
       if (error) throw error;
       for (const event of data || []) {
         if (!event.resend_email_id) continue;
+        const leadRecipient = recipientByResendId.get(event.resend_email_id);
+        if (!leadRecipient || String(event.email || '').trim().toLowerCase() !== leadRecipient) continue;
         const statuses = eventsByMessage.get(event.resend_email_id) || new Set<string>();
         statuses.add(event.event_type);
         eventsByMessage.set(event.resend_email_id, statuses);
+        const clickedUrl = event.event_type === 'clicked' ? String(event.link_url || '').trim() : '';
+        if (clickedUrl) {
+          const links = clickedLinksByMessage.get(event.resend_email_id) || new Map();
+          const existing = links.get(clickedUrl);
+          links.set(clickedUrl, {
+            url: clickedUrl,
+            clicked_at: String(event.occurred_at || existing?.clicked_at || ''),
+            count: (existing?.count || 0) + 1,
+          });
+          clickedLinksByMessage.set(event.resend_email_id, links);
+        }
       }
       if ((data || []).length < OUTBOX_PAGE_SIZE) break;
     }
   }
 
   return messages
-    .map(message => ({
-      ...message,
-      events: [
-        ...(message.sent_at ? ['sent'] : []),
-        ...Array.from(message.resend_email_id ? eventsByMessage.get(message.resend_email_id) || [] : []),
-        message.status,
-        ...(message.enrollment?.exit_reason === 'replied' ? ['replied'] : []),
-      ].filter((status, index, statuses) => statuses.indexOf(status) === index),
-    }))
+    .map(message => {
+      const recipientEvents = Array.from(message.resend_email_id ? eventsByMessage.get(message.resend_email_id) || [] : []);
+      const fallbackStatus = !message.resend_email_id || recipientEvents.length === 0 ? [message.status] : [];
+      const inferredOpen = recipientEvents.includes('clicked') && !recipientEvents.includes('opened');
+      return {
+        ...message,
+        clicked_links: Array.from(message.resend_email_id ? clickedLinksByMessage.get(message.resend_email_id)?.values() || [] : [])
+          .sort((a, b) => b.clicked_at.localeCompare(a.clicked_at)),
+        events: [
+          ...(message.sent_at ? ['sent'] : []),
+          ...recipientEvents,
+          ...fallbackStatus,
+          ...(inferredOpen ? ['opened_inferred'] : []),
+          ...(message.enrollment?.exit_reason === 'replied' ? ['replied'] : []),
+        ].filter((status, index, statuses) => statuses.indexOf(status) === index),
+      };
+    })
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
