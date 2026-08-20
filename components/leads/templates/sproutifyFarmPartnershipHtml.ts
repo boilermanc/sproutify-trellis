@@ -8,7 +8,7 @@ export const SPROUTIFY_FARM_PARTNERSHIP_HTML = `<!DOCTYPE HTML PUBLIC "-//W3C//D
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="x-apple-disable-message-reformatting" />
-  <title>Congrats on your new Tower Farm — meet Sproutify Farm!</title>
+  <title>Introducing Sproutify Farm for your Tower Farm project</title>
   <style type="text/css">
     body { margin: 0; padding: 0; background-color: #EEF2E6; }
     table, td, tr { border-collapse: collapse; vertical-align: top; }
@@ -39,10 +39,10 @@ export const SPROUTIFY_FARM_PARTNERSHIP_HTML = `<!DOCTYPE HTML PUBLIC "-//W3C//D
           </tr>
           <tr>
             <td class="u-content-padding" style="background-color:#FFFDF8;padding:30px 28px 24px;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#2C2C2A;">
-              <p style="margin:0 0 18px;font-size:21px;line-height:28px;font-weight:700;color:#14402C;">Congrats on your new Tower Farm &mdash; meet Sproutify Farm! &#127881;</p>
+              <p style="margin:0 0 18px;font-size:21px;line-height:28px;font-weight:700;color:#14402C;">Introducing Sproutify Farm for your Tower Farm project</p>
               <p style="margin:0 0 14px;">Hi {{first_name}},</p>
-              <p style="margin:0 0 14px;">Congratulations on your new Tower Farm &mdash; this is such an exciting step, and I&rsquo;m thrilled to welcome you to the tower farm family!</p>
-              <p style="margin:0 0 14px;">I want to personally reach out and introduce you to <a href="https://farm.sproutify.app/" style="color:#14402C;font-weight:700;">Sproutify Farm</a>, the only farm management software developed specifically for commercial aeroponic farms. We have partnered with Tower Farm Corp to help new aeroponic farms get started smoothly and successfully.</p>
+              <p style="margin:0 0 14px;">I&rsquo;m Sheree, a tower farmer and co-founder of Sproutify. I wanted to personally introduce myself and share a resource built for aeroponic farm operators.</p>
+              <p style="margin:0 0 14px;"><a href="https://farm.sproutify.app/" style="color:#14402C;font-weight:700;">Sproutify Farm</a> is farm management software developed specifically for commercial aeroponic farms. We partner with Tower Farm Corp to help operators plan, organize, and run their farms smoothly.</p>
               <p style="margin:0 0 12px;"><strong>What is Sproutify Farm?</strong> We have built a farm management app specifically for aeroponic tower operations &mdash; tower capacity planning, port management, seed-to-harvest workflows, and task coordination that generic farm tools just can&rsquo;t handle. Tower Farm provides great equipment; Sproutify Farm provides the operational system to organize and run profitably, day in and day out.</p>
               <ul style="margin:0 0 18px;padding-left:22px;">
                 <li style="margin:0 0 8px;"><strong>Tower &amp; port management</strong> &mdash; see every tower and port at a glance, so you always know what&rsquo;s growing where and when.</li>
@@ -52,7 +52,7 @@ export const SPROUTIFY_FARM_PARTNERSHIP_HTML = `<!DOCTYPE HTML PUBLIC "-//W3C//D
                 <li style="margin:0 0 8px;"><strong>Task coordination</strong> &mdash; stay on top of daily to-dos so nothing slips through the cracks.</li>
                 <li style="margin:0;"><strong>Reporting</strong> &mdash; clear insights into your harvests and operation, so you can make smart decisions and grow more profitably.</li>
               </ul>
-              <p style="margin:0 0 14px;"><strong>Start today!</strong> Still waiting for equipment? Mid-installation? Already growing? There&rsquo;s no wrong time to jump in! Since seedling production takes a few weeks, the sooner you start planning your seeding schedule in Sproutify, the smoother your first harvest will be. And if you&rsquo;re already up and running &mdash; perfect, we&rsquo;ll help you get organized from here.</p>
+              <p style="margin:0 0 14px;"><strong>Start where you are.</strong> Whether you&rsquo;re exploring a project, waiting for equipment, mid-installation, or already growing, there&rsquo;s no wrong time to get organized. Since seedling production takes a few weeks, early seeding and capacity planning can make harvests run much more smoothly.</p>
               <p style="margin:0 0 14px;"><strong>How it works.</strong> Sproutify Farm is your day-to-day operations hub &mdash; like QuickBooks for your farm. It complements any consulting relationship you have, giving you one organized place to manage the business side of growing.</p>
               <p style="margin:0 0 14px;"><strong>Free for 90 days.</strong> Tower Farm Corp is generously covering the first 3 months of your Sproutify Farm subscription &mdash; completely free to you. No cost, no obligation &mdash; just full access to the platform while you get your operation off the ground. After 90 days, the <a href="https://farm.sproutify.app/" style="color:#14402C;font-weight:700;">subscription</a> is based on the number of towers in operation.</p>
               <p style="margin:0 0 14px;">Clint and I run our own tower farm, so we know firsthand the gap between &ldquo;the equipment arrives&rdquo; and &ldquo;the farm is actually profitable&rdquo; &mdash; especially for first-time farmers. We built Sproutify Farm to help you close that gap fast.</p>

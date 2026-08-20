@@ -9,11 +9,14 @@ let buildLeadEmailHtml;
 let LEAD_CC_RECIPIENTS;
 let LEAD_EMAIL_TEMPLATES;
 let applyLeadTemplate;
+let extractLatestReply;
+let emailList;
 
 before(async () => {
   server = await createServer({ appType: 'custom', configFile: false, logLevel: 'silent', root: process.cwd(), server: { middlewareMode: true } });
   ({ classifyLeadEmailEligibility, leadPlainTextToHtml, buildLeadEmailHtml, LEAD_CC_RECIPIENTS } = await server.ssrLoadModule('/leadService.ts'));
   ({ LEAD_EMAIL_TEMPLATES, applyLeadTemplate } = await server.ssrLoadModule('/components/leads/leadEmailTemplates.ts'));
+  ({ extractLatestReply, emailList } = await server.ssrLoadModule('/supabase/functions/_shared/reply-content.ts'));
 });
 
 after(async () => { await server?.close(); });
@@ -68,7 +71,7 @@ test('offers a cleaned Sproutify Farm HTML partnership template with the real lo
   const template = LEAD_EMAIL_TEMPLATES.find(item => item.id === 'new-farm-partnership-html');
   assert.ok(template);
   assert.equal(template.name, 'Introducing Sproutify Farm — HTML');
-  assert.equal(template.subject, 'Congrats on your new Tower Farm — meet Sproutify Farm! 🎉');
+  assert.equal(template.subject, 'Introducing Sproutify Farm for your Tower Farm project');
   assert.equal(template.bodyFormat, 'html');
   assert.match(template.body, />Introducing Sproutify Farm<\/p>/);
   assert.match(template.body, /Tower &amp; port management/);
@@ -77,6 +80,20 @@ test('offers a cleaned Sproutify Farm HTML partnership template with the real lo
   assert.match(template.body, /https:\/\/www\.sproutify\.app\/images\/sproutify-farm-white\.png/);
   assert.match(template.body, /<!-- SPROUTIFY_COMPLIANCE_FOOTER -->/);
   assert.doesNotMatch(template.body, /\{\{body_copy\}\}|#8217;|href="#"/);
+  assert.doesNotMatch(template.body, /Congratulations on your new Tower Farm|Congrats on your new Tower Farm/);
+});
+
+test('keeps only the newly written Outlook reply', () => {
+  const reply = extractLatestReply(`I have not ordered anything from you.\n\nSara\n\n**********************************************\nSHAHLA SARA MAHDAVI\n\n________________________________\nFrom: Sheree <sheree@sproutify.app>\nSubject: Original message\nOriginal copy and tracked URLs`);
+  assert.equal(reply, 'I have not ordered anything from you.\n\nSara');
+});
+
+test('strips Gmail quoted replies and normalizes CC addresses', () => {
+  assert.equal(extractLatestReply('Thanks for the note.\n\nOn Thu, Aug 20, 2026 at 9:00 AM Sheree wrote:\n> Original'), 'Thanks for the note.');
+  assert.deepEqual(emailList(['Bret <bret.bowlin@towerfarms.com>', 'Sheree <SHEREE@SPROUTIFY.APP>']), [
+    'bret.bowlin@towerfarms.com',
+    'sheree@sproutify.app',
+  ]);
 });
 
 test('personalizes the HTML template and places one compliance footer at its marker', () => {

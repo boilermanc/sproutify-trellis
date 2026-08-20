@@ -17,14 +17,16 @@ export interface LeadEmailTemplate {
 export const LEAD_EMAIL_TEMPLATES: LeadEmailTemplate[] = [
   {
     id: 'new-tower-farm-welcome',
-    name: 'New Tower Farm — Welcome',
-    subject: 'Welcome to your new Tower Farm — your first 3 months are on us',
+    name: 'Tower Farm — Introduction',
+    subject: 'Introducing Sproutify Farm for your Tower Farm project',
     bodyFormat: 'text',
-    body: `Congratulations on your new Tower Farm! I wanted to personally reach out to introduce [Sproutify Farm](https://farm.sproutify.app/), the operational software Tower Farm Corp partners with to help new aeroponic farms get up and running successfully.
+    body: `Hi {{first_name}},
+
+I'm Sheree, a tower farmer and co-founder of Sproutify. I wanted to personally introduce myself and share [Sproutify Farm](https://farm.sproutify.app/), the operational software Tower Farm Corp partners with to help aeroponic farms plan, organize, and run successfully.
 
 **What Sproutify does:** We've built farm management software specifically for aeroponic tower operations — tower capacity planning, port management, seed-to-harvest workflows, and task coordination that generic farm tools simply can't handle. Tower Farm gives you great equipment; Sproutify gives you the operational system to run it profitably day-to-day.
 
-**Start where you are:** Wherever you are in the process — still waiting on equipment, mid-installation, or already growing — there's no wrong time to get started. Since seedling production takes several weeks, the earlier you begin planning your seeding schedule in Sproutify, the smoother your first harvest will go. But if you're already up and running, we'll help you get your current operation organized from here.
+**Start where you are:** Whether you're exploring a project, waiting on equipment, mid-installation, or already growing, there's no wrong time to get organized. Since seedling production takes several weeks, early seeding and capacity planning can make harvests run much more smoothly.
 
 **Your complimentary access:** Tower Farm Corp is covering your first 3 months on us. No cost, no obligation — just full access to the platform while you get your operation off the ground.
 
@@ -41,7 +43,7 @@ Co-Founder, Sproutify`,
   {
     id: 'new-farm-partnership-html',
     name: 'Introducing Sproutify Farm — HTML',
-    subject: 'Congrats on your new Tower Farm — meet Sproutify Farm! 🎉',
+    subject: 'Introducing Sproutify Farm for your Tower Farm project',
     bodyFormat: 'html',
     body: SPROUTIFY_FARM_PARTNERSHIP_HTML,
   },

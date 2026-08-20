@@ -51,6 +51,12 @@ test('requires selecting the next sequence email before approval', () => {
   assert.match(sequencePanel, /setSelectedStepId\(null\)/);
 });
 
+test('requires the operator to confirm Tower Farm referral membership before starting', () => {
+  assert.match(sequencePanel, /referralConfirmed/);
+  assert.match(sequencePanel, /belongs on the Tower Farm referral list/);
+  assert.match(sequencePanel, /disabled=\{working \|\| disabled \|\| !referralConfirmed\}/);
+});
+
 test('provides a live lead email outbox with recipient-level tracking statuses', () => {
   assert.match(leadsPage, /Email Outbox/);
   assert.match(leadsPage, /LeadEmailOutboxModal/);
@@ -76,4 +82,6 @@ test('replies and negative delivery outcomes stop the sequence', () => {
   assert.match(webhook, /exit_reason: "replied"/);
   assert.match(webhook, /\["bounced", "complained", "failed", "suppressed"\]/);
   assert.match(webhook, /RESEND_WEBHOOK_SECRET is not configured/);
+  assert.match(webhook, /shereeAlreadyCopied/);
+  assert.match(webhook, /replyNotificationHtml/);
 });

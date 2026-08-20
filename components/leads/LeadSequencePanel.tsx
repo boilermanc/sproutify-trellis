@@ -16,6 +16,7 @@ const formatWhen = (value: string | null) => value
 
 const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, onStart, onAction }) => {
   const [mode, setMode] = useState<LeadSequenceMode>('approval');
+  const [referralConfirmed, setReferralConfirmed] = useState(false);
   const [working, setWorking] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   useEffect(() => {
@@ -39,7 +40,11 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, onS
         <button type="button" onClick={() => setMode('approval')} className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${mode === 'approval' ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200' : 'border-white/10 text-slate-500'}`}>Approve each</button>
         <button type="button" onClick={() => setMode('automatic')} className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${mode === 'automatic' ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200' : 'border-white/10 text-slate-500'}`}>Automatic</button>
       </div>
-      <button type="button" disabled={working || disabled} onClick={() => void run(() => onStart(mode))} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#0a2420] disabled:opacity-40">{working ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}Start sequence</button>
+      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2.5 text-[10px] leading-4 text-amber-100">
+        <input type="checkbox" checked={referralConfirmed} onChange={event => setReferralConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-emerald-400" />
+        <span>I confirmed this person belongs on the Tower Farm referral list.</span>
+      </label>
+      <button type="button" disabled={working || disabled || !referralConfirmed} onClick={() => void run(() => onStart(mode))} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-[#0a2420] disabled:cursor-not-allowed disabled:opacity-40">{working ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}Start sequence</button>
     </section>
   );
 

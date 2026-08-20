@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { emailList, extractLatestReply, receivedHtmlToText } from "../_shared/reply-content.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -56,6 +57,26 @@ const htmlEscape = (value: string) => value
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
+const TRELLIS_LEADS_URL = "https://trellis.sproutify.app";
+const REPLY_NOTIFICATION_RECIPIENT = "sheree@sproutify.app";
+
+const replyNotificationHtml = (from: string, subject: string, preview: string) => `<!doctype html>
+<html><body style="margin:0;background:#f1f5f9;padding:24px 12px">
+  <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dbe4e8;border-radius:14px;overflow:hidden;font:14px/1.6 Arial,sans-serif;color:#334155">
+    <div style="padding:18px 22px;background:#14402c;color:#ffffff">
+      <div style="font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#bde3c6">New lead reply</div>
+      <div style="margin-top:4px;font-size:18px;font-weight:bold">${htmlEscape(subject)}</div>
+    </div>
+    <div style="padding:22px">
+      <div style="margin-bottom:16px"><strong>From:</strong> ${htmlEscape(from)}</div>
+      <div style="padding:16px;border-left:4px solid #7ac143;background:#f7faf5;white-space:pre-wrap">${htmlEscape(preview || "No text body supplied.")}</div>
+      <div style="margin-top:20px">
+        <a href="${TRELLIS_LEADS_URL}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5c6;color:#082f3a;text-decoration:none;font-weight:bold">View in Trellis</a>
+      </div>
+    </div>
+  </div>
+</body></html>`;
+
 async function processInboundReply(supabase: any, evt: any): Promise<void> {
   const data = evt?.data || {};
   const destinations = Array.isArray(data.to) ? data.to.map(String) : [String(data.to || "")];
@@ -90,8 +111,7 @@ async function processInboundReply(supabase: any, evt: any): Promise<void> {
   const from = String(data.from || "").trim().toLowerCase();
   const subject = String(data.subject || "Reply from lead");
   const bodyText = String(received.text || "").trim();
-  const preview = (bodyText || String(received.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
-    .trim().slice(0, 4000);
+  const preview = extractLatestReply(bodyText || receivedHtmlToText(String(received.html || "")));
 
   const { error: insertError } = await supabase.from("lead_email_messages").insert({
     enrollment_id: enrollmentId, lead_id: leadId, profile_id: profileId,
@@ -113,8 +133,13 @@ async function processInboundReply(supabase: any, evt: any): Promise<void> {
     payload: { lead_id: leadId, direction: "inbound", from, subject, preview, resend_email_id: data.email_id },
   });
 
-  // Receiving domains route to Resend, so forward the human-readable reply to Sheree.
-  if (token) {
+  // Keep Sheree copied on outbound messages as requested. If the lead uses Reply
+  // All, she already receives the native reply, so do not send a duplicate.
+  // Plain Reply reaches only the unique Resend address, in which case send one
+  // clean internal notification containing only the newly written response.
+  const inboundCopies = [...new Set([...emailList(received.cc), ...emailList(data.cc)])];
+  const shereeAlreadyCopied = inboundCopies.includes(REPLY_NOTIFICATION_RECIPIENT);
+  if (token && !shereeAlreadyCopied) {
     await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -123,10 +148,10 @@ async function processInboundReply(supabase: any, evt: any): Promise<void> {
       },
       body: JSON.stringify({
         from: "Sproutify Farm Replies <sheree@sproutify.app>",
-        to: ["sheree@sproutify.app"],
+        to: [REPLY_NOTIFICATION_RECIPIENT],
         reply_to: from || undefined,
         subject: `Lead reply: ${subject}`,
-        html: `<p><strong>From:</strong> ${htmlEscape(from)}</p><p><strong>Subject:</strong> ${htmlEscape(subject)}</p><hr><div style="white-space:pre-wrap">${htmlEscape(preview || "No text body supplied.")}</div>`,
+        html: replyNotificationHtml(from, subject, preview),
       }),
     });
   }

@@ -57,12 +57,12 @@ const p = (value: string) => `<p style="margin:0 0 14px">${value}</p>`;
 export function sequenceHtml(templateKey: string, firstName: string, email: string, scope: string): string {
   const name = esc(firstName || "there");
   if (templateKey === "farm-introduction") {
-    return layout("Congrats on your new Tower Farm — meet Sproutify Farm! 🎉", [
+    return layout("Introducing Sproutify Farm for your Tower Farm project", [
       p(`Hi ${name},`),
-      p("Congratulations on your new Tower Farm — this is such an exciting step, and I’m thrilled to welcome you to the tower farm family!"),
-      p('I want to personally introduce <a href="https://farm.sproutify.app/" style="color:#14402c;font-weight:bold">Sproutify Farm</a>, the only farm management software developed specifically for commercial aeroponic farms. We partnered with Tower Farm Corp to help new farms get started smoothly and successfully.'),
+      p("I’m Sheree, a tower farmer and co-founder of Sproutify. I wanted to personally introduce myself and share a resource built for aeroponic farm operators."),
+      p('<a href="https://farm.sproutify.app/" style="color:#14402c;font-weight:bold">Sproutify Farm</a> is farm management software developed specifically for commercial aeroponic farms. We partner with Tower Farm Corp to help operators plan, organize, and run their farms smoothly.'),
       p("Sproutify gives you tower and port management, capacity planning, seed-to-harvest workflows, seed inventory and expenses, task coordination, and clear reporting in one place."),
-      p("There’s no wrong time to jump in. Since seedling production takes a few weeks, the sooner you plan your seeding schedule, the smoother your first harvest will be."),
+      p("Whether you’re exploring a project, planning installation, or already growing, there’s no wrong time to get organized. Since seedling production takes a few weeks, early seeding and capacity planning can make harvests run much more smoothly."),
       p("<strong>Free for 90 days.</strong> Tower Farm Corp is covering your first three months—no cost and no obligation—while you get your operation off the ground."),
       p("Clint and I run our own tower farm, so we know the gap between the equipment arriving and the farm becoming profitable. We built Sproutify Farm to help close that gap."),
       p('I would love to set up a quick demo. Reply with the best times, send any questions, or explore <a href="https://farm.sproutify.app/" style="color:#14402c;font-weight:bold">farm.sproutify.app</a> anytime.'),
