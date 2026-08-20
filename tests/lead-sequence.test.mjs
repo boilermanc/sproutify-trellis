@@ -5,6 +5,9 @@ import test from 'node:test';
 const migration = await readFile(new URL('../supabase/migrations/20260819195339_add_lead_email_sequences.sql', import.meta.url), 'utf8');
 const worker = await readFile(new URL('../supabase/functions/lead-sequence-worker/index.ts', import.meta.url), 'utf8');
 const webhook = await readFile(new URL('../supabase/functions/resend-webhook/index.ts', import.meta.url), 'utf8');
+const leadsPage = await readFile(new URL('../pages/Leads.tsx', import.meta.url), 'utf8');
+const sequenceService = await readFile(new URL('../services/leadSequenceService.ts', import.meta.url), 'utf8');
+const outbox = await readFile(new URL('../components/leads/LeadEmailOutboxModal.tsx', import.meta.url), 'utf8');
 
 test('defines the four-step 0/3/5/7-day farm sequence', () => {
   assert.match(migration, /\(1, 0, 'Initial introduction'/);
@@ -30,6 +33,24 @@ test('supports authenticated browser invocation of the sequence worker', () => {
   assert.match(worker, /req\.method === "OPTIONS"/);
   assert.match(worker, /Access-Control-Allow-Origin/);
   assert.match(worker, /authorization, apikey, content-type, x-client-info, x-supabase-api-version/);
+});
+
+test('refreshes lead stage after sends and live email status while details are open', () => {
+  assert.match(leadsPage, /Promise\.all\(\[loadTimeline\(lead\), loadLeads\(\)\]\)/);
+  assert.match(leadsPage, /fetchLeadSequence\(expandedLeadId\)/);
+  assert.match(leadsPage, /}, 15000\)/);
+  assert.match(leadsPage, /Deep Dive Failed/);
+});
+
+test('provides a live lead email outbox with recipient-level tracking statuses', () => {
+  assert.match(leadsPage, /Email Outbox/);
+  assert.match(leadsPage, /LeadEmailOutboxModal/);
+  assert.match(sequenceService, /fetchLeadEmailOutbox/);
+  assert.match(sequenceService, /\.from\('lead_email_messages'\)/);
+  assert.match(sequenceService, /\.from\('email_events'\)/);
+  assert.match(sequenceService, /\.range\(from, from \+ OUTBOX_PAGE_SIZE - 1\)/);
+  assert.match(outbox, /refreshes every 15 seconds/);
+  assert.match(outbox, /'sent'.*'delivered'.*'opened'.*'clicked'.*'replied'/s);
 });
 
 test('replies and negative delivery outcomes stop the sequence', () => {

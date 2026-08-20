@@ -1,6 +1,89 @@
 import { supabase } from '../lib/supabase';
 import { LeadEmailMessage, LeadEmailSequenceEnrollment, LeadEmailSequenceStep, LeadSequenceMode } from '../types';
 
+export interface LeadEmailOutboxMessage {
+  id: string;
+  lead_id: string;
+  recipient_email: string;
+  subject: string;
+  status: string;
+  resend_email_id: string | null;
+  body_preview: string | null;
+  created_at: string;
+  sent_at: string | null;
+  provider_event_at: string | null;
+  last_error: string | null;
+  step: { step_number: number; name: string } | null;
+  enrollment: { exit_reason: string | null } | null;
+  events: string[];
+}
+
+const OUTBOX_BATCH_SIZE = 200;
+const OUTBOX_PAGE_SIZE = 1000;
+const OUTBOX_MAX_PAGES = 100;
+
+export async function fetchLeadEmailOutbox(leadIds: string[]): Promise<LeadEmailOutboxMessage[]> {
+  if (leadIds.length === 0) return [];
+
+  const messages: LeadEmailOutboxMessage[] = [];
+  for (let offset = 0; offset < leadIds.length; offset += OUTBOX_BATCH_SIZE) {
+    const batch = leadIds.slice(offset, offset + OUTBOX_BATCH_SIZE);
+    for (let page = 0; page < OUTBOX_MAX_PAGES; page++) {
+      const from = page * OUTBOX_PAGE_SIZE;
+      const { data, error } = await supabase
+        .from('lead_email_messages')
+        .select('id,lead_id,recipient_email,subject,status,resend_email_id,body_preview,created_at,sent_at,provider_event_at,last_error,step:lead_email_sequence_steps(step_number,name),enrollment:lead_email_sequence_enrollments(exit_reason)')
+        .in('lead_id', batch)
+        .eq('direction', 'outbound')
+        .order('created_at', { ascending: false })
+        .range(from, from + OUTBOX_PAGE_SIZE - 1);
+      if (error) throw error;
+      messages.push(...(data || []).map((row: any) => ({
+        ...row,
+        step: Array.isArray(row.step) ? row.step[0] || null : row.step || null,
+        enrollment: Array.isArray(row.enrollment) ? row.enrollment[0] || null : row.enrollment || null,
+        events: [],
+      })));
+      if ((data || []).length < OUTBOX_PAGE_SIZE) break;
+    }
+  }
+
+  const eventsByMessage = new Map<string, Set<string>>();
+  const resendIds = [...new Set(messages.map(message => message.resend_email_id).filter((id): id is string => !!id))];
+  for (let offset = 0; offset < resendIds.length; offset += OUTBOX_BATCH_SIZE) {
+    const batch = resendIds.slice(offset, offset + OUTBOX_BATCH_SIZE);
+    for (let page = 0; page < OUTBOX_MAX_PAGES; page++) {
+      const from = page * OUTBOX_PAGE_SIZE;
+      const { data, error } = await supabase
+        .from('email_events')
+        .select('resend_email_id,event_type')
+        .in('resend_email_id', batch)
+        .order('occurred_at', { ascending: true })
+        .range(from, from + OUTBOX_PAGE_SIZE - 1);
+      if (error) throw error;
+      for (const event of data || []) {
+        if (!event.resend_email_id) continue;
+        const statuses = eventsByMessage.get(event.resend_email_id) || new Set<string>();
+        statuses.add(event.event_type);
+        eventsByMessage.set(event.resend_email_id, statuses);
+      }
+      if ((data || []).length < OUTBOX_PAGE_SIZE) break;
+    }
+  }
+
+  return messages
+    .map(message => ({
+      ...message,
+      events: [
+        ...(message.sent_at ? ['sent'] : []),
+        ...Array.from(message.resend_email_id ? eventsByMessage.get(message.resend_email_id) || [] : []),
+        message.status,
+        ...(message.enrollment?.exit_reason === 'replied' ? ['replied'] : []),
+      ].filter((status, index, statuses) => statuses.indexOf(status) === index),
+    }))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
 export async function fetchLeadSequence(leadId: string): Promise<LeadEmailSequenceEnrollment | null> {
   const { data: enrollment, error } = await supabase
     .from('lead_email_sequence_enrollments')

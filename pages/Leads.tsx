@@ -14,6 +14,7 @@ import {
   Loader2,
   List,
   Mail,
+  MailCheck,
   Plus,
   Search,
   Tag,
@@ -39,6 +40,7 @@ import LeadBulkBar from '../components/leads/LeadBulkBar';
 import { runSequentialBulk } from '../components/leads/leadBulk';
 import CrmModal from '../components/leads/CrmModal';
 import LeadSequencePanel from '../components/leads/LeadSequencePanel';
+import LeadEmailOutboxModal from '../components/leads/LeadEmailOutboxModal';
 import { controlLeadSequence, fetchLeadSequence, startLeadSequence } from '../services/leadSequenceService';
 import {
   checkExistingLeads,
@@ -133,7 +135,7 @@ const renderDeepDiveBadge = (status?: LeadResearchStatus) => {
     return <span title="Researching this lead…" className="inline-flex items-center gap-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-cyan-300"><Loader2 size={10} className="animate-spin" />Researching</span>;
   }
   if (status === 'failed') {
-    return <span title="Deep dive failed — run it again" className="inline-flex items-center gap-1 rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-300"><Telescope size={10} />Failed</span>;
+    return <span title="Deep dive failed — run it again" className="inline-flex items-center gap-1 rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-300"><Telescope size={10} />Deep Dive Failed</span>;
   }
   return <span title="No deep dive yet" className="inline-flex items-center text-slate-400"><Telescope size={12} /></span>;
 };
@@ -179,6 +181,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [bulkPending, setBulkPending] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ completed: number; total: number } | null>(null);
   const [bulkFailures, setBulkFailures] = useState<Array<{ email: string; reason: string }>>([]);
+  const [showEmailOutbox, setShowEmailOutbox] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [leadForm, setLeadForm] = useState<NewLeadInput>(emptyLeadForm);
@@ -466,10 +469,23 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
   }, [addToast]);
 
+  // Resend pushes delivery/open/click changes into Supabase by webhook. Keep an
+  // expanded lead's sequence panel current without requiring the user to close
+  // the row or reload the whole page.
+  useEffect(() => {
+    if (!expandedLeadId) return;
+    const interval = window.setInterval(() => {
+      fetchLeadSequence(expandedLeadId)
+        .then(sequence => setLeadSequences(current => ({ ...current, [expandedLeadId]: sequence })))
+        .catch(() => { /* transient; the next webhook-status refresh retries */ });
+    }, 15000);
+    return () => window.clearInterval(interval);
+  }, [expandedLeadId]);
+
   const startSequenceForLead = async (lead: Lead, mode: LeadSequenceMode) => {
     try {
       await startLeadSequence(lead.id, mode);
-      await loadTimeline(lead);
+      await Promise.all([loadTimeline(lead), loadLeads()]);
       addToast(mode === 'automatic' ? 'Sequence started and first email sent.' : 'Sequence created. Approve the first email when ready.', 'success');
     } catch (error) {
       console.error('Failed to start lead sequence:', error);
@@ -483,7 +499,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     if (!enrollment) return;
     try {
       await controlLeadSequence(enrollment.id, action);
-      await loadTimeline(lead);
+      await Promise.all([loadTimeline(lead), loadLeads()]);
       addToast(action === 'approve_next' ? 'Email approved and sent.' : `Sequence ${action === 'stop' ? 'stopped' : `${action}d`}.`, 'success');
     } catch (error) {
       console.error('Failed to control lead sequence:', error);
@@ -801,6 +817,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
 
         <div className="flex flex-wrap items-center gap-3">
           {selectedPipeline && <div className="flex rounded-xl border border-white/10 bg-[#10142E] p-1"><button type="button" onClick={() => setViewMode('list')} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider ${viewMode === 'list' ? 'bg-cyan-400 text-[#07101D]' : 'text-slate-500 hover:text-white'}`}><List size={14} />List</button><button type="button" onClick={() => setViewMode('board')} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wider ${viewMode === 'board' ? 'bg-cyan-400 text-[#07101D]' : 'text-slate-500 hover:text-white'}`}><Columns3 size={14} />Board</button></div>}
+          <button type="button" onClick={() => setShowEmailOutbox(true)} disabled={!selectedPipeline} className="flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-4 py-3 text-xs font-black uppercase tracking-wider text-cyan-200 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-40"><MailCheck size={16} />Email Outbox</button>
           <button type="button" onClick={exportFilteredLeads} disabled={!selectedPipeline || filteredLeads.length === 0} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-40"><Download size={16} />Export CSV</button>
           {pipelines.length > 0 && (
             <label className="relative">
@@ -1231,6 +1248,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
             )}
           </div>
         </CrmModal>
+      )}
+      {showEmailOutbox && selectedPipeline && (
+        <LeadEmailOutboxModal leads={leads} scopeLabel={`${activeBranch?.name || 'Leads'} · ${selectedPipeline.name}`} onClose={() => setShowEmailOutbox(false)} />
       )}
     </div>
   );
