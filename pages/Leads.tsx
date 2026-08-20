@@ -239,13 +239,13 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     return () => { cancelled = true; };
   }, [activeBranch?.id, addToast]);
 
-  const loadLeads = useCallback(async () => {
+  const loadLeads = useCallback(async (silent = false) => {
     if (!activeBranch || !selectedPipeline) {
       setLeads([]);
       return;
     }
 
-    setLoadingLeads(true);
+    if (!silent) setLoadingLeads(true);
     try {
       const data = await fetchLeads(activeBranch.id, {
         status: undefined,
@@ -273,7 +273,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
       console.error('Failed to load leads:', error);
       addToast('Failed to load leads.', 'error');
     } finally {
-      setLoadingLeads(false);
+      if (!silent) setLoadingLeads(false);
     }
   }, [activeBranch, addToast, selectedPipeline]);
 
@@ -485,7 +485,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const startSequenceForLead = async (lead: Lead, mode: LeadSequenceMode) => {
     try {
       await startLeadSequence(lead.id, mode);
-      await Promise.all([loadTimeline(lead), loadLeads()]);
+      await Promise.all([loadTimeline(lead), loadLeads(true)]);
       addToast(mode === 'automatic' ? 'Sequence started and first email sent.' : 'Sequence created. Approve the first email when ready.', 'success');
     } catch (error) {
       console.error('Failed to start lead sequence:', error);
@@ -499,7 +499,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     if (!enrollment) return;
     try {
       await controlLeadSequence(enrollment.id, action);
-      await Promise.all([loadTimeline(lead), loadLeads()]);
+      await Promise.all([loadTimeline(lead), loadLeads(true)]);
       addToast(action === 'approve_next' ? 'Email approved and sent.' : `Sequence ${action === 'stop' ? 'stopped' : `${action}d`}.`, 'success');
     } catch (error) {
       console.error('Failed to control lead sequence:', error);

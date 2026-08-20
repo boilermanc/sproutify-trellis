@@ -8,6 +8,7 @@ const webhook = await readFile(new URL('../supabase/functions/resend-webhook/ind
 const leadsPage = await readFile(new URL('../pages/Leads.tsx', import.meta.url), 'utf8');
 const sequenceService = await readFile(new URL('../services/leadSequenceService.ts', import.meta.url), 'utf8');
 const outbox = await readFile(new URL('../components/leads/LeadEmailOutboxModal.tsx', import.meta.url), 'utf8');
+const sequencePanel = await readFile(new URL('../components/leads/LeadSequencePanel.tsx', import.meta.url), 'utf8');
 
 test('defines the four-step 0/3/5/7-day farm sequence', () => {
   assert.match(migration, /\(1, 0, 'Initial introduction'/);
@@ -36,10 +37,18 @@ test('supports authenticated browser invocation of the sequence worker', () => {
 });
 
 test('refreshes lead stage after sends and live email status while details are open', () => {
-  assert.match(leadsPage, /Promise\.all\(\[loadTimeline\(lead\), loadLeads\(\)\]\)/);
+  assert.match(leadsPage, /Promise\.all\(\[loadTimeline\(lead\), loadLeads\(true\)\]\)/);
+  assert.match(leadsPage, /if \(!silent\) setLoadingLeads\(true\)/);
   assert.match(leadsPage, /fetchLeadSequence\(expandedLeadId\)/);
   assert.match(leadsPage, /}, 15000\)/);
   assert.match(leadsPage, /Deep Dive Failed/);
+});
+
+test('requires selecting the next sequence email before approval', () => {
+  assert.match(sequencePanel, /selectedStepId/);
+  assert.match(sequencePanel, /Click to select this email/);
+  assert.match(sequencePanel, /disabled=\{working \|\| !approvalArmed\}/);
+  assert.match(sequencePanel, /setSelectedStepId\(null\)/);
 });
 
 test('provides a live lead email outbox with recipient-level tracking statuses', () => {
