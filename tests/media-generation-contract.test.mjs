@@ -145,3 +145,40 @@ test('Media Generation requires cost review and stores an editable timed-text pl
   assert.match(edge, /executionSeconds \* rate \* Number\(attempt\.gpu_count/);
   assert.match(edge, /get_configuration/);
 });
+
+test('Generated media library hands approved private video to the existing publishing queue', async () => {
+  const page = await read('pages/MediaGeneration.tsx');
+  const library = await read('components/media/GeneratedMediaLibrary.tsx');
+  const service = await read('services/mediaGenerationService.ts');
+  const edge = await read('supabase/functions/media-generation/index.ts');
+  const migration = await read('supabase/migrations/20260821213000_link_media_generation_to_publishing.sql');
+  const scheduler = JSON.parse(await read('n8n-blueprints/S1-scheduled-post-publisher.json'));
+  const nodeNames = new Set(scheduler.nodes.map(node => node.name));
+
+  assert.match(page, /Created media/);
+  assert.match(page, /GeneratedMediaLibrary/);
+  assert.match(library, /Every completed generation/);
+  assert.match(library, /Send to Post Scheduler/);
+  assert.match(library, /Instagram Reel/);
+  assert.match(library, /TikTok video/);
+  assert.match(library, /Facebook video remains disabled/);
+  assert.match(service, /getMediaGenerationLibrary/);
+  assert.match(service, /scheduleMediaGenerationOutput/);
+  assert.match(edge, /body\.action === "list_library"/);
+  assert.match(edge, /body\.action === "approve_output"/);
+  assert.match(edge, /body\.action === "schedule_output"/);
+  assert.match(edge, /MEDIA_PUBLISHING_HANDOFF_ENABLED/);
+  assert.match(edge, /source_generation_output_id/);
+  assert.match(migration, /source_media_asset_id/);
+  assert.match(migration, /idx_ssp_created_by_idempotency/);
+  assert.match(migration, /resolve_scheduled_generated_media/);
+  assert.match(migration, /job\.created_by = scheduled\.created_by/);
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.resolve_scheduled_generated_media\(UUID\) FROM PUBLIC, anon, authenticated/);
+  for (const name of ['Has Private Generated Media?', 'Fetch Generated Asset', 'Validate Generated Asset', 'Sign Generated Asset', 'Attach Generated Media URL']) {
+    assert.equal(nodeNames.has(name), true, `missing scheduler node: ${name}`);
+  }
+  assert.match(JSON.stringify(scheduler), /expiresIn\\?"?: ?3600/);
+  assert.equal(scheduler.connections['Drop Unclaimed Posts'].main[0][0].node, 'Has Private Generated Media?');
+  assert.equal(scheduler.connections['Attach Generated Media URL'].main[0][0].node, 'Route by Platform');
+  assert.match(JSON.stringify(scheduler), /rpc\/resolve_scheduled_generated_media/);
+});

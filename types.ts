@@ -2269,6 +2269,32 @@ export interface MediaGenerationJob {
   updated_at: string;
 }
 
+export interface MediaGenerationLibraryItem {
+  output_id: string;
+  output_role: string;
+  approved: boolean;
+  approved_at: string | null;
+  asset: MediaAsset;
+  job: MediaGenerationJob;
+  project: MediaGenerationProject | null;
+  attempt: {
+    execution_seconds?: number | null;
+    actual_cost_usd?: number | null;
+    gpu_count?: number | null;
+  } | null;
+  publishing: ScheduledPost[];
+  signed_url: string | null;
+}
+
+export interface ScheduleMediaGenerationOutput {
+  output_id: string;
+  branch_id: string;
+  platform: 'instagram' | 'tiktok';
+  caption: string;
+  scheduled_for: string;
+  idempotency_key: string;
+}
+
 export interface CreateMediaGenerationJob {
   project_id: string;
   scene_id?: string | null;

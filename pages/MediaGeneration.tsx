@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, DollarSign, Film, Loader2, Play, Plus, RefreshCw, RotateCcw, ShieldCheck, Square, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, DollarSign, Film, LibraryBig, Loader2, Play, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Square, Upload } from 'lucide-react';
 import type { Branch, MediaGenerationJob, MediaGenerationProject, MediaGenerationTaskType, MediaModelCatalogEntry, MediaTextCue } from '../types';
 import {
   cancelMediaGenerationJob,
@@ -17,6 +17,7 @@ import type { MediaGenerationConfiguration } from '../services/mediaGenerationSe
 import { useMediaGenerationPoller } from '../hooks/useMediaGenerationPoller';
 import TimedTextTimeline from '../components/media/TimedTextTimeline';
 import VideoResultPreview from '../components/media/VideoResultPreview';
+import GeneratedMediaLibrary from '../components/media/GeneratedMediaLibrary';
 
 interface Props {
   branches: Branch[];
@@ -75,6 +76,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
   const [resultUrls, setResultUrls] = useState<Record<string, string>>({});
   const [resultDetails, setResultDetails] = useState<Record<string, { executionSeconds: number | null; actualCost: number | null }>>({});
   const [configuration, setConfiguration] = useState<MediaGenerationConfiguration | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<'create' | 'library'>('create');
 
   const selectedModel = useMemo(() => models.find(model => model.id === modelId), [modelId, models]);
   const activeIds = useMemo(() => jobs.filter(job => !terminal.has(job.status)).map(job => job.id), [jobs]);
@@ -208,7 +210,12 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
         <p className="mt-4 max-w-3xl text-sm leading-6 text-indigo-100">Create video with LongCat now and add other GPU providers later. Inputs stay private, every attempt is tracked, and existing Trellis editors remain intact.</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+      <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+        <button type="button" onClick={() => setWorkspaceView('create')} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black ${workspaceView === 'create' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}><Sparkles className="h-4 w-4" /> Create</button>
+        <button type="button" onClick={() => setWorkspaceView('library')} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black ${workspaceView === 'library' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}><LibraryBig className="h-4 w-4" /> Created media</button>
+      </div>
+
+      {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-5">
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">Project</h2>
@@ -288,7 +295,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
             </div>
           </section>
         </main>
-      </div>
+      </div>}
     </div>
   );
 };

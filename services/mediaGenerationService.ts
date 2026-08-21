@@ -4,8 +4,10 @@ import type {
   CreateMediaGenerationJob,
   MediaAsset,
   MediaGenerationJob,
+  MediaGenerationLibraryItem,
   MediaGenerationProject,
   MediaModelCatalogEntry,
+  ScheduleMediaGenerationOutput,
 } from '../types';
 
 export interface MediaJobDetail {
@@ -24,6 +26,19 @@ export interface MediaGenerationConfiguration {
   max_daily_dispatches_per_user: number;
   execution_timeout_seconds: number;
   cost_per_gpu_second: number | null;
+  publishing_handoff_enabled: boolean;
+}
+
+export async function getMediaGenerationLibrary(limit = 100): Promise<MediaGenerationLibraryItem[]> {
+  return (await callMedia<{ items: MediaGenerationLibraryItem[] }>('list_library', { limit })).items;
+}
+
+export async function approveMediaGenerationOutput(outputId: string): Promise<void> {
+  await callMedia<{ output: Record<string, unknown> }>('approve_output', { output_id: outputId });
+}
+
+export async function scheduleMediaGenerationOutput(input: ScheduleMediaGenerationOutput): Promise<{ post: Record<string, unknown> }> {
+  return callMedia<{ post: Record<string, unknown> }>('schedule_output', { publication: input });
 }
 
 async function mediaFunctionError(error: unknown): Promise<string> {

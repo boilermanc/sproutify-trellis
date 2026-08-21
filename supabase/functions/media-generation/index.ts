@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { runPodStatusToJobStatus, validateCreateMediaJob } from "../_shared/media-generation.ts";
+import { runPodStatusToJobStatus, sanitizeMediaText, validateCreateMediaJob } from "../_shared/media-generation.ts";
 import { cancelRunPodJob, getRunPodJob, submitRunPodJob, type RunPodConfig } from "../_shared/gpu-providers/runpod.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -20,6 +20,7 @@ const boundedInteger = (name: string, fallback: number, min: number, max: number
   return Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value)) : fallback;
 };
 const MEDIA_GENERATION_ENABLED = enabled("MEDIA_GENERATION_ENABLED");
+const MEDIA_PUBLISHING_HANDOFF_ENABLED = enabled("MEDIA_PUBLISHING_HANDOFF_ENABLED");
 const MEDIA_GENERATION_ALLOWED_ROLES = new Set(
   (Deno.env.get("MEDIA_GENERATION_ALLOWED_ROLES") || "owner,admin").split(",").map(value => value.trim()).filter(Boolean),
 );
@@ -77,6 +78,60 @@ async function getOwnedJob(db: any, jobId: string, userId: string) {
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Generation job not found or you do not own it.");
   return data;
+}
+
+async function getOwnedOutput(db: any, outputId: string, userId: string) {
+  const { data: output, error } = await db.from("media_generation_outputs").select("*").eq("id", outputId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!output) throw new Error("Generated output not found.");
+  const job = await getOwnedJob(db, output.job_id, userId);
+  const { data: asset, error: assetError } = await db.from("media_assets").select("*").eq("id", output.asset_id).maybeSingle();
+  if (assetError || !asset || asset.status !== "ready") throw new Error(assetError?.message || "Generated asset is unavailable.");
+  return { output, job, asset };
+}
+
+async function listLibrary(db: any, userId: string, limit: number) {
+  const { data: jobs, error: jobsError } = await db.from("media_generation_jobs").select("*")
+    .eq("created_by", userId).eq("status", "succeeded").order("created_at", { ascending: false }).limit(limit);
+  if (jobsError) throw new Error(jobsError.message);
+  if (!jobs?.length) return [];
+  const jobIds = jobs.map((job: any) => job.id);
+  const projectIds = [...new Set(jobs.map((job: any) => job.project_id))];
+  const [{ data: outputs, error: outputsError }, { data: attempts }, { data: projects }, { data: publications }] = await Promise.all([
+    db.from("media_generation_outputs").select("*").in("job_id", jobIds),
+    db.from("media_generation_attempts").select("job_id,execution_seconds,actual_cost_usd,gpu_count,attempt_number").in("job_id", jobIds).order("attempt_number", { ascending: false }),
+    db.from("media_generation_projects").select("*").in("id", projectIds),
+    db.from("scheduled_social_posts").select("*").in("source_generation_job_id", jobIds).order("created_at", { ascending: false }),
+  ]);
+  if (outputsError) throw new Error(outputsError.message);
+  if (!outputs?.length) return [];
+  const assetIds = [...new Set((outputs || []).map((output: any) => output.asset_id))];
+  const { data: assets, error: assetsError } = await db.from("media_assets").select("*").in("id", assetIds);
+  if (assetsError) throw new Error(assetsError.message);
+  const jobsById = new Map(jobs.map((job: any) => [job.id, job]));
+  const projectsById = new Map((projects || []).map((project: any) => [project.id, project]));
+  const assetsById = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+  const attemptByJob = new Map<string, any>();
+  for (const attempt of attempts || []) if (!attemptByJob.has(attempt.job_id)) attemptByJob.set(attempt.job_id, attempt);
+  const publicationsByOutput = new Map<string, any[]>();
+  for (const publication of publications || []) publicationsByOutput.set(publication.source_generation_output_id, [...(publicationsByOutput.get(publication.source_generation_output_id) || []), publication]);
+  return Promise.all((outputs || []).map(async (output: any) => {
+    const job = jobsById.get(output.job_id) as any;
+    const asset = assetsById.get(output.asset_id) as any;
+    const signed = asset ? await db.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 60 * 60) : { data: null };
+    return {
+      output_id: output.id,
+      output_role: output.output_role,
+      approved: output.approved,
+      approved_at: output.approved_at || null,
+      asset,
+      job,
+      project: projectsById.get(job.project_id) || null,
+      attempt: attemptByJob.get(job.id) || null,
+      publishing: publicationsByOutput.get(output.id) || [],
+      signed_url: signed.data?.signedUrl || null,
+    };
+  }));
 }
 
 async function addEvent(db: any, jobId: string, eventType: string, values: Record<string, unknown> = {}) {
@@ -279,7 +334,72 @@ Deno.serve(async (request) => {
         max_daily_dispatches_per_user: MAX_DAILY_DISPATCHES_PER_USER,
         execution_timeout_seconds: Math.round(RUNPOD_EXECUTION_TIMEOUT_MS / 1000),
         cost_per_gpu_second: RUNPOD_COST_PER_SECOND > 0 ? RUNPOD_COST_PER_SECOND : null,
+        publishing_handoff_enabled: MEDIA_PUBLISHING_HANDOFF_ENABLED,
       } });
+    }
+    if (body.action === "list_library") {
+      return json({ items: await listLibrary(db, user.id, Math.min(100, Math.max(1, Number(body.limit || 50)))) });
+    }
+    if (body.action === "approve_output") {
+      const owned = await getOwnedOutput(db, clean(body.output_id, 80), user.id);
+      if (owned.job.status !== "succeeded") throw new Error("Only completed outputs can be approved.");
+      const now = new Date().toISOString();
+      const { data, error } = await db.from("media_generation_outputs")
+        .update({ approved: true, approved_at: now, approved_by: user.id }).eq("id", owned.output.id).select("*").single();
+      if (error || !data) throw new Error(error?.message || "Could not approve the generated output.");
+      await addEvent(db, owned.job.id, "output_approved", { attempt_id: owned.output.attempt_id, status: "succeeded", progress: 100, details: { output_id: owned.output.id, asset_id: owned.asset.id } });
+      return json({ output: data });
+    }
+    if (body.action === "schedule_output") {
+      if (!MEDIA_PUBLISHING_HANDOFF_ENABLED) throw new Error("Generated-media publishing handoff is paused.");
+      const publication = body.publication && typeof body.publication === "object" ? body.publication : {};
+      const owned = await getOwnedOutput(db, clean(publication.output_id, 80), user.id);
+      if (!owned.output.approved) throw new Error("Approve this generated output before scheduling it.");
+      const platform = clean(publication.platform, 20).toLowerCase();
+      if (!new Set(["instagram", "tiktok"]).has(platform)) throw new Error("Generated video can currently publish to Instagram or TikTok.");
+      const caption = sanitizeMediaText(clean(publication.caption, 2200));
+      if (!caption) throw new Error("A publishing caption is required.");
+      const scheduledFor = new Date(String(publication.scheduled_for || ""));
+      if (Number.isNaN(scheduledFor.getTime())) throw new Error("Choose a valid publishing date and time.");
+      const nowMs = Date.now();
+      if (scheduledFor.getTime() < nowMs - 5 * 60_000) throw new Error("Publishing time cannot be in the past.");
+      if (scheduledFor.getTime() > nowMs + 30 * 24 * 60 * 60_000) throw new Error("Schedule generated media no more than 30 days ahead.");
+      const branchId = clean(publication.branch_id, 80);
+      const { data: branch, error: branchError } = await db.from("branches").select("id,slug,is_active").eq("id", branchId).maybeSingle();
+      if (branchError || !branch?.is_active) throw new Error(branchError?.message || "Choose an active Trellis brand.");
+      if (!["owner", "admin"].includes(operator.role)) {
+        const { data: assignment } = await db.from("trellis_user_branches").select("id")
+          .eq("trellis_user_id", operator.id).eq("branch_id", branch.id).maybeSingle();
+        if (!assignment) throw new Error("You are not assigned to that brand.");
+      }
+      const idempotencyKey = clean(publication.idempotency_key, 160);
+      if (!idempotencyKey) throw new Error("A publishing idempotency key is required.");
+      const row = {
+        branch_id: branch.id,
+        branch_slug: branch.slug,
+        platform,
+        caption,
+        media_type: "video",
+        media_urls: [],
+        scheduled_for: scheduledFor.toISOString(),
+        status: "scheduled",
+        source: "media_generation",
+        created_by: user.id,
+        source_media_asset_id: owned.asset.id,
+        source_generation_job_id: owned.job.id,
+        source_generation_output_id: owned.output.id,
+        idempotency_key: idempotencyKey,
+        creative_template: owned.job.model_id,
+        creative_meta: { project_id: owned.job.project_id, task_type: owned.job.task_type, model_id: owned.job.model_id },
+      };
+      const { data: post, error: postError } = await db.from("scheduled_social_posts").insert(row).select("*").single();
+      if (postError?.code === "23505") {
+        const { data: existing } = await db.from("scheduled_social_posts").select("*").eq("created_by", user.id).eq("idempotency_key", idempotencyKey).single();
+        return json({ post: existing, duplicate: true });
+      }
+      if (postError || !post) throw new Error(postError?.message || "Could not add the video to the publishing queue.");
+      await addEvent(db, owned.job.id, "publishing_scheduled", { attempt_id: owned.output.attempt_id, status: "succeeded", progress: 100, details: { output_id: owned.output.id, scheduled_post_id: post.id, platform, scheduled_for: post.scheduled_for } });
+      return json({ post }, 201);
     }
     if (body.action === "list_models") {
       const { data, error } = await db.from("media_model_catalog").select("*").eq("active", true).order("display_name");
