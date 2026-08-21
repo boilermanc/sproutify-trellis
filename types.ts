@@ -2178,6 +2178,18 @@ export type MediaGenerationInputRole =
   | 'first_frame'
   | 'last_frame';
 
+export type MediaTextAnimation = 'fade' | 'slide_up' | 'word_reveal';
+export type MediaTextPosition = 'top' | 'center' | 'bottom';
+
+export interface MediaTextCue {
+  id: string;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+  position: MediaTextPosition;
+  animation: MediaTextAnimation;
+}
+
 export interface MediaGenerationProject {
   id: string;
   organization_id: string;

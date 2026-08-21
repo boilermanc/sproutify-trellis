@@ -30,11 +30,13 @@ const RUNPOD_JOB_TTL_MS = Math.max(
   RUNPOD_EXECUTION_TIMEOUT_MS,
   boundedInteger("RUNPOD_JOB_TTL_MS", 7_200_000, 300_000, 86_400_000),
 );
+const RUNPOD_COST_PER_SECOND = Math.max(0, Number(Deno.env.get("RUNPOD_COST_PER_SECOND") || 0));
 const ACTIVE_JOB_STATUSES = ["validating", "submitted", "running", "cancel_requested"];
 
 async function assertDispatchAllowed(db: any, userId: string, operatorRole: string) {
   if (!MEDIA_GENERATION_ENABLED) throw new Error("Media generation is disabled by the deployment circuit breaker.");
   if (!MEDIA_GENERATION_ALLOWED_ROLES.has(operatorRole)) throw new Error("Your Trellis role is not allowed to start GPU generation jobs.");
+  if (!(RUNPOD_COST_PER_SECOND > 0)) throw new Error("GPU cost tracking is not configured; dispatch was blocked.");
 
   const utcDayStart = new Date();
   utcDayStart.setUTCHours(0, 0, 0, 0);
@@ -116,7 +118,7 @@ async function dispatchJob(db: any, job: any, userId: string, operatorRole: stri
   };
 
   const gpuCount = Number(model.runtime?.recommended_gpu_count || 1);
-  const ratePerSecond = Number(Deno.env.get("RUNPOD_COST_PER_SECOND") || 0);
+  const ratePerSecond = RUNPOD_COST_PER_SECOND;
   const estimatedMaxCost = ratePerSecond > 0 ? ratePerSecond * (RUNPOD_EXECUTION_TIMEOUT_MS / 1000) * gpuCount : null;
   const { data: attempt, error: attemptError } = await db.from("media_generation_attempts").insert({
     job_id: job.id,
@@ -228,8 +230,8 @@ async function refreshJob(db: any, job: any) {
 
   if (next === "succeeded") {
     const asset = await registerSuccessfulOutput(db, job, attempt, providerJob);
-    const rate = Number(Deno.env.get("RUNPOD_COST_PER_SECOND") || 0);
-    const actualCost = executionSeconds != null && rate > 0 ? executionSeconds * rate : null;
+    const rate = RUNPOD_COST_PER_SECOND;
+    const actualCost = executionSeconds != null && rate > 0 ? executionSeconds * rate * Number(attempt.gpu_count || 1) : null;
     await Promise.all([
       db.from("media_generation_attempts").update({ status: "succeeded", response_snapshot: { id: providerJob.id, status: providerJob.status, output: providerJob.output || null }, execution_seconds: executionSeconds, actual_cost_usd: actualCost, completed_at: now }).eq("id", attempt.id),
       db.from("media_generation_jobs").update({ status: "succeeded", progress: 100, completed_at: now, last_heartbeat_at: now, error_code: null, error_message: null }).eq("id", job.id),
@@ -268,6 +270,17 @@ Deno.serve(async (request) => {
   const body = await request.json().catch(() => ({}));
 
   try {
+    if (body.action === "get_configuration") {
+      return json({ configuration: {
+        generation_enabled: MEDIA_GENERATION_ENABLED,
+        role_allowed: MEDIA_GENERATION_ALLOWED_ROLES.has(operator.role),
+        cost_tracking_configured: RUNPOD_COST_PER_SECOND > 0,
+        max_active_jobs_per_user: MAX_ACTIVE_JOBS_PER_USER,
+        max_daily_dispatches_per_user: MAX_DAILY_DISPATCHES_PER_USER,
+        execution_timeout_seconds: Math.round(RUNPOD_EXECUTION_TIMEOUT_MS / 1000),
+        cost_per_gpu_second: RUNPOD_COST_PER_SECOND > 0 ? RUNPOD_COST_PER_SECOND : null,
+      } });
+    }
     if (body.action === "list_models") {
       const { data, error } = await db.from("media_model_catalog").select("*").eq("active", true).order("display_name");
       if (error) throw new Error(error.message);

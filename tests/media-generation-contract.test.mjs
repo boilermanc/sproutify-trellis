@@ -114,3 +114,34 @@ test('LongCat task adapters match the pinned upstream pipeline signatures', asyn
   assert.match(runner, /dist\.destroy_process_group\(\)/);
   assert.match(requirements, /accelerate==0\.31\.0/);
 });
+
+test('Media Generation requires cost review and stores an editable timed-text plan', async () => {
+  const page = await read('pages/MediaGeneration.tsx');
+  const timeline = await read('components/media/TimedTextTimeline.tsx');
+  const validation = await read('supabase/functions/_shared/media-generation.ts');
+  assert.match(page, /Spend protection/);
+  assert.match(page, /Review cost/);
+  assert.match(page, /Confirm & generate/);
+  assert.match(page, /finishing: \{ text_cues: textCues \}/);
+  assert.match(page, /One worker maximum/);
+  assert.match(page, /Tracked cost:/);
+  assert.match(page, /VideoResultPreview/);
+  assert.match(page, /cost_tracking_configured/);
+  assert.match(timeline, /Flowing text/);
+  assert.match(timeline, /word_reveal/);
+  assert.match(timeline, /start_seconds/);
+  assert.match(timeline, /end_seconds/);
+  const preview = await read('components/media/VideoResultPreview.tsx');
+  const styles = await read('index.css');
+  assert.match(preview, /onTimeUpdate/);
+  assert.match(preview, /Export burn-in will be added/);
+  assert.match(styles, /@keyframes mediaTextSlideUp/);
+  assert.match(validation, /sanitizeMediaText/);
+  assert.match(validation, /\[REDACTED_CC\]/);
+  assert.match(validation, /sanitizeJson\(body\.parameters/);
+  assert.match(validation, /metadata: sanitizeJson/);
+  const edge = await read('supabase/functions/media-generation/index.ts');
+  assert.match(edge, /GPU cost tracking is not configured; dispatch was blocked/);
+  assert.match(edge, /executionSeconds \* rate \* Number\(attempt\.gpu_count/);
+  assert.match(edge, /get_configuration/);
+});

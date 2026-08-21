@@ -16,6 +16,16 @@ export interface MediaJobDetail {
   events: Array<Record<string, unknown>>;
 }
 
+export interface MediaGenerationConfiguration {
+  generation_enabled: boolean;
+  role_allowed: boolean;
+  cost_tracking_configured: boolean;
+  max_active_jobs_per_user: number;
+  max_daily_dispatches_per_user: number;
+  execution_timeout_seconds: number;
+  cost_per_gpu_second: number | null;
+}
+
 async function mediaFunctionError(error: unknown): Promise<string> {
   if (error instanceof FunctionsHttpError) {
     try {
@@ -37,6 +47,10 @@ async function callMedia<T>(action: string, payload: Record<string, unknown> = {
 
 export async function getMediaModels(): Promise<MediaModelCatalogEntry[]> {
   return (await callMedia<{ models: MediaModelCatalogEntry[] }>('list_models')).models;
+}
+
+export async function getMediaGenerationConfiguration(): Promise<MediaGenerationConfiguration> {
+  return (await callMedia<{ configuration: MediaGenerationConfiguration }>('get_configuration')).configuration;
 }
 
 export async function createMediaProject(input: { name: string; description?: string; branch_id?: string | null }): Promise<MediaGenerationProject> {

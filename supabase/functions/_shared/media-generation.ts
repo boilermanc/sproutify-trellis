@@ -41,6 +41,31 @@ const INPUT_ROLES = new Set<MediaInputRole>([
   "source_video", "first_frame", "last_frame",
 ]);
 
+export function sanitizeMediaText(text: string): string {
+  const ccRegex = /\b(?:\d{4}[ -]?){3}(?=\d{4}\b)\d{4}\b/g;
+  const idRegex = /\b\d{3}[-]?\d{2}[-]?\d{4}\b/g;
+  const tokenRegex = /\b[A-Za-z0-9_-]{32,}\b/g;
+  return text
+    .replace(ccRegex, "[REDACTED_CC]")
+    .replace(idRegex, "[REDACTED_ID]")
+    .replace(tokenRegex, "[REDACTED_TOKEN]");
+}
+
+function sanitizeJson(value: unknown, depth = 0): unknown {
+  if (depth > 6) throw new Error("parameters are nested too deeply.");
+  if (typeof value === "string") return sanitizeMediaText(value).slice(0, 12000);
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 200).map(item => sanitizeJson(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 200).map(([key, item]) => [
+      key.slice(0, 120),
+      sanitizeJson(item, depth + 1),
+    ]));
+  }
+  return null;
+}
+
 function requiredRoles(taskType: MediaTaskType): MediaInputRole[][] {
   if (taskType === "image_to_video") return [["source_image", "first_frame"]];
   if (taskType === "video_continuation") return [["source_video"]];
@@ -54,7 +79,7 @@ export function validateCreateMediaJob(value: unknown): CreateMediaJobRequest {
   if (!UUID.test(String(body.project_id || ""))) throw new Error("A valid project_id is required.");
   if (!String(body.model_id || "").trim()) throw new Error("A model_id is required.");
   if (!MEDIA_TASK_TYPES.includes(body.task_type as MediaTaskType)) throw new Error("Unsupported generation task type.");
-  const prompt = String(body.prompt || "").trim();
+  const prompt = sanitizeMediaText(String(body.prompt || "").trim());
   if (!prompt || prompt.length > 12000) throw new Error("Prompt must be between 1 and 12,000 characters.");
   if (body.parameters != null && (typeof body.parameters !== "object" || Array.isArray(body.parameters))) throw new Error("parameters must be an object.");
 
@@ -67,7 +92,9 @@ export function validateCreateMediaJob(value: unknown): CreateMediaJobRequest {
       asset_id: String(item.asset_id),
       input_role: item.input_role as MediaInputRole,
       position: Math.max(0, Number(item.position || 0)),
-      metadata: (item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)) ? item.metadata as Record<string, unknown> : {},
+      metadata: sanitizeJson(
+        (item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)) ? item.metadata : {},
+      ) as Record<string, unknown>,
     };
   }) : [];
 
@@ -89,8 +116,8 @@ export function validateCreateMediaJob(value: unknown): CreateMediaJobRequest {
     provider: String(body.provider || "runpod").trim().toLowerCase(),
     task_type: body.task_type as MediaTaskType,
     prompt,
-    negative_prompt: body.negative_prompt ? String(body.negative_prompt).trim().slice(0, 12000) : undefined,
-    parameters: (body.parameters || {}) as Record<string, unknown>,
+    negative_prompt: body.negative_prompt ? sanitizeMediaText(String(body.negative_prompt).trim()).slice(0, 12000) : undefined,
+    parameters: sanitizeJson(body.parameters || {}) as Record<string, unknown>,
     inputs,
     idempotency_key: body.idempotency_key ? String(body.idempotency_key).trim().slice(0, 160) : undefined,
   };
