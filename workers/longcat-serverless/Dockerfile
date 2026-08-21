@@ -20,7 +20,7 @@ RUN git clone https://github.com/meituan-longcat/LongCat-Video.git /opt/longcat 
 WORKDIR /opt/trellis
 COPY requirements.txt ./requirements-worker.txt
 RUN pip install --no-cache-dir -r requirements-worker.txt
-COPY handler.py longcat_job.py ./
+COPY . ./
 
 CMD ["python", "-u", "handler.py"]
 
