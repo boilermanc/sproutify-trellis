@@ -19,6 +19,7 @@ Apply `20260821170735_add_media_generation_foundation.sql`, then deploy the `med
 - `RUNPOD_LONGCAT_AVATAR_ENDPOINT_ID`
 - `RUNPOD_COST_PER_SECOND` only after the endpoint's actual blended rate is known
 - `MEDIA_GENERATION_ENABLED=false` until the benchmark operator deliberately opens the circuit breaker
+- `MEDIA_FINISHING_ENABLED=false` until the CPU rendering worker is installed, healthy, and polling
 - `MEDIA_GENERATION_ALLOWED_ROLES=owner,admin`
 - `MEDIA_GENERATION_MAX_ACTIVE_PER_USER=1`
 - `MEDIA_GENERATION_MAX_DAILY_DISPATCHES_PER_USER=3`
@@ -42,7 +43,7 @@ Keep active workers at zero during the proof of concept. Do not set a permanent 
 
 ## Cost circuit breakers
 
-The Edge Function is fail-closed: provider dispatch is disabled unless `MEDIA_GENERATION_ENABLED` is explicitly true. The proof-of-concept defaults also restrict dispatch to owners/admins, one active job per user, three dispatch attempts per UTC day, two attempts per job, and a one-hour provider execution timeout. A partial unique index prevents two active jobs for the same user even if requests race.
+The Edge Function is fail-closed: provider dispatch is disabled unless `MEDIA_GENERATION_ENABLED` is explicitly true, and video finishing is disabled unless `MEDIA_FINISHING_ENABLED` is explicitly true. The proof-of-concept defaults also restrict dispatch to owners/admins, one active job per user, three dispatch attempts per UTC day, two attempts per job, and a one-hour provider execution timeout. A partial unique index prevents two active jobs for the same user even if requests race.
 
 RunPod must remain at zero active workers, one maximum worker, one GPU per base worker, and Auto-Pay disabled during the proof of concept. The endpoint-level worker maximum is the infrastructure backstop if application requests race or a caller bypasses the Trellis UI. Do not increase any limit until usage-ledger and RunPod billing records agree for the benchmark set.
 

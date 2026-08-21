@@ -21,6 +21,7 @@ export interface MediaJobDetail {
 
 export interface MediaGenerationConfiguration {
   generation_enabled: boolean;
+  finishing_enabled: boolean;
   role_allowed: boolean;
   cost_tracking_configured: boolean;
   max_active_jobs_per_user: number;

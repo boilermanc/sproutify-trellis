@@ -20,6 +20,7 @@ const boundedInteger = (name: string, fallback: number, min: number, max: number
   return Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value)) : fallback;
 };
 const MEDIA_GENERATION_ENABLED = enabled("MEDIA_GENERATION_ENABLED");
+const MEDIA_FINISHING_ENABLED = enabled("MEDIA_FINISHING_ENABLED");
 const MEDIA_PUBLISHING_HANDOFF_ENABLED = enabled("MEDIA_PUBLISHING_HANDOFF_ENABLED");
 const MEDIA_GENERATION_ALLOWED_ROLES = new Set(
   (Deno.env.get("MEDIA_GENERATION_ALLOWED_ROLES") || "owner,admin").split(",").map(value => value.trim()).filter(Boolean),
@@ -376,6 +377,7 @@ Deno.serve(async (request) => {
     if (body.action === "get_configuration") {
       return json({ configuration: {
         generation_enabled: MEDIA_GENERATION_ENABLED,
+        finishing_enabled: MEDIA_FINISHING_ENABLED,
         role_allowed: MEDIA_GENERATION_ALLOWED_ROLES.has(operator.role),
         cost_tracking_configured: RUNPOD_COST_PER_SECOND > 0,
         max_active_jobs_per_user: MAX_ACTIVE_JOBS_PER_USER,
@@ -389,6 +391,7 @@ Deno.serve(async (request) => {
       return json({ items: await listLibrary(db, user.id, Math.min(100, Math.max(1, Number(body.limit || 50)))) });
     }
     if (body.action === "create_finishing_job") {
+      if (!MEDIA_FINISHING_ENABLED) throw new Error("Video text finishing is paused until the rendering worker is online.");
       const finishing = body.finishing && typeof body.finishing === "object" ? body.finishing : {};
       const owned = await getOwnedOutput(db, clean(finishing.source_output_id, 80), user.id);
       if (owned.output.output_role !== "primary") throw new Error("Create text finishes from the untouched original video.");

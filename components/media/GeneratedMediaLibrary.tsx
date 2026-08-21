@@ -6,6 +6,7 @@ import MediaFinishingEditor from './MediaFinishingEditor';
 
 interface Props {
   branches: Branch[];
+  finishingEnabled: boolean;
   publishingEnabled: boolean;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -19,7 +20,7 @@ const localDateTime = (date: Date) => {
 
 const defaultSchedule = () => localDateTime(new Date(Date.now() + 60 * 60_000));
 
-const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, addToast }) => {
+const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, publishingEnabled, addToast }) => {
   const [items, setItems] = useState<MediaGenerationLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -123,12 +124,13 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, a
               {latestPublication && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">Publishing: {latestPublication.platform} · {latestPublication.status} · {new Date(latestPublication.scheduled_for).toLocaleString()}</p>}
               {item.finishing && <p className={`mt-3 rounded-xl px-3 py-2 text-[11px] font-bold ${item.finishing.status === 'failed' ? 'bg-rose-50 text-rose-700' : item.finishing.status === 'succeeded' ? 'bg-emerald-50 text-emerald-700' : 'bg-violet-50 text-violet-700'}`}>{item.finishing.status === 'succeeded' ? 'Finished text version is ready below.' : item.finishing.status === 'failed' ? `Finishing failed: ${item.finishing.error_message || 'Try rendering again.'}` : `Finishing video: ${item.finishing.status} · ${item.finishing.progress}%`}</p>}
               <div className="mt-4 flex flex-wrap gap-2">
-                {item.output_role === 'primary' && <button type="button" disabled={Boolean(finishingActive)} onClick={() => setEditItem(item)} className="flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white disabled:cursor-wait disabled:opacity-50">{finishingActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Type className="h-4 w-4" />} {finishingActive ? 'Rendering text' : 'Edit text'}</button>}
+                {item.output_role === 'primary' && <button type="button" disabled={!finishingEnabled || Boolean(finishingActive)} onClick={() => setEditItem(item)} title={finishingEnabled ? 'Add timed text and render a finished version' : 'Text finishing is paused until the rendering worker is online'} className="flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{finishingActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Type className="h-4 w-4" />} {finishingActive ? 'Rendering text' : 'Edit text'}</button>}
                 {!item.approved && <button type="button" disabled={workingId === item.output_id} onClick={() => void approve(item)} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50"><CheckCircle2 className="h-4 w-4" /> Approve</button>}
                 {item.approved && <button type="button" disabled={!publishingEnabled || workingId === item.output_id} onClick={() => openPublishing(item)} title={publishingEnabled ? 'Send to Post Scheduler' : 'Publishing handoff is paused until the private-media resolver is deployed'} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Send className="h-4 w-4" /> Send to publishing</button>}
                 {item.signed_url && <a href={item.signed_url} download className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600"><Download className="h-4 w-4" /> Download</a>}
               </div>
               {item.approved && !publishingEnabled && <p className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-amber-700"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Publishing remains paused until the worker can resolve private generated media immediately before posting.</p>}
+              {item.output_role === 'primary' && !finishingEnabled && <p className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-amber-700"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Text finishing remains paused until its rendering worker is confirmed online.</p>}
             </div>
           </article>;
         })}

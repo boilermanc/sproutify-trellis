@@ -218,7 +218,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
 
       <MediaGenerationGuide />
 
-      {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+      {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} finishingEnabled={configuration?.finishing_enabled === true} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-5">
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">Project</h2>

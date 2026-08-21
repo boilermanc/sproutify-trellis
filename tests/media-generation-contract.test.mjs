@@ -160,6 +160,8 @@ test('post-generation finishing preserves the original and renders validated fon
   assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /REVOKE ALL ON TABLE public\.media_finishing_jobs FROM PUBLIC, anon, authenticated/);
   assert.match(edge, /body\.action === "create_finishing_job"/);
+  assert.match(edge, /MEDIA_FINISHING_ENABLED/);
+  assert.match(edge, /Video text finishing is paused until the rendering worker is online/);
   assert.match(edge, /MEDIA_FONT_IDS/);
   assert.match(edge, /Create text finishes from the untouched original video/);
   assert.match(edge, /already has a finishing render in progress/);
