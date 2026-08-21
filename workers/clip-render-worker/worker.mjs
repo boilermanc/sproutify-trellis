@@ -59,6 +59,27 @@ async function upload(pathInBucket, buf, contentType) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${pathInBucket}`;
 }
 
+async function uploadPrivate(bucket, pathInBucket, buf, contentType) {
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${pathInBucket}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': contentType, 'x-upsert': 'false' },
+    body: buf,
+  });
+  if (![200, 201].includes(r.status)) throw new Error(`Private upload failed ${r.status}: ${await r.text()}`);
+}
+
+async function signPrivateAsset(bucket, storagePath, expiresIn = 3600) {
+  const encoded = storagePath.split('/').map(encodeURIComponent).join('/');
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${encoded}`, {
+    method: 'POST', headers: HEADERS, body: JSON.stringify({ expiresIn }),
+  });
+  if (!r.ok) throw new Error(`Could not sign source video ${r.status}: ${await r.text()}`);
+  const payload = await r.json();
+  const signed = payload.signedURL || payload.signedUrl;
+  if (!signed) throw new Error('Storage did not return a signed source-video URL');
+  return signed.startsWith('http') ? signed : `${SUPABASE_URL}/storage/v1${signed}`;
+}
+
 async function download(url, filePath) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`Download failed ${r.status}: ${url}`);
@@ -184,6 +205,77 @@ async function assemble(job) {
   }
 }
 
+async function renderMediaFinish(job) {
+  const [assets, outputs] = await Promise.all([
+    rest(`media_assets?id=eq.${job.source_asset_id}&select=*`),
+    rest(`media_generation_outputs?id=eq.${job.source_output_id}&select=*`),
+  ]);
+  const sourceAsset = assets?.[0];
+  const sourceOutput = outputs?.[0];
+  if (!sourceAsset || sourceAsset.status !== 'ready') throw new Error('Finishing source asset is unavailable');
+  if (!sourceOutput || sourceOutput.asset_id !== sourceAsset.id || sourceOutput.output_role !== 'primary') throw new Error('Finishing source must be an untouched primary output');
+  if (!String(sourceAsset.mime_type || '').startsWith('video/')) throw new Error('Finishing source is not a video');
+
+  const sourceUrl = await signPrivateAsset(sourceAsset.storage_bucket, sourceAsset.storage_path, 3600);
+  const inputProps = {
+    sourceUrl,
+    durationSec: Number(sourceAsset.duration_seconds || 1),
+    width: Number(sourceAsset.width || 854),
+    height: Number(sourceAsset.height || 480),
+    cues: job.text_cues || [],
+    style: job.style || {},
+  };
+  const serveUrl = await getServeUrl();
+  const composition = await selectComposition({ serveUrl, id: 'MediaFinishing', inputProps });
+  const tmp = mkdtempSync(path.join(tmpdir(), 'mediafinish-'));
+  try {
+    const out = path.join(tmp, 'finished.mp4');
+    await renderMedia({ composition, serveUrl, codec: 'h264', outputLocation: out, inputProps });
+    const data = readFileSync(out);
+    const storagePath = `${job.created_by}/${job.project_id}/finishes/${job.id}/output.mp4`;
+    await uploadPrivate('media-generation-assets', storagePath, data, 'video/mp4');
+    const probe = ffprobe(out);
+    const assetRows = await rest('media_assets', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        project_id: job.project_id,
+        asset_type: 'finished_video',
+        role: 'text_finished_output',
+        storage_bucket: 'media-generation-assets',
+        storage_path: storagePath,
+        mime_type: 'video/mp4',
+        file_size_bytes: data.byteLength,
+        duration_seconds: probe.duration || sourceAsset.duration_seconds,
+        width: probe.width || sourceAsset.width,
+        height: probe.height || sourceAsset.height,
+        status: 'ready',
+        metadata: { source_output_id: sourceOutput.id, finishing_job_id: job.id, cue_count: (job.text_cues || []).length, style: job.style || {} },
+      }),
+    });
+    const asset = assetRows?.[0];
+    if (!asset) throw new Error('Could not register finished media asset');
+    const outputRows = await rest('media_generation_outputs', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ job_id: sourceOutput.job_id, asset_id: asset.id, output_role: 'finished', source_output_id: sourceOutput.id, approved: false }),
+    });
+    const output = outputRows?.[0];
+    if (!output) throw new Error('Could not register finished media output');
+    await patch('media_finishing_jobs', job.id, {
+      status: 'succeeded', progress: 100, output_asset_id: asset.id, output_id: output.id,
+      completed_at: new Date().toISOString(), error_message: null,
+    });
+    await rest('media_generation_events', {
+      method: 'POST',
+      body: JSON.stringify({ job_id: sourceOutput.job_id, event_type: 'finishing_succeeded', status: 'succeeded', progress: 100, details: { finishing_job_id: job.id, source_output_id: sourceOutput.id, output_id: output.id, asset_id: asset.id } }),
+    });
+    console.log(`[finish] ${job.id} -> ${storagePath}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 async function claimNext() {
   const jobs = await rest('trellis_clip_render_jobs?status=eq.queued&order=created_at.asc&limit=1&select=*');
   const job = jobs?.[0];
@@ -192,11 +284,30 @@ async function claimNext() {
   return job;
 }
 
+async function claimNextFinish() {
+  const jobs = await rest('media_finishing_jobs?status=eq.queued&order=queued_at.asc&limit=1&select=*');
+  const job = jobs?.[0];
+  if (!job) return null;
+  if (Number(job.attempts || 0) >= Number(job.max_attempts || 2)) {
+    await patch('media_finishing_jobs', job.id, { status: 'failed', error_message: 'Finishing retry limit reached.', completed_at: new Date().toISOString() });
+    return null;
+  }
+  await patch('media_finishing_jobs', job.id, { status: 'running', progress: 5, attempts: Number(job.attempts || 0) + 1, started_at: new Date().toISOString() });
+  return job;
+}
+
 async function loop() {
   console.log(`[worker] clip render worker up — bucket ${BUCKET}, polling every ${POLL_MS}ms`);
   for (;;) {
     let job = null;
+    let finishJob = null;
     try {
+      finishJob = await claimNextFinish();
+      if (finishJob) {
+        console.log(`[finish-job] ${finishJob.id}`);
+        await renderMediaFinish(finishJob);
+        continue;
+      }
       job = await claimNext();
       if (job) {
         console.log(`[job] ${job.job_type} ${job.id}`);
@@ -205,6 +316,10 @@ async function loop() {
       }
     } catch (e) {
       console.error('[error]', e.message || e);
+      if (finishJob) {
+        try { await patch('media_finishing_jobs', finishJob.id, { status: 'failed', progress: 0, error_message: String(e.message || e).slice(0, 500), completed_at: new Date().toISOString() }); }
+        catch { /* best effort */ }
+      }
       if (job) {
         try { await patch('trellis_clip_render_jobs', job.id, { status: 'failed', error_message: String(e.message || e).slice(0, 500) }); }
         catch { /* best effort */ }

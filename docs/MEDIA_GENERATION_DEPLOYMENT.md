@@ -62,3 +62,30 @@ The proof of concept passes only when outputs reliably upload to the expected pr
 ## Migration gate for existing tools
 
 After the benchmark passes, integrate one low-risk consumer first—recommended: an optional Talking Character path inside Creative Studio. Keep the current provider alongside it. Compare at least quality, latency, cost, and failure rate before making LongCat the default. Clip Studio, Episode assembly, Studio Album rendering, approvals, and publishing stay unchanged.
+
+## Post-generation text finishing
+
+Apply `20260821230515_add_media_finishing_jobs.sql` and redeploy the
+`media-generation` function before exposing **Render final video**. The finishing
+queue is private and service-role writable; authenticated clients may only read
+jobs for projects they can access.
+
+Deploy `workers/clip-render-worker` on the IONOS worker host, run `npm ci`, and
+restart its existing service. The worker now checks `media_finishing_jobs` before
+the Clip Studio queue. It signs the private source immediately before rendering,
+creates a new private MP4, and registers a separate unapproved `finished` output.
+It never overwrites or republishes the original GPU output.
+
+```bash
+ssh your-server
+cd /path/to/sproutify-trellis/workers/clip-render-worker
+npm ci
+sudo systemctl restart trellis-clip-render
+sudo systemctl status trellis-clip-render --no-pager
+journalctl -u trellis-clip-render -n 100 --no-pager
+```
+
+If the deployed service uses a different unit name, identify it first with
+`systemctl list-units --type=service | grep -E 'trellis|clip'`; do not create a
+second competing poller. Verify one short text finish before approving or
+scheduling the new output.

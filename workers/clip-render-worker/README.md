@@ -1,12 +1,14 @@
 # Trellis Clip Render Worker
 
-Renders Clip Studio B-roll beats (Remotion templates → vertical MP4) and stitches
-final Shorts with ffmpeg. Polls `trellis_clip_render_jobs` on the Hub Supabase —
+Renders Clip Studio B-roll beats, stitches final Shorts, and creates text-finished
+copies of generated media. Polls `media_finishing_jobs` and
+`trellis_clip_render_jobs` on the Hub Supabase —
 no inbound port needed, so it can run on the VPS or any laptop.
 
 ## How it works
 
 1. The Clip Studio UI queues rows in `trellis_clip_render_jobs` (status `queued`).
+   Media Generation queues private post-generation text jobs in `media_finishing_jobs`.
 2. This worker claims the oldest queued job (status → `running`):
    - **`beat`** — loads the beat's `beat_type` + `template_params`, renders the matching
      Remotion template at 1080x1920@30 for the beat's duration, uploads to
@@ -15,6 +17,10 @@ no inbound port needed, so it can run on the VPS or any laptop.
      `clip-assets/{project_id}/final.mp4`, and sets the project's `final_video_url`.
 3. Job row gets `completed` (+ output_url, dims, QA chips) or `failed` (+ error).
    The UI polls every 5s while jobs are in flight.
+
+For `media_finishing_jobs`, the worker signs the private original immediately before
+rendering, burns the editable timing and font plan into a new private MP4, registers
+it as a `finished` media output, and leaves the original unchanged.
 
 ## Setup
 
