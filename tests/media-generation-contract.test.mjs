@@ -102,3 +102,14 @@ test('LongCat worker pins upstream code and keeps giant weights on a volume', as
   assert.match(runner, /generate_i2v/);
   assert.match(runner, /generate_vc/);
 });
+
+test('LongCat task adapters match the pinned upstream pipeline signatures', async () => {
+  const runner = await read('workers/longcat-serverless/longcat_job.py');
+  const requirements = await read('workers/longcat-serverless/requirements.txt');
+  assert.match(runner, /generate_t2v\(height=480, width=832, \*\*common\)/);
+  assert.match(runner, /generate_i2v\(image=load_image\(image_path\), resolution=resolution, \*\*common\)/);
+  assert.match(runner, /generate_vc\(video=source, resolution=resolution,/);
+  assert.doesNotMatch(runner, /common = dict\([^\n]*resolution=/);
+  assert.match(runner, /dist\.destroy_process_group\(\)/);
+  assert.match(requirements, /accelerate==0\.31\.0/);
+});

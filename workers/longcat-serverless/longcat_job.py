@@ -69,16 +69,16 @@ def _base(payload: dict, output_path: Path) -> None:
     frames_count = min(241, max(17, int(params.get("frames", 93))))
     seed = int(params.get("seed", 42))
     generator = torch.Generator(device=local_rank).manual_seed(seed + rank)
-    common = dict(prompt=job["prompt"], resolution=resolution, num_frames=frames_count, num_inference_steps=16, use_distill=True, guidance_scale=1.0, generator=generator)
+    common = dict(prompt=job["prompt"], num_frames=frames_count, num_inference_steps=16, use_distill=True, guidance_scale=1.0, generator=generator)
 
     if task == "text_to_video":
-        generated = pipe.generate_t2v(**common)[0]
+        generated = pipe.generate_t2v(height=480, width=832, **common)[0]
         result = _frames(generated)
     elif task == "image_to_video":
         image_path = _input(payload, "source_image", "first_frame")
         if not image_path:
             raise ValueError("image_to_video requires a source image.")
-        generated = pipe.generate_i2v(image=load_image(image_path), **common)[0]
+        generated = pipe.generate_i2v(image=load_image(image_path), resolution=resolution, **common)[0]
         result = _frames(generated)
     elif task == "video_continuation":
         video_path = _input(payload, "source_video")
@@ -86,7 +86,7 @@ def _base(payload: dict, output_path: Path) -> None:
             raise ValueError("video_continuation requires a source video.")
         source = load_video(video_path)
         cond_frames = min(13, len(source))
-        generated = pipe.generate_vc(video=source, num_cond_frames=cond_frames, use_kv_cache=True, offload_kv_cache=False, enhance_hf=False, **common)[0]
+        generated = pipe.generate_vc(video=source, resolution=resolution, num_cond_frames=cond_frames, use_kv_cache=True, offload_kv_cache=False, enhance_hf=False, **common)[0]
         result = source + _frames(generated)[cond_frames:]
     else:
         raise ValueError(f"Base LongCat does not support {task}.")
@@ -134,10 +134,14 @@ def main() -> None:
     args = parser.parse_args()
     payload = json.loads(Path(args.request).read_text(encoding="utf-8"))
     output = Path(args.output)
-    if payload["model"]["id"] == "longcat-video-avatar-1.5":
-        _avatar(payload, output)
-    else:
-        _base(payload, output)
+    try:
+        if payload["model"]["id"] == "longcat-video-avatar-1.5":
+            _avatar(payload, output)
+        else:
+            _base(payload, output)
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
 
 if __name__ == "__main__":
