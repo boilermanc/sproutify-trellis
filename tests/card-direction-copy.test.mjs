@@ -10,10 +10,12 @@ import { createServer } from 'vite';
 
 let server;
 let directions;
+let renderer;
 
 before(async () => {
   server = await createServer({ appType: 'custom', configFile: false, logLevel: 'silent', root: process.cwd(), server: { middlewareMode: true } });
   directions = await server.ssrLoadModule('/services/brandCreativeDirections.ts');
+  renderer = await server.ssrLoadModule('/utils/cardRenderer.ts');
 });
 
 after(async () => server?.close());
@@ -151,5 +153,11 @@ test('every seeded direction still has a fallback overlay to degrade to', () => 
   for (const direction of directions.BRAND_CREATIVE_DIRECTIONS) {
     assert.ok(direction.safeOverlay.heading.trim(), `${direction.id} has no fallback heading`);
     assert.ok(direction.safeOverlay.footer.trim().length <= 44, `${direction.id} fallback footer is too long to render`);
+  }
+});
+
+test('secondary card typography stays readable after mobile feed downscaling', () => {
+  for (const [role, scale] of Object.entries(renderer.CARD_TEXT_SCALE)) {
+    assert.ok(scale >= 0.03, `${role} text is below the 3% mobile readability floor`);
   }
 });
