@@ -92,7 +92,7 @@ test('LongCat worker pins upstream code and keeps giant weights on a volume', as
   assert.match(dockerfile, /LONGCAT_COMMIT=6b3f4b8582a8bc3f20f795735f5383716c4ba794/);
   assert.match(dockerfile, /LONGCAT_BASE_WEIGHTS=\/runpod-volume\/weights\/LongCat-Video/);
   assert.match(dockerfile, /apt-get install[^\n]+libsndfile1/);
-  assert.match(dockerfile, /sed -i '\/\^libsndfile1==\/d' \/opt\/longcat\/requirements_avatar\.txt/);
+  assert.match(dockerfile, /sed -i -e '\/\^libsndfile1==\/d' -e '\/\^tritonserverclient==\/d'/);
   assert.doesNotMatch(dockerfile, /huggingface-cli download/);
   assert.match(handler, /trellis\.media-generation\.v1/);
   assert.match(handler, /signed_upload_url/);
