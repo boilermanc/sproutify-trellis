@@ -14,6 +14,45 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const clean = (value: unknown, max = 200) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+const enabled = (name: string) => ["1", "true", "yes", "on"].includes((Deno.env.get(name) || "").trim().toLowerCase());
+const boundedInteger = (name: string, fallback: number, min: number, max: number) => {
+  const value = Number(Deno.env.get(name) || fallback);
+  return Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value)) : fallback;
+};
+const MEDIA_GENERATION_ENABLED = enabled("MEDIA_GENERATION_ENABLED");
+const MEDIA_GENERATION_ALLOWED_ROLES = new Set(
+  (Deno.env.get("MEDIA_GENERATION_ALLOWED_ROLES") || "owner,admin").split(",").map(value => value.trim()).filter(Boolean),
+);
+const MAX_ACTIVE_JOBS_PER_USER = boundedInteger("MEDIA_GENERATION_MAX_ACTIVE_PER_USER", 1, 1, 5);
+const MAX_DAILY_DISPATCHES_PER_USER = boundedInteger("MEDIA_GENERATION_MAX_DAILY_DISPATCHES_PER_USER", 3, 1, 100);
+const RUNPOD_EXECUTION_TIMEOUT_MS = boundedInteger("RUNPOD_EXECUTION_TIMEOUT_MS", 3_600_000, 300_000, 86_400_000);
+const RUNPOD_JOB_TTL_MS = Math.max(
+  RUNPOD_EXECUTION_TIMEOUT_MS,
+  boundedInteger("RUNPOD_JOB_TTL_MS", 7_200_000, 300_000, 86_400_000),
+);
+const ACTIVE_JOB_STATUSES = ["validating", "submitted", "running", "cancel_requested"];
+
+async function assertDispatchAllowed(db: any, userId: string, operatorRole: string) {
+  if (!MEDIA_GENERATION_ENABLED) throw new Error("Media generation is disabled by the deployment circuit breaker.");
+  if (!MEDIA_GENERATION_ALLOWED_ROLES.has(operatorRole)) throw new Error("Your Trellis role is not allowed to start GPU generation jobs.");
+
+  const utcDayStart = new Date();
+  utcDayStart.setUTCHours(0, 0, 0, 0);
+  const [{ count: activeCount, error: activeError }, { count: dailyCount, error: dailyError }] = await Promise.all([
+    db.from("media_generation_jobs").select("id", { count: "exact", head: true })
+      .eq("created_by", userId).in("status", ACTIVE_JOB_STATUSES),
+    db.from("media_generation_attempts")
+      .select("id,media_generation_jobs!inner(created_by)", { count: "exact", head: true })
+      .eq("media_generation_jobs.created_by", userId).gte("created_at", utcDayStart.toISOString()),
+  ]);
+  if (activeError || dailyError) throw new Error("Could not verify media generation usage limits; dispatch was blocked.");
+  if (Number(activeCount || 0) >= MAX_ACTIVE_JOBS_PER_USER) {
+    throw new Error(`You already have ${MAX_ACTIVE_JOBS_PER_USER} active GPU generation job(s).`);
+  }
+  if (Number(dailyCount || 0) >= MAX_DAILY_DISPATCHES_PER_USER) {
+    throw new Error(`Daily GPU generation limit reached (${MAX_DAILY_DISPATCHES_PER_USER} dispatches).`);
+  }
+}
 
 function runPodConfig(modelId: string): RunPodConfig {
   const apiKey = Deno.env.get("RUNPOD_API_KEY") || "";
@@ -43,9 +82,10 @@ async function addEvent(db: any, jobId: string, eventType: string, values: Recor
   if (error) console.error("Could not record media generation event", { jobId, eventType, error: error.message });
 }
 
-async function dispatchJob(db: any, job: any, userId: string) {
+async function dispatchJob(db: any, job: any, userId: string, operatorRole: string) {
   if (!["queued", "failed"].includes(job.status)) throw new Error(`Job cannot be dispatched from ${job.status}.`);
   if (job.attempt_count >= job.max_attempts) throw new Error("This job has used all retry attempts.");
+  await assertDispatchAllowed(db, userId, operatorRole);
 
   const [{ data: model, error: modelError }, { data: inputRows, error: inputsError }] = await Promise.all([
     db.from("media_model_catalog").select("*").eq("id", job.model_id).eq("active", true).maybeSingle(),
@@ -75,6 +115,9 @@ async function dispatchJob(db: any, job: any, userId: string) {
     output: { bucket: BUCKET, path: outputPath, signed_upload_url: upload.signedUrl, signed_upload_token: upload.token, supabase_url: SUPABASE_URL, content_type: "video/mp4" },
   };
 
+  const gpuCount = Number(model.runtime?.recommended_gpu_count || 1);
+  const ratePerSecond = Number(Deno.env.get("RUNPOD_COST_PER_SECOND") || 0);
+  const estimatedMaxCost = ratePerSecond > 0 ? ratePerSecond * (RUNPOD_EXECUTION_TIMEOUT_MS / 1000) * gpuCount : null;
   const { data: attempt, error: attemptError } = await db.from("media_generation_attempts").insert({
     job_id: job.id,
     attempt_number: attemptNumber,
@@ -88,16 +131,41 @@ async function dispatchJob(db: any, job: any, userId: string) {
       output_bucket: BUCKET,
       output_path: outputPath,
     },
-    gpu_count: Number(model.runtime?.recommended_gpu_count || 1),
+    gpu_count: gpuCount,
+    estimated_cost_usd: estimatedMaxCost,
   }).select("*").single();
   if (attemptError || !attempt) throw new Error(attemptError?.message || "Could not create generation attempt.");
 
-  await db.from("media_generation_jobs").update({ status: "validating", attempt_count: attemptNumber, error_code: null, error_message: null }).eq("id", job.id);
+  const { error: validatingError } = await db.from("media_generation_jobs")
+    .update({ status: "validating", attempt_count: attemptNumber, error_code: null, error_message: null })
+    .eq("id", job.id);
+  if (validatingError) {
+    const completedAt = new Date().toISOString();
+    await Promise.all([
+      db.from("media_generation_attempts").update({
+        status: "failed",
+        error_code: "dispatch_guardrail",
+        error_message: "Another GPU generation job is already active.",
+        completed_at: completedAt,
+      }).eq("id", attempt.id),
+      db.from("media_generation_jobs").update({
+        status: "failed",
+        attempt_count: attemptNumber,
+        error_code: "dispatch_guardrail",
+        error_message: "Another GPU generation job is already active.",
+        completed_at: completedAt,
+      }).eq("id", job.id),
+    ]);
+    throw new Error(validatingError.code === "23505" ? "Only one GPU generation job may be active per user." : validatingError.message);
+  }
   await addEvent(db, job.id, "dispatch_started", { attempt_id: attempt.id, status: "validating", progress: 0 });
 
   try {
     if (job.provider !== "runpod") throw new Error(`Provider ${job.provider} is not configured yet.`);
-    const providerJob = await submitRunPodJob(runPodConfig(job.model_id), workerInput);
+    const providerJob = await submitRunPodJob(runPodConfig(job.model_id), workerInput, {
+      executionTimeout: RUNPOD_EXECUTION_TIMEOUT_MS,
+      ttl: RUNPOD_JOB_TTL_MS,
+    });
     const now = new Date().toISOString();
     await Promise.all([
       db.from("media_generation_attempts").update({ provider_job_id: providerJob.id, status: "submitted", response_snapshot: { id: providerJob.id, status: providerJob.status } }).eq("id", attempt.id),
@@ -251,6 +319,7 @@ Deno.serve(async (request) => {
     if (body.action === "create_job") {
       const input = validateCreateMediaJob(body.job);
       await getOwnedProject(db, input.project_id, user.id);
+      await assertDispatchAllowed(db, user.id, operator.role);
       const { data: model } = await db.from("media_model_catalog").select("*").eq("id", input.model_id).eq("active", true).maybeSingle();
       if (!model || !Array.isArray(model.task_types) || !model.task_types.includes(input.task_type)) throw new Error("The selected model does not support this job type.");
       const assetIds = (input.inputs || []).map(item => item.asset_id);
@@ -278,7 +347,7 @@ Deno.serve(async (request) => {
         }
       }
       await addEvent(db, job.id, "job_created", { status: "queued", progress: 0 });
-      return json({ job: await dispatchJob(db, job, user.id) }, 201);
+      return json({ job: await dispatchJob(db, job, user.id, operator.role) }, 201);
     }
     if (body.action === "list_jobs") {
       await getOwnedProject(db, body.project_id, user.id);
@@ -311,7 +380,7 @@ Deno.serve(async (request) => {
       if (job.status !== "failed") throw new Error("Only failed jobs can be retried.");
       if (job.attempt_count >= job.max_attempts) throw new Error("This job has used all retry attempts.");
       await db.from("media_generation_jobs").update({ status: "queued", progress: 0, provider_job_id: null, completed_at: null, error_code: null, error_message: null }).eq("id", job.id);
-      return json({ job: await dispatchJob(db, { ...job, status: "queued", provider_job_id: null }, user.id) });
+      return json({ job: await dispatchJob(db, { ...job, status: "queued", provider_job_id: null }, user.id, operator.role) });
     }
     return json({ error: "Unknown action." }, 400);
   } catch (error) {

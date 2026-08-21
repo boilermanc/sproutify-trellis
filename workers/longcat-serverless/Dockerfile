@@ -9,11 +9,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LONGCAT_AVATAR_WEIGHTS=/runpod-volume/weights/LongCat-Video-Avatar-1.5
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg git libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends ffmpeg git libgl1 libglib2.0-0 libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/meituan-longcat/LongCat-Video.git /opt/longcat \
     && git -C /opt/longcat checkout "$LONGCAT_COMMIT" \
+    && sed -i '/^libsndfile1==/d' /opt/longcat/requirements_avatar.txt \
     && pip install --no-cache-dir -r /opt/longcat/requirements.txt -r /opt/longcat/requirements_avatar.txt
 
 WORKDIR /opt/trellis

@@ -12,6 +12,11 @@ export interface RunPodJob {
   executionTime?: number;
 }
 
+export interface RunPodJobPolicy {
+  executionTimeout: number;
+  ttl: number;
+}
+
 async function runPodRequest(config: RunPodConfig, path: string, init?: RequestInit): Promise<RunPodJob> {
   const response = await fetch(`https://api.runpod.ai/v2/${config.endpointId}${path}`, {
     ...init,
@@ -22,8 +27,8 @@ async function runPodRequest(config: RunPodConfig, path: string, init?: RequestI
   return payload as RunPodJob;
 }
 
-export function submitRunPodJob(config: RunPodConfig, input: Record<string, unknown>): Promise<RunPodJob> {
-  return runPodRequest(config, "/run", { method: "POST", body: JSON.stringify({ input }) });
+export function submitRunPodJob(config: RunPodConfig, input: Record<string, unknown>, policy: RunPodJobPolicy): Promise<RunPodJob> {
+  return runPodRequest(config, "/run", { method: "POST", body: JSON.stringify({ input, policy }) });
 }
 
 export function getRunPodJob(config: RunPodConfig, providerJobId: string): Promise<RunPodJob> {

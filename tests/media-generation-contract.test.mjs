@@ -33,8 +33,23 @@ test('RunPod provider implementation uses queue endpoints and keeps the key serv
   assert.match(provider, /\/run/);
   assert.match(provider, /\/status\//);
   assert.match(provider, /\/cancel\//);
+  assert.match(provider, /JSON\.stringify\(\{ input, policy \}\)/);
   assert.match(fn, /Deno\.env\.get\("RUNPOD_API_KEY"\)/);
   assert.doesNotMatch(await read('services/mediaGenerationService.ts'), /RUNPOD_API_KEY|api\.runpod\.ai/);
+});
+
+test('GPU dispatch is fail-closed and bounded before a provider request', async () => {
+  const fn = await read('supabase/functions/media-generation/index.ts');
+  const migration = await read('supabase/migrations/20260821170735_add_media_generation_foundation.sql');
+  assert.match(fn, /MEDIA_GENERATION_ENABLED/);
+  assert.match(fn, /MEDIA_GENERATION_ALLOWED_ROLES/);
+  assert.match(fn, /MEDIA_GENERATION_MAX_ACTIVE_PER_USER/);
+  assert.match(fn, /MEDIA_GENERATION_MAX_DAILY_DISPATCHES_PER_USER/);
+  assert.match(fn, /RUNPOD_EXECUTION_TIMEOUT_MS/);
+  assert.match(fn, /executionTimeout: RUNPOD_EXECUTION_TIMEOUT_MS/);
+  assert.match(fn, /ttl: RUNPOD_JOB_TTL_MS/);
+  assert.match(fn, /Could not verify media generation usage limits; dispatch was blocked/);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS idx_media_jobs_one_active_per_user/);
 });
 
 test('jobs use signed object URLs and a versioned worker contract', async () => {
@@ -76,6 +91,8 @@ test('LongCat worker pins upstream code and keeps giant weights on a volume', as
   const runner = await read('workers/longcat-serverless/longcat_job.py');
   assert.match(dockerfile, /LONGCAT_COMMIT=6b3f4b8582a8bc3f20f795735f5383716c4ba794/);
   assert.match(dockerfile, /LONGCAT_BASE_WEIGHTS=\/runpod-volume\/weights\/LongCat-Video/);
+  assert.match(dockerfile, /apt-get install[^\n]+libsndfile1/);
+  assert.match(dockerfile, /sed -i '\/\^libsndfile1==\/d' \/opt\/longcat\/requirements_avatar\.txt/);
   assert.doesNotMatch(dockerfile, /huggingface-cli download/);
   assert.match(handler, /trellis\.media-generation\.v1/);
   assert.match(handler, /signed_upload_url/);

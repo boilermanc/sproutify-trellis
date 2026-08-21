@@ -6,7 +6,7 @@ Do not route existing production video features into this layer until this gate 
 
 1. Supabase access that can apply migrations, deploy Edge Functions, create/update Storage buckets, and set function secrets.
 2. RunPod access that can create a network volume, build or pull a private container image, create Serverless endpoints, and read per-job execution/cost data.
-3. A container registry that RunPod can pull from.
+3. GitHub authorization for RunPod's repository build integration (RunPod stores the resulting image in its managed registry).
 4. Hugging Face access for downloading the LongCat base and Avatar 1.5 weights onto the network volume. Do not put a Hugging Face token in the image.
 5. A consented benchmark pack: still images, speech audio, source images, and short source videos that may be sent to the selected GPU infrastructure.
 
@@ -18,6 +18,12 @@ Apply `20260821170735_add_media_generation_foundation.sql`, then deploy the `med
 - `RUNPOD_LONGCAT_VIDEO_ENDPOINT_ID`
 - `RUNPOD_LONGCAT_AVATAR_ENDPOINT_ID`
 - `RUNPOD_COST_PER_SECOND` only after the endpoint's actual blended rate is known
+- `MEDIA_GENERATION_ENABLED=false` until the benchmark operator deliberately opens the circuit breaker
+- `MEDIA_GENERATION_ALLOWED_ROLES=owner,admin`
+- `MEDIA_GENERATION_MAX_ACTIVE_PER_USER=1`
+- `MEDIA_GENERATION_MAX_DAILY_DISPATCHES_PER_USER=3`
+- `RUNPOD_EXECUTION_TIMEOUT_MS=3600000`
+- `RUNPOD_JOB_TTL_MS=7200000`
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are supplied by the hosted Edge Function environment. The service-role value must never be exposed to the browser or worker.
 
@@ -33,6 +39,12 @@ Create separate endpoints:
 - Avatar endpoint: start with two visible GPUs, context parallelism 2, Flex workers, minimum workers 0. Confirm RunPod schedules both GPUs into the same worker before running Avatar.
 
 Keep active workers at zero during the proof of concept. Do not set a permanent warm worker until cold-start measurements justify the idle cost.
+
+## Cost circuit breakers
+
+The Edge Function is fail-closed: provider dispatch is disabled unless `MEDIA_GENERATION_ENABLED` is explicitly true. The proof-of-concept defaults also restrict dispatch to owners/admins, one active job per user, three dispatch attempts per UTC day, two attempts per job, and a one-hour provider execution timeout. A partial unique index prevents two active jobs for the same user even if requests race.
+
+RunPod must remain at zero active workers, one maximum worker, one GPU per base worker, and Auto-Pay disabled during the proof of concept. The endpoint-level worker maximum is the infrastructure backstop if application requests race or a caller bypasses the Trellis UI. Do not increase any limit until usage-ledger and RunPod billing records agree for the benchmark set.
 
 ## Acceptance tests
 

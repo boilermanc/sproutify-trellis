@@ -183,6 +183,9 @@ CREATE INDEX idx_media_projects_branch_updated ON public.media_generation_projec
 CREATE INDEX idx_media_assets_project_type ON public.media_assets (project_id, asset_type, created_at DESC);
 CREATE INDEX idx_media_jobs_project_created ON public.media_generation_jobs (project_id, created_at DESC);
 CREATE INDEX idx_media_jobs_active ON public.media_generation_jobs (status, priority DESC, queued_at) WHERE status IN ('queued','submitted','running','cancel_requested');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_media_jobs_one_active_per_user
+  ON public.media_generation_jobs (created_by)
+  WHERE status IN ('validating','submitted','running','cancel_requested');
 CREATE INDEX idx_media_jobs_provider_id ON public.media_generation_jobs (provider, provider_job_id) WHERE provider_job_id IS NOT NULL;
 CREATE INDEX idx_media_attempts_job ON public.media_generation_attempts (job_id, attempt_number DESC);
 CREATE INDEX idx_media_events_job ON public.media_generation_events (job_id, created_at DESC);
