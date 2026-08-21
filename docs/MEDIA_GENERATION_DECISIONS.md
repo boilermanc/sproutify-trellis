@@ -41,6 +41,12 @@ This is the running decision and deferred-question list for Trellis GPU generati
 6. Every provider submission creates an immutable attempt and events; a retry does not erase previous failures.
 7. Avatar 1.5 enforces distillation's eight inference steps. The initial runtime assumption is two GPUs with context parallelism 2 and INT8 enabled.
 8. Existing tools are migrated individually only after side-by-side results meet acceptance criteria.
+9. Completed outputs appear in one **Created media** library with private previews, provenance, measured cost, approval state, and publishing history.
+10. Human approval is required before a generated output can enter the publishing queue.
+11. Generated video reuses `scheduled_social_posts` and the existing n8n publisher instead of creating a second publishing engine.
+12. Instagram Reels and TikTok video are the first publishing destinations. Facebook video remains disabled until its current publisher accepts video.
+13. Private generated media is resolved through a service-role-only database function and signed for one hour only after the scheduler has atomically claimed the post.
+14. Generation dispatch and publishing handoff remain separate circuit breakers. Enabling publishing does not enable RunPod generation.
 
 ## Deferred, not blocking foundation work
 
@@ -51,10 +57,12 @@ This is the running decision and deferred-question list for Trellis GPU generati
 - Default quality presets (480p fast, 720p refined, duration/segment limits).
 - Which commercial provider remains the production fallback.
 - Retention period for source assets, failed outputs, logs, and provider response snapshots.
+- Facebook video support in the existing publisher.
+- Production merge/deployment of the Trellis frontend workspace.
 
-## Access needed for the deployment/benchmark phase
+## Access status for the deployment/benchmark phase
 
-- RunPod account/API key, permission to create Serverless endpoints, and a network volume.
-- Hugging Face token only if the selected weight repositories require authenticated download at deployment time.
-- Supabase project deployment access for the migration, Edge Function, bucket, and secrets.
-- A small approved reference pack: consented character images, short audio clips, image-to-video source frames, and continuation clips.
+- RunPod, Supabase, GitHub repository-build, and n8n deployment access are available.
+- The base RunPod endpoint remains scale-to-zero with a one-worker maximum and no active GPU workers.
+- Still needed only when testing Avatar or gated weights: a Hugging Face token if the selected repository requires it.
+- Still needed for the benchmark: a small approved reference pack with consented character images, short audio clips, image-to-video source frames, and continuation clips.
