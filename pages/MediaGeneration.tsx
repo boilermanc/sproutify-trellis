@@ -18,6 +18,7 @@ import { useMediaGenerationPoller } from '../hooks/useMediaGenerationPoller';
 import TimedTextTimeline from '../components/media/TimedTextTimeline';
 import VideoResultPreview from '../components/media/VideoResultPreview';
 import GeneratedMediaLibrary from '../components/media/GeneratedMediaLibrary';
+import MediaGenerationGuide from '../components/media/MediaGenerationGuide';
 
 interface Props {
   branches: Branch[];
@@ -214,6 +215,8 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
         <button type="button" onClick={() => setWorkspaceView('create')} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black ${workspaceView === 'create' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}><Sparkles className="h-4 w-4" /> Create</button>
         <button type="button" onClick={() => setWorkspaceView('library')} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black ${workspaceView === 'library' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}><LibraryBig className="h-4 w-4" /> Created media</button>
       </div>
+
+      <MediaGenerationGuide />
 
       {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-5">

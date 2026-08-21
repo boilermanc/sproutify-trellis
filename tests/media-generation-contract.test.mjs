@@ -182,3 +182,20 @@ test('Generated media library hands approved private video to the existing publi
   assert.equal(scheduler.connections['Attach Generated Media URL'].main[0][0].node, 'Route by Platform');
   assert.match(JSON.stringify(scheduler), /rpc\/resolve_scheduled_generated_media/);
 });
+
+test('Media Generation gives first-time operators an in-product walkthrough', async () => {
+  const page = await read('pages/MediaGeneration.tsx');
+  const guide = await read('components/media/MediaGenerationGuide.tsx');
+
+  assert.match(page, /MediaGenerationGuide/);
+  assert.match(guide, /How to use Media Generation/);
+  assert.match(guide, /Recommended first test/);
+  assert.match(guide, /LongCat Base/);
+  assert.match(guide, /Nothing is billed until/);
+  assert.match(guide, /Text to video/);
+  assert.match(guide, /Image to video/);
+  assert.match(guide, /Talking character/);
+  assert.match(guide, /Continue a video/);
+  assert.match(guide, /Review and publish/);
+  assert.match(guide, /does not replace them/);
+});
