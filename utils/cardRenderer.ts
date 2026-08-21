@@ -24,6 +24,18 @@ import { ensureFontLoaded, FONT_OPTIONS } from './imageComposite';
 
 export const CARD_SIZE = { width: 1080, height: 1350 } as const; // 4:5, IG portrait
 
+// Cards are usually viewed at roughly one third of their exported width in a
+// mobile feed. Text below 3% of the canvas width therefore lands under about
+// 11 CSS pixels and becomes decorative rather than readable. Keep secondary
+// copy at or above this shared floor so references, sublines, footnotes and
+// footer calls-to-action survive Instagram/Facebook downscaling.
+export const CARD_TEXT_SCALE = {
+  eyebrow: 0.03,
+  secondary: 0.032,
+  compact: 0.03,
+  logo: 0.036,
+} as const;
+
 // Fraunces/Playfair-style serif for display text, Inter for UI/labels.
 // Both are already curated in FONT_OPTIONS so we don't add a new dependency
 // or a new Google Fonts family to load.
@@ -279,7 +291,7 @@ function drawEyebrow(ctx: CanvasRenderingContext2D, text: string, palette: CardP
   const eyebrow = safeText(text).trim();
   if (!eyebrow) return topY;
 
-  const fontSizePx = W * 0.026;
+  const fontSizePx = W * CARD_TEXT_SCALE.eyebrow;
   ctx.save();
   ctx.font = fontString(600, fontSizePx, CARD_FONTS.sans);
   ctx.fillStyle = palette?.muted || '#999999';
@@ -294,7 +306,7 @@ function drawLogoText(ctx: CanvasRenderingContext2D, text: string, palette: Card
   const logo = safeText(text).trim();
   if (!logo) return;
 
-  const fontSizePx = W * 0.03;
+  const fontSizePx = W * CARD_TEXT_SCALE.logo;
   ctx.save();
   ctx.font = fontString(600, fontSizePx, CARD_FONTS.serif, true);
   ctx.fillStyle = palette?.text || '#ffffff';
@@ -399,7 +411,7 @@ function drawVerse(ctx: CanvasRenderingContext2D, concept: CardConcept, W: numbe
 
   const reference = safeText(concept.reference).trim();
   if (reference) {
-    const refSizePx = W * 0.022;
+    const refSizePx = W * CARD_TEXT_SCALE.compact;
     ctx.save();
     ctx.font = fontString(600, refSizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.muted || '#999999';
@@ -503,7 +515,7 @@ function drawStatement(ctx: CanvasRenderingContext2D, concept: CardConcept, W: n
   ctx.restore();
 
   if (subline) {
-    const sizePx = W * 0.024;
+    const sizePx = W * CARD_TEXT_SCALE.secondary;
     ctx.save();
     ctx.font = fontString(400, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.muted || '#777777';
@@ -570,7 +582,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
     // fewer rows are needed than the space allows.
     const gridStartY = gridTop + Math.max(0, (gridHeight - totalGridHeight) / 2);
 
-    const cellFontSizePx = Math.max(W * 0.017, cellW * 0.11);
+    const cellFontSizePx = Math.max(W * CARD_TEXT_SCALE.compact, cellW * 0.13);
 
     items.forEach((item, i) => {
       const col = i % cols;
@@ -603,7 +615,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
         cellMaxWidth,
         cellH - cellPad * 2,
         cellFontSizePx,
-        cellFontSizePx * 0.55,
+        W * 0.024,
         cellFontSizePx * 0.05,
         1.2,
         (sizePx) => {
@@ -628,7 +640,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
   }
 
   if (footnote) {
-    const sizePx = W * 0.02;
+    const sizePx = W * CARD_TEXT_SCALE.compact;
     ctx.save();
     ctx.font = fontString(400, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.muted || '#999999';
@@ -1096,7 +1108,7 @@ function drawEditorial(
 
   const wordmarkSubtitle = safeText(concept.wordmarkSubtitle).trim();
   if (wordmarkSubtitle) {
-    const sizePx = W * 0.02;
+    const sizePx = W * CARD_TEXT_SCALE.compact;
     ctx.save();
     ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = accent;
@@ -1153,7 +1165,7 @@ function drawEditorial(
   // Bullet rows: icon badge + wrapped, mixed-weight text.
   if (bullets.length > 0) {
     const iconRadius = bulletRowH * 0.36;
-    const textFontSizePx = W * 0.026;
+    const textFontSizePx = W * CARD_TEXT_SCALE.secondary;
     const textX = marginX + iconRadius * 2 + W * 0.025;
     const bulletTextMaxWidth = Math.max(W * 0.15, maxWidth - (textX - marginX));
 
@@ -1182,7 +1194,7 @@ function drawEditorial(
     const bandTop = H - footerBandH;
     paintFooterBand(ctx, palette, W, H, bandTop);
 
-    const sizePx = W * 0.022;
+    const sizePx = W * CARD_TEXT_SCALE.compact;
     ctx.save();
     ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = textColor;
@@ -1250,7 +1262,7 @@ function drawList(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
     const textX = padX + numberColW;
     const textMaxWidth = Math.max(W * 0.2, maxWidth - numberColW);
     const rowPad = rowH * 0.12;
-    const minFontSizePx = W * 0.016;
+    const minFontSizePx = W * 0.024;
 
     bullets.forEach((bullet, i) => {
       const rowTop = listTop + i * rowH;
@@ -1272,7 +1284,7 @@ function drawList(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
       // into the next row).
       const words = tagBulletWords(safeText(bullet.text), safeText(bullet.emphasis));
       const availableTextH = rowH - rowPad * 2;
-      let textFontSizePx = Math.min(W * 0.03, rowH * 0.36);
+      let textFontSizePx = Math.min(W * CARD_TEXT_SCALE.secondary, rowH * 0.4);
       let lines = wrapBulletWords(ctx, words, textMaxWidth, textFontSizePx, CARD_FONTS.sans);
       let lineHeightPx = textFontSizePx * 1.28;
       while (lines.length * lineHeightPx > availableTextH && textFontSizePx > minFontSizePx) {
@@ -1295,7 +1307,7 @@ function drawList(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
   }
 
   if (footnote) {
-    const sizePx = W * 0.02;
+    const sizePx = W * CARD_TEXT_SCALE.compact;
     ctx.save();
     ctx.font = fontString(400, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.muted || '#999999';
@@ -1375,7 +1387,7 @@ function drawConversation(ctx: CanvasRenderingContext2D, concept: CardConcept, W
 
   if (messages.length > 0) {
     const bubbleMaxWidth = maxWidth * 0.68;
-    const bubbleFontSizePx = W * 0.028;
+    const bubbleFontSizePx = W * CARD_TEXT_SCALE.secondary;
     const bubblePadX = W * 0.032;
     const bubblePadY = H * 0.02;
     const lineHeightPx = bubbleFontSizePx * 1.3;
@@ -1492,7 +1504,7 @@ function drawStat(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
   }
 
   if (statUnit) {
-    const sizePx = W * 0.03;
+    const sizePx = W * CARD_TEXT_SCALE.secondary;
     ctx.save();
     ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.accent || '#c9622a';
@@ -1504,7 +1516,7 @@ function drawStat(ctx: CanvasRenderingContext2D, concept: CardConcept, W: number
   }
 
   if (subline) {
-    const sizePx = W * 0.024;
+    const sizePx = W * CARD_TEXT_SCALE.secondary;
     ctx.save();
     ctx.font = fontString(400, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.muted || '#999999';
@@ -1588,7 +1600,7 @@ function drawQuote(ctx: CanvasRenderingContext2D, concept: CardConcept, W: numbe
   }
 
   if (attribution) {
-    const sizePx = W * 0.024;
+    const sizePx = W * CARD_TEXT_SCALE.compact;
     ctx.save();
     ctx.font = fontString(600, sizePx, CARD_FONTS.sans);
     ctx.fillStyle = palette?.muted || '#999999';
