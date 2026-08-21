@@ -210,6 +210,141 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-generated-source",
+              "leftValue": "={{ $json.source_media_asset_id || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has Private Generated Media?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        0
+      ],
+      "notes": "Generated media stays in the private media-generation bucket. Resolve and sign it immediately before publishing; ordinary uploaded posts continue directly to platform routing.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/resolve_scheduled_generated_media",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_scheduled_post_id: $json.id }) }}",
+        "options": {}
+      },
+      "name": "Fetch Generated Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        180,
+        -260
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Calls a service-role-only resolver that verifies the claimed post, approved output, completed generation job, private asset, and original owner all match before returning a storage path.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $input.item.json;\nconst asset = Array.isArray(raw) ? raw[0] : raw;\nif (!asset?.storage_bucket || !asset?.storage_path) throw new Error('Generated media asset could not be resolved');\nif (asset.status !== 'ready') throw new Error('Generated media asset is not ready for publishing');\nreturn { json: asset };"
+      },
+      "name": "Validate Generated Asset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -260
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/sign/{{ $json.storage_bucket }}/{{ $json.storage_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ expiresIn: 3600 }) }}",
+        "options": {}
+      },
+      "name": "Sign Generated Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        620,
+        -260
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Creates a one-hour URL only when the scheduled post is claimed. The private asset is never made public and no long-lived signed URL is stored."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const source = $('Drop Unclaimed Posts').item.json;\nconst signed = $input.item.json || {};\nconst rawUrl = signed.signedURL || signed.signedUrl;\nif (!rawUrl) throw new Error('Supabase returned no signed generated-media URL');\nconst base = 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1';\nconst mediaUrl = String(rawUrl).startsWith('http') ? String(rawUrl) : base + String(rawUrl);\nreturn { json: { ...source, media_urls: [mediaUrl] } };"
+      },
+      "name": "Attach Generated Media URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        -260
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
         "rules": {
           "values": [
             {
@@ -674,7 +809,97 @@
       "main": [
         [
           {
+            "node": "Has Private Generated Media?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Private Generated Media?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Generated Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Generated Asset": {
+      "main": [
+        [
+          {
+            "node": "Validate Generated Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Generated Asset": {
+      "main": [
+        [
+          {
+            "node": "Sign Generated Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign Generated Asset": {
+      "main": [
+        [
+          {
+            "node": "Attach Generated Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Generated Media URL": {
+      "main": [
+        [
+          {
+            "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
             "type": "main",
             "index": 0
           }

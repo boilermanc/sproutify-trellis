@@ -913,6 +913,26 @@ GRANT ALL ON scheduled_social_posts TO anon, authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_ssp_due ON scheduled_social_posts (scheduled_for) WHERE status = 'scheduled';
 CREATE INDEX IF NOT EXISTS idx_ssp_branch_scheduled ON scheduled_social_posts (branch_slug, scheduled_for);
 
+-- Generated-media publishing provenance. The referenced media tables are
+-- created by the provider-agnostic media-generation foundation migration.
+ALTER TABLE scheduled_social_posts
+  ADD COLUMN IF NOT EXISTS source_media_asset_id UUID,
+  ADD COLUMN IF NOT EXISTS source_generation_job_id UUID,
+  ADD COLUMN IF NOT EXISTS source_generation_output_id UUID,
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_media_asset
+  ON scheduled_social_posts (source_media_asset_id)
+  WHERE source_media_asset_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_generation_job
+  ON scheduled_social_posts (source_generation_job_id, created_at DESC)
+  WHERE source_generation_job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_generation_output
+  ON scheduled_social_posts (source_generation_output_id)
+  WHERE source_generation_output_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ssp_created_by_idempotency
+  ON scheduled_social_posts (created_by, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION set_ssp_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN

@@ -591,7 +591,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
 
 export interface StudioAlbum {
   id: string;
@@ -2147,4 +2147,163 @@ export interface NewScheduledPost {
   scheduled_for: string;
   source?: string;
   created_by?: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEDIA GENERATION (provider-agnostic GPU jobs)
+// ═══════════════════════════════════════════════════════════════
+
+export type MediaGenerationTaskType =
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'audio_driven_avatar'
+  | 'video_continuation';
+
+export type MediaGenerationJobStatus =
+  | 'validating'
+  | 'queued'
+  | 'submitted'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancel_requested'
+  | 'cancelled';
+
+export type MediaGenerationInputRole =
+  | 'reference_image'
+  | 'reference_video'
+  | 'driving_audio'
+  | 'source_image'
+  | 'source_video'
+  | 'first_frame'
+  | 'last_frame';
+
+export type MediaTextAnimation = 'fade' | 'slide_up' | 'word_reveal';
+export type MediaTextPosition = 'top' | 'center' | 'bottom';
+
+export interface MediaTextCue {
+  id: string;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+  position: MediaTextPosition;
+  animation: MediaTextAnimation;
+}
+
+export interface MediaGenerationProject {
+  id: string;
+  organization_id: string;
+  branch_id: string | null;
+  created_by: string;
+  name: string;
+  description: string | null;
+  status: 'active' | 'archived';
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaModelCatalogEntry {
+  id: string;
+  display_name: string;
+  family: string;
+  provider_hint: string | null;
+  task_types: MediaGenerationTaskType[];
+  capabilities: Record<string, unknown>;
+  runtime: Record<string, unknown>;
+  default_parameters: Record<string, unknown>;
+  active: boolean;
+}
+
+export interface MediaAsset {
+  id: string;
+  project_id: string;
+  character_id: string | null;
+  asset_type: string;
+  role: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  status: 'uploading' | 'ready' | 'processing' | 'failed' | 'archived';
+  metadata: Record<string, unknown>;
+  created_at: string;
+  signed_url?: string | null;
+}
+
+export interface MediaGenerationJobInput {
+  asset_id: string;
+  input_role: MediaGenerationInputRole;
+  position?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MediaGenerationJob {
+  id: string;
+  project_id: string;
+  scene_id: string | null;
+  created_by: string;
+  model_id: string;
+  provider: string;
+  task_type: MediaGenerationTaskType;
+  status: MediaGenerationJobStatus;
+  progress: number;
+  provider_job_id: string | null;
+  prompt: string;
+  negative_prompt: string | null;
+  parameters: Record<string, unknown>;
+  max_attempts: number;
+  attempt_count: number;
+  retry_of: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  queued_at: string;
+  submitted_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  last_heartbeat_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaGenerationLibraryItem {
+  output_id: string;
+  output_role: string;
+  approved: boolean;
+  approved_at: string | null;
+  asset: MediaAsset;
+  job: MediaGenerationJob;
+  project: MediaGenerationProject | null;
+  attempt: {
+    execution_seconds?: number | null;
+    actual_cost_usd?: number | null;
+    gpu_count?: number | null;
+  } | null;
+  publishing: ScheduledPost[];
+  signed_url: string | null;
+}
+
+export interface ScheduleMediaGenerationOutput {
+  output_id: string;
+  branch_id: string;
+  platform: 'instagram' | 'tiktok';
+  caption: string;
+  scheduled_for: string;
+  idempotency_key: string;
+}
+
+export interface CreateMediaGenerationJob {
+  project_id: string;
+  scene_id?: string | null;
+  model_id: string;
+  provider?: string;
+  task_type: MediaGenerationTaskType;
+  prompt: string;
+  negative_prompt?: string;
+  parameters?: Record<string, unknown>;
+  inputs?: MediaGenerationJobInput[];
+  idempotency_key?: string;
 }
