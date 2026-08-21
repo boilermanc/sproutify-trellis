@@ -11,6 +11,7 @@ import Tasks from './pages/Tasks';
 import CampaignBuilder from './pages/CampaignBuilder';
 import SocialHub from './pages/SocialHub';
 import VideoAdLab from './pages/VideoAdLab';
+import MediaGeneration from './pages/MediaGeneration';
 import TrellisStudio from './pages/TrellisStudio';
 import StudioAlbums from './pages/StudioAlbums';
 import TrellisEpisodes from './pages/TrellisEpisodes';
@@ -484,6 +485,7 @@ const AppContent: React.FC = () => {
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onBranchesChange={refreshBranches} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
       case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
       case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
+      case 'media-generation': return <MediaGeneration branches={branches} addToast={addToast} />;
       case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
       case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
       case 'trellis-episodes': return <TrellisEpisodes branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
