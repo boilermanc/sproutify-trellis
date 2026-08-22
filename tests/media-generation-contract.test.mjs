@@ -236,6 +236,7 @@ test('Media Generation gives first-time operators an in-product walkthrough', as
   const guide = await read('components/media/MediaGenerationGuide.tsx');
 
   assert.match(page, /MediaGenerationGuide/);
+  assert.match(page, /workspaceView === 'create' && <MediaGenerationGuide/);
   assert.match(guide, /How to use Media Generation/);
   assert.match(guide, /Recommended first test/);
   assert.match(guide, /LongCat Base/);
