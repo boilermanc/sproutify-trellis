@@ -39,6 +39,10 @@ export async function approveMediaGenerationOutput(outputId: string): Promise<vo
   await callMedia<{ output: Record<string, unknown> }>('approve_output', { output_id: outputId });
 }
 
+export async function deleteMediaGenerationOutput(outputId: string): Promise<void> {
+  await callMedia<{ deleted: boolean }>('delete_output', { output_id: outputId });
+}
+
 export async function scheduleMediaGenerationOutput(input: ScheduleMediaGenerationOutput): Promise<{ post: Record<string, unknown> }> {
   return callMedia<{ post: Record<string, unknown> }>('schedule_output', { publication: input });
 }

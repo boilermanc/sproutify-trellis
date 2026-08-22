@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowUpDown, CalendarClock, CheckCircle2, DollarSign, Download, Film, Filter, Instagram, Loader2, RefreshCw, Send, ShieldCheck, Type } from 'lucide-react';
+import { ArrowUpDown, CalendarClock, CheckCircle2, DollarSign, Download, Film, Filter, Instagram, Loader2, RefreshCw, Send, ShieldCheck, Trash2, Type } from 'lucide-react';
 import type { Branch, MediaGenerationLibraryItem } from '../../types';
-import { approveMediaGenerationOutput, getMediaGenerationLibrary, scheduleMediaGenerationOutput } from '../../services/mediaGenerationService';
+import { approveMediaGenerationOutput, deleteMediaGenerationOutput, getMediaGenerationLibrary, scheduleMediaGenerationOutput } from '../../services/mediaGenerationService';
 import MediaFinishingEditor from './MediaFinishingEditor';
 
 interface Props {
@@ -35,6 +35,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
   const [scheduledFor, setScheduledFor] = useState(defaultSchedule);
   const [publishKey, setPublishKey] = useState('');
   const [editItem, setEditItem] = useState<MediaGenerationLibraryItem | null>(null);
+  const [removeItem, setRemoveItem] = useState<MediaGenerationLibraryItem | null>(null);
 
   const activeBranches = useMemo(() => branches.filter(branch => branch.is_active), [branches]);
   const branchNames = useMemo(() => new Map(branches.map(branch => [branch.id, branch.name])), [branches]);
@@ -93,6 +94,21 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
       addToast('Video approved for publishing.', 'success');
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Could not approve this video.', 'error');
+    } finally {
+      setWorkingId(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!removeItem) return;
+    try {
+      setWorkingId(removeItem.output_id);
+      await deleteMediaGenerationOutput(removeItem.output_id);
+      setItems(current => current.filter(item => item.output_id !== removeItem.output_id && item.source_output_id !== removeItem.output_id));
+      setRemoveItem(null);
+      addToast('Video deleted from storage and removed from Created media.', 'success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not remove this video.', 'error');
     } finally {
       setWorkingId(null);
     }
@@ -163,6 +179,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
                 {!item.approved && <button type="button" disabled={workingId === item.output_id} onClick={() => void approve(item)} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50"><CheckCircle2 className="h-4 w-4" /> Approve</button>}
                 {item.approved && <button type="button" disabled={!publishingEnabled || workingId === item.output_id} onClick={() => openPublishing(item)} title={publishingEnabled ? 'Send to Post Scheduler' : 'Publishing handoff is paused until the private-media resolver is deployed'} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Send className="h-4 w-4" /> Send to publishing</button>}
                 {item.signed_url && <a href={item.signed_url} download className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600"><Download className="h-4 w-4" /> Download</a>}
+                <button type="button" disabled={workingId === item.output_id || Boolean(finishingActive)} onClick={() => setRemoveItem(item)} title="Permanently delete this video from storage" className="flex items-center gap-2 rounded-xl border border-rose-200 px-3 py-2 text-xs font-black text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="h-4 w-4" /> Remove</button>
               </div>
               {(item.approved && !publishingEnabled) || (item.output_role === 'primary' && !finishingEnabled) ? <p className="flex items-start gap-2 text-[10px] leading-4 text-amber-700 md:col-span-2 xl:col-span-3"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />{item.approved && !publishingEnabled ? 'Publishing is paused until the private-media resolver is deployed.' : 'Text finishing is paused until its renderer is online.'}</p> : null}
             </div>
@@ -181,6 +198,14 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
           <label className="mt-3 block text-[10px] font-black uppercase tracking-wider text-slate-400">Publish around<input type="datetime-local" value={scheduledFor} min={localDateTime(new Date())} max={localDateTime(new Date(Date.now() + 30 * 24 * 60 * 60_000))} onChange={event => setScheduledFor(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700" /></label>
           <p className="mt-3 text-[11px] leading-5 text-slate-500">Instagram and TikTok video are supported first. Facebook video remains disabled until its publisher gains video support.</p>
           <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setPublishItem(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-600">Cancel</button><button type="button" disabled={workingId === publishItem.output_id || !branchId || !caption.trim() || !scheduledFor} onClick={() => void schedule()} className="flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">{workingId === publishItem.output_id ? <Loader2 className="h-4 w-4 animate-spin" /> : platform === 'instagram' ? <Instagram className="h-4 w-4" /> : <Send className="h-4 w-4" />} Add to queue</button></div>
+        </div>
+      </div>}
+      {removeItem && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Delete generated video">
+        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+          <div className="flex items-center gap-3"><div className="rounded-2xl bg-rose-50 p-3"><Trash2 className="h-5 w-5 text-rose-600" /></div><div><h3 className="text-lg font-black text-slate-900">Delete this video?</h3><p className="text-xs text-slate-500">The video file will be permanently deleted from storage.</p></div></div>
+          <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-xs leading-5 text-rose-700">This cannot be undone. Trellis keeps only the small generation usage and cost record for accurate reporting. Videos in publishing must be removed from that queue first.</p>
+          <p className="mt-3 line-clamp-2 text-xs font-bold leading-5 text-slate-800">{removeItem.job.prompt}</p>
+          <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={workingId === removeItem.output_id} onClick={() => setRemoveItem(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-600 disabled:opacity-40">Keep video</button><button type="button" disabled={workingId === removeItem.output_id} onClick={() => void remove()} className="flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">{workingId === removeItem.output_id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Delete permanently</button></div>
         </div>
       </div>}
       {editItem && <MediaFinishingEditor item={editItem} branches={branches} addToast={addToast} onClose={() => setEditItem(null)} onQueued={load} />}
