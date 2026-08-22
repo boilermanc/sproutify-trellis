@@ -20,6 +20,7 @@ const boundedInteger = (name: string, fallback: number, min: number, max: number
   return Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value)) : fallback;
 };
 const MEDIA_GENERATION_ENABLED = enabled("MEDIA_GENERATION_ENABLED");
+const MEDIA_FINISHING_ENABLED = enabled("MEDIA_FINISHING_ENABLED");
 const MEDIA_PUBLISHING_HANDOFF_ENABLED = enabled("MEDIA_PUBLISHING_HANDOFF_ENABLED");
 const MEDIA_GENERATION_ALLOWED_ROLES = new Set(
   (Deno.env.get("MEDIA_GENERATION_ALLOWED_ROLES") || "owner,admin").split(",").map(value => value.trim()).filter(Boolean),
@@ -33,6 +34,47 @@ const RUNPOD_JOB_TTL_MS = Math.max(
 );
 const RUNPOD_COST_PER_SECOND = Math.max(0, Number(Deno.env.get("RUNPOD_COST_PER_SECOND") || 0));
 const ACTIVE_JOB_STATUSES = ["validating", "submitted", "running", "cancel_requested"];
+const MEDIA_FONT_IDS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains"]);
+const MEDIA_TEXT_POSITIONS = new Set(["top", "center", "bottom"]);
+const MEDIA_TEXT_ANIMATIONS = new Set(["fade", "slide_up", "word_reveal"]);
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function validateFinishingPlan(value: unknown, durationSeconds: number) {
+  const input = value && typeof value === "object" ? value as Record<string, any> : {};
+  const rawCues = Array.isArray(input.text_cues) ? input.text_cues : [];
+  if (rawCues.length < 1 || rawCues.length > 24) throw new Error("Add between 1 and 24 timed text messages.");
+  if (!(durationSeconds > 0)) throw new Error("The source video duration is unavailable; refresh the media record before finishing it.");
+  const cues = rawCues.map((raw: any, index: number) => {
+    const text = sanitizeMediaText(clean(raw?.text, 180));
+    const start = Number(raw?.start_seconds);
+    const end = Number(raw?.end_seconds);
+    const position = clean(raw?.position, 20);
+    const animation = clean(raw?.animation, 30);
+    if (!text) throw new Error(`Text message ${index + 1} is empty.`);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > durationSeconds + 0.1) throw new Error(`Text message ${index + 1} has invalid timing.`);
+    if (!MEDIA_TEXT_POSITIONS.has(position)) throw new Error(`Text message ${index + 1} has an unsupported position.`);
+    if (!MEDIA_TEXT_ANIMATIONS.has(animation)) throw new Error(`Text message ${index + 1} has an unsupported animation.`);
+    return { id: clean(raw?.id, 80) || crypto.randomUUID(), text, start_seconds: start, end_seconds: end, position, animation };
+  });
+  const rawStyle = input.style && typeof input.style === "object" ? input.style : {};
+  const fontId = clean(rawStyle.font_id, 30);
+  const fontSize = Number(rawStyle.font_size);
+  const fontWeight = Number(rawStyle.font_weight);
+  const backgroundOpacity = Number(rawStyle.background_opacity);
+  if (!MEDIA_FONT_IDS.has(fontId)) throw new Error("Choose one of the available video fonts.");
+  if (!Number.isFinite(fontSize) || fontSize < 0.035 || fontSize > 0.14) throw new Error("Text size is outside the supported range.");
+  if (![400, 600, 700, 800, 900].includes(fontWeight)) throw new Error("Choose a supported font weight.");
+  if (!HEX_COLOR.test(String(rawStyle.color || "")) || !HEX_COLOR.test(String(rawStyle.background_color || ""))) throw new Error("Choose valid text and background colors.");
+  if (!Number.isFinite(backgroundOpacity) || backgroundOpacity < 0 || backgroundOpacity > 0.9) throw new Error("Text background strength is outside the supported range.");
+  return {
+    cues,
+    style: {
+      font_id: fontId, font_size: fontSize, font_weight: fontWeight,
+      color: rawStyle.color, background_color: rawStyle.background_color,
+      background_opacity: backgroundOpacity, uppercase: rawStyle.uppercase === true, shadow: rawStyle.shadow !== false,
+    },
+  };
+}
 
 async function assertDispatchAllowed(db: any, userId: string, operatorRole: string) {
   if (!MEDIA_GENERATION_ENABLED) throw new Error("Media generation is disabled by the deployment circuit breaker.");
@@ -105,6 +147,9 @@ async function listLibrary(db: any, userId: string, limit: number) {
   ]);
   if (outputsError) throw new Error(outputsError.message);
   if (!outputs?.length) return [];
+  const outputIds = outputs.map((output: any) => output.id);
+  const { data: finishingJobs, error: finishingError } = await db.from("media_finishing_jobs").select("*").in("source_output_id", outputIds).order("created_at", { ascending: false });
+  if (finishingError) throw new Error(finishingError.message);
   const assetIds = [...new Set((outputs || []).map((output: any) => output.asset_id))];
   const { data: assets, error: assetsError } = await db.from("media_assets").select("*").in("id", assetIds);
   if (assetsError) throw new Error(assetsError.message);
@@ -115,6 +160,8 @@ async function listLibrary(db: any, userId: string, limit: number) {
   for (const attempt of attempts || []) if (!attemptByJob.has(attempt.job_id)) attemptByJob.set(attempt.job_id, attempt);
   const publicationsByOutput = new Map<string, any[]>();
   for (const publication of publications || []) publicationsByOutput.set(publication.source_generation_output_id, [...(publicationsByOutput.get(publication.source_generation_output_id) || []), publication]);
+  const finishingBySource = new Map<string, any>();
+  for (const finishing of finishingJobs || []) if (!finishingBySource.has(finishing.source_output_id)) finishingBySource.set(finishing.source_output_id, finishing);
   return Promise.all((outputs || []).map(async (output: any) => {
     const job = jobsById.get(output.job_id) as any;
     const asset = assetsById.get(output.asset_id) as any;
@@ -130,6 +177,8 @@ async function listLibrary(db: any, userId: string, limit: number) {
       attempt: attemptByJob.get(job.id) || null,
       publishing: publicationsByOutput.get(output.id) || [],
       signed_url: signed.data?.signedUrl || null,
+      source_output_id: output.source_output_id || null,
+      finishing: finishingBySource.get(output.id) || null,
     };
   }));
 }
@@ -328,6 +377,7 @@ Deno.serve(async (request) => {
     if (body.action === "get_configuration") {
       return json({ configuration: {
         generation_enabled: MEDIA_GENERATION_ENABLED,
+        finishing_enabled: MEDIA_FINISHING_ENABLED,
         role_allowed: MEDIA_GENERATION_ALLOWED_ROLES.has(operator.role),
         cost_tracking_configured: RUNPOD_COST_PER_SECOND > 0,
         max_active_jobs_per_user: MAX_ACTIVE_JOBS_PER_USER,
@@ -339,6 +389,34 @@ Deno.serve(async (request) => {
     }
     if (body.action === "list_library") {
       return json({ items: await listLibrary(db, user.id, Math.min(100, Math.max(1, Number(body.limit || 50)))) });
+    }
+    if (body.action === "create_finishing_job") {
+      if (!MEDIA_FINISHING_ENABLED) throw new Error("Video text finishing is paused until the rendering worker is online.");
+      const finishing = body.finishing && typeof body.finishing === "object" ? body.finishing : {};
+      const owned = await getOwnedOutput(db, clean(finishing.source_output_id, 80), user.id);
+      if (owned.output.output_role !== "primary") throw new Error("Create text finishes from the untouched original video.");
+      if (!String(owned.asset.mime_type || "").startsWith("video/")) throw new Error("Only video outputs can be finished.");
+      const { cues, style } = validateFinishingPlan(finishing, Number(owned.asset.duration_seconds || 0));
+      const idempotencyKey = clean(finishing.idempotency_key, 160);
+      if (!idempotencyKey) throw new Error("A finishing idempotency key is required.");
+      const { data: active } = await db.from("media_finishing_jobs").select("id").eq("source_output_id", owned.output.id).in("status", ["queued", "running", "cancel_requested"]).limit(1);
+      if (active?.length) throw new Error("This video already has a finishing render in progress.");
+      const { data, error } = await db.from("media_finishing_jobs").insert({
+        project_id: owned.job.project_id,
+        source_output_id: owned.output.id,
+        source_asset_id: owned.asset.id,
+        created_by: user.id,
+        text_cues: cues,
+        style,
+        idempotency_key: idempotencyKey,
+      }).select("*").single();
+      if (error?.code === "23505") {
+        const { data: existing } = await db.from("media_finishing_jobs").select("*").eq("created_by", user.id).eq("idempotency_key", idempotencyKey).single();
+        return json({ finishing_job: existing, duplicate: true });
+      }
+      if (error || !data) throw new Error(error?.message || "Could not queue the final video.");
+      await addEvent(db, owned.job.id, "finishing_queued", { status: "queued", progress: 0, details: { finishing_job_id: data.id, source_output_id: owned.output.id } });
+      return json({ finishing_job: data }, 201);
     }
     if (body.action === "approve_output") {
       const owned = await getOwnedOutput(db, clean(body.output_id, 80), user.id);

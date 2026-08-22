@@ -19,6 +19,7 @@ Apply `20260821170735_add_media_generation_foundation.sql`, then deploy the `med
 - `RUNPOD_LONGCAT_AVATAR_ENDPOINT_ID`
 - `RUNPOD_COST_PER_SECOND` only after the endpoint's actual blended rate is known
 - `MEDIA_GENERATION_ENABLED=false` until the benchmark operator deliberately opens the circuit breaker
+- `MEDIA_FINISHING_ENABLED=false` until the CPU rendering worker is installed, healthy, and polling
 - `MEDIA_GENERATION_ALLOWED_ROLES=owner,admin`
 - `MEDIA_GENERATION_MAX_ACTIVE_PER_USER=1`
 - `MEDIA_GENERATION_MAX_DAILY_DISPATCHES_PER_USER=3`
@@ -42,7 +43,7 @@ Keep active workers at zero during the proof of concept. Do not set a permanent 
 
 ## Cost circuit breakers
 
-The Edge Function is fail-closed: provider dispatch is disabled unless `MEDIA_GENERATION_ENABLED` is explicitly true. The proof-of-concept defaults also restrict dispatch to owners/admins, one active job per user, three dispatch attempts per UTC day, two attempts per job, and a one-hour provider execution timeout. A partial unique index prevents two active jobs for the same user even if requests race.
+The Edge Function is fail-closed: provider dispatch is disabled unless `MEDIA_GENERATION_ENABLED` is explicitly true, and video finishing is disabled unless `MEDIA_FINISHING_ENABLED` is explicitly true. The proof-of-concept defaults also restrict dispatch to owners/admins, one active job per user, three dispatch attempts per UTC day, two attempts per job, and a one-hour provider execution timeout. A partial unique index prevents two active jobs for the same user even if requests race.
 
 RunPod must remain at zero active workers, one maximum worker, one GPU per base worker, and Auto-Pay disabled during the proof of concept. The endpoint-level worker maximum is the infrastructure backstop if application requests race or a caller bypasses the Trellis UI. Do not increase any limit until usage-ledger and RunPod billing records agree for the benchmark set.
 
@@ -62,3 +63,30 @@ The proof of concept passes only when outputs reliably upload to the expected pr
 ## Migration gate for existing tools
 
 After the benchmark passes, integrate one low-risk consumer first—recommended: an optional Talking Character path inside Creative Studio. Keep the current provider alongside it. Compare at least quality, latency, cost, and failure rate before making LongCat the default. Clip Studio, Episode assembly, Studio Album rendering, approvals, and publishing stay unchanged.
+
+## Post-generation text finishing
+
+Apply `20260821230515_add_media_finishing_jobs.sql` and redeploy the
+`media-generation` function before exposing **Render final video**. The finishing
+queue is private and service-role writable; authenticated clients may only read
+jobs for projects they can access.
+
+Deploy `workers/clip-render-worker` on the IONOS worker host, run `npm ci`, and
+restart its existing service. The worker now checks `media_finishing_jobs` before
+the Clip Studio queue. It signs the private source immediately before rendering,
+creates a new private MP4, and registers a separate unapproved `finished` output.
+It never overwrites or republishes the original GPU output.
+
+```bash
+ssh your-server
+cd /path/to/sproutify-trellis/workers/clip-render-worker
+npm ci
+sudo systemctl restart trellis-clip-render
+sudo systemctl status trellis-clip-render --no-pager
+journalctl -u trellis-clip-render -n 100 --no-pager
+```
+
+If the deployed service uses a different unit name, identify it first with
+`systemctl list-units --type=service | grep -E 'trellis|clip'`; do not create a
+second competing poller. Verify one short text finish before approving or
+scheduling the new output.

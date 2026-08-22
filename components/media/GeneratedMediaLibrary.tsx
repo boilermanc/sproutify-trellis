@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CheckCircle2, DollarSign, Download, Film, Instagram, Loader2, RefreshCw, Send, ShieldCheck } from 'lucide-react';
+import { CalendarClock, CheckCircle2, DollarSign, Download, Film, Instagram, Loader2, RefreshCw, Send, ShieldCheck, Type } from 'lucide-react';
 import type { Branch, MediaGenerationLibraryItem } from '../../types';
 import { approveMediaGenerationOutput, getMediaGenerationLibrary, scheduleMediaGenerationOutput } from '../../services/mediaGenerationService';
+import MediaFinishingEditor from './MediaFinishingEditor';
 
 interface Props {
   branches: Branch[];
+  finishingEnabled: boolean;
   publishingEnabled: boolean;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -18,7 +20,7 @@ const localDateTime = (date: Date) => {
 
 const defaultSchedule = () => localDateTime(new Date(Date.now() + 60 * 60_000));
 
-const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, addToast }) => {
+const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, publishingEnabled, addToast }) => {
   const [items, setItems] = useState<MediaGenerationLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -29,6 +31,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, a
   const [caption, setCaption] = useState('');
   const [scheduledFor, setScheduledFor] = useState(defaultSchedule);
   const [publishKey, setPublishKey] = useState('');
+  const [editItem, setEditItem] = useState<MediaGenerationLibraryItem | null>(null);
 
   const activeBranches = useMemo(() => branches.filter(branch => branch.is_active), [branches]);
   const load = useCallback(async () => {
@@ -43,6 +46,11 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, a
   }, [addToast]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!items.some(item => item.finishing && ['queued', 'running', 'cancel_requested'].includes(item.finishing.status))) return;
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
+  }, [items, load]);
 
   const visibleItems = useMemo(() => items.filter(item => {
     if (filter === 'needs_approval') return !item.approved;
@@ -107,18 +115,22 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, a
       {loading ? <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div> : visibleItems.length === 0 ? <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center"><Film className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-bold text-slate-500">No generated videos match this view yet.</p></div> : <div className="grid gap-5 lg:grid-cols-2">
         {visibleItems.map(item => {
           const latestPublication = item.publishing[0];
+          const finishingActive = item.finishing && ['queued', 'running', 'cancel_requested'].includes(item.finishing.status);
           return <article key={item.output_id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="aspect-video bg-black">{item.signed_url ? <video controls preload="metadata" src={item.signed_url} className="h-full w-full object-contain" /> : <div className="flex h-full items-center justify-center text-xs font-bold text-slate-400">Preview unavailable</div>}</div>
             <div className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">{item.project?.name || 'Media project'}</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-800">{item.job.prompt}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${item.approved ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{item.approved ? 'Approved' : 'Needs approval'}</span></div>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">{item.project?.name || 'Media project'} · {item.output_role === 'finished' ? 'Finished version' : 'Original'}</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-800">{item.job.prompt}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${item.approved ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{item.approved ? 'Approved' : 'Needs approval'}</span></div>
               <div className="mt-4 flex flex-wrap gap-3 text-[11px] font-bold text-slate-500"><span>{item.job.task_type.replaceAll('_', ' ')}</span><span>{item.asset.duration_seconds ? `${Number(item.asset.duration_seconds).toFixed(1)} sec` : 'Duration pending'}</span><span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" />{item.attempt?.actual_cost_usd == null ? 'Cost pending' : `$${Number(item.attempt.actual_cost_usd).toFixed(2)}`}</span></div>
               {latestPublication && <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">Publishing: {latestPublication.platform} · {latestPublication.status} · {new Date(latestPublication.scheduled_for).toLocaleString()}</p>}
+              {item.finishing && <p className={`mt-3 rounded-xl px-3 py-2 text-[11px] font-bold ${item.finishing.status === 'failed' ? 'bg-rose-50 text-rose-700' : item.finishing.status === 'succeeded' ? 'bg-emerald-50 text-emerald-700' : 'bg-violet-50 text-violet-700'}`}>{item.finishing.status === 'succeeded' ? 'Finished text version is ready below.' : item.finishing.status === 'failed' ? `Finishing failed: ${item.finishing.error_message || 'Try rendering again.'}` : `Finishing video: ${item.finishing.status} · ${item.finishing.progress}%`}</p>}
               <div className="mt-4 flex flex-wrap gap-2">
+                {item.output_role === 'primary' && <button type="button" disabled={!finishingEnabled || Boolean(finishingActive)} onClick={() => setEditItem(item)} title={finishingEnabled ? 'Add timed text and render a finished version' : 'Text finishing is paused until the rendering worker is online'} className="flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{finishingActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Type className="h-4 w-4" />} {finishingActive ? 'Rendering text' : 'Edit text'}</button>}
                 {!item.approved && <button type="button" disabled={workingId === item.output_id} onClick={() => void approve(item)} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50"><CheckCircle2 className="h-4 w-4" /> Approve</button>}
                 {item.approved && <button type="button" disabled={!publishingEnabled || workingId === item.output_id} onClick={() => openPublishing(item)} title={publishingEnabled ? 'Send to Post Scheduler' : 'Publishing handoff is paused until the private-media resolver is deployed'} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40"><Send className="h-4 w-4" /> Send to publishing</button>}
                 {item.signed_url && <a href={item.signed_url} download className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600"><Download className="h-4 w-4" /> Download</a>}
               </div>
               {item.approved && !publishingEnabled && <p className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-amber-700"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Publishing remains paused until the worker can resolve private generated media immediately before posting.</p>}
+              {item.output_role === 'primary' && !finishingEnabled && <p className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-amber-700"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Text finishing remains paused until its rendering worker is confirmed online.</p>}
             </div>
           </article>;
         })}
@@ -137,6 +149,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, publishingEnabled, a
           <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setPublishItem(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-600">Cancel</button><button type="button" disabled={workingId === publishItem.output_id || !branchId || !caption.trim() || !scheduledFor} onClick={() => void schedule()} className="flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">{workingId === publishItem.output_id ? <Loader2 className="h-4 w-4 animate-spin" /> : platform === 'instagram' ? <Instagram className="h-4 w-4" /> : <Send className="h-4 w-4" />} Add to queue</button></div>
         </div>
       </div>}
+      {editItem && <MediaFinishingEditor item={editItem} branches={branches} addToast={addToast} onClose={() => setEditItem(null)} onQueued={load} />}
     </div>
   );
 };

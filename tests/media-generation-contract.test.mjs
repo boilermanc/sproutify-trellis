@@ -134,7 +134,7 @@ test('Media Generation requires cost review and stores an editable timed-text pl
   const preview = await read('components/media/VideoResultPreview.tsx');
   const styles = await read('index.css');
   assert.match(preview, /onTimeUpdate/);
-  assert.match(preview, /Export burn-in will be added/);
+  assert.match(preview, /Render final video creates a new MP4/);
   assert.match(styles, /@keyframes mediaTextSlideUp/);
   assert.match(validation, /sanitizeMediaText/);
   assert.match(validation, /\[REDACTED_CC\]/);
@@ -144,6 +144,38 @@ test('Media Generation requires cost review and stores an editable timed-text pl
   assert.match(edge, /GPU cost tracking is not configured; dispatch was blocked/);
   assert.match(edge, /executionSeconds \* rate \* Number\(attempt\.gpu_count/);
   assert.match(edge, /get_configuration/);
+});
+
+test('post-generation finishing preserves the original and renders validated font choices on the existing worker', async () => {
+  const migration = await read('supabase/migrations/20260821230515_add_media_finishing_jobs.sql');
+  const edge = await read('supabase/functions/media-generation/index.ts');
+  const library = await read('components/media/GeneratedMediaLibrary.tsx');
+  const editor = await read('components/media/MediaFinishingEditor.tsx');
+  const fonts = await read('components/media/mediaFonts.ts');
+  const worker = await read('workers/clip-render-worker/worker.mjs');
+  const composition = await read('workers/clip-render-worker/remotion/MediaFinishing.tsx');
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.media_finishing_jobs/);
+  assert.match(migration, /CHECK \(output_role IN \([^)]*'finished'/);
+  assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /REVOKE ALL ON TABLE public\.media_finishing_jobs FROM PUBLIC, anon, authenticated/);
+  assert.match(edge, /body\.action === "create_finishing_job"/);
+  assert.match(edge, /MEDIA_FINISHING_ENABLED/);
+  assert.match(edge, /Video text finishing is paused until the rendering worker is online/);
+  assert.match(edge, /MEDIA_FONT_IDS/);
+  assert.match(edge, /Create text finishes from the untouched original video/);
+  assert.match(edge, /already has a finishing render in progress/);
+  assert.match(library, /Edit text/);
+  assert.match(library, /Finished version/);
+  assert.match(editor, /Render final video/);
+  assert.match(editor, /No LongCat charge/);
+  assert.match(fonts, /Cormorant Garamond/);
+  assert.match(fonts, /Bebas Neue/);
+  assert.match(worker, /claimNextFinish/);
+  assert.match(worker, /media-generation-assets/);
+  assert.match(worker, /output_role: 'finished'/);
+  assert.match(composition, /OffthreadVideo/);
+  assert.match(composition, /word_reveal/);
 });
 
 test('Generated media library hands approved private video to the existing publishing queue', async () => {

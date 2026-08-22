@@ -6,6 +6,7 @@ interface Props {
   durationSeconds: number;
   cues: MediaTextCue[];
   onChange: (cues: MediaTextCue[]) => void;
+  showPreview?: boolean;
 }
 
 const positions: Array<{ value: MediaTextPosition; label: string }> = [
@@ -31,7 +32,7 @@ function cueId(): string {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const timeLabel = (value: number) => `${value.toFixed(1)}s`;
 
-const TimedTextTimeline: React.FC<Props> = ({ durationSeconds, cues, onChange }) => {
+const TimedTextTimeline: React.FC<Props> = ({ durationSeconds, cues, onChange, showPreview = true }) => {
   const [previewTime, setPreviewTime] = useState(0);
   const safeDuration = Math.max(1, durationSeconds);
   const activeCue = useMemo(
@@ -74,13 +75,13 @@ const TimedTextTimeline: React.FC<Props> = ({ durationSeconds, cues, onChange })
         <button type="button" onClick={addCue} className="flex items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100"><Plus className="h-3.5 w-3.5" /> Add text</button>
       </div>
 
-      <div className="relative aspect-video overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-800 to-violet-950 shadow-inner">
+      {showPreview && <div className="relative aspect-video overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-800 to-violet-950 shadow-inner">
         <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_30%_30%,rgba(255,255,255,.35),transparent_30%)]" />
         <div className={`absolute inset-x-6 flex ${activeCue?.position === 'top' ? 'top-8 items-start' : activeCue?.position === 'bottom' ? 'bottom-8 items-end' : 'inset-y-0 items-center'} justify-center text-center`}>
           {activeCue ? <p className="max-w-[85%] text-balance text-2xl font-black leading-tight text-white drop-shadow-lg sm:text-3xl">{activeCue.text}</p> : <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/35">Move the playhead to preview text</p>}
         </div>
         <div className="absolute bottom-2 right-3 rounded-md bg-black/40 px-2 py-1 text-[10px] font-bold text-white/80">{timeLabel(previewTime)} / {timeLabel(safeDuration)}</div>
-      </div>
+      </div>}
 
       <div>
         <input aria-label="Text preview time" type="range" min={0} max={safeDuration} step={0.1} value={Math.min(previewTime, safeDuration)} onChange={event => setPreviewTime(Number(event.target.value))} className="w-full accent-violet-600" />

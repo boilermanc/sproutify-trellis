@@ -1,6 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type {
+  CreateMediaFinishingJob,
   CreateMediaGenerationJob,
   MediaAsset,
   MediaGenerationJob,
@@ -20,6 +21,7 @@ export interface MediaJobDetail {
 
 export interface MediaGenerationConfiguration {
   generation_enabled: boolean;
+  finishing_enabled: boolean;
   role_allowed: boolean;
   cost_tracking_configured: boolean;
   max_active_jobs_per_user: number;
@@ -39,6 +41,10 @@ export async function approveMediaGenerationOutput(outputId: string): Promise<vo
 
 export async function scheduleMediaGenerationOutput(input: ScheduleMediaGenerationOutput): Promise<{ post: Record<string, unknown> }> {
   return callMedia<{ post: Record<string, unknown> }>('schedule_output', { publication: input });
+}
+
+export async function createMediaFinishingJob(input: CreateMediaFinishingJob): Promise<{ finishing_job: Record<string, unknown> }> {
+  return callMedia<{ finishing_job: Record<string, unknown> }>('create_finishing_job', { finishing: input });
 }
 
 async function mediaFunctionError(error: unknown): Promise<string> {

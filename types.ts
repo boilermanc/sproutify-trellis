@@ -2180,6 +2180,7 @@ export type MediaGenerationInputRole =
 
 export type MediaTextAnimation = 'fade' | 'slide_up' | 'word_reveal';
 export type MediaTextPosition = 'top' | 'center' | 'bottom';
+export type MediaFontId = 'cormorant' | 'abril' | 'bebas' | 'playfair' | 'oswald' | 'montserrat' | 'inter' | 'jetbrains';
 
 export interface MediaTextCue {
   id: string;
@@ -2188,6 +2189,41 @@ export interface MediaTextCue {
   end_seconds: number;
   position: MediaTextPosition;
   animation: MediaTextAnimation;
+}
+
+export interface MediaTextStyle {
+  font_id: MediaFontId;
+  font_size: number;
+  font_weight: 400 | 600 | 700 | 800 | 900;
+  color: string;
+  background_color: string;
+  background_opacity: number;
+  uppercase: boolean;
+  shadow: boolean;
+}
+
+export type MediaFinishingJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel_requested' | 'cancelled';
+
+export interface MediaFinishingJob {
+  id: string;
+  project_id: string;
+  source_output_id: string;
+  source_asset_id: string;
+  created_by: string;
+  status: MediaFinishingJobStatus;
+  progress: number;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  output_asset_id: string | null;
+  output_id: string | null;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface MediaGenerationProject {
@@ -2284,6 +2320,15 @@ export interface MediaGenerationLibraryItem {
   } | null;
   publishing: ScheduledPost[];
   signed_url: string | null;
+  source_output_id?: string | null;
+  finishing: MediaFinishingJob | null;
+}
+
+export interface CreateMediaFinishingJob {
+  source_output_id: string;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  idempotency_key: string;
 }
 
 export interface ScheduleMediaGenerationOutput {
