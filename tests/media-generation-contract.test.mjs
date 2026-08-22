@@ -195,6 +195,9 @@ test('Generated media library hands approved private video to the existing publi
   assert.match(library, /Branch A–Z/);
   assert.match(library, /Newest first/);
   assert.match(library, /statusCounts/);
+  assert.match(library, /Delete permanently/);
+  assert.match(library, /permanently deleted from storage/);
+  assert.match(library, /generation usage and cost record/);
   assert.match(library, /Send to Post Scheduler/);
   assert.match(library, /Instagram Reel/);
   assert.match(library, /TikTok video/);
@@ -203,6 +206,10 @@ test('Generated media library hands approved private video to the existing publi
   assert.match(service, /scheduleMediaGenerationOutput/);
   assert.match(edge, /body\.action === "list_library"/);
   assert.match(edge, /body\.action === "approve_output"/);
+  assert.match(edge, /body\.action === "delete_output"/);
+  assert.match(edge, /storage\.from\(bucket\)\.remove\(paths\)/);
+  assert.match(edge, /status: "archived"/);
+  assert.match(edge, /Remove this video from the publishing queue/);
   assert.match(edge, /body\.action === "schedule_output"/);
   assert.match(edge, /MEDIA_PUBLISHING_HANDOFF_ENABLED/);
   assert.match(edge, /source_generation_output_id/);

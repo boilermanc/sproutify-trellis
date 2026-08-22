@@ -155,14 +155,15 @@ async function listLibrary(db: any, userId: string, limit: number) {
   if (assetsError) throw new Error(assetsError.message);
   const jobsById = new Map(jobs.map((job: any) => [job.id, job]));
   const projectsById = new Map((projects || []).map((project: any) => [project.id, project]));
-  const assetsById = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+  const assetsById = new Map<string, any>((assets || []).map((asset: any) => [asset.id, asset]));
   const attemptByJob = new Map<string, any>();
   for (const attempt of attempts || []) if (!attemptByJob.has(attempt.job_id)) attemptByJob.set(attempt.job_id, attempt);
   const publicationsByOutput = new Map<string, any[]>();
   for (const publication of publications || []) publicationsByOutput.set(publication.source_generation_output_id, [...(publicationsByOutput.get(publication.source_generation_output_id) || []), publication]);
   const finishingBySource = new Map<string, any>();
   for (const finishing of finishingJobs || []) if (!finishingBySource.has(finishing.source_output_id)) finishingBySource.set(finishing.source_output_id, finishing);
-  return Promise.all((outputs || []).map(async (output: any) => {
+  const visibleOutputs = (outputs || []).filter((output: any) => assetsById.get(output.asset_id)?.status === "ready");
+  return Promise.all(visibleOutputs.map(async (output: any) => {
     const job = jobsById.get(output.job_id) as any;
     const asset = assetsById.get(output.asset_id) as any;
     const signed = asset ? await db.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 60 * 60) : { data: null };
@@ -427,6 +428,53 @@ Deno.serve(async (request) => {
       if (error || !data) throw new Error(error?.message || "Could not approve the generated output.");
       await addEvent(db, owned.job.id, "output_approved", { attempt_id: owned.output.attempt_id, status: "succeeded", progress: 100, details: { output_id: owned.output.id, asset_id: owned.asset.id } });
       return json({ output: data });
+    }
+    if (body.action === "delete_output") {
+      const owned = await getOwnedOutput(db, clean(body.output_id, 80), user.id);
+      const { data: derivedOutputs, error: derivedError } = await db.from("media_generation_outputs")
+        .select("*").eq("source_output_id", owned.output.id);
+      if (derivedError) throw new Error(derivedError.message);
+      const affectedOutputs = [owned.output, ...(derivedOutputs || [])];
+      const affectedOutputIds = affectedOutputs.map((output: any) => output.id);
+      const affectedAssetIds = [...new Set(affectedOutputs.map((output: any) => output.asset_id).filter(Boolean))];
+      const [{ count: activePublications, error: publicationError }, { count: activeFinishes, error: finishingError }] = await Promise.all([
+        db.from("scheduled_social_posts").select("id", { count: "exact", head: true })
+          .in("source_generation_output_id", affectedOutputIds).in("status", ["scheduled", "publishing", "published"]),
+        db.from("media_finishing_jobs").select("id", { count: "exact", head: true })
+          .in("source_output_id", affectedOutputIds).in("status", ["queued", "running", "cancel_requested"]),
+      ]);
+      if (publicationError || finishingError) throw new Error(publicationError?.message || finishingError?.message || "Could not check whether the video is in use.");
+      if ((activePublications || 0) > 0) throw new Error("Remove this video from the publishing queue before deleting it from the library.");
+      if ((activeFinishes || 0) > 0) throw new Error("Wait for the text finishing render to complete before deleting this video.");
+      const { data: affectedAssets, error: affectedAssetsError } = await db.from("media_assets").select("*").in("id", affectedAssetIds);
+      if (affectedAssetsError) throw new Error(affectedAssetsError.message);
+      const storagePaths = new Map<string, string[]>();
+      for (const asset of affectedAssets || []) {
+        if (!asset.storage_bucket || !asset.storage_path) continue;
+        storagePaths.set(asset.storage_bucket, [...(storagePaths.get(asset.storage_bucket) || []), asset.storage_path]);
+      }
+      for (const [bucket, paths] of storagePaths) {
+        const { error: storageError } = await db.storage.from(bucket).remove(paths);
+        if (storageError) throw new Error(`Could not delete the video from storage: ${storageError.message}`);
+      }
+      const now = new Date().toISOString();
+      const { error: outputError } = await db.from("media_generation_outputs")
+        .update({ approved: false, approved_at: null, approved_by: null }).in("id", affectedOutputIds);
+      if (outputError) throw new Error(outputError.message);
+      for (const asset of affectedAssets || []) {
+        const { error: assetError } = await db.from("media_assets").update({
+          status: "archived",
+          metadata: { ...(asset.metadata || {}), storage_deleted_at: now, storage_deleted_by: user.id },
+        }).eq("id", asset.id);
+        if (assetError) throw new Error(assetError.message);
+      }
+      await addEvent(db, owned.job.id, "output_deleted", {
+        attempt_id: owned.output.attempt_id,
+        status: "succeeded",
+        progress: 100,
+        details: { output_ids: affectedOutputIds, asset_ids: affectedAssetIds, storage_files_deleted: [...storagePaths.values()].flat().length },
+      });
+      return json({ deleted: true });
     }
     if (body.action === "schedule_output") {
       if (!MEDIA_PUBLISHING_HANDOFF_ENABLED) throw new Error("Generated-media publishing handoff is paused.");
