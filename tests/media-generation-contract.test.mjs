@@ -196,6 +196,10 @@ test('Generated media library hands approved private video to the existing publi
   assert.match(library, /Newest first/);
   assert.match(library, /statusCounts/);
   assert.match(library, /Delete permanently/);
+  assert.match(library, /aria-label="Video actions"/);
+  assert.match(library, /aria-label="Approve video"/);
+  assert.match(library, /aria-label="Download video"/);
+  assert.match(library, /aria-label="Remove video"/);
   assert.match(library, /permanently deleted from storage/);
   assert.match(library, /generation usage and cost record/);
   assert.match(library, /Send to Post Scheduler/);
