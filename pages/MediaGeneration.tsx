@@ -216,7 +216,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
         <button type="button" onClick={() => setWorkspaceView('library')} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black ${workspaceView === 'library' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}><LibraryBig className="h-4 w-4" /> Created media</button>
       </div>
 
-      <MediaGenerationGuide />
+      {workspaceView === 'create' && <MediaGenerationGuide />}
 
       {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} finishingEnabled={configuration?.finishing_enabled === true} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-5">
