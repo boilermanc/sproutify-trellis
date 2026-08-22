@@ -166,7 +166,7 @@ test('post-generation finishing preserves the original and renders validated fon
   assert.match(edge, /Create text finishes from the untouched original video/);
   assert.match(edge, /already has a finishing render in progress/);
   assert.match(library, /Edit text/);
-  assert.match(library, /Finished version/);
+  assert.match(library, /Finished/);
   assert.match(editor, /Render final video/);
   assert.match(editor, /No LongCat charge/);
   assert.match(fonts, /Cormorant Garamond/);
@@ -190,6 +190,11 @@ test('Generated media library hands approved private video to the existing publi
   assert.match(page, /Created media/);
   assert.match(page, /GeneratedMediaLibrary/);
   assert.match(library, /Every completed generation/);
+  assert.match(library, /Filter by branch/);
+  assert.match(library, /All branches/);
+  assert.match(library, /Branch A–Z/);
+  assert.match(library, /Newest first/);
+  assert.match(library, /statusCounts/);
   assert.match(library, /Send to Post Scheduler/);
   assert.match(library, /Instagram Reel/);
   assert.match(library, /TikTok video/);
