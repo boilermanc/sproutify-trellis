@@ -44,6 +44,6 @@ test('frequent opener preset is targetable in Campaign Builder', () => {
   assert.match(types, /field: 'last_opened_days_ago'[\s\S]*less_or_equal'[\s\S]*value: 60/);
   assert.match(engine, /case 'campaigns_opened'/);
   assert.match(builder, /fetchEngagementByEmail\(\)/);
-  assert.match(builder, /evaluateSegment\(ep, seg, engagementByEmail\)/);
+  assert.match(builder, /evaluateSegment\(ep, seg, engagementByEmail, linkInterestByEmail\)/);
   assert.match(segments, /dedupeProfilesByEmail\(filterProfilesBySegment/);
 });

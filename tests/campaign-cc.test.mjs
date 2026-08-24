@@ -4,13 +4,14 @@ import { test } from 'node:test';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('all send_resend_email call sites use named parameter objects', async () => {
+test('the remaining campaign send_resend_email call uses named parameters and leads use the attributable Edge Function', async () => {
   const files = ['leadService.ts', 'src/services/resendService.ts'];
   const sources = await Promise.all(files.map(read));
   const callSites = sources.flatMap(source => [...source.matchAll(/\.rpc\(['"]send_resend_email['"],\s*([^\n]+)/g)]);
 
-  assert.equal(callSites.length, 2);
+  assert.equal(callSites.length, 1);
   for (const callSite of callSites) assert.match(callSite[1], /^\{/);
+  assert.match(sources[0], /functions\.invoke\('lead-email-send'/);
 });
 
 test('campaign CC reaches both test RPC and durable batch sends', async () => {

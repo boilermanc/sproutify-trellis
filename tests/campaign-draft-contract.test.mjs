@@ -47,7 +47,7 @@ test('Brand Intelligence exposes the shared asset gallery as a first-class tab',
   assert.match(brandIntelligence, /'templates' \| 'assets'/);
   assert.match(brandIntelligence, /Brand Asset Library/);
   assert.match(brandIntelligence, /Upload Assets/);
-  assert.match(brandIntelligence, /Available in Campaign Builder/);
+  assert.match(brandIntelligence, /available in Campaign Builder/i);
   assert.match(brandIntelligence, /activeTab === 'assets'/);
 });
 
