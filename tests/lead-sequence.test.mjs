@@ -46,9 +46,18 @@ test('refreshes lead stage after sends and live email status while details are o
 
 test('requires selecting the next sequence email before approval', () => {
   assert.match(sequencePanel, /selectedStepId/);
-  assert.match(sequencePanel, /Click to select this email/);
+  assert.match(sequencePanel, /Click here to select/);
   assert.match(sequencePanel, /disabled=\{working \|\| !approvalArmed\}/);
   assert.match(sequencePanel, /setSelectedStepId\(null\)/);
+});
+
+test('opens the shared rendered template when an email number is clicked', () => {
+  assert.match(sequencePanel, /setPreviewStep\(step\)/);
+  assert.match(sequencePanel, /Preview email \$\{step\.step_number\}/);
+  assert.match(sequencePanel, /renderLeadSequenceHtml/);
+  assert.match(sequencePanel, /srcDoc=\{previewHtml\}/);
+  assert.match(sequencePanel, /previewFirstName/);
+  assert.match(sequencePanel, /previewRecipientEmail/);
 });
 
 test('requires the operator to confirm Tower Farm referral membership before starting', () => {

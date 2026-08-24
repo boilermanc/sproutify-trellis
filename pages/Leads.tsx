@@ -1037,6 +1037,9 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       enrollment={leadSequences[lead.id]}
                                       loading={sequenceLoadingId === lead.id}
                                       disabled={!lead.profile?.email}
+                                      previewFirstName={lead.profile?.first_name}
+                                      previewRecipientEmail={lead.profile?.email}
+                                      previewScope={activeBranch?.slug}
                                       onStart={(mode) => startSequenceForLead(lead, mode)}
                                       onAction={(action) => actOnSequence(lead, action)}
                                     />

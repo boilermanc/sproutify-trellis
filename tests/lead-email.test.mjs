@@ -11,12 +11,15 @@ let LEAD_EMAIL_TEMPLATES;
 let applyLeadTemplate;
 let extractLatestReply;
 let emailList;
+let renderLeadComplianceFooter;
+let renderLeadSequenceHtml;
 
 before(async () => {
   server = await createServer({ appType: 'custom', configFile: false, logLevel: 'silent', root: process.cwd(), server: { middlewareMode: true } });
   ({ classifyLeadEmailEligibility, leadPlainTextToHtml, buildLeadEmailHtml, LEAD_CC_RECIPIENTS } = await server.ssrLoadModule('/leadService.ts'));
   ({ LEAD_EMAIL_TEMPLATES, applyLeadTemplate } = await server.ssrLoadModule('/components/leads/leadEmailTemplates.ts'));
   ({ extractLatestReply, emailList } = await server.ssrLoadModule('/supabase/functions/_shared/reply-content.ts'));
+  ({ renderLeadComplianceFooter, renderLeadSequenceHtml } = await server.ssrLoadModule('/supabase/functions/_shared/lead-sequence-template.ts'));
 });
 
 after(async () => { await server?.close(); });
@@ -94,6 +97,23 @@ test('strips Gmail quoted replies and normalizes CC addresses', () => {
     'bret.bowlin@towerfarms.com',
     'sheree@sproutify.app',
   ]);
+});
+
+test('renders every farm sequence template from the shared production renderer', () => {
+  const footer = renderLeadComplianceFooter('diana@example.com', 'sproutify-farm', 'https://example.supabase.co');
+  const expectations = [
+    ['farm-introduction', 'Introducing Sproutify Farm for your Tower Farm project'],
+    ['farm-follow-up', 'Just making sure this landed'],
+    ['farm-value-add', 'A smoother first harvest starts with the schedule'],
+    ['farm-soft-close', 'Should I keep your Sproutify Farm access open?'],
+  ];
+  for (const [templateKey, heading] of expectations) {
+    const html = renderLeadSequenceHtml(templateKey, 'Diana', footer);
+    assert.match(html, /Hi Diana,/);
+    assert.ok(html.includes(heading));
+    assert.match(html, /diana%40example\.com/);
+    assert.match(html, /Unsubscribe/);
+  }
 });
 
 test('personalizes the HTML template and places one compliance footer at its marker', () => {
