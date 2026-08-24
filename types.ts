@@ -2226,6 +2226,32 @@ export interface MediaFinishingJob {
   updated_at: string;
 }
 
+export type MediaPlatformExportStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel_requested' | 'cancelled';
+export type MediaPlatformExportFraming = 'blur_background' | 'center_crop' | 'fit';
+
+export interface MediaPlatformExport {
+  id: string;
+  project_id: string;
+  source_output_id: string;
+  source_asset_id: string;
+  created_by: string;
+  platform: 'instagram_reel';
+  framing: MediaPlatformExportFraming;
+  status: MediaPlatformExportStatus;
+  progress: number;
+  output_asset_id: string | null;
+  output_asset?: MediaAsset | null;
+  signed_url?: string | null;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MediaGenerationProject {
   id: string;
   organization_id: string;
@@ -2322,12 +2348,20 @@ export interface MediaGenerationLibraryItem {
   signed_url: string | null;
   source_output_id?: string | null;
   finishing: MediaFinishingJob | null;
+  platform_export: MediaPlatformExport | null;
 }
 
 export interface CreateMediaFinishingJob {
   source_output_id: string;
   text_cues: MediaTextCue[];
   style: MediaTextStyle;
+  idempotency_key: string;
+}
+
+export interface CreateMediaPlatformExport {
+  source_output_id: string;
+  platform: 'instagram_reel';
+  framing: MediaPlatformExportFraming;
   idempotency_key: string;
 }
 

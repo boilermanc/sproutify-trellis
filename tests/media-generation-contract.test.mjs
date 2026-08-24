@@ -248,3 +248,21 @@ test('Media Generation gives first-time operators an in-product walkthrough', as
   assert.match(guide, /Review and publish/);
   assert.match(guide, /does not replace them/);
 });
+
+test('Instagram Reel exports are private, durable, CPU-rendered, and required by publishing', async () => {
+  const [migration, edge, worker, library] = await Promise.all([
+    read('supabase/migrations/20260824162239_add_media_platform_exports.sql'),
+    read('supabase/functions/media-generation/index.ts'),
+    read('workers/clip-render-worker/worker.mjs'),
+    read('components/media/GeneratedMediaLibrary.tsx'),
+  ]);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.media_platform_exports/);
+  assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /GRANT SELECT ON TABLE public\.media_platform_exports TO authenticated/);
+  assert.match(edge, /create_platform_export/);
+  assert.match(edge, /Create the Instagram Reel version before scheduling/);
+  assert.match(worker, /1080:1920/);
+  assert.match(worker, /'-r', '30'/);
+  assert.match(worker, /anullsrc=channel_layout=stereo:sample_rate=48000/);
+  assert.match(library, /No RunPod GPU is started/);
+});

@@ -205,6 +205,11 @@ async function assemble(job) {
   }
 }
 
+function hasAudioStream(filePath) {
+  const out = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath], { encoding: 'utf8' });
+  return out.status === 0 && Boolean((out.stdout || '').trim());
+}
+
 async function renderMediaFinish(job) {
   const [assets, outputs] = await Promise.all([
     rest(`media_assets?id=eq.${job.source_asset_id}&select=*`),
@@ -276,6 +281,76 @@ async function renderMediaFinish(job) {
   }
 }
 
+async function renderPlatformExport(job) {
+  const [assets, outputs] = await Promise.all([
+    rest(`media_assets?id=eq.${job.source_asset_id}&select=*`),
+    rest(`media_generation_outputs?id=eq.${job.source_output_id}&select=*`),
+  ]);
+  const sourceAsset = assets?.[0];
+  const sourceOutput = outputs?.[0];
+  if (!sourceAsset || sourceAsset.status !== 'ready') throw new Error('Platform-export source asset is unavailable');
+  if (!sourceOutput || sourceOutput.asset_id !== sourceAsset.id) throw new Error('Platform-export source does not match its output');
+  if (!String(sourceAsset.mime_type || '').startsWith('video/')) throw new Error('Platform-export source is not a video');
+  if (job.platform !== 'instagram_reel') throw new Error(`Unsupported platform export: ${job.platform}`);
+
+  const sourceUrl = await signPrivateAsset(sourceAsset.storage_bucket, sourceAsset.storage_path, 3600);
+  const tmp = mkdtempSync(path.join(tmpdir(), 'platformexport-'));
+  try {
+    const source = path.join(tmp, 'source.mp4');
+    const out = path.join(tmp, 'instagram-reel.mp4');
+    await download(sourceUrl, source);
+    const audio = hasAudioStream(source);
+    const framingFilters = {
+      blur_background: '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=30[bg];[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]',
+      center_crop: '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p[v]',
+      fit: '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p[v]',
+    };
+    const filter = framingFilters[job.framing] || framingFilters.blur_background;
+    const args = ['-y', '-i', source];
+    if (!audio) args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
+    args.push('-filter_complex', filter, '-map', '[v]', '-map', audio ? '0:a:0' : '1:a:0',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '30',
+      '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-movflags', '+faststart', '-shortest', out);
+    const ff = spawnSync('ffmpeg', args, { encoding: 'utf8' });
+    if (ff.status !== 0) throw new Error(`Instagram export failed: ${(ff.stderr || '').slice(-1200)}`);
+
+    const data = readFileSync(out);
+    const storagePath = `${job.created_by}/${job.project_id}/platform-exports/${job.id}/instagram-reel.mp4`;
+    await uploadPrivate('media-generation-assets', storagePath, data, 'video/mp4');
+    const probe = ffprobe(out);
+    const assetRows = await rest('media_assets', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        project_id: job.project_id,
+        asset_type: 'platform_export',
+        role: 'instagram_reel_export',
+        storage_bucket: 'media-generation-assets',
+        storage_path: storagePath,
+        mime_type: 'video/mp4',
+        file_size_bytes: data.byteLength,
+        duration_seconds: probe.duration || sourceAsset.duration_seconds,
+        width: probe.width || 1080,
+        height: probe.height || 1920,
+        status: 'ready',
+        metadata: { source_output_id: sourceOutput.id, platform_export_id: job.id, platform: job.platform, framing: job.framing, fps: 30, audio: audio ? 'source' : 'silent_aac' },
+      }),
+    });
+    const asset = assetRows?.[0];
+    if (!asset) throw new Error('Could not register Instagram export asset');
+    await patch('media_platform_exports', job.id, {
+      status: 'succeeded', progress: 100, output_asset_id: asset.id,
+      completed_at: new Date().toISOString(), error_message: null,
+    });
+    await rest('media_generation_events', {
+      method: 'POST',
+      body: JSON.stringify({ job_id: sourceOutput.job_id, event_type: 'platform_export_succeeded', status: 'succeeded', progress: 100, details: { platform_export_id: job.id, source_output_id: sourceOutput.id, asset_id: asset.id, platform: job.platform } }),
+    });
+    console.log(`[platform-export] ${job.id} -> ${storagePath}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 async function claimNext() {
   const jobs = await rest('trellis_clip_render_jobs?status=eq.queued&order=created_at.asc&limit=1&select=*');
   const job = jobs?.[0];
@@ -296,12 +371,31 @@ async function claimNextFinish() {
   return job;
 }
 
+async function claimNextPlatformExport() {
+  const jobs = await rest('media_platform_exports?status=eq.queued&order=queued_at.asc&limit=1&select=*');
+  const job = jobs?.[0];
+  if (!job) return null;
+  if (Number(job.attempts || 0) >= Number(job.max_attempts || 2)) {
+    await patch('media_platform_exports', job.id, { status: 'failed', error_message: 'Platform export retry limit reached.', completed_at: new Date().toISOString() });
+    return null;
+  }
+  await patch('media_platform_exports', job.id, { status: 'running', progress: 5, attempts: Number(job.attempts || 0) + 1, started_at: new Date().toISOString() });
+  return job;
+}
+
 async function loop() {
   console.log(`[worker] clip render worker up — bucket ${BUCKET}, polling every ${POLL_MS}ms`);
   for (;;) {
     let job = null;
     let finishJob = null;
+    let platformExportJob = null;
     try {
+      platformExportJob = await claimNextPlatformExport();
+      if (platformExportJob) {
+        console.log(`[platform-export-job] ${platformExportJob.id}`);
+        await renderPlatformExport(platformExportJob);
+        continue;
+      }
       finishJob = await claimNextFinish();
       if (finishJob) {
         console.log(`[finish-job] ${finishJob.id}`);
@@ -316,6 +410,10 @@ async function loop() {
       }
     } catch (e) {
       console.error('[error]', e.message || e);
+      if (platformExportJob) {
+        try { await patch('media_platform_exports', platformExportJob.id, { status: 'failed', progress: 0, error_message: String(e.message || e).slice(0, 500), completed_at: new Date().toISOString() }); }
+        catch { /* best effort */ }
+      }
       if (finishJob) {
         try { await patch('media_finishing_jobs', finishJob.id, { status: 'failed', progress: 0, error_message: String(e.message || e).slice(0, 500), completed_at: new Date().toISOString() }); }
         catch { /* best effort */ }
@@ -325,7 +423,7 @@ async function loop() {
         catch { /* best effort */ }
       }
     }
-    if (!job) await new Promise(r => setTimeout(r, POLL_MS));
+    if (!job && !finishJob && !platformExportJob) await new Promise(r => setTimeout(r, POLL_MS));
   }
 }
 
