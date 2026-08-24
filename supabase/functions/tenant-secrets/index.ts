@@ -53,6 +53,7 @@ function toConfig(row: Record<string, any> | null) {
     gemini_api_key: r.gemini_api_key || "",
     openai_api_key: r.openai_api_key || "",
     anthropic_api_key: r.anthropic_api_key || "",
+    xai_api_key: r.xai_api_key || "",
     n8n_webhooks: {
       chat: r.n8n_webhook_chat || "",
       workflow: r.n8n_webhook_workflow || "",
@@ -74,7 +75,7 @@ function toConfig(row: Record<string, any> | null) {
 // Only these columns may be written. An unexpected key in the request body is
 // dropped rather than passed through to the upsert.
 const WRITABLE = [
-  "active_llm", "gemini_api_key", "openai_api_key", "anthropic_api_key",
+  "active_llm", "gemini_api_key", "openai_api_key", "anthropic_api_key", "xai_api_key",
   "n8n_webhook_chat", "n8n_webhook_workflow", "slack_webhook",
   "resend_token", "resend_from_address", "twilio_sid", "twilio_token",
   "woo_consumer_key", "woo_consumer_secret", "meta_app_id", "meta_app_secret",
@@ -100,6 +101,15 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Not authenticated" }, 401);
   }
 
+  // Credentials are materially more sensitive than ordinary Trellis data.
+  // A valid session alone is not enough: only active owners/admins may read or
+  // change the organization-wide provider keys.
+  const db = createClient(HUB_URL, SERVICE_KEY);
+  const { data: secretManager } = await db.from("trellis_users").select("role,status")
+    .eq("auth_user_id", userData.user.id).eq("status", "active")
+    .in("role", ["owner", "admin"]).maybeSingle();
+  if (!secretManager) return json({ error: "Owner or admin access required" }, 403);
+
   let body: any;
   try {
     body = await req.json();
@@ -107,7 +117,6 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const db = createClient(HUB_URL, SERVICE_KEY);
   const op = body?.op;
 
   if (op === "get") {

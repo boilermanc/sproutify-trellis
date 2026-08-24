@@ -17,6 +17,7 @@ const DEFAULT_SECRETS: ApiKeyConfig = {
   gemini_api_key: '',
   openai_api_key: '',
   anthropic_api_key: '',
+  xai_api_key: '',
   n8n_webhooks: { chat: '', workflow: '' },
   slack_webhook: '',
   resend_token: '',

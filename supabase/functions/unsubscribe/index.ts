@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { writeBackBranchUnsubscribe } from "../_shared/spoke-email-consent.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -67,6 +68,10 @@ Deno.serve(async (req: Request) => {
     console.error("unsubscribe upsert failed:", error.message);
     return isPost ? new Response("error", { status: 500 }) : redirect("?status=error");
   }
+
+  // Hub suppression stays authoritative. Mirror Rekkrd branch/global consent
+  // after it succeeds; a spoke outage must never undo or block the unsubscribe.
+  await writeBackBranchUnsubscribe(supabase, email, scope);
 
   if (isPost) return new Response("ok", { status: 200 });
   // Global unsubscribe → no brand param (page shows the all-brands message).

@@ -64,6 +64,7 @@ const NAV_GROUPS = [
       { id: 'reddit-growth', label: 'Reddit Ads', icon: MessageCircle },
       { id: 'video-ad-lab', label: 'Creative Studio', icon: Sparkles },
       { id: 'media-generation', label: 'Media Generation', icon: Video },
+      { id: 'motion-posts', label: 'Motion Posts', icon: Video },
       { id: 'post-scheduler', label: 'Post Scheduler', icon: CalendarClock },
       { id: 'card-studio', label: 'Card Studio', icon: LayoutTemplate },
       { id: 'ad-performance', label: 'Ad Performance', icon: TrendingUp },

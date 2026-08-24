@@ -237,6 +237,67 @@ def _run_ffmpeg(cmd: list[str], asset_id: str, duration_s: float, pipeline: str 
         raise RuntimeError(f"ffmpeg failed with exit code {code}: {' | '.join(tail[-8:])}")
 
 
+def _render_motion_post(job_id: str, user_id: str, source_video_url: str, audio_url: str,
+                        audio_start_seconds: float, requested_duration: float,
+                        storage_bucket: str, storage_path: str):
+    """Mix an owned Rekkrd audio excerpt under an xAI-generated vertical clip."""
+    try:
+        _patch("motion_post_jobs", job_id, {
+            "status": "mixing", "progress": 90, "error_message": None, "updated_at": _now(),
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            source = os.path.join(tmp, "source.mp4")
+            audio = os.path.join(tmp, "music.mp3")
+            out = os.path.join(tmp, "motion-post.mp4")
+            _download(source_video_url, source)
+            _download(audio_url, audio)
+            source_duration = _duration(source)
+            duration = min(source_duration or requested_duration, requested_duration or source_duration)
+            if duration <= 0:
+                raise RuntimeError("Generated clip duration could not be determined")
+            fade_out_start = max(0.0, duration - 0.65)
+            cmd = [
+                "ffmpeg", "-y", "-nostats", "-progress", "pipe:1",
+                "-i", source,
+                "-stream_loop", "-1", "-ss", str(max(0.0, audio_start_seconds)), "-i", audio,
+                "-filter_complex",
+                (
+                    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+                    "crop=1080:1920,setsar=1,fps=30,format=yuv420p[v];"
+                    f"[1:a]atrim=duration={duration:.3f},asetpts=PTS-STARTPTS,volume=0.90,"
+                    f"afade=t=in:st=0:d=0.35,afade=t=out:st={fade_out_start:.3f}:d=0.65[a]"
+                ),
+                "-map", "[v]", "-map", "[a]", "-t", f"{duration:.3f}",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out,
+            ]
+            # The generic heartbeat helper targets Episode/Studio asset tables,
+            # so Motion Posts track coarse progress directly on their job row.
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                tail = " | ".join((proc.stderr or "").splitlines()[-8:])
+                raise RuntimeError(f"ffmpeg motion mix failed: {tail}")
+            _patch("motion_post_jobs", job_id, {"progress": 97, "updated_at": _now()})
+            with open(out, "rb") as f:
+                data = f.read()
+            url = _upload(storage_bucket, storage_path, data, "video/mp4")
+        _patch("motion_post_jobs", job_id, {
+            "status": "ready", "progress": 100, "output_bucket": storage_bucket,
+            "output_path": storage_path, "output_url": url, "error_message": None,
+            "completed_at": _now(), "updated_at": _now(),
+        })
+        print(f"[motion-post] job {job_id} ready -> {url}")
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        try:
+            _patch("motion_post_jobs", job_id, {
+                "status": "failed", "progress": 100,
+                "error_message": str(exc)[:500], "updated_at": _now(),
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: str | None, motion: str = "ken_burns",
              pipeline: str = "episode", job_id: str | None = None, storage_bucket: str | None = None,
              storage_path: str | None = None, artwork_layout: str | None = None):
@@ -375,8 +436,33 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
 def video():
     b = request.get_json(force=True, silent=True) or {}
     pipeline = b.get("pipeline", "episode")
-    if pipeline not in ("episode", "studio"):
-        return jsonify({"error": "pipeline must be episode or studio"}), 400
+    if pipeline not in ("episode", "studio", "motion_post"):
+        return jsonify({"error": "pipeline must be episode, studio, or motion_post"}), 400
+    if pipeline == "motion_post":
+        required = ("job_id", "user_id", "source_video_url", "audio_url", "storage_bucket", "storage_path")
+        if any(not b.get(field) for field in required):
+            return jsonify({"error": f"Motion Post jobs require {', '.join(required)}"}), 400
+        expected_prefix = f"{b['user_id']}/{b['job_id']}/"
+        if b.get("storage_bucket") != "motion-posts" or not str(b.get("storage_path", "")).startswith(expected_prefix):
+            return jsonify({"error": "Motion Post output path is invalid"}), 400
+        job = _get_row("motion_post_jobs", b["job_id"], "id,created_by,status,output_bucket,output_path")
+        valid = bool(
+            job and job.get("created_by") == b["user_id"]
+            and job.get("status") == "mixing"
+            and job.get("output_bucket") == b.get("storage_bucket")
+            and job.get("output_path") == b.get("storage_path")
+        )
+        if not valid:
+            return jsonify({"error": "Motion Post job linkage could not be verified"}), 409
+        threading.Thread(
+            target=_render_motion_post,
+            args=(
+                b["job_id"], b["user_id"], b["source_video_url"], b["audio_url"],
+                float(b.get("audio_start_seconds") or 0), float(b.get("duration_seconds") or 7),
+                b["storage_bucket"], b["storage_path"],
+            ), daemon=True,
+        ).start()
+        return jsonify({"accepted": True, "job_id": b["job_id"]}), 202
     project_id = b.get("album_id") if pipeline == "studio" else b.get("episode_id")
     if not b.get("asset_id") or not project_id or not b.get("master_audio_url"):
         return jsonify({"error": "asset_id, project id, and master_audio_url required"}), 400

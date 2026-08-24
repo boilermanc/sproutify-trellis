@@ -15,20 +15,23 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'unsubscribed', label: 'Unsubscribed' },
 ];
 
-const fmtWhen = (iso: string): string => {
+const fmtWhen = (iso: string | null): string => {
+  if (!iso) return '—';
   try { return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
   catch { return '—'; }
 };
 
 interface Props {
+  campaignId: string;
   campaignSubject: string;
+  branches?: string[];
   onClose: () => void;
 }
 
 // Per-campaign recipient list — "who opened/clicked/complained" without having to
 // open each customer's profile one at a time. Reads email_events, grouped by
 // recipient (see fetchCampaignRecipients).
-export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onClose }) => {
+export const CampaignRecipientsModal: React.FC<Props> = ({ campaignId, campaignSubject, branches = [], onClose }) => {
   const [recipients, setRecipients] = useState<CampaignRecipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadedCount, setLoadedCount] = useState(0);
@@ -39,13 +42,13 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignSubject, onCl
     let cancelled = false;
     setLoading(true);
     setLoadedCount(0);
-    fetchCampaignRecipients(campaignSubject, (rowsSoFar) => {
+    fetchCampaignRecipients(campaignId, branches, (rowsSoFar) => {
       if (!cancelled) setLoadedCount(rowsSoFar);
     }).then((rows) => {
       if (!cancelled) setRecipients(rows);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [campaignSubject]);
+  }, [campaignId, branches]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();

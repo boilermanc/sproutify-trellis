@@ -267,6 +267,8 @@ export const autoMapFields = (
       last_name: ['last_name', 'lastname', 'lname', 'surname', 'family_name'],
       phone: ['phone', 'phone_number', 'mobile', 'cell', 'telephone'],
       subscribed: ['subscribed', 'is_subscribed', 'newsletter_subscribed', 'opted_in', 'newsletter'],
+      email_digest_optin: ['email_digest_optin'],
+      email_updates_optin: ['email_updates_optin'],
       created_at: ['created_at', 'created', 'createdat', 'signup_date', 'registered_at'],
     },
     orders: {
@@ -366,8 +368,18 @@ export async function fetchSpokeProfiles(
         if (mapping.phone && row[mapping.phone] !== undefined) {
           profile.phone = String(row[mapping.phone]);
         }
-        if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
-          profile.subscribed = Boolean(row[mapping.subscribed]);
+        const toBoolean = (value: unknown): boolean => value === true || value === 1 || value === 'true' || value === '1';
+        const hasDigestOptIn = !!mapping.email_digest_optin && row[mapping.email_digest_optin] !== undefined;
+        const hasUpdatesOptIn = !!mapping.email_updates_optin && row[mapping.email_updates_optin] !== undefined;
+        if (hasDigestOptIn) profile.email_digest_optin = toBoolean(row[mapping.email_digest_optin]);
+        if (hasUpdatesOptIn) profile.email_updates_optin = toBoolean(row[mapping.email_updates_optin]);
+        if (hasDigestOptIn || hasUpdatesOptIn) {
+          // Rekkrd's signup promise covers collecting tips and product updates,
+          // but its profile stores those as two toggles. Either opt-in is valid
+          // branch consent; unsubscribe write-back clears both.
+          profile.subscribed = profile.email_digest_optin === true || profile.email_updates_optin === true;
+        } else if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
+          profile.subscribed = toBoolean(row[mapping.subscribed]);
         }
         if (mapping.created_at && row[mapping.created_at] !== undefined) {
           profile.created_at = String(row[mapping.created_at]);

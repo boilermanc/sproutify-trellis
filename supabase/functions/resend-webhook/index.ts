@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { emailList, extractLatestReply, receivedHtmlToText } from "../_shared/reply-content.ts";
+import { writeBackBranchUnsubscribe } from "../_shared/spoke-email-consent.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -319,6 +320,7 @@ Deno.serve(async (req: Request) => {
         { onConflict: "email,scope" },
       );
       if (unsubErr) console.error("unsubscribe-click suppress failed:", unsubErr.message);
+      else await writeBackBranchUnsubscribe(supabase, email, scope);
 
       // Reflect the opt-out in ATL's own subscriber list too — Hub-link clicks
       // never reach ATL's own unsubscribe endpoint on their own.

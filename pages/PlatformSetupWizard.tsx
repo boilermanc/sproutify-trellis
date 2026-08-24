@@ -967,7 +967,20 @@ const PlatformSetupWizard: React.FC<PlatformSetupWizardProps> = ({
             && (selectedPlatform !== 'youtube' || c.branch_social_account_id === selectedSocialAccountId)
         );
         if (connected) {
-          setIsConnected(true);
+          // An active row proves only that an OAuth token was stored. Verify the
+          // live publish target too, so Facebook cannot appear connected when
+          // Meta returned a user token but no Page/page_id.
+          const live = await testConnection(
+            selectedBranchId,
+            selectedPlatform as SocialPlatform,
+            selectedPlatform === 'youtube' ? selectedSocialAccountId || undefined : undefined,
+          );
+          if (live.ok) {
+            setIsConnected(true);
+          } else {
+            setIsConnected(false);
+            setConnectError(live.error || 'The saved connection is not usable. Reconnect and grant the requested account access.');
+          }
         } else {
           setConnectError('The account was not connected. Please complete the authorization popup and try again.');
         }

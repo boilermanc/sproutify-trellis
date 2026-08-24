@@ -32,10 +32,13 @@ async function fetchAllPages<T>(
   return rows;
 }
 
-// Per-campaign email metrics, aggregated by subject on the Hub (`campaign_email_stats`
-// view over `email_events`, which the resend-webhook edge function populates).
+// Per-campaign email metrics keyed by the durable campaign UUID. Subject is only
+// display copy; repeated subject lines never combine separate sends.
 export interface CampaignEmailStat {
+  campaign_id: string;
+  campaign_name: string;
   campaign_subject: string;
+  branches: string[];
   sent: number;
   delivered: number;
   opened: number;
@@ -56,12 +59,36 @@ export interface SuppressionSummary {
 
 export async function fetchCampaignEmailStats(): Promise<CampaignEmailStat[]> {
   try {
-    const { data, error } = await supabase
-      .from('campaign_email_stats')
+    const { data: campaignRows, error: campaignError } = await supabase
+      .from('campaigns')
+      .select('id,name,subject,branches,launched_at,created_at,send_status')
+      .or('launched_at.not.is.null,send_status.not.is.null')
+      .order('launched_at', { ascending: false, nullsFirst: false });
+    if (campaignError) throw campaignError;
+    const campaigns = campaignRows || [];
+    if (campaigns.length === 0) return [];
+
+    const { data: statRows, error: statError } = await supabase
+      .from('campaign_stats_by_id')
       .select('*')
-      .order('last_event_at', { ascending: false });
-    if (error) throw error;
-    return (data || []) as CampaignEmailStat[];
+      .in('campaign_id', campaigns.map((row: any) => row.id));
+    if (statError) throw statError;
+    const byId = new Map((statRows || []).map((row: any) => [row.campaign_id, row]));
+
+    return campaigns.map((campaign: any) => {
+      const stat: any = byId.get(campaign.id) || {};
+      return {
+        campaign_id: campaign.id,
+        campaign_name: campaign.name || campaign.subject || 'Untitled campaign',
+        campaign_subject: campaign.subject || '',
+        branches: Array.isArray(campaign.branches) ? campaign.branches : [],
+        sent: Number(stat.sent || 0), delivered: Number(stat.delivered || 0),
+        opened: Number(stat.opened || 0), clicked: Number(stat.clicked || 0),
+        bounced: Number(stat.bounced || 0), complained: Number(stat.complained || 0),
+        first_event_at: stat.first_event_at || null,
+        last_event_at: stat.last_event_at || null,
+      };
+    });
   } catch (e) {
     console.error('fetchCampaignEmailStats failed:', e);
     return [];
@@ -310,7 +337,7 @@ export async function fetchEmailActivity(email: string): Promise<EmailEventRow[]
   try {
     const { data, error } = await supabase
       .from('email_events')
-      .select('id,email,event_type,campaign_subject,resend_email_id,link_url,occurred_at,metadata')
+      .select('id,email,event_type,campaign_subject,campaign_id,resend_email_id,link_url,occurred_at,metadata')
       .eq('email', email.toLowerCase())
       .order('occurred_at', { ascending: false })
       .limit(200);
@@ -360,9 +387,8 @@ export async function fetchLeadEmailEngagement(
   return map;
 }
 
-// One row per recipient of a given campaign (matched by subject, same grouping
-// campaign_email_stats uses) — the "who opened/clicked/complained" list, so you
-// don't have to open each customer's profile one at a time to find out.
+// One row per recipient of an exact campaign — the
+// "who opened/clicked/complained" list.
 export interface CampaignRecipient {
   email: string;
   delivered: boolean;
@@ -375,26 +401,32 @@ export interface CampaignRecipient {
   unsubscribed: boolean;
   // Every distinct link this recipient clicked, in click order.
   linkUrls: string[];
-  lastEventAt: string;
+  lastEventAt: string | null;
 }
 
-// Sourced from campaign_recipient_status — grouped server-side to one row per
-// (campaign_subject, email), not one row per raw event. A campaign with 12,800
+const suppressionScopesForCampaign = (branches: string[]): string[] => {
+  const normalized = [...new Set((branches || []).map((branch) => String(branch).trim().toLowerCase()).filter(Boolean))];
+  return normalized.length === 1 ? ['global', normalized[0]] : ['global'];
+};
+
+// Sourced from campaign_recipient_status_by_id — grouped server-side to one row
+// per (campaign_id, email), not one row per raw event. A campaign with 12,800
 // delivery/open/click events for 5,600 recipients pulls 5,600 rows here, not
 // 12,800, and that count only grows with audience size, not re-opens/re-sends.
 export async function fetchCampaignRecipients(
-  campaignSubject: string,
+  campaignId: string,
+  branches: string[] = [],
   onProgress?: (rowsSoFar: number) => void,
 ): Promise<CampaignRecipient[]> {
-  if (!campaignSubject) return [];
+  if (!campaignId) return [];
   try {
     const data = await fetchAllPages<{
       email: string; delivered: boolean; opened: boolean; clicked: boolean;
-      bounced: boolean; complained: boolean; link_urls: string[] | null; last_event_at: string;
+       bounced: boolean; complained: boolean; link_urls: string[] | null; last_event_at: string | null;
     }>(
-      'campaign_recipient_status',
+      'campaign_recipient_status_by_id',
       'email,delivered,opened,clicked,bounced,complained,link_urls,last_event_at',
-      (q) => q.eq('campaign_subject', campaignSubject),
+      (q) => q.eq('campaign_id', campaignId),
       'email',
       onProgress,
     );
@@ -409,6 +441,7 @@ export async function fetchCampaignRecipients(
           .from('email_suppressions')
           .select('email')
           .eq('reason', 'unsubscribe')
+          .in('scope', suppressionScopesForCampaign(branches))
           .range(from, from + PAGE - 1);
         if (supErr) break;
         for (const s of sup || []) unsubscribedSet.add((s.email || '').toLowerCase());
@@ -428,7 +461,7 @@ export async function fetchCampaignRecipients(
         linkUrls: r.link_urls || [],
         lastEventAt: r.last_event_at,
       }))
-      .sort((a, b) => (a.lastEventAt < b.lastEventAt ? 1 : -1));
+      .sort((a, b) => String(a.lastEventAt || '') < String(b.lastEventAt || '') ? 1 : -1);
   } catch (e) {
     console.error('fetchCampaignRecipients failed:', e);
     return [];
@@ -437,11 +470,11 @@ export async function fetchCampaignRecipients(
 
 // Unsubscribe count for one campaign. Unsubscribes aren't Resend events (they
 // live in email_suppressions), so campaign_email_stats can't report them. We
-// intersect this campaign's recipients (campaign_recipient_status, by subject)
+// intersect this campaign's exact-ID recipients
 // with the unsubscribe suppression list — the SAME definition the recipients
 // modal uses, so the drawer metric and the modal's Unsubscribed chip agree.
-export async function fetchCampaignUnsubscribedCount(campaignSubject: string): Promise<number> {
-  if (!campaignSubject) return 0;
+export async function fetchCampaignUnsubscribedCount(campaignId: string, branches: string[] = []): Promise<number> {
+  if (!campaignId) return 0;
   try {
     // The unsubscribe list is small (the do-not-email list) — pull it once.
     const emails: string[] = [];
@@ -451,6 +484,7 @@ export async function fetchCampaignUnsubscribedCount(campaignSubject: string): P
         .from('email_suppressions')
         .select('email')
         .eq('reason', 'unsubscribe')
+        .in('scope', suppressionScopesForCampaign(branches))
         .range(from, from + PAGE - 1);
       if (error) return 0;
       for (const r of data || []) if (r.email) emails.push(r.email.toLowerCase());
@@ -464,9 +498,9 @@ export async function fetchCampaignUnsubscribedCount(campaignSubject: string): P
     const CH = 300;
     for (let i = 0; i < emails.length; i += CH) {
       const { count, error } = await supabase
-        .from('campaign_recipient_status')
+        .from('campaign_recipient_status_by_id')
         .select('email', { count: 'exact', head: true })
-        .eq('campaign_subject', campaignSubject)
+        .eq('campaign_id', campaignId)
         .in('email', emails.slice(i, i + CH));
       if (error) return total;
       total += count || 0;
@@ -563,20 +597,18 @@ export function deriveLabelFromUrl(url: string): string {
   }
 }
 
-// The campaign HTML we actually sent, looked up by subject (the same key the
-// stats views group on). Newest match wins if two campaigns share a subject.
-async function fetchSentHtmlBySubject(campaignSubject: string): Promise<string> {
+// The campaign HTML we actually sent, looked up by its durable campaign ID.
+async function fetchSentHtmlById(campaignId: string): Promise<string> {
   try {
     const { data, error } = await supabase
       .from('campaigns')
-      .select('dispatch,created_at')
-      .eq('subject', campaignSubject)
-      .order('created_at', { ascending: false })
-      .limit(1);
+      .select('dispatch')
+      .eq('id', campaignId)
+      .maybeSingle();
     if (error) throw error;
-    return (data?.[0] as any)?.dispatch?.html_template || '';
+    return (data as any)?.dispatch?.html_template || '';
   } catch (e) {
-    console.error('fetchSentHtmlBySubject failed:', e);
+    console.error('fetchSentHtmlById failed:', e);
     return '';
   }
 }
@@ -585,18 +617,18 @@ async function fetchSentHtmlBySubject(campaignSubject: string): Promise<string> 
 // the caller already has the campaign row (the Campaigns drawer does) to skip the
 // extra lookup; Reports only knows the subject, so it omits it.
 export async function fetchCampaignLinkClicks(
-  campaignSubject: string,
+  campaignId: string,
   sentHtml?: string,
 ): Promise<CampaignLinkClick[]> {
-  if (!campaignSubject) return [];
+  if (!campaignId) return [];
   try {
     const [{ data, error }, html] = await Promise.all([
       supabase
-        .from('campaign_link_clicks')
+        .from('campaign_link_clicks_by_id')
         .select('link_url,clicks,unique_clickers,first_click_at,last_click_at')
-        .eq('campaign_subject', campaignSubject)
+        .eq('campaign_id', campaignId)
         .order('clicks', { ascending: false }),
-      sentHtml !== undefined ? Promise.resolve(sentHtml) : fetchSentHtmlBySubject(campaignSubject),
+      sentHtml !== undefined ? Promise.resolve(sentHtml) : fetchSentHtmlById(campaignId),
     ]);
     if (error) throw error;
 
@@ -630,15 +662,15 @@ export interface LinkClicker {
 // single campaign, so this reads a small slice of email_events rather than the
 // whole campaign's click history.
 export async function fetchLinkClickers(
-  campaignSubject: string,
+  campaignId: string,
   linkUrl: string,
 ): Promise<LinkClicker[]> {
-  if (!campaignSubject || !linkUrl) return [];
+  if (!campaignId || !linkUrl) return [];
   try {
     const rows = await fetchAllPages<{ email: string; link_url: string | null; occurred_at: string; metadata: any }>(
       'email_events',
       'email,link_url,occurred_at,metadata',
-      (q) => q.eq('campaign_subject', campaignSubject).eq('event_type', 'clicked'),
+      (q) => q.eq('campaign_id', campaignId).eq('event_type', 'clicked'),
       'occurred_at',
     );
 

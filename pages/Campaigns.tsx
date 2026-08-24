@@ -49,9 +49,9 @@ const SEND_STATUS_LABEL: Record<string, string> = {
 // it (so we have delivery/open events + a saved dispatch to reuse).
 const canResend = (c: Campaign) => c.send_status === 'sent' || c.send_status === 'partial';
 
-// Stats are aggregated by subject on the Hub, so we match a campaign to its stats by subject line.
-const emptyStat = (subject: string): CampaignEmailStat => ({
-  campaign_subject: subject, sent: 0, delivered: 0, opened: 0, clicked: 0,
+const emptyStat = (campaign: Campaign): CampaignEmailStat => ({
+  campaign_id: campaign.id, campaign_name: campaign.name, campaign_subject: campaign.subject, branches: campaign.branches || [],
+  sent: 0, delivered: 0, opened: 0, clicked: 0,
   bounced: 0, complained: 0, first_event_at: null, last_event_at: null,
 });
 
@@ -111,23 +111,22 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
     else { addToast?.(`Couldn't delete: ${error}`, 'error'); }
   };
 
-  // subject -> stat lookup
-  const statBySubject = useMemo(() => {
+  const statById = useMemo(() => {
     const m = new Map<string, CampaignEmailStat>();
-    for (const s of stats) if (s.campaign_subject) m.set(s.campaign_subject, s);
+    for (const s of stats) if (s.campaign_id) m.set(s.campaign_id, s);
     return m;
   }, [stats]);
 
-  const statFor = (c: Campaign): CampaignEmailStat => statBySubject.get(c.subject) || emptyStat(c.subject);
+  const statFor = (c: Campaign): CampaignEmailStat => statById.get(c.id) || emptyStat(c);
 
   const totals = useMemo(() => {
     const t = { sent: 0, delivered: 0, opened: 0, clicked: 0 };
     for (const c of campaigns) {
-      const s = statBySubject.get(c.subject);
+      const s = statById.get(c.id);
       if (s) { t.sent += s.sent; t.delivered += s.delivered; t.opened += s.opened; t.clicked += s.clicked; }
     }
     return t;
-  }, [campaigns, statBySubject]);
+  }, [campaigns, statById]);
 
   return (
     <div className="p-6 lg:p-10 space-y-6">
@@ -334,11 +333,11 @@ const CampaignDetailDrawer: React.FC<{
 
   useEffect(() => {
     let alive = true;
-    if (c.subject) {
-      fetchCampaignUnsubscribedCount(c.subject).then((n) => { if (alive) setUnsubCount(n); }).catch(() => {});
+    if (c.id) {
+      fetchCampaignUnsubscribedCount(c.id, c.branches || []).then((n) => { if (alive) setUnsubCount(n); }).catch(() => {});
     }
     return () => { alive = false; };
-  }, [c.subject]);
+  }, [c.id, c.branches]);
 
   const canRetry = c.send_status === 'failed' || c.send_status === 'partial' || (!!rstats && rstats.failed > 0);
   const handleRetry = async () => {
@@ -460,7 +459,7 @@ const CampaignDetailDrawer: React.FC<{
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Engagement</h3>
             {!hasEvents && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
-                No delivery events recorded for this subject yet. Stats populate from Resend webhook events.
+                No delivery events recorded for this campaign yet. Stats populate from accepted sends and Resend webhook events.
               </p>
             )}
             <div className="grid grid-cols-3 gap-3">
@@ -551,17 +550,18 @@ const CampaignDetailDrawer: React.FC<{
           )}
 
           <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1">
-            <Mail className="w-3 h-3" /> Engagement matched by subject line via Resend delivery events
+            <Mail className="w-3 h-3" /> Engagement matched by exact campaign ID via Resend delivery events
           </p>
         </div>
       </div>
 
       {showRecipients && c.subject && (
-        <CampaignRecipientsModal campaignSubject={c.subject} onClose={() => setShowRecipients(false)} />
+        <CampaignRecipientsModal campaignId={c.id} campaignSubject={c.subject} branches={c.branches || []} onClose={() => setShowRecipients(false)} />
       )}
       {showLinkClicks && c.subject && (
         <LinkClickSummaryModal
           campaignSubject={c.subject}
+          campaignId={c.id}
           // We already hold the sent HTML here, so pass it and skip the by-subject
           // lookup the Reports panel has to do.
           sentHtml={c.dispatch?.html_template || ''}
