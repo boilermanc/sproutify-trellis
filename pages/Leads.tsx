@@ -494,11 +494,11 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     }
   };
 
-  const actOnSequence = async (lead: Lead, action: 'approve_next' | 'pause' | 'resume' | 'stop') => {
+  const actOnSequence = async (lead: Lead, action: 'approve_next' | 'pause' | 'resume' | 'stop', stepNumber?: number) => {
     const enrollment = leadSequences[lead.id];
     if (!enrollment) return;
     try {
-      await controlLeadSequence(enrollment.id, action);
+      await controlLeadSequence(enrollment.id, action, stepNumber);
       await Promise.all([loadTimeline(lead), loadLeads(true)]);
       addToast(action === 'approve_next' ? 'Email approved and sent.' : `Sequence ${action === 'stop' ? 'stopped' : `${action}d`}.`, 'success');
     } catch (error) {
@@ -1041,7 +1041,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
                                       previewRecipientEmail={lead.profile?.email}
                                       previewScope={activeBranch?.slug}
                                       onStart={(mode) => startSequenceForLead(lead, mode)}
-                                      onAction={(action) => actOnSequence(lead, action)}
+                                      onAction={(action, stepNumber) => actOnSequence(lead, action, stepNumber)}
                                     />
                                     <label className="block rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                                       <span className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">

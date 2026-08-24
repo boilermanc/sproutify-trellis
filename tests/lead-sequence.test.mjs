@@ -44,11 +44,15 @@ test('refreshes lead stage after sends and live email status while details are o
   assert.match(leadsPage, /Deep Dive Failed/);
 });
 
-test('requires selecting the next sequence email before approval', () => {
+test('lets the operator select any unsent sequence email before approval', () => {
   assert.match(sequencePanel, /selectedStepId/);
   assert.match(sequencePanel, /Click here to select/);
+  assert.match(sequencePanel, /message\.status === 'failed'/);
+  assert.match(sequencePanel, /selectedApprovalStep\.step_number/);
   assert.match(sequencePanel, /disabled=\{working \|\| !approvalArmed\}/);
   assert.match(sequencePanel, /setSelectedStepId\(null\)/);
+  assert.match(sequenceService, /approve_lead_email_sequence_step/);
+  assert.match(sequenceService, /p_step_number: stepNumber/);
 });
 
 test('opens the shared rendered template when an email number is clicked', () => {
@@ -64,6 +68,12 @@ test('requires the operator to confirm Tower Farm referral membership before sta
   assert.match(sequencePanel, /referralConfirmed/);
   assert.match(sequencePanel, /belongs on the Tower Farm referral list/);
   assert.match(sequencePanel, /disabled=\{working \|\| disabled \|\| !referralConfirmed\}/);
+});
+
+test('keeps the referral confirmation readable against its panel', () => {
+  assert.match(sequencePanel, /bg-slate-950\/35/);
+  assert.match(sequencePanel, /font-bold leading-4 text-white/);
+  assert.doesNotMatch(sequencePanel, /text-amber-100/);
 });
 
 test('provides a live lead email outbox with recipient-level tracking statuses', () => {
