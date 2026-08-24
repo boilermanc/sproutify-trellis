@@ -158,11 +158,17 @@ export async function startLeadSequence(leadId: string, mode: LeadSequenceMode):
 export async function controlLeadSequence(
   enrollmentId: string,
   action: 'approve_next' | 'pause' | 'resume' | 'stop',
+  stepNumber?: number,
 ): Promise<void> {
-  const { error } = await supabase.rpc('control_lead_email_sequence', {
-    p_enrollment_id: enrollmentId,
-    p_action: action,
-  });
+  const { error } = action === 'approve_next' && stepNumber != null
+    ? await supabase.rpc('approve_lead_email_sequence_step', {
+      p_enrollment_id: enrollmentId,
+      p_step_number: stepNumber,
+    })
+    : await supabase.rpc('control_lead_email_sequence', {
+      p_enrollment_id: enrollmentId,
+      p_action: action,
+    });
   if (error) throw error;
   if (action === 'approve_next' || action === 'resume') await runWorker();
 }

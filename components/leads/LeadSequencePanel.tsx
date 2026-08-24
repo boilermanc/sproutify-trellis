@@ -11,7 +11,7 @@ interface Props {
   previewRecipientEmail?: string | null;
   previewScope?: string | null;
   onStart: (mode: LeadSequenceMode) => Promise<void>;
-  onAction: (action: 'approve_next' | 'pause' | 'resume' | 'stop') => Promise<void>;
+  onAction: (action: 'approve_next' | 'pause' | 'resume' | 'stop', stepNumber?: number) => Promise<void>;
 }
 
 const formatWhen = (value: string | null) => value
@@ -56,7 +56,7 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
         <button type="button" onClick={() => setMode('approval')} className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${mode === 'approval' ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200' : 'border-white/10 text-slate-500'}`}>Approve each</button>
         <button type="button" onClick={() => setMode('automatic')} className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${mode === 'automatic' ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200' : 'border-white/10 text-slate-500'}`}>Automatic</button>
       </div>
-      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2.5 text-[10px] leading-4 text-amber-100">
+      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-white/15 bg-slate-950/35 px-3 py-2.5 text-[10px] font-bold leading-4 text-white">
         <input type="checkbox" checked={referralConfirmed} onChange={event => setReferralConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-emerald-400" />
         <span>I confirmed this person belongs on the Tower Farm referral list.</span>
       </label>
@@ -68,10 +68,10 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
     enrollment.messages.filter(message => message.step_id).map(message => [message.step_id!, message]),
   );
   const active = ['active', 'awaiting_approval', 'paused'].includes(enrollment.status);
-  const nextApprovalStep = enrollment.status === 'awaiting_approval'
-    ? enrollment.steps.find(step => step.step_number === enrollment.next_step_number)
+  const selectedApprovalStep = enrollment.status === 'awaiting_approval'
+    ? enrollment.steps.find(step => step.id === selectedStepId)
     : undefined;
-  const approvalArmed = !!nextApprovalStep && selectedStepId === nextApprovalStep.id;
+  const approvalArmed = !!selectedApprovalStep;
   const previewEmail = previewRecipientEmail || 'lead@example.com';
   const previewHtml = previewStep
     ? renderLeadSequenceHtml(
@@ -91,7 +91,7 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
         {enrollment.steps.map(step => {
           const message = latestByStep.get(step.id);
           const isNext = step.step_number === enrollment.next_step_number && active;
-          const selectable = enrollment.status === 'awaiting_approval' && isNext && !message;
+          const selectable = enrollment.status === 'awaiting_approval' && (!message || message.status === 'failed');
           const selected = selectable && selectedStepId === step.id;
           return <div key={step.id} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${selected ? 'border-cyan-400 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white'} ${selectable ? 'hover:border-cyan-300 hover:bg-cyan-50/60' : ''}`}>
             <button type="button" onClick={() => setPreviewStep(step)} aria-label={`Preview email ${step.step_number}: ${step.name}`} title={`Preview email ${step.step_number}`} className={`group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[9px] font-black transition hover:scale-105 hover:ring-2 hover:ring-cyan-200 ${message?.sent_at ? 'bg-emerald-100 text-emerald-700' : isNext ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-600'}`}>
@@ -100,14 +100,14 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
             </button>
             <button type="button" disabled={!selectable || working} onClick={() => setSelectedStepId(step.id)} className={`min-w-0 flex-1 text-left ${selectable ? 'cursor-pointer' : 'cursor-default'}`}>
               <span className="block truncate text-[11px] font-bold text-slate-700">{step.name}</span>
-              <span className="block text-[9px] text-slate-500">{message ? `${message.status}${message.resend_email_id ? ' · tracked' : ''} · click number to preview` : selectable ? (selected ? 'Selected · ready to approve' : 'Click here to select · click number to preview') : isNext ? `${formatWhen(enrollment.next_run_at)} · click number to preview` : `+${step.delay_days} days · click number to preview`}</span>
+              <span className="block text-[9px] text-slate-500">{message && message.status !== 'failed' ? `${message.status}${message.resend_email_id ? ' · tracked' : ''} · click number to preview` : selectable ? (selected ? 'Selected · ready to approve' : `${message?.status === 'failed' ? 'Failed · ' : ''}Click here to select · click number to preview`) : isNext ? `${formatWhen(enrollment.next_run_at)} · click number to preview` : `+${step.delay_days} days · click number to preview`}</span>
             </button>
           </div>;
         })}
       </div>
       {enrollment.exit_reason && <p className="mt-3 rounded-lg bg-white/[0.04] px-3 py-2 text-[10px] text-slate-400">Stopped: {enrollment.exit_reason.replace(/_/g, ' ')}</p>}
       {active && <div className="mt-3 flex flex-wrap gap-2">
-        {enrollment.status === 'awaiting_approval' && <button type="button" disabled={working || !approvalArmed} onClick={() => void run(() => onAction('approve_next'))} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#071b25] disabled:cursor-not-allowed disabled:opacity-40"><Send size={12} />Approve & send</button>}
+        {enrollment.status === 'awaiting_approval' && <button type="button" disabled={working || !approvalArmed} onClick={() => selectedApprovalStep && void run(() => onAction('approve_next', selectedApprovalStep.step_number))} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#071b25] disabled:cursor-not-allowed disabled:opacity-40"><Send size={12} />Approve & send{selectedApprovalStep ? ` email ${selectedApprovalStep.step_number}` : ''}</button>}
         {enrollment.status === 'active' && <button type="button" disabled={working} onClick={() => void run(() => onAction('pause'))} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-300"><Pause size={12} />Pause</button>}
         {enrollment.status === 'paused' && <button type="button" disabled={working} onClick={() => void run(() => onAction('resume'))} className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-cyan-300"><Clock3 size={12} />Resume</button>}
         <button type="button" disabled={working} onClick={() => void run(() => onAction('stop'))} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-400/20 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-rose-300"><StopCircle size={12} />Stop</button>
