@@ -2,6 +2,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type {
   CreateMediaFinishingJob,
+  CreateMediaPlatformExport,
   CreateMediaGenerationJob,
   MediaAsset,
   MediaGenerationJob,
@@ -49,6 +50,10 @@ export async function scheduleMediaGenerationOutput(input: ScheduleMediaGenerati
 
 export async function createMediaFinishingJob(input: CreateMediaFinishingJob): Promise<{ finishing_job: Record<string, unknown> }> {
   return callMedia<{ finishing_job: Record<string, unknown> }>('create_finishing_job', { finishing: input });
+}
+
+export async function createMediaPlatformExport(input: CreateMediaPlatformExport): Promise<{ platform_export: Record<string, unknown> }> {
+  return callMedia<{ platform_export: Record<string, unknown> }>('create_platform_export', { platform_export: input });
 }
 
 async function mediaFunctionError(error: unknown): Promise<string> {

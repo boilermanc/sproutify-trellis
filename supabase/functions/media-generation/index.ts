@@ -148,9 +148,15 @@ async function listLibrary(db: any, userId: string, limit: number) {
   if (outputsError) throw new Error(outputsError.message);
   if (!outputs?.length) return [];
   const outputIds = outputs.map((output: any) => output.id);
-  const { data: finishingJobs, error: finishingError } = await db.from("media_finishing_jobs").select("*").in("source_output_id", outputIds).order("created_at", { ascending: false });
-  if (finishingError) throw new Error(finishingError.message);
-  const assetIds = [...new Set((outputs || []).map((output: any) => output.asset_id))];
+  const [{ data: finishingJobs, error: finishingError }, { data: platformExports, error: platformExportError }] = await Promise.all([
+    db.from("media_finishing_jobs").select("*").in("source_output_id", outputIds).order("created_at", { ascending: false }),
+    db.from("media_platform_exports").select("*").in("source_output_id", outputIds).order("created_at", { ascending: false }),
+  ]);
+  if (finishingError || platformExportError) throw new Error(finishingError?.message || platformExportError?.message);
+  const assetIds = [...new Set([
+    ...(outputs || []).map((output: any) => output.asset_id),
+    ...(platformExports || []).map((platformExport: any) => platformExport.output_asset_id).filter(Boolean),
+  ])];
   const { data: assets, error: assetsError } = await db.from("media_assets").select("*").in("id", assetIds);
   if (assetsError) throw new Error(assetsError.message);
   const jobsById = new Map(jobs.map((job: any) => [job.id, job]));
@@ -162,11 +168,18 @@ async function listLibrary(db: any, userId: string, limit: number) {
   for (const publication of publications || []) publicationsByOutput.set(publication.source_generation_output_id, [...(publicationsByOutput.get(publication.source_generation_output_id) || []), publication]);
   const finishingBySource = new Map<string, any>();
   for (const finishing of finishingJobs || []) if (!finishingBySource.has(finishing.source_output_id)) finishingBySource.set(finishing.source_output_id, finishing);
+  const platformExportBySource = new Map<string, any>();
+  for (const platformExport of platformExports || []) if (!platformExportBySource.has(platformExport.source_output_id)) platformExportBySource.set(platformExport.source_output_id, platformExport);
   const visibleOutputs = (outputs || []).filter((output: any) => assetsById.get(output.asset_id)?.status === "ready");
   return Promise.all(visibleOutputs.map(async (output: any) => {
     const job = jobsById.get(output.job_id) as any;
     const asset = assetsById.get(output.asset_id) as any;
     const signed = asset ? await db.storage.from(asset.storage_bucket).createSignedUrl(asset.storage_path, 60 * 60) : { data: null };
+    const platformExport = platformExportBySource.get(output.id) || null;
+    const platformAsset = platformExport?.output_asset_id ? assetsById.get(platformExport.output_asset_id) : null;
+    const platformSigned = platformAsset?.status === "ready"
+      ? await db.storage.from(platformAsset.storage_bucket).createSignedUrl(platformAsset.storage_path, 60 * 60)
+      : { data: null };
     return {
       output_id: output.id,
       output_role: output.output_role,
@@ -180,6 +193,7 @@ async function listLibrary(db: any, userId: string, limit: number) {
       signed_url: signed.data?.signedUrl || null,
       source_output_id: output.source_output_id || null,
       finishing: finishingBySource.get(output.id) || null,
+      platform_export: platformExport ? { ...platformExport, output_asset: platformAsset || null, signed_url: platformSigned.data?.signedUrl || null } : null,
     };
   }));
 }
@@ -419,6 +433,38 @@ Deno.serve(async (request) => {
       await addEvent(db, owned.job.id, "finishing_queued", { status: "queued", progress: 0, details: { finishing_job_id: data.id, source_output_id: owned.output.id } });
       return json({ finishing_job: data }, 201);
     }
+    if (body.action === "create_platform_export") {
+      const requestExport = body.platform_export && typeof body.platform_export === "object" ? body.platform_export : {};
+      const owned = await getOwnedOutput(db, clean(requestExport.source_output_id, 80), user.id);
+      if (!String(owned.asset.mime_type || "").startsWith("video/")) throw new Error("Only video outputs can be exported.");
+      const platform = clean(requestExport.platform, 40).toLowerCase();
+      if (platform !== "instagram_reel") throw new Error("Instagram Reel is the first platform export available.");
+      const framing = clean(requestExport.framing || "blur_background", 40).toLowerCase();
+      if (!new Set(["blur_background", "center_crop", "fit"]).has(framing)) throw new Error("Choose a valid Reel framing option.");
+      const idempotencyKey = clean(requestExport.idempotency_key, 160);
+      if (!idempotencyKey) throw new Error("An export idempotency key is required.");
+      const { data: active } = await db.from("media_platform_exports").select("id")
+        .eq("source_output_id", owned.output.id).eq("platform", platform)
+        .in("status", ["queued", "running", "cancel_requested"]).limit(1);
+      if (active?.length) throw new Error("This video already has an Instagram export in progress.");
+      const { data, error } = await db.from("media_platform_exports").insert({
+        project_id: owned.job.project_id,
+        source_output_id: owned.output.id,
+        source_asset_id: owned.asset.id,
+        created_by: user.id,
+        platform,
+        framing,
+        idempotency_key: idempotencyKey,
+      }).select("*").single();
+      if (error?.code === "23505") {
+        const { data: existing } = await db.from("media_platform_exports").select("*")
+          .eq("created_by", user.id).eq("idempotency_key", idempotencyKey).single();
+        return json({ platform_export: existing, duplicate: true });
+      }
+      if (error || !data) throw new Error(error?.message || "Could not queue the Instagram export.");
+      await addEvent(db, owned.job.id, "platform_export_queued", { status: "queued", progress: 0, details: { platform_export_id: data.id, source_output_id: owned.output.id, platform, framing } });
+      return json({ platform_export: data }, 201);
+    }
     if (body.action === "approve_output") {
       const owned = await getOwnedOutput(db, clean(body.output_id, 80), user.id);
       if (owned.job.status !== "succeeded") throw new Error("Only completed outputs can be approved.");
@@ -436,16 +482,25 @@ Deno.serve(async (request) => {
       if (derivedError) throw new Error(derivedError.message);
       const affectedOutputs = [owned.output, ...(derivedOutputs || [])];
       const affectedOutputIds = affectedOutputs.map((output: any) => output.id);
-      const affectedAssetIds = [...new Set(affectedOutputs.map((output: any) => output.asset_id).filter(Boolean))];
-      const [{ count: activePublications, error: publicationError }, { count: activeFinishes, error: finishingError }] = await Promise.all([
+      const { data: platformExports, error: platformExportsError } = await db.from("media_platform_exports")
+        .select("*").in("source_output_id", affectedOutputIds);
+      if (platformExportsError) throw new Error(platformExportsError.message);
+      const affectedAssetIds = [...new Set([
+        ...affectedOutputs.map((output: any) => output.asset_id),
+        ...(platformExports || []).map((platformExport: any) => platformExport.output_asset_id),
+      ].filter(Boolean))];
+      const [{ count: activePublications, error: publicationError }, { count: activeFinishes, error: finishingError }, { count: activeExports, error: exportError }] = await Promise.all([
         db.from("scheduled_social_posts").select("id", { count: "exact", head: true })
           .in("source_generation_output_id", affectedOutputIds).in("status", ["scheduled", "publishing", "published"]),
         db.from("media_finishing_jobs").select("id", { count: "exact", head: true })
           .in("source_output_id", affectedOutputIds).in("status", ["queued", "running", "cancel_requested"]),
+        db.from("media_platform_exports").select("id", { count: "exact", head: true })
+          .in("source_output_id", affectedOutputIds).in("status", ["queued", "running", "cancel_requested"]),
       ]);
-      if (publicationError || finishingError) throw new Error(publicationError?.message || finishingError?.message || "Could not check whether the video is in use.");
+      if (publicationError || finishingError || exportError) throw new Error(publicationError?.message || finishingError?.message || exportError?.message || "Could not check whether the video is in use.");
       if ((activePublications || 0) > 0) throw new Error("Remove this video from the publishing queue before deleting it from the library.");
       if ((activeFinishes || 0) > 0) throw new Error("Wait for the text finishing render to complete before deleting this video.");
+      if ((activeExports || 0) > 0) throw new Error("Wait for the Instagram export to complete before deleting this video.");
       const { data: affectedAssets, error: affectedAssetsError } = await db.from("media_assets").select("*").in("id", affectedAssetIds);
       if (affectedAssetsError) throw new Error(affectedAssetsError.message);
       const storagePaths = new Map<string, string[]>();
@@ -483,6 +538,19 @@ Deno.serve(async (request) => {
       if (!owned.output.approved) throw new Error("Approve this generated output before scheduling it.");
       const platform = clean(publication.platform, 20).toLowerCase();
       if (!new Set(["instagram", "tiktok"]).has(platform)) throw new Error("Generated video can currently publish to Instagram or TikTok.");
+      let publishingAsset = owned.asset;
+      let platformExportId: string | null = null;
+      if (platform === "instagram") {
+        const { data: reelExport, error: reelExportError } = await db.from("media_platform_exports").select("*")
+          .eq("source_output_id", owned.output.id).eq("platform", "instagram_reel").eq("status", "succeeded")
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (reelExportError) throw new Error(reelExportError.message);
+        if (!reelExport?.output_asset_id) throw new Error("Create the Instagram Reel version before scheduling this video to Instagram.");
+        const { data: exportAsset, error: exportAssetError } = await db.from("media_assets").select("*").eq("id", reelExport.output_asset_id).maybeSingle();
+        if (exportAssetError || !exportAsset || exportAsset.status !== "ready") throw new Error(exportAssetError?.message || "The Instagram Reel export is unavailable.");
+        publishingAsset = exportAsset;
+        platformExportId = reelExport.id;
+      }
       const caption = sanitizeMediaText(clean(publication.caption, 2200));
       if (!caption) throw new Error("A publishing caption is required.");
       const scheduledFor = new Date(String(publication.scheduled_for || ""));
@@ -511,12 +579,12 @@ Deno.serve(async (request) => {
         status: "scheduled",
         source: "media_generation",
         created_by: user.id,
-        source_media_asset_id: owned.asset.id,
+        source_media_asset_id: publishingAsset.id,
         source_generation_job_id: owned.job.id,
         source_generation_output_id: owned.output.id,
         idempotency_key: idempotencyKey,
         creative_template: owned.job.model_id,
-        creative_meta: { project_id: owned.job.project_id, task_type: owned.job.task_type, model_id: owned.job.model_id },
+        creative_meta: { project_id: owned.job.project_id, task_type: owned.job.task_type, model_id: owned.job.model_id, platform_export_id: platformExportId },
       };
       const { data: post, error: postError } = await db.from("scheduled_social_posts").insert(row).select("*").single();
       if (postError?.code === "23505") {
