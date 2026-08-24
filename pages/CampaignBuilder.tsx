@@ -59,7 +59,7 @@ interface CampaignRecord {
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface CampaignBuilderProps {
-  onCampaignLaunch: (campaign: { name: string, audienceSize: number, segments: string[] }) => void;
+  onCampaignLaunch: (campaign: { id: string, name: string, audienceSize: number, segments: string[] }) => void;
   profiles: Profile[];
   branchStats?: BranchStatsResult;
   spokeConnections?: SpokeConnection[];
@@ -1413,6 +1413,7 @@ Return ONLY the post content, no explanations or labels.`,
         }));
 
         onCampaignLaunch({
+          id: newCampaign.id,
           name: campaignName,
           audienceSize,
           segments: selectedSegments,

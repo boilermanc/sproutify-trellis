@@ -59,6 +59,18 @@ test('campaign list exposes the resume handoff', () => {
   assert.match(app, /setCampaignDraftId\(id\); setActiveView\('campaign-builder'\)/);
 });
 
+test('a completed launch navigates to and opens the persisted campaign', () => {
+  const builder = read('pages/CampaignBuilder.tsx');
+  const campaigns = read('pages/Campaigns.tsx');
+  const app = read('App.tsx');
+
+  assert.match(builder, /onCampaignLaunch\(\{\s*id:\s*newCampaign\.id,/);
+  assert.match(app, /setFocusedCampaignId\(campaign\.id\);\s*setActiveView\('campaigns'\)/);
+  assert.match(app, /focusedCampaignId=\{focusedCampaignId\}/);
+  assert.match(campaigns, /allCampaigns\.find\(campaign => campaign\.id === focusedCampaignId\)/);
+  assert.match(campaigns, /setSelected\(focusedCampaign\)/);
+});
+
 test('migration removes anonymous campaign access and scopes writes', () => {
   const migration = read('supabase/migrations/20260804114818_campaign_draft_ownership.sql');
   assert.match(migration, /ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES auth\.users/);

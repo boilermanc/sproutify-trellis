@@ -14,6 +14,8 @@ interface CampaignsProps {
   branchContext?: BranchContext;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onEditDraft?: (campaignId: string) => void;
+  focusedCampaignId?: string | null;
+  onFocusedCampaignOpened?: () => void;
 }
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
@@ -55,7 +57,7 @@ const emptyStat = (campaign: Campaign): CampaignEmailStat => ({
   bounced: 0, complained: 0, first_event_at: null, last_event_at: null,
 });
 
-const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDraft }) => {
+const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDraft, focusedCampaignId, onFocusedCampaignOpened }) => {
   const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +95,14 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
   };
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!focusedCampaignId) return;
+    const focusedCampaign = allCampaigns.find(campaign => campaign.id === focusedCampaignId);
+    if (!focusedCampaign) return;
+    setSelected(focusedCampaign);
+    onFocusedCampaignOpened?.();
+  }, [allCampaigns, focusedCampaignId, onFocusedCampaignOpened]);
 
   const handleDuplicate = async (c: Campaign) => {
     setBusyId(c.id);

@@ -68,6 +68,7 @@ const AppContent: React.FC = () => {
   const [authView, setAuthView] = useState<AuthView>('login');
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [campaignDraftId, setCampaignDraftId] = useState<string | null>(null);
+  const [focusedCampaignId, setFocusedCampaignId] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team' | undefined>(undefined);
   const [connectionAutoStart, setConnectionAutoStart] = useState<{ nonce: number; name?: string }>({ nonce: 0 });
   const [helpArticle, setHelpArticle] = useState<Article | null>(null);
@@ -466,7 +467,7 @@ const AppContent: React.FC = () => {
     );
   }, []);
 
-  const handleCampaignLaunch = (campaign: { name: string, audienceSize: number, segments: string[] }) => {
+  const handleCampaignLaunch = (campaign: { id: string, name: string, audienceSize: number, segments: string[] }) => {
     const newEvent: MarketingEvent = {
       id: `evt_${Date.now()}`,
       profile_id: 'SYSTEM',
@@ -477,6 +478,8 @@ const AppContent: React.FC = () => {
     };
     setEvents(prev => [newEvent, ...prev]);
     addToast(`Global sync successful: ${campaign.name} is now live across ${currentBrand.name} spokes.`);
+    setFocusedCampaignId(campaign.id);
+    setActiveView('campaigns');
   };
 
   const renderView = () => {
@@ -512,7 +515,7 @@ const AppContent: React.FC = () => {
       case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'help-center': return <HelpCenter initialArticle={helpArticle} />;
       case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} branchStats={branchStats} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} draftCampaignId={campaignDraftId} onDraftIdChange={setCampaignDraftId} />;
-      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} onEditDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} />;
+      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} focusedCampaignId={focusedCampaignId} onFocusedCampaignOpened={() => setFocusedCampaignId(null)} onEditDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} />;
       case 'marketing-brands': return (
         <MarketingBrands
           branchContext={branchContext}
