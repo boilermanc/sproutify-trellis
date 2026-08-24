@@ -245,6 +245,10 @@ export interface NormalizedSpokeProfile {
   last_name?: string;
   phone?: string;
   subscribed?: boolean;
+  // Rekkrd keeps these preferences separately. `subscribed` is their union for
+  // Trellis targeting, while the originals remain available for audit/display.
+  email_digest_optin?: boolean;
+  email_updates_optin?: boolean;
   created_at?: string;
   referral_source?: string;
   email_notifications?: boolean;
@@ -340,6 +344,7 @@ export interface ApiKeyConfig {
   gemini_api_key: string;
   openai_api_key: string;
   anthropic_api_key: string;
+  xai_api_key?: string;
   n8n_webhooks: N8nWebhooks;
   slack_webhook?: string;
   woo_consumer_key: string;
@@ -591,7 +596,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'motion-posts' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
 
 export interface StudioAlbum {
   id: string;
@@ -1592,6 +1597,60 @@ export interface MusicGeneration {
   file_size_bytes: number | null;
   cost_estimate: number | null;
   generation_started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── Motion Posts (still image → AI motion → Rekkrd audio → Reel) ───
+export type MotionPostStatus =
+  | 'queued' | 'generating' | 'mixing' | 'ready' | 'failed'
+  | 'publishing' | 'published' | 'cancelled';
+
+export type MotionPostAudioSourceType = 'studio_track' | 'studio_master' | 'music_generation';
+
+export interface MotionPostAudioOption {
+  id: string;
+  source_type: MotionPostAudioSourceType;
+  title: string;
+  artist?: string | null;
+  duration_seconds?: number | null;
+  audio_url: string;
+}
+
+export interface MotionPostJob {
+  id: string;
+  organization_id: string;
+  created_by: string;
+  branch_id: string | null;
+  branch_slug: string;
+  title: string;
+  prompt: string;
+  provider: 'xai';
+  model: string;
+  duration_seconds: number;
+  aspect_ratio: '9:16';
+  resolution: '480p' | '720p' | '1080p';
+  status: MotionPostStatus;
+  progress: number;
+  source_bucket: string;
+  source_path: string;
+  source_url: string | null;
+  provider_request_id: string | null;
+  generated_video_url: string | null;
+  audio_source_type: MotionPostAudioSourceType | null;
+  audio_source_id: string | null;
+  audio_title: string | null;
+  audio_url: string | null;
+  audio_start_seconds: number;
+  caption: string | null;
+  output_bucket: string;
+  output_path: string | null;
+  output_url: string | null;
+  cost_estimate: number;
+  cost_actual: number | null;
+  error_message: string | null;
+  published_at: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;

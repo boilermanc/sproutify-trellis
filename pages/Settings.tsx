@@ -500,6 +500,23 @@ const Settings: React.FC<SettingsProps> = ({
                          </button>
                       </div>
                     ))}
+                    <div className="relative pt-4 border-t border-slate-100">
+                      <label className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase mb-2 ml-1">
+                        <Sparkles size={14} className="text-slate-900" />
+                        xAI API Key <span className="normal-case font-bold text-slate-400">(Motion Posts)</span>
+                      </label>
+                      <input
+                        type={visibleKeys.xai_api_key ? 'text' : 'password'}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500"
+                        value={localApiKeys.xai_api_key || ''}
+                        onChange={(e) => setLocalApiKeys({ ...localApiKeys, xai_api_key: e.target.value })}
+                        placeholder="Enter your xAI API Key..."
+                      />
+                      <button type="button" onClick={() => setVisibleKeys(prev => ({...prev, xai_api_key: !prev.xai_api_key}))} className="absolute right-4 top-[4.55rem] text-slate-400 hover:text-slate-900 transition-colors">
+                        {visibleKeys.xai_api_key ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                      <p className="mt-2 text-[10px] text-slate-400">Stored server-side and used only by the authenticated Motion Posts Edge Function.</p>
+                    </div>
                   </div>
                </div>
 

@@ -16,6 +16,7 @@ const fmtWhen = (iso: string | null): string => {
 };
 
 interface Props {
+  campaignId: string;
   campaignSubject: string;
   // The HTML this campaign sent, when the caller already has it (the Campaigns
   // drawer does). Omit and the service looks it up by subject.
@@ -25,7 +26,7 @@ interface Props {
 
 // Per-campaign link click summary — which link earned the clicks, and who
 // clicked it. Two levels: the ranked link list, then one link's clickers.
-export const LinkClickSummaryModal: React.FC<Props> = ({ campaignSubject, sentHtml, onClose }) => {
+export const LinkClickSummaryModal: React.FC<Props> = ({ campaignId, campaignSubject, sentHtml, onClose }) => {
   const [links, setLinks] = useState<CampaignLinkClick[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -39,22 +40,22 @@ export const LinkClickSummaryModal: React.FC<Props> = ({ campaignSubject, sentHt
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchCampaignLinkClicks(campaignSubject, sentHtml)
+    fetchCampaignLinkClicks(campaignId, sentHtml)
       .then((rows) => { if (!cancelled) setLinks(rows); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [campaignSubject, sentHtml]);
+  }, [campaignId, sentHtml]);
 
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
     setClickersLoading(true);
     setClickerSearch('');
-    fetchLinkClickers(campaignSubject, selected.linkUrl)
+    fetchLinkClickers(campaignId, selected.linkUrl)
       .then((rows) => { if (!cancelled) setClickers(rows); })
       .finally(() => { if (!cancelled) setClickersLoading(false); });
     return () => { cancelled = true; };
-  }, [campaignSubject, selected]);
+  }, [campaignId, selected]);
 
   const totals = useMemo(() => ({
     clicks: links.reduce((n, l) => n + l.clicks, 0),

@@ -5,7 +5,7 @@ Two Flask workers back the heavy media steps of the AI content pipeline:
 | Worker | Port | Endpoint | Job |
 |--------|------|----------|-----|
 | `stitch_worker.py` | 8099 | `POST /stitch` | crossfade approved session tracks → master mp3 (bucket `music-sessions`) |
-| `video_worker.py`  | 8100 | `POST /video`  | ffmpeg: master audio + cover image → mp4 (Episodes or private Studio Albums) |
+| `video_worker.py`  | 8100 | `POST /video`  | ffmpeg: Episode/Studio video renders plus Rekkrd Motion Post audio finishing |
 
 Both: `pip install -r requirements.txt` (needs **ffmpeg**), set `SUPABASE_URL` +
 `SUPABASE_SERVICE_ROLE_KEY`, run. Both are CORS-enabled and respond 202
@@ -24,6 +24,12 @@ The video worker preserves asset metadata and writes heartbeat details into
 Studio requests are accepted only when the album, pending final-video asset,
 queued job, private bucket, and album-scoped storage path all match. If you deploy
 a new worker build, restart `trellis-video` so heartbeat updates start on future renders.
+
+Motion Posts reuse the same endpoint with `pipeline: "motion_post"`. The worker
+accepts only a `mixing` job whose owner, `motion-posts` bucket, and
+`{user_id}/{job_id}/` output path all match the database row. It crops the Grok
+Imagine clip to 1080x1920, mixes the selected owned track excerpt, adds short
+audio fades, uploads an Instagram-ready H.264/AAC MP4, and marks the job ready.
 
 The stitch worker writes the same style of heartbeat details into
 `trellis_music_renders.metadata.worker` while rebuilding a master. The Studio UI

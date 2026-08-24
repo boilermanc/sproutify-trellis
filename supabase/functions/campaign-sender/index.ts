@@ -30,8 +30,14 @@ function personalize(template: string, unsubTemplate: string, scope: string, r: 
   const unsub = (unsubTemplate && r.unsubscribe_token)
     ? unsubTemplate.replace(/\{\{\s*token\s*\}\}/g, r.unsubscribe_token)
     : `${SUPABASE_URL}/functions/v1/unsubscribe?email=${encodeURIComponent(r.email)}&scope=${encodeURIComponent(scope)}`;
-  return template
-    .replace(/\{\{\s*first_name\s*\}\}/g, r.first_name || "Friend")
+  const firstName = r.first_name?.trim() || "";
+  const personalized = template.replace(
+    /<!--\s*IF_FIRST_NAME\s*-->([\s\S]*?)<!--\s*END_IF_FIRST_NAME\s*-->/gi,
+    (_match, content: string) => firstName ? content : "",
+  );
+  return personalized
+    // Templates without a conditional greeting retain the established fallback.
+    .replace(/\{\{\s*first_name\s*\}\}/g, firstName || "Friend")
     .replace(/\{\{\s*email\s*\}\}/g, r.email)
     .replace(/\{\{\s*unsubscribe_url\s*\}\}/g, unsub);
 }

@@ -1146,6 +1146,16 @@ Return ONLY the post content, no explanations or labels.`,
   const buildDispatchHtml = (profile: Profile): string => {
     const fill = (html: string) => {
       let out = applyTemplateImageOverrides(html, templateImageOverrides);
+      // Conditional greeting blocks remain in the launch snapshot so the
+      // campaign-sender can decide per recipient. Test sends have a real email,
+      // so resolve the block here to make the preview match delivery exactly.
+      if (profile.email) {
+        const hasFirstName = Boolean(profile.first_name?.trim());
+        out = out.replace(
+          /<!--\s*IF_FIRST_NAME\s*-->([\s\S]*?)<!--\s*END_IF_FIRST_NAME\s*-->/gi,
+          (_match, content: string) => hasFirstName ? content : '',
+        );
+      }
       // Replace each discovered token with the value typed in Compose. Empty
       // tokens collapse to '' so a raw {{token}} never leaks into the sent email.
       // A FUNCTION replacer is used (not a string) so `$` sequences in the copy

@@ -410,28 +410,96 @@ GRANT SELECT ON campaign_sends TO authenticated;
 GRANT ALL ON campaign_sends TO service_role;
 
 -- Per-campaign rollup keyed by campaign_id (exact — no subject-collision risk).
--- Prefer this over campaign_email_stats once email_events.campaign_id is populated.
--- Same COUNT(DISTINCT email) treatment as campaign_email_stats above, for the
--- same reason — every column is unique recipients, not raw event rows.
+-- Sent is provider-accepted campaign_sends, so the count does not depend on a
+-- later webhook. Engagement remains distinct recipients from Resend events.
 CREATE OR REPLACE VIEW campaign_stats_by_id
 WITH (security_invoker = true) AS
+WITH send_stats AS (
+  SELECT campaign_id, COUNT(DISTINCT lower(email)) AS sent
+  FROM campaign_sends
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+), event_stats AS (
+  SELECT
+    campaign_id,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'delivered')  AS delivered,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'opened')     AS opened,
+    COUNT(DISTINCT lower(email)) FILTER (
+      WHERE event_type = 'clicked'
+        AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+    ) AS clicked,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'bounced')    AS bounced,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'complained') AS complained,
+    MIN(occurred_at) AS first_event_at,
+    MAX(occurred_at) AS last_event_at
+  FROM email_events
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+)
 SELECT
-  campaign_id,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'sent')       AS sent,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'delivered')  AS delivered,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')     AS opened,
-  COUNT(DISTINCT email) FILTER (
-    WHERE event_type = 'clicked'
-      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
-  ) AS clicked,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounced')    AS bounced,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'complained') AS complained,
-  MIN(occurred_at) AS first_event_at,
-  MAX(occurred_at) AS last_event_at
-FROM email_events
-WHERE campaign_id IS NOT NULL
-GROUP BY campaign_id;
+  c.id AS campaign_id,
+  COALESCE(s.sent, 0::bigint) AS sent,
+  COALESCE(e.delivered, 0::bigint) AS delivered,
+  COALESCE(e.opened, 0::bigint) AS opened,
+  COALESCE(e.clicked, 0::bigint) AS clicked,
+  COALESCE(e.bounced, 0::bigint) AS bounced,
+  COALESCE(e.complained, 0::bigint) AS complained,
+  e.first_event_at,
+  e.last_event_at
+FROM campaigns c
+LEFT JOIN send_stats s ON s.campaign_id = c.id
+LEFT JOIN event_stats e ON e.campaign_id = c.id
+WHERE c.launched_at IS NOT NULL OR c.send_status IS NOT NULL;
 GRANT SELECT ON campaign_stats_by_id TO anon, authenticated, service_role;
+
+-- Exact-ID recipient status. Start with campaign_sends so provider-accepted
+-- recipients remain visible before (or even without) a webhook callback.
+CREATE OR REPLACE VIEW campaign_recipient_status_by_id
+WITH (security_invoker = true) AS
+WITH identities AS (
+  SELECT campaign_id, lower(email) AS email FROM campaign_sends WHERE campaign_id IS NOT NULL
+  UNION
+  SELECT campaign_id, lower(email) AS email FROM email_events WHERE campaign_id IS NOT NULL
+), send_times AS (
+  SELECT campaign_id, lower(email) AS email, MAX(sent_at) AS sent_at
+  FROM campaign_sends WHERE campaign_id IS NOT NULL GROUP BY campaign_id, lower(email)
+), event_status AS (
+  SELECT campaign_id, lower(email) AS email,
+    bool_or(event_type = 'delivered') AS delivered,
+    bool_or(event_type = 'opened') AS opened,
+    bool_or(event_type = 'clicked' AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%') AS clicked,
+    bool_or(event_type = 'bounced') AS bounced,
+    bool_or(event_type = 'complained') AS complained,
+    array_remove(array_agg(DISTINCT COALESCE(link_url, metadata->'click'->>'link'))
+      FILTER (WHERE event_type = 'clicked' AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'), NULL) AS link_urls,
+    MAX(occurred_at) AS last_event_at
+  FROM email_events WHERE campaign_id IS NOT NULL GROUP BY campaign_id, lower(email)
+)
+SELECT i.campaign_id, i.email,
+  COALESCE(e.delivered, false) AS delivered, COALESCE(e.opened, false) AS opened,
+  COALESCE(e.clicked, false) AS clicked, COALESCE(e.bounced, false) AS bounced,
+  COALESCE(e.complained, false) AS complained, COALESCE(e.link_urls, ARRAY[]::text[]) AS link_urls,
+  COALESCE(e.last_event_at, s.sent_at) AS last_event_at
+FROM identities i
+LEFT JOIN send_times s USING (campaign_id, email)
+LEFT JOIN event_status e USING (campaign_id, email);
+REVOKE ALL ON campaign_recipient_status_by_id FROM PUBLIC;
+REVOKE ALL ON campaign_recipient_status_by_id FROM anon;
+GRANT SELECT ON campaign_recipient_status_by_id TO authenticated, service_role;
+
+CREATE OR REPLACE VIEW campaign_link_clicks_by_id
+WITH (security_invoker = true) AS
+SELECT campaign_id, COALESCE(link_url, metadata->'click'->>'link') AS link_url,
+  COUNT(*) AS clicks, COUNT(DISTINCT lower(email)) AS unique_clickers,
+  MIN(occurred_at) AS first_click_at, MAX(occurred_at) AS last_click_at
+FROM email_events
+WHERE event_type = 'clicked' AND campaign_id IS NOT NULL
+  AND COALESCE(link_url, metadata->'click'->>'link', '') <> ''
+  AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+GROUP BY campaign_id, COALESCE(link_url, metadata->'click'->>'link');
+REVOKE ALL ON campaign_link_clicks_by_id FROM PUBLIC;
+REVOKE ALL ON campaign_link_clicks_by_id FROM anon;
+GRANT SELECT ON campaign_link_clicks_by_id TO authenticated, service_role;
 
 -- Per-recipient status within one campaign — one row per (campaign_subject, email)
 -- instead of one row per raw event, so a campaign with thousands of delivery/open/
@@ -533,6 +601,7 @@ GROUP BY
 REVOKE ALL ON link_interest_clicks FROM PUBLIC;
 REVOKE ALL ON link_interest_clicks FROM anon;
 GRANT SELECT ON link_interest_clicks TO authenticated, service_role;
+
 
 -- One row per email, all-time, instead of one row per open/click event —
 -- bounded by audience size, not by years of engagement history. Backs
@@ -2566,6 +2635,58 @@ ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_format_check
 
 CREATE INDEX IF NOT EXISTS video_ad_jobs_status_idx ON public.video_ad_jobs (status);
 CREATE INDEX IF NOT EXISTS video_ad_jobs_media_urls_idx ON public.video_ad_jobs USING GIN (media_urls jsonb_path_ops);
+
+-- 22. MOTION POSTS (still image → Grok motion → optional Rekkrd audio)
+ALTER TABLE IF EXISTS public.tenant_secrets ADD COLUMN IF NOT EXISTS xai_api_key TEXT;
+
+CREATE TABLE IF NOT EXISTS public.motion_post_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+  created_by UUID NOT NULL,
+  branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
+  branch_slug TEXT NOT NULL DEFAULT 'rekkrd',
+  title TEXT NOT NULL DEFAULT 'Untitled motion post',
+  prompt TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'xai' CHECK (provider IN ('xai')),
+  model TEXT NOT NULL DEFAULT 'grok-imagine-video-1.5',
+  duration_seconds INTEGER NOT NULL DEFAULT 7 CHECK (duration_seconds BETWEEN 3 AND 15),
+  aspect_ratio TEXT NOT NULL DEFAULT '9:16' CHECK (aspect_ratio IN ('9:16')),
+  resolution TEXT NOT NULL DEFAULT '720p' CHECK (resolution IN ('480p','720p','1080p')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','generating','mixing','ready','failed','publishing','published','cancelled')),
+  progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+  source_bucket TEXT NOT NULL DEFAULT 'motion-posts', source_path TEXT NOT NULL, source_url TEXT,
+  provider_request_id TEXT, generated_video_url TEXT,
+  audio_source_type TEXT CHECK (audio_source_type IN ('studio_track','studio_master','music_generation')),
+  audio_source_id UUID, audio_title TEXT, audio_url TEXT,
+  audio_start_seconds NUMERIC NOT NULL DEFAULT 0 CHECK (audio_start_seconds >= 0),
+  caption TEXT,
+  output_bucket TEXT NOT NULL DEFAULT 'motion-posts', output_path TEXT, output_url TEXT,
+  cost_estimate NUMERIC NOT NULL DEFAULT 0, cost_actual NUMERIC, error_message TEXT,
+  published_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_motion_post_jobs_owner_created ON public.motion_post_jobs (created_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_motion_post_jobs_status ON public.motion_post_jobs (status, updated_at DESC);
+ALTER TABLE public.motion_post_jobs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages motion posts" ON public.motion_post_jobs;
+CREATE POLICY "Service role manages motion posts" ON public.motion_post_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Motion post owner reads jobs" ON public.motion_post_jobs;
+CREATE POLICY "Motion post owner reads jobs" ON public.motion_post_jobs FOR SELECT TO authenticated USING ((select auth.uid()) = created_by);
+REVOKE ALL ON public.motion_post_jobs FROM anon, authenticated;
+GRANT SELECT ON public.motion_post_jobs TO authenticated;
+GRANT ALL ON public.motion_post_jobs TO service_role;
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('motion-posts','motion-posts',true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+DROP POLICY IF EXISTS "Motion post owners upload assets" ON storage.objects;
+CREATE POLICY "Motion post owners upload assets" ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "Motion post owners read assets" ON storage.objects;
+CREATE POLICY "Motion post owners read assets" ON storage.objects FOR SELECT TO authenticated
+USING (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "Motion post owners delete assets" ON storage.objects;
+CREATE POLICY "Motion post owners delete assets" ON storage.objects FOR DELETE TO authenticated
+USING (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 `;
 
 export const WEBHOOK_SPECS = {
