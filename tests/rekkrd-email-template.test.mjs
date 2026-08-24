@@ -3,8 +3,20 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const templateUrl = new URL('../docs/email-templates/rekkrd-founder-letter.html', import.meta.url);
-const migrationUrl = new URL('../supabase/migrations/20260824173000_seed_rekkrd_founder_letter_email_template.sql', import.meta.url);
+const migrationUrl = new URL('../supabase/migrations/20260824223413_update_rekkrd_founder_footer.sql', import.meta.url);
 const senderUrl = new URL('../supabase/functions/campaign-sender/index.ts', import.meta.url);
+const templateId = '8d8ff75e-f0e5-4b8a-9852-c8fdaf3c3759';
+
+const requiredDestinationUrls = [
+  'https://rekkrd.com',
+  'https://www.instagram.com/rekkrdapp/',
+  'https://www.facebook.com/profile.php?id=61590210250901',
+  'https://www.youtube.com/@RekkrdAfterDark',
+  'https://www.youtube.com/@RekkrdListeningRoom',
+  'https://rekkrd.com/listening-room',
+  'https://rekkrd.com/support',
+  'https://www.sweetwater.technology',
+];
 
 const requiredTokens = [
   'first_name',
@@ -30,20 +42,31 @@ test('Rekkrd founder letter exposes reusable campaign fields and compliance toke
   assert.match(html, /role="presentation"/);
   assert.match(html, /max-width:600px/);
   assert.match(html, /<!-- IF_FIRST_NAME -->[\s\S]*?Hey \{\{first_name\}\},[\s\S]*?<!-- END_IF_FIRST_NAME -->/);
+  for (const url of requiredDestinationUrls) {
+    assert.ok(html.includes(`href="${url}"`), `missing destination ${url}`);
+  }
+  assert.match(html, /Built by/);
+  assert.match(html, /Sweetwater Technology/);
+  assert.equal(html.match(/\{\{unsubscribe_url\}\}/g)?.length, 1);
+  assert.match(html, /href="\{\{unsubscribe_url\}\}"/);
+  assert.doesNotMatch(html, /RESEND_UNSUBSCRIBE_URL/);
   assert.doesNotMatch(html, /href="#"/);
+  assert.doesNotMatch(html, /href="\s*"/);
+  assert.doesNotMatch(html, /href="\[https?:\/\//);
 });
 
-test('seed is branch-scoped, idempotent, and uses the canonical HTML', async () => {
+test('footer update is ID- and branch-scoped and uses the canonical HTML', async () => {
   const [html, sql] = await Promise.all([
     readFile(templateUrl, 'utf8'),
     readFile(migrationUrl, 'utf8'),
   ]);
   const embeddedHtml = sql.match(/\$rekkrd_html\$([\s\S]*?)\$rekkrd_html\$/)?.[1];
 
-  assert.equal(embeddedHtml, html.trimEnd());
-  assert.match(sql, /WHERE b\.slug = 'rekkrd'/);
-  assert.match(sql, /ON CONFLICT \(id\) DO UPDATE/);
-  assert.match(sql, /'Rekkrd Founder Letter'/);
+  assert.equal(embeddedHtml?.replace(/\r\n/g, '\n'), html.trimEnd().replace(/\r\n/g, '\n'));
+  assert.match(sql, /AND b\.slug = 'rekkrd'/);
+  assert.ok(sql.includes(templateId));
+  assert.match(sql, /GET DIAGNOSTICS updated_count = ROW_COUNT/);
+  assert.match(sql, /updated_count <> 1/);
 });
 
 test('send worker removes the complete greeting block when a name is unavailable', async () => {

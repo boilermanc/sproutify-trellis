@@ -1,4 +1,9 @@
-<!DOCTYPE html>
+DO $migration$
+DECLARE
+  updated_count INTEGER;
+BEGIN
+  UPDATE public.email_templates AS et
+  SET html_body = $rekkrd_html$<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -153,4 +158,17 @@
     </tr>
   </table>
 </body>
-</html>
+</html>$rekkrd_html$,
+      updated_at = now()
+  FROM public.branches AS b
+  WHERE et.id = '8d8ff75e-f0e5-4b8a-9852-c8fdaf3c3759'
+    AND et.branch_id = b.id::text
+    AND b.slug = 'rekkrd';
+
+  GET DIAGNOSTICS updated_count = ROW_COUNT;
+
+  IF updated_count <> 1 THEN
+    RAISE EXCEPTION 'Expected to update exactly one Rekkrd email template, updated %', updated_count;
+  END IF;
+END
+$migration$;
