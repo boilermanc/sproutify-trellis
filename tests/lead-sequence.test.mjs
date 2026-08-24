@@ -49,10 +49,19 @@ test('lets the operator select any unsent sequence email before approval', () =>
   assert.match(sequencePanel, /Click here to select/);
   assert.match(sequencePanel, /message\.status === 'failed'/);
   assert.match(sequencePanel, /selectedApprovalStep\.step_number/);
+  assert.match(sequencePanel, /Click anywhere on an unsent email card to select it/);
+  assert.match(sequencePanel, /event\.stopPropagation\(\)/);
+  assert.match(sequencePanel, /if \(selectable && !working\) setSelectedStepId\(step\.id\)/);
   assert.match(sequencePanel, /disabled=\{working \|\| !approvalArmed\}/);
   assert.match(sequencePanel, /setSelectedStepId\(null\)/);
   assert.match(sequenceService, /approve_lead_email_sequence_step/);
   assert.match(sequenceService, /p_step_number: stepNumber/);
+});
+
+test('explains setup and compliance locks instead of leaving email cards silently disabled', () => {
+  assert.match(sequencePanel, /Create sequence & choose email/);
+  assert.match(sequencePanel, /Nothing sends until you select and approve an email/);
+  assert.match(sequencePanel, /Sending locked:/);
 });
 
 test('opens the shared rendered template when an email number is clicked', () => {
