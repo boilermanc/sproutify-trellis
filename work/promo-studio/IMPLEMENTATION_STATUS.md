@@ -18,6 +18,7 @@ Updated: 2026-08-25
 - Render worker contract: preview/final inputs are resolved from the active manifest and checksum-verified private assets, captions are rebuilt from approved display phrases, vertical output is fixed to 1080x1920, and final rendering requires current preview approval. The Rekkrd proof composition is explicitly not enabled as a cross-branch production template.
 - Composition registry: render jobs accept only pinned key/version pairs. `PromoProof@ps-002-v1` is Rekkrd-only, while the implemented `vertical-ui-story@v1` composition is reserved for all branches; both remain disabled until the generic composition is promoted into a registry-approved production worker build.
 - Branch-neutral composition: `vertical-ui-story@v1` is registered in the existing Remotion bundle and accepts only resolved media, normalized scenes/captions, approved brand presentation, safe areas, and review metadata. Its LF-normalized source fingerprint is pinned in the server registry. The Rekkrd fixture passed visual review plus 1080x1920, 30 fps, exact 10-second, H.264/yuv420p, AAC/48 kHz, -14 ±0.5 LUFS, and ≤-1.5 dBTP delivery QA; worker claims remain disabled.
+- Branch presentation envelope: render jobs resolve one active Brand Identity by authoritative branch slug, bind its approval record and timestamp to the live branch UUID, and pass only normalized palette, typography, and an optional approved private logo asset. Rekkrd preserves its already-approved locked style registry values; missing or ambiguous identities fail closed.
 - Preview review contract: selection accepts only a ready 1080x1920 private asset produced by a succeeded current-revision preview job; decisions are bound to that selected asset, and final render readiness uses its latest decision.
 - Render completion contract: a service-role-only transaction verifies the active render lease, deterministic private Storage objects, checksums, delivery-profile QA, and tool/input fingerprints before registering the render plus QA assets and completing the job.
 - Durable no-op worker: a filtered service worker proves claim/lease/complete behavior without claiming future job types.
@@ -28,7 +29,7 @@ Updated: 2026-08-25
 - Master Schema Engine mapping: `constants.ts` imports the migration verbatim with Vite `?raw`.
 - User API: `supabase/functions/promo-studio/index.ts`
 - No-op worker: `supabase/functions/promo-worker/index.ts`
-- Shared server contracts: `supabase/functions/_shared/promo-studio.ts`, `supabase/functions/_shared/github-evidence.ts`, `supabase/functions/_shared/promo-creative-plan.ts`
+- Shared server contracts: `supabase/functions/_shared/promo-studio.ts`, `supabase/functions/_shared/github-evidence.ts`, `supabase/functions/_shared/promo-creative-plan.ts`, `supabase/functions/_shared/promo-presentation.ts`
 - Capture queue contract: `supabase/functions/_shared/promo-capture.ts`
 - Voice queue contract: `supabase/functions/_shared/promo-voice.ts`
 - Music queue contract: `supabase/functions/_shared/promo-music.ts`
@@ -79,7 +80,7 @@ Existing provider credentials remain in their current server-side locations. No 
 2. `GITHUB_READ_TOKEN` is not configured in the Hub function secrets. Rekkrd is private, so production evidence scanning and Creative Director generation stop before the provider call with an explicit credential blocker.
 3. A production Rekkrd capture URL, capture auth profile, fixture-account owner, and allowed production routes are still external decisions. The local PS-002 capture remains valid evidence for the proof only.
 4. Voice-provider production selection is still open. PS-002 proves Google Gemini TTS and preserves display text separately from pronunciation text; no production voice was selected or claimed.
-5. The no-op worker is intentionally the only executable worker type. Capture, voice, alignment, music, rendering, export, and publishing remain queued architecture until their corresponding workers are implemented.
+5. The no-op worker is intentionally the only executable worker type. Capture, voice, alignment, music, rendering, export, and publishing remain queued architecture until their corresponding workers are implemented. Render activation is now blocked by composition promotion and an approved generic FFmpeg fingerprint rather than missing Rekkrd presentation data.
 
 ## Next gate
 

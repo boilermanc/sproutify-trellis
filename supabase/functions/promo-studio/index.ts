@@ -445,23 +445,29 @@ Deno.serve(async (req: Request) => {
           revision.manifest, body.direction, (musicReservations || []).map((job: any) => job.input),
         );
       } else if (jobType === "preview_render" || jobType === "final_render") {
+        const { data: branch, error: branchError } = await db.from("branches")
+          .select("id,slug,name,is_active").eq("id", project.branch_id).eq("is_active", true).maybeSingle();
+        if (branchError || !branch) throw new Error("Could not verify the active render branch.");
         const [
           { data: revision, error: revisionError },
           { data: assets, error: assetsError },
           { data: approvals, error: approvalsError },
-          { data: branch, error: branchError },
+          { data: brandIdentities, error: brandIdentityError },
         ] = await Promise.all([
           db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
           db.from("promo_assets").select("id,revision_id,kind,status,storage_bucket,storage_path,mime_type,checksum_sha256,width,height")
             .eq("project_id", project.id).eq("revision_id", project.current_revision_id),
           db.from("promo_approvals").select("revision_id,gate,subject_type,subject_id,decision,created_at").eq("project_id", project.id)
             .eq("revision_id", project.current_revision_id),
-          db.from("branches").select("id,slug").eq("id", project.branch_id).eq("is_active", true).maybeSingle(),
+          db.from("brand_identities").select("id,branch_id,name,status,color_palette,typography,updated_at")
+            .eq("branch_id", branch.slug).eq("status", "active").order("updated_at", { ascending: false }).limit(2),
         ]);
         if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for rendering.");
-        if (assetsError || approvalsError || branchError || !branch) throw new Error("Could not verify render assets, approvals, and branch.");
+        if (assetsError || approvalsError || brandIdentityError) throw new Error("Could not verify render assets, approvals, and presentation.");
+        if (brandIdentities?.length !== 1) throw new Error("Rendering requires one unambiguous active Brand Identity for this branch.");
         input = buildPromoRenderJobInput(
           revision.manifest, assets || [], approvals || [], project.selected_preview_render_id, jobType, body.format, branch,
+          brandIdentities[0],
         );
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});

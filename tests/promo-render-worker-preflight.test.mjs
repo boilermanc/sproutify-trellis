@@ -17,9 +17,10 @@ test('private asset plan passes structural preflight but remains activation-bloc
   assert.equal(preflight.asset_plan.length, 4);
   assert.equal(preflight.activation_ready, false);
   assert.deepEqual(preflight.activation_blockers, [
-    'PROMO_RENDER_COMPOSITION_DISABLED', 'PROMO_RENDER_PRESENTATION_REQUIRED',
-    'PROMO_RENDER_PIPELINE_FINGERPRINT_MISMATCH',
+    'PROMO_RENDER_COMPOSITION_DISABLED', 'PROMO_RENDER_PIPELINE_FINGERPRINT_MISMATCH',
   ]);
+  assert.equal(preflight.asset_plan.find(asset => asset.asset_id === fixture.job.input.presentation.brand.logo_asset_id)
+    .roles.includes('brand:logo'), true);
   assert.throws(() => assertPromoRenderActivationReady(preflight), error => error.code === 'PROMO_RENDER_ACTIVATION_BLOCKED');
   assert.equal(preflight.asset_plan.every(asset => asset.storage_bucket === 'promo-assets' && !('signed_url' in asset)), true);
 });
@@ -50,13 +51,6 @@ test('presentation blocker requires approval provenance bound to the target bran
   assert.equal(inspect(empty).activation_blockers.includes('PROMO_RENDER_PRESENTATION_REQUIRED'), true);
 
   const approved = createRekkrdRenderClaimFixture();
-  approved.job.input.presentation = {
-    approved: true,
-    approval_id: '90000000-0000-4000-8000-000000000201',
-    source_branch_id: approved.project.branch_id,
-    target_branch_id: approved.project.branch_id,
-  };
-  approved.job.input_fingerprint = fingerprintPromoInput(approved.job.input);
   assert.equal(inspect(approved).activation_blockers.includes('PROMO_RENDER_PRESENTATION_REQUIRED'), false);
 
   const wrongTarget = createRekkrdRenderClaimFixture();

@@ -3,6 +3,7 @@ import {
   PROMO_COMPOSITION_REGISTRY_VERSION,
   promoCompositionAllowsBranch,
 } from "./promo-compositions.ts";
+import { buildPromoPresentationEnvelope } from "./promo-presentation.ts";
 
 const SHA256 = /^[a-f0-9]{64}$/i;
 const SAFE_KEY = /^[A-Za-z][A-Za-z0-9._-]{0,79}$/;
@@ -36,6 +37,7 @@ export function buildPromoRenderJobInput(
   jobTypeValue: unknown,
   formatValue: unknown,
   authoritativeBranchValue: unknown,
+  brandIdentityValue: unknown,
 ) {
   if (!record(manifestValue) || !record(manifestValue.promo) || !record(manifestValue.script)
     || !record(manifestValue.captions) || !record(manifestValue.voice) || !record(manifestValue.music)
@@ -94,6 +96,7 @@ export function buildPromoRenderJobInput(
   if (!promoCompositionAllowsBranch(composition, authoritativeBranchValue.slug)) {
     throw new PromoRenderReadinessError("PROMO_RENDER_COMPOSITION_SCOPE_INVALID", "The requested render composition is not available for this branch.");
   }
+  const presentation = buildPromoPresentationEnvelope(authoritativeBranchValue, brandIdentityValue, manifestValue);
   if (!composition.formats.includes(format) || composition.width !== variant.width
     || composition.height !== variant.height || composition.fps !== render.fps) {
     throw new PromoRenderReadinessError("PROMO_RENDER_COMPOSITION_FORMAT_INVALID", "The registered composition does not support this render format.");
@@ -192,6 +195,7 @@ export function buildPromoRenderJobInput(
     selectedVoice.audio_asset_id,
     selectedMusic.audio_asset_id,
     ...scenes.map(scene => scene.visual.asset_id),
+    ...(presentation.brand.logo_asset_id ? [presentation.brand.logo_asset_id] : []),
   ]);
   const manifestAssetById = new Map(manifestValue.assets.map((asset: any) => [asset?.id, asset]));
   const assetRows = Array.isArray(assetRowsValue) ? assetRowsValue.filter(record) : [];
@@ -256,6 +260,7 @@ export function buildPromoRenderJobInput(
       true_peak_dbfs: -1.5,
       expected_ffmpeg_fingerprint: render.ffmpeg_fingerprint,
     },
+    presentation,
     review: {
       provenance_overlay: jobType === "preview_render",
       generated_visual_scene_ids: generatedVisualSceneIds,

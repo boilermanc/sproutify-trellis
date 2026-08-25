@@ -11,3 +11,24 @@ export interface PromoCompositionDefinition {
   readonly worker_enabled: boolean;
   readonly source_fingerprint_sha256: string;
 }
+
+export interface PromoPresentationEnvelope {
+  readonly schema_version: "1.0.0";
+  readonly approved: true;
+  readonly approval_id: string;
+  readonly approval_source: "active_brand_identity" | "active_brand_identity+locked_style_registry";
+  readonly source_branch_id: string;
+  readonly target_branch_id: string;
+  readonly source_updated_at: string;
+  readonly brand: {
+    readonly name: string;
+    readonly logo_asset_id: string | null;
+    readonly background: string;
+    readonly surface: string;
+    readonly foreground: string;
+    readonly muted: string;
+    readonly accent: string;
+    readonly display_font: string;
+    readonly label_font: string;
+  };
+}
