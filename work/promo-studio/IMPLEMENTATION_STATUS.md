@@ -16,6 +16,7 @@ Updated: 2026-08-25
 - Voice worker contract: generation and alignment inputs are resolved from the approved active manifest, preserve pronunciation-safe speech text separately from display copy, use opaque voice profiles, and exclude browser-supplied provider settings and credentials. The executable worker remains disabled pending a provider decision.
 - Music worker contract: generation inputs are resolved from the approved structured manifest, remain strictly instrumental, reserve take numbers atomically, and exclude browser prompts, provider settings, and credentials. Existing Lyria paths are documented as adapter candidates, not direct Promo persistence boundaries.
 - Render worker contract: preview/final inputs are resolved from the active manifest and checksum-verified private assets, captions are rebuilt from approved display phrases, vertical output is fixed to 1080x1920, and final rendering requires current preview approval. The Rekkrd proof composition is explicitly not enabled as a cross-branch production template.
+- Preview review contract: selection accepts only a ready 1080x1920 private asset produced by a succeeded current-revision preview job; decisions are bound to that selected asset, and final render readiness uses its latest decision.
 - Durable no-op worker: a filtered service worker proves claim/lease/complete behavior without claiming future job types.
 
 ## Exact deployment artifacts
@@ -60,6 +61,7 @@ Existing provider credentials remain in their current server-side locations. No 
 - Voice queue contracts: 5 passing.
 - Music queue contracts: 4 passing.
 - Render queue contracts: 4 passing.
+- Preview review contracts: 3 passing.
 - PS-002 proof contracts: 10 passing.
 - TypeScript: `npx tsc --noEmit` passes.
 - Edge Functions: Deno type-check passes for `promo-studio` and `promo-worker`.

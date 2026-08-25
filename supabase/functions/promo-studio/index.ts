@@ -127,7 +127,10 @@ async function createManifestRevision(db: any, input: {
   try {
     await persistPromoReviewProjection(db, input.project.id, revisionId, manifest);
     const { data: activated, error: projectError } = await db.from("promo_projects")
-      .update({ current_revision_id: revisionId, status: manifest.promo.status })
+      .update({
+        current_revision_id: revisionId, status: manifest.promo.status,
+        selected_preview_render_id: null, final_approved_at: null,
+      })
       .eq("id", input.project.id).eq("current_revision_id", input.current.id).select("id").maybeSingle();
     if (projectError || !activated) throw new Error(projectError?.message || "Project changed while the revision was being saved. Reload and try again.");
   } catch (revisionError) {
@@ -317,7 +320,10 @@ Deno.serve(async (req: Request) => {
       ]);
       const writeError = normalizedWrites.find(result => result.error)?.error;
       if (writeError) { await cleanup(); throw new Error(`Could not persist the Creative Director review data: ${writeError.message}`); }
-      const { error: projectError } = await db.from("promo_projects").update({ current_revision_id: revisionId, status: "script_review" }).eq("id", project.id);
+      const { error: projectError } = await db.from("promo_projects").update({
+        current_revision_id: revisionId, status: "script_review",
+        selected_preview_render_id: null, final_approved_at: null,
+      }).eq("id", project.id);
       if (projectError) { await cleanup(); throw new Error(`Could not activate the Creative Director revision: ${projectError.message}`); }
       await audit(db, {
         projectId: project.id, revisionId, event: "creative_plan.generated", stage: "script_review", actorId: userId,
@@ -375,7 +381,10 @@ Deno.serve(async (req: Request) => {
         subject_id: subjectId, decision: "approved", decided_by: userId, reason,
       }).select("*").single();
       if (approvalError) {
-        await db.from("promo_projects").update({ current_revision_id: current.id, status: current.manifest.promo.status })
+        await db.from("promo_projects").update({
+          current_revision_id: current.id, status: current.manifest.promo.status,
+          selected_preview_render_id: project.selected_preview_render_id, final_approved_at: project.final_approved_at,
+        })
           .eq("id", project.id).eq("current_revision_id", created.revisionId);
         await db.from("promo_manifest_revisions").delete().eq("id", created.revisionId);
         throw new Error(`Could not record Promo Studio approval: ${approvalError.message}`);
@@ -438,14 +447,16 @@ Deno.serve(async (req: Request) => {
       } else if (jobType === "preview_render" || jobType === "final_render") {
         const [{ data: revision, error: revisionError }, { data: assets, error: assetsError }, { data: approvals, error: approvalsError }] = await Promise.all([
           db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
-          db.from("promo_assets").select("id,revision_id,status,storage_bucket,storage_path,checksum_sha256")
+          db.from("promo_assets").select("id,revision_id,kind,status,storage_bucket,storage_path,mime_type,checksum_sha256,width,height")
             .eq("project_id", project.id).eq("revision_id", project.current_revision_id),
-          db.from("promo_approvals").select("revision_id,gate,decision,created_at").eq("project_id", project.id)
+          db.from("promo_approvals").select("revision_id,gate,subject_type,subject_id,decision,created_at").eq("project_id", project.id)
             .eq("revision_id", project.current_revision_id),
         ]);
         if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for rendering.");
         if (assetsError || approvalsError) throw new Error("Could not verify render assets and approvals.");
-        input = buildPromoRenderJobInput(revision.manifest, assets || [], approvals || [], jobType, body.format);
+        input = buildPromoRenderJobInput(
+          revision.manifest, assets || [], approvals || [], project.selected_preview_render_id, jobType, body.format,
+        );
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
       }
@@ -486,6 +497,7 @@ Deno.serve(async (req: Request) => {
       const decision = cleanPromoText(body.decision, 40);
       if (!PROMO_APPROVAL_GATES.has(gate) || !PROMO_APPROVAL_DECISIONS.has(decision)) throw new Error("Approval gate or decision is invalid.");
       if (decision === "approved" && ["claims", "script"].includes(gate)) throw new Error("Claims and scripts must use their gated approval actions.");
+      if (gate === "preview") throw new Error("Preview decisions must use the selected preview review action.");
       const revisionId = cleanPromoText(body.revision_id || project.current_revision_id, 80);
       const { data: revision } = await db.from("promo_manifest_revisions").select("id").eq("id", revisionId).eq("project_id", project.id).maybeSingle();
       if (!revision) throw new Error("Approval revision does not belong to this project.");
@@ -499,6 +511,53 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error(`Could not record Promo Studio approval: ${error.message}`);
       await audit(db, { projectId: project.id, revisionId: revision.id, event: "approval.recorded", stage: gate, actorId: userId, details: { decision, subject_type: subjectType, subject_id: subjectId } });
       return json({ approval: data }, 201);
+    }
+
+    if (action === "select_preview") {
+      if (!project.current_revision_id || !isPromoUuid(body.asset_id)) throw new Error("A valid current preview asset is required.");
+      const { data: asset, error: assetError } = await db.from("promo_assets").select("*")
+        .eq("id", body.asset_id).eq("project_id", project.id).eq("revision_id", project.current_revision_id)
+        .eq("kind", "render_preview").eq("status", "ready").maybeSingle();
+      if (assetError || !asset || asset.storage_bucket !== BUCKET || asset.mime_type !== "video/mp4"
+        || asset.width !== 1080 || asset.height !== 1920 || !/^[a-f0-9]{64}$/.test(asset.checksum_sha256 || "")) {
+        throw new Error("Select a verified 1080x1920 preview from the active revision.");
+      }
+      const { data: jobs, error: jobError } = await db.from("promo_jobs").select("id")
+        .eq("project_id", project.id).eq("revision_id", project.current_revision_id)
+        .eq("job_type", "preview_render").eq("status", "succeeded").contains("output_asset_ids", [asset.id]).limit(1);
+      if (jobError || !jobs?.length) throw new Error("The selected preview was not produced by a succeeded preview render job.");
+      const { data: updated, error: updateError } = await db.from("promo_projects")
+        .update({ selected_preview_render_id: asset.id, status: "final_review", final_approved_at: null })
+        .eq("id", project.id).eq("current_revision_id", project.current_revision_id).select("*").single();
+      if (updateError || !updated) throw new Error("Could not select the current Promo Studio preview.");
+      await audit(db, {
+        projectId: project.id, revisionId: project.current_revision_id, event: "preview.selected", stage: "preview",
+        actorId: userId, details: { asset_id: asset.id, render_job_id: jobs[0].id },
+      });
+      return json({ project: updated, asset });
+    }
+
+    if (action === "review_preview") {
+      const decision = cleanPromoText(body.decision, 40);
+      if (!PROMO_APPROVAL_DECISIONS.has(decision)) throw new Error("Preview decision is invalid.");
+      if (!project.current_revision_id || !isPromoUuid(project.selected_preview_render_id)) {
+        throw new Error("Select a current preview before recording a decision.");
+      }
+      const { data: asset } = await db.from("promo_assets").select("id").eq("id", project.selected_preview_render_id)
+        .eq("project_id", project.id).eq("revision_id", project.current_revision_id)
+        .eq("kind", "render_preview").eq("status", "ready").maybeSingle();
+      if (!asset) throw new Error("The selected preview is no longer ready for review.");
+      const reason = sanitizePromoText(body.reason, 1000) || null;
+      const { data: approval, error } = await db.from("promo_approvals").insert({
+        project_id: project.id, revision_id: project.current_revision_id, gate: "preview", subject_type: "asset",
+        subject_id: asset.id, decision, decided_by: userId, reason,
+      }).select("*").single();
+      if (error || !approval) throw new Error(`Could not record preview decision: ${error?.message || "unknown error"}`);
+      await audit(db, {
+        projectId: project.id, revisionId: project.current_revision_id, event: "approval.recorded", stage: "preview",
+        actorId: userId, details: { decision, subject_type: "asset", subject_id: asset.id },
+      });
+      return json({ approval }, 201);
     }
 
     if (action === "create_asset_upload") {

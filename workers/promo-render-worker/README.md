@@ -16,6 +16,9 @@ for every branch. Before enabling render claims, Trellis needs:
 - ffprobe verification for 1080x1920, 30 fps, duration, streams, codecs, and color range;
 - output checksum, measured loudness, tool fingerprints, cost, retries, and provenance audit data;
 - immutable manifest revision plus private preview/final `promo_assets` registration.
+- a post-claim preflight that revalidates the project's selected preview and its
+  latest asset-bound approval, so a queued final job cannot outlive a revoke or
+  preview selection change.
 
 The worker must accept only asset IDs and normalized timeline data from the
 server-created job. It must never accept browser URLs, storage paths, captions,
