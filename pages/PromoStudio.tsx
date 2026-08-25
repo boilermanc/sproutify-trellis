@@ -109,7 +109,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
 
   const manifest = detail?.revision?.manifest;
   const stages = manifest ? [
-    { name: 'Evidence', icon: GitBranch, ready: !!manifest.evidence.repository && !!manifest.evidence.capture_environment, note: manifest.evidence.repository ? `${manifest.evidence.repository.full_name}@${manifest.evidence.repository.commit_sha.slice(0, 7)}` : 'Repository and capture environment required' },
+    { name: 'Evidence', icon: GitBranch, ready: !!manifest.evidence.repository && !!manifest.evidence.capture_environment, note: manifest.evidence.repository ? `${manifest.evidence.repository.full_name}@${manifest.evidence.repository.commit_sha.slice(0, 7)}` : detail?.source ? `${detail.source.repository_full_name}@${detail.source.default_ref} mapped; ${detail.source.capture_base_url ? 'capture environment mapped' : 'capture environment required'}` : 'Branch repository and capture environment required' },
     { name: 'Script', icon: FileCode2, ready: manifest.script.status === 'approved', note: manifest.script.approved_text ? `${manifest.script.phrases.length} timed phrase${manifest.script.phrases.length === 1 ? '' : 's'}` : 'Script has not been drafted' },
     { name: 'Voice', icon: Volume2, ready: !!manifest.voice.selected_take_id, note: manifest.voice.takes.length ? `${manifest.voice.takes.length} take${manifest.voice.takes.length === 1 ? '' : 's'}` : 'No voice takes yet' },
     { name: 'Music', icon: Music2, ready: !!manifest.music.selected_take_id, note: manifest.music.takes.length ? `${manifest.music.takes.length} take${manifest.music.takes.length === 1 ? '' : 's'}` : 'No music takes yet' },

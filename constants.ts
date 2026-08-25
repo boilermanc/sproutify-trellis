@@ -1,6 +1,7 @@
 
 import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
 import PROMO_STUDIO_SQL_SCHEMA from './supabase/migrations/20260825162352_add_promo_studio_foundation.sql?raw';
+import PROMO_BRANCH_SOURCES_SQL_SCHEMA from './supabase/migrations/20260825175823_add_promo_branch_sources.sql?raw';
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -2750,6 +2751,7 @@ USING (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select au
 -- Kept as an exact raw import from the executable migration so the Schema
 -- Engine and deployment artifact cannot silently drift apart.
 ${PROMO_STUDIO_SQL_SCHEMA}
+${PROMO_BRANCH_SOURCES_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {
