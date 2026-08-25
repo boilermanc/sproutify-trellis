@@ -2165,7 +2165,7 @@ CREATE TABLE IF NOT EXISTS studio_tracks (
   title TEXT NOT NULL, narrative_purpose TEXT, energy SMALLINT CHECK (energy BETWEEN 1 AND 10), instrumentation TEXT, vocal_direction TEXT, prompt TEXT, lyrics TEXT,
   generation_provider TEXT, generation_model TEXT, provider_generation_id TEXT, duration_seconds INTEGER, source_audio_path TEXT,
   review_status TEXT NOT NULL DEFAULT 'planned' CHECK (review_status IN ('planned','generated','pending_review','approved','rejected','regenerating','locked','failed')),
-  approved_at TIMESTAMPTZ, rejection_reason TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (album_id, track_number)
+  approved_at TIMESTAMPTZ, rejection_reason TEXT, included_in_master BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (album_id, track_number)
 );
 CREATE TABLE IF NOT EXISTS studio_assets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), album_id UUID NOT NULL REFERENCES studio_albums(id) ON DELETE CASCADE, track_id UUID REFERENCES studio_tracks(id) ON DELETE CASCADE,
@@ -2201,6 +2201,7 @@ ALTER TABLE studio_albums DROP CONSTRAINT IF EXISTS studio_albums_release_identi
 ALTER TABLE studio_albums ADD CONSTRAINT studio_albums_release_identity_status_check CHECK (release_identity_status IN ('not_started','draft','approved'));
 ALTER TABLE studio_assets ADD COLUMN IF NOT EXISTS error_message TEXT;
 ALTER TABLE studio_assets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE studio_tracks ADD COLUMN IF NOT EXISTS included_in_master BOOLEAN NOT NULL DEFAULT TRUE;
 CREATE INDEX IF NOT EXISTS idx_studio_albums_org_updated ON studio_albums (organization_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_studio_albums_style_preset ON studio_albums (style_preset_id);
 CREATE INDEX IF NOT EXISTS idx_studio_tracks_album_order ON studio_tracks (album_id, track_number);
