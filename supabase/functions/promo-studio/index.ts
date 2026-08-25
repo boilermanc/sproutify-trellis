@@ -10,6 +10,7 @@ import {
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
 import { buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
 import { buildPromoVoiceAlignmentJobInput, buildPromoVoiceGenerationJobInput } from "../_shared/promo-voice.ts";
+import { buildPromoMusicGenerationJobInput } from "../_shared/promo-music.ts";
 import {
   buildPromoCreativeDirectorPrompt, materializePromoCreativePlan, parsePromoCreativePlan,
 } from "../_shared/promo-creative-plan.ts";
@@ -397,7 +398,7 @@ Deno.serve(async (req: Request) => {
       if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
       const jobType = cleanPromoText(body.job_type, 60);
       if (!PROMO_JOB_TYPES.has(jobType)) throw new Error("Unsupported Promo Studio job type.");
-      const serverResolvedJob = ["capture", "voice_generate", "voice_align"].includes(jobType);
+      const serverResolvedJob = ["capture", "voice_generate", "voice_align", "music_generate"].includes(jobType);
       const dependencies = serverResolvedJob ? [] : (Array.isArray(body.dependency_job_ids) ? body.dependency_job_ids : []);
       if (dependencies.some((id: unknown) => !isPromoUuid(id))) throw new Error("Job dependencies must be valid job IDs.");
       let input: unknown;
@@ -422,6 +423,17 @@ Deno.serve(async (req: Request) => {
         input = jobType === "voice_generate"
           ? buildPromoVoiceGenerationJobInput(revision.manifest, body.direction, (voiceReservations || []).map((job: any) => job.input))
           : buildPromoVoiceAlignmentJobInput(revision.manifest, body.take_id);
+      } else if (jobType === "music_generate") {
+        const [{ data: revision, error: revisionError }, { data: musicReservations, error: reservationsError }] = await Promise.all([
+          db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
+          db.from("promo_jobs").select("input").eq("revision_id", project.current_revision_id)
+            .eq("job_type", "music_generate").in("status", ["queued", "running", "succeeded"]),
+        ]);
+        if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for music work.");
+        if (reservationsError) throw new Error("Could not verify existing music take reservations.");
+        input = buildPromoMusicGenerationJobInput(
+          revision.manifest, body.direction, (musicReservations || []).map((job: any) => job.input),
+        );
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
       }
