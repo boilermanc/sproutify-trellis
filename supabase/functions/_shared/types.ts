@@ -10,6 +10,7 @@ export interface PromoCompositionDefinition {
   readonly fps: number;
   readonly worker_enabled: boolean;
   readonly source_fingerprint_sha256: string;
+  readonly pipeline_fingerprint_sha256: string;
 }
 
 export interface PromoPresentationEnvelope {

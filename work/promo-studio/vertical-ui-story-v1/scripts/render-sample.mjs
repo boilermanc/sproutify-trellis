@@ -5,6 +5,9 @@ import { spawnSync } from 'node:child_process';
 import { bundle } from '../../../../workers/clip-render-worker/node_modules/@remotion/bundler/dist/index.js';
 import { renderMedia, renderStill, selectComposition } from '../../../../workers/clip-render-worker/node_modules/@remotion/renderer/dist/index.js';
 import { validateLoudness, validateProbe } from '../../ps-002/scripts/proof-contract.mjs';
+import {
+  buildCorrectionArgs, buildFinalizeArgs, buildLoudnessAnalysisArgs, buildProbeArgs,
+} from '../../../../workers/promo-render-worker/pipeline.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const sampleRoot = path.resolve(scriptDir, '..');
@@ -18,11 +21,7 @@ const nullDevice = process.platform === 'win32' ? 'NUL' : '/dev/null';
 const reuseRemotion = process.argv.includes('--reuse-remotion');
 
 const measureLoudness = file => {
-  const analysis = spawnSync('ffmpeg', [
-    '-hide_banner', '-nostats', '-i', file,
-    '-af', 'loudnorm=I=-14:TP=-1.5:LRA=7:print_format=json',
-    '-f', 'null', nullDevice,
-  ], { encoding: 'utf8' });
+  const analysis = spawnSync('ffmpeg', buildLoudnessAnalysisArgs(file, nullDevice), { encoding: 'utf8' });
   if (analysis.status !== 0) throw new Error(`FFmpeg loudness analysis failed: ${analysis.stderr}`);
   const matches = analysis.stderr.match(/\{\s*"input_i"[\s\S]*?\}/g);
   if (!matches?.length) throw new Error('FFmpeg did not return loudness analysis JSON.');
@@ -75,43 +74,22 @@ await Promise.all([
 ]);
 
 const measuredInput = measureLoudness(remotionOutput);
-const loudnessFilter = [
-  'loudnorm=I=-14:TP=-1.5:LRA=7',
-  `measured_I=${measuredInput.input_i}`,
-  `measured_TP=${measuredInput.input_tp}`,
-  `measured_LRA=${measuredInput.input_lra}`,
-  `measured_thresh=${measuredInput.input_thresh}`,
-  `offset=${measuredInput.target_offset}`,
-  'linear=false',
-].join(':');
 const normalizedOutput = path.join(outputDir, 'vertical-ui-story-v1-normalized.mp4');
-const finalize = spawnSync('ffmpeg', [
-  '-y', '-v', 'error', '-i', remotionOutput,
-  '-t', String(inputProps.duration_seconds),
-  '-af', loudnessFilter,
-  '-vf', 'scale=in_range=full:out_range=tv,format=yuv420p',
-  '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-r', '30',
-  '-c:a', 'aac', '-ar', '48000', '-b:a', '192k', '-movflags', '+faststart',
-  normalizedOutput,
-], { encoding: 'utf8' });
+const finalize = spawnSync('ffmpeg', buildFinalizeArgs({
+  inputPath: remotionOutput, outputPath: normalizedOutput,
+  targetSeconds: inputProps.duration_seconds, measurement: measuredInput,
+}), { encoding: 'utf8' });
 if (finalize.status !== 0) throw new Error(`FFmpeg finalization failed: ${finalize.stderr}`);
 
 const normalizedMeasurement = measureLoudness(normalizedOutput);
-const correctionDb = -14 - Number(normalizedMeasurement.input_i);
 const finalOutput = path.join(outputDir, 'vertical-ui-story-v1.mp4');
-const correct = spawnSync('ffmpeg', [
-  '-y', '-v', 'error', '-i', normalizedOutput,
-  '-t', String(inputProps.duration_seconds),
-  '-map', '0:v:0', '-map', '0:a:0', '-c:v', 'copy',
-  '-af', `volume=${correctionDb.toFixed(3)}dB,alimiter=limit=0.79:level=false`,
-  '-c:a', 'aac', '-ar', '48000', '-b:a', '192k', '-movflags', '+faststart',
-  finalOutput,
-], { encoding: 'utf8' });
+const correct = spawnSync('ffmpeg', buildCorrectionArgs({
+  inputPath: normalizedOutput, outputPath: finalOutput,
+  targetSeconds: inputProps.duration_seconds, measuredIntegratedLufs: normalizedMeasurement.input_i,
+}), { encoding: 'utf8' });
 if (correct.status !== 0) throw new Error(`FFmpeg loudness correction failed: ${correct.stderr}`);
 
-const probeResult = spawnSync('ffprobe', [
-  '-v', 'error', '-show_streams', '-show_format', '-of', 'json', finalOutput,
-], { encoding: 'utf8' });
+const probeResult = spawnSync('ffprobe', buildProbeArgs(finalOutput), { encoding: 'utf8' });
 if (probeResult.status !== 0) throw new Error(`ffprobe failed: ${probeResult.stderr}`);
 const media = validateProbe(JSON.parse(probeResult.stdout));
 const loudness = validateLoudness(measureLoudness(finalOutput));

@@ -15,6 +15,7 @@ export const PROMO_COMPOSITIONS: readonly PromoCompositionDefinition[] = Object.
     fps: 30,
     worker_enabled: false,
     source_fingerprint_sha256: "828b5ba150bd7fecf18f25c5edeba0fb5c9887d229fe2bcfd60868e84be7298f",
+    pipeline_fingerprint_sha256: "3b507045648c68790fbd57b9562445a25277eca5a70dc5ea8994fc46ddd595be",
   }),
   Object.freeze({
     key: "vertical-ui-story",
@@ -28,6 +29,7 @@ export const PROMO_COMPOSITIONS: readonly PromoCompositionDefinition[] = Object.
     fps: 30,
     worker_enabled: false,
     source_fingerprint_sha256: "6f404ce3c28134c95c478735f8d1abd409a1d5fced689996feeff1c8237f7210",
+    pipeline_fingerprint_sha256: "0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e",
   }),
 ]);
 

@@ -17,7 +17,7 @@ test('private asset plan passes structural preflight but remains activation-bloc
   assert.equal(preflight.asset_plan.length, 4);
   assert.equal(preflight.activation_ready, false);
   assert.deepEqual(preflight.activation_blockers, [
-    'PROMO_RENDER_COMPOSITION_DISABLED', 'PROMO_RENDER_PIPELINE_FINGERPRINT_MISMATCH',
+    'PROMO_RENDER_COMPOSITION_DISABLED',
   ]);
   assert.equal(preflight.asset_plan.find(asset => asset.asset_id === fixture.job.input.presentation.brand.logo_asset_id)
     .roles.includes('brand:logo'), true);
