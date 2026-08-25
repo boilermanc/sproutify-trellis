@@ -61,6 +61,10 @@ test('music generation fails closed on approval, profile, and brief errors', () 
   const unknownPhrase = fixture();
   unknownPhrase.music.brief = JSON.stringify({ ...JSON.parse(unknownPhrase.music.brief), accent_phrase_ids: ['invented'] });
   assert.throws(() => buildPromoMusicGenerationJobInput(unknownPhrase, 'balanced'), /approved script phrases/i);
+
+  const subSecond = fixture();
+  subSecond.promo.target_seconds = 0.5;
+  assert.throws(() => buildPromoMusicGenerationJobInput(subSecond, 'balanced'), /between 1 and 600/i);
 });
 
 test('music generation honors server-side take reservations and direction limits', () => {

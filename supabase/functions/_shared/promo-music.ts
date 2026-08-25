@@ -50,7 +50,7 @@ export function buildPromoMusicGenerationJobInput(manifestValue: unknown, direct
     || !configuredStrings(manifestValue.brand.sonic_profile.avoid)) {
     throw new PromoMusicReadinessError("PROMO_MUSIC_PROFILE_REQUIRED", "A configured sonic profile is required before music can be queued.");
   }
-  if (!Number.isFinite(manifestValue.promo.target_seconds) || manifestValue.promo.target_seconds <= 0 || manifestValue.promo.target_seconds > 600) {
+  if (!Number.isFinite(manifestValue.promo.target_seconds) || manifestValue.promo.target_seconds < 1 || manifestValue.promo.target_seconds > 600) {
     throw new PromoMusicReadinessError("PROMO_MUSIC_TARGET_INVALID", "Music target duration must be between 1 and 600 seconds.");
   }
   const direction = typeof directionValue === "string" ? directionValue : "";
