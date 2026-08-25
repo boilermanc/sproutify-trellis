@@ -97,7 +97,12 @@ export async function buildGitHubEvidenceMap(inputValue: GitHubEvidenceInput, op
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
   const api = async (path: string) => {
     const response = await fetcher(`https://api.github.com/repos/${input.repository}${path}`, { headers });
-    if (!response.ok) throw new Error(`GitHub evidence request failed (${response.status}).`);
+    if (!response.ok) {
+      if (response.status === 404 && !options.token) {
+        throw new Error('GitHub repository could not be read. Private repositories require the server-side GITHUB_READ_TOKEN.');
+      }
+      throw new Error(`GitHub evidence request failed (${response.status}).`);
+    }
     return response.json();
   };
   const commit = await api(`/commits/${encodeURIComponent(input.ref)}`);
