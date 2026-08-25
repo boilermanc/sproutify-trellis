@@ -6,6 +6,9 @@ import {
   sanitizePromoJson, sanitizePromoText, validatePromoCreate, validatePromoRevision,
 } from "../_shared/promo-studio.ts";
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
+import {
+  buildPromoCreativeDirectorPrompt, materializePromoCreativePlan, parsePromoCreativePlan,
+} from "../_shared/promo-creative-plan.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -65,6 +68,11 @@ function safeFilename(value: unknown) {
   const filename = cleanPromoText(value, 160).replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   if (!filename) throw new Error("A valid filename is required.");
   return filename;
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 Deno.serve(async (req: Request) => {
@@ -152,6 +160,108 @@ Deno.serve(async (req: Request) => {
         },
       });
       return json({ evidence_map: map });
+    }
+
+    if (action === "generate_creative_plan") {
+      if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
+      const [{ data: source, error: sourceError }, { data: current, error: currentError }] = await Promise.all([
+        db.from("promo_branch_sources").select("*").eq("branch_id", project.branch_id).eq("is_active", true).maybeSingle(),
+        db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).single(),
+      ]);
+      if (sourceError || !source) throw new Error("This branch has no verified product repository mapping.");
+      if (currentError || !current) throw new Error("Could not load the active Promo Manifest.");
+      const evidence = await buildGitHubEvidenceMap({
+        repository: source.repository_full_name, ref: source.default_ref,
+        permitted_paths: source.permitted_paths, prohibited_paths: source.prohibited_paths,
+      }, { token: Deno.env.get("GITHUB_READ_TOKEN") || Deno.env.get("GITHUB_TOKEN") || undefined });
+      const geminiKey = Deno.env.get("GEMINI_API_KEY") || (await db.from("tenant_secrets")
+        .select("gemini_api_key").eq("organization_id", ORGANIZATION_ID).maybeSingle()).data?.gemini_api_key;
+      if (!geminiKey) throw new Error("Promo Creative Director requires a server-side Gemini key.");
+      const promptVersion = "promo-creative-director-v1";
+      const model = "gemini-3-flash-preview";
+      const prompt = buildPromoCreativeDirectorPrompt({
+        request: current.manifest.request.prompt, targetSeconds: project.target_seconds,
+        formats: project.requested_formats, branchName: current.manifest.promo.branch.display_name, evidence,
+      });
+      const modelResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+        }),
+      });
+      if (!modelResponse.ok) throw new Error(`Promo Creative Director provider failed (${modelResponse.status}).`);
+      const providerPayload = await modelResponse.json();
+      const rawText = providerPayload?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (typeof rawText !== "string" || !rawText.trim()) throw new Error("Promo Creative Director returned no plan.");
+      let rawPlan: unknown;
+      try { rawPlan = JSON.parse(rawText); } catch { throw new Error("Promo Creative Director returned invalid JSON."); }
+      const plan = parsePromoCreativePlan(sanitizePromoJson(rawPlan), evidence);
+      const revisionId = crypto.randomUUID();
+      const revisionNumber = Number(current.revision_number) + 1;
+      const now = new Date().toISOString();
+      const assetId = crypto.randomUUID();
+      const assetPath = `${project.id}/${revisionId}/creative-plan-response.json`;
+      const rawBytes = new TextEncoder().encode(JSON.stringify(plan));
+      const rawChecksum = await sha256Hex(rawBytes);
+      const manifest = materializePromoCreativePlan(current.manifest, plan, evidence, source);
+      Object.assign(manifest.promo, {
+        id: project.id, organization_id: project.organization_id, owner_id: project.created_by,
+        revision_id: revisionId, revision: revisionNumber, parent_revision_id: current.id, updated_at: now,
+      });
+      manifest.assets.push({
+        id: assetId, kind: "provider_response", role: "creative_director_validated_response",
+        storage_bucket: BUCKET, storage_path: assetPath, mime_type: "application/json", checksum_sha256: rawChecksum,
+        duration_seconds: null, width: null, height: null,
+        provenance: { source_kind: "provider", source_ref: `${model}:${promptVersion}`, generated: true, approved: false },
+      });
+      const validatedManifest = validatePromoRevision(manifest, project.id, revisionId, revisionNumber);
+      const fingerprint = await fingerprintPromoJson(validatedManifest);
+      const { error: uploadError } = await db.storage.from(BUCKET).upload(assetPath, rawBytes, { contentType: "application/json", upsert: false });
+      if (uploadError) throw new Error(`Could not store the validated Creative Director response: ${uploadError.message}`);
+      const cleanup = async () => { await db.storage.from(BUCKET).remove([assetPath]); await db.from("promo_manifest_revisions").delete().eq("id", revisionId); };
+      const { data: revision, error: revisionError } = await db.from("promo_manifest_revisions").insert({
+        id: revisionId, project_id: project.id, revision_number: revisionNumber, parent_revision_id: current.id,
+        created_by: userId, reason: "Generated evidence-bound creative plan", manifest: validatedManifest,
+        manifest_fingerprint: fingerprint, diff: [{ op: "creative_plan", prompt_version: promptVersion, model }],
+      }).select("*").single();
+      if (revisionError) { await cleanup(); throw new Error(`Could not create the Creative Director revision: ${revisionError.message}`); }
+      const normalizedWrites = await Promise.all([
+        db.from("promo_assets").insert({
+          id: assetId, project_id: project.id, revision_id: revisionId, kind: "provider_response",
+          role: "creative_director_validated_response", status: "ready", storage_bucket: BUCKET,
+          storage_path: assetPath, mime_type: "application/json", checksum_sha256: rawChecksum,
+          file_size_bytes: rawBytes.byteLength, generated: true, approved: false,
+          provenance: { model, prompt_version: promptVersion, evidence_commit: evidence.commit_sha },
+        }),
+        db.from("promo_claims").insert(validatedManifest.evidence.claims.map((claim: any) => ({
+          project_id: project.id, revision_id: revisionId, claim_key: claim.id, claim_text: claim.text,
+          claim_type: claim.claim_type, evidence_status: claim.status, evidence_refs: claim.evidence_refs, approved: false,
+        }))),
+        db.from("promo_scenes").insert(validatedManifest.scenes.map((scene: any) => ({
+          project_id: project.id, revision_id: revisionId, scene_key: scene.id, position: scene.position,
+          name: scene.name, purpose: scene.purpose, phrase_anchor: scene.anchor,
+          duration_policy: scene.duration, visual_kind: scene.visual.kind, layout: scene.layout,
+          provenance: { claim_ids: scene.claim_ids, capture_scenario_id: scene.visual.capture_scenario_id },
+        }))),
+        validatedManifest.captures.scenarios.length
+          ? db.from("promo_capture_scenarios").insert(validatedManifest.captures.scenarios.map((scenario: any) => ({
+            project_id: project.id, revision_id: revisionId, scenario_key: scenario.key,
+            scenario_version: scenario.version, repository_ref: scenario.repository_ref,
+            commit_sha: scenario.commit_sha, environment: scenario.environment, route: scenario.route,
+            auth_profile_key: scenario.auth_profile_key, definition: scenario, status: "draft",
+          })))
+          : Promise.resolve({ error: null }),
+      ]);
+      const writeError = normalizedWrites.find(result => result.error)?.error;
+      if (writeError) { await cleanup(); throw new Error(`Could not persist the Creative Director review data: ${writeError.message}`); }
+      const { error: projectError } = await db.from("promo_projects").update({ current_revision_id: revisionId, status: "script_review" }).eq("id", project.id);
+      if (projectError) { await cleanup(); throw new Error(`Could not activate the Creative Director revision: ${projectError.message}`); }
+      await audit(db, {
+        projectId: project.id, revisionId, event: "creative_plan.generated", stage: "script_review", actorId: userId,
+        details: { model, prompt_version: promptVersion, evidence_commit: evidence.commit_sha, claim_count: plan.claims.length, scene_count: plan.storyboard.length, fingerprint },
+      });
+      return json({ revision, plan, claims: validatedManifest.evidence.claims }, 201);
     }
 
     if (action === "get_project") {
