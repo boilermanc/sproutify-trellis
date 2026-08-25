@@ -69,7 +69,7 @@ function buildDurationAwarePrompt(track: Track): { model: string; input: string 
     ? "Create a complete 30-second clip."
     : `Create an approximately ${formatTargetDuration(duration)} piece. Shape the arrangement to finish naturally near ${formatTargetDuration(duration)}; the requested runtime is a target, not permission to cut off the ending.`;
   const vocalDirection = track.vocal_style === "instrumental"
-    ? "STRICTLY INSTRUMENTAL. Use instruments only: no vocals, singing, spoken words, chants, humming, vocal samples, choir, or human voice of any kind."
+    ? "PURE INSTRUMENTAL MUSIC. Arrange the entire piece exclusively for musical instruments. Express every melody, harmony, rhythm, and texture through non-vocal instruments."
     : track.vocal_style === "mostly_instrumental"
       ? "Keep the piece predominantly instrumental; any voice must be sparse and secondary."
       : track.vocal_style === "vocals"

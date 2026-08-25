@@ -107,7 +107,7 @@ test('music generation carries the planned runtime into the Lyria prompt', async
   assert.match(fn, /input: `\$\{durationDirection\} \$\{vocalDirection\} \$\{track\.prompt\}`/);
 });
 
-test('Studio previews stop the previous audio and instrumental generation forbids every form of voice', async () => {
+test('Studio previews stop the previous audio and instrumental generation uses a strict positive-only constraint', async () => {
   const page = await read('pages/StudioAlbums.tsx');
   const worker = await read('supabase/functions/generate-session-track/index.ts');
   const studio = await read('supabase/functions/studio-albums/index.ts');
@@ -115,8 +115,10 @@ test('Studio previews stop the previous audio and instrumental generation forbid
   assert.match(page, /previousAudio !== nextAudio\) previousAudio\.pause\(\)/);
   assert.match(page, /onPlay=\{handleAudioPlay\}/);
   assert.match(worker, /track\.vocal_style === "instrumental"/);
-  assert.match(worker, /STRICTLY INSTRUMENTAL/);
-  assert.match(worker, /no vocals, singing, spoken words, chants, humming, vocal samples, choir, or human voice of any kind/);
+  assert.match(worker, /PURE INSTRUMENTAL MUSIC/);
+  assert.match(worker, /entire piece exclusively for musical instruments/);
+  assert.match(worker, /non-vocal instruments/);
+  assert.doesNotMatch(worker, /no vocals, singing, spoken words, chants/);
   assert.match(studio, /vocal_style: album\.vocal_direction/);
 });
 
