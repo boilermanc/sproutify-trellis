@@ -150,6 +150,12 @@ export async function queuePromoVoiceAlignment(projectId: string, takeId: string
   })).job;
 }
 
+export async function queuePromoMusicGeneration(projectId: string, direction: 'understated' | 'balanced' | 'energetic') {
+  return (await callPromo<{ job: PromoJob }>('create_job', {
+    project_id: projectId, job_type: 'music_generate', direction,
+  })).job;
+}
+
 export async function cancelPromoJob(projectId: string, jobId: string) {
   return (await callPromo<{ job: PromoJob }>('cancel_job', { project_id: projectId, job_id: jobId })).job;
 }

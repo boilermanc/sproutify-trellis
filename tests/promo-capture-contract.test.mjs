@@ -85,7 +85,7 @@ test('capture jobs are resolved server-side while the deployed worker remains no
   ]);
   assert.match(edge, /jobType === "capture"/);
   assert.match(edge, /buildPromoCaptureJobInput\(revision\.manifest, source, body\.scenario_id\)/);
-  assert.match(edge, /const serverResolvedJob = \["capture", "voice_generate", "voice_align"\]\.includes\(jobType\)/);
+  assert.match(edge, /const serverResolvedJob = \["capture", "voice_generate", "voice_align", "music_generate"\]\.includes\(jobType\)/);
   assert.match(edge, /const dependencies = serverResolvedJob \? \[\]/);
   assert.match(edge, /const idempotencyKey = \(serverResolvedJob \? ""/);
   assert.match(worker, /p_job_types: \["noop"\]/);
