@@ -35,6 +35,10 @@ function voiceManifest(value: unknown) {
   if (!value.script.phrases.length) {
     throw new PromoVoiceReadinessError("PROMO_VOICE_SCRIPT_EMPTY", "At least one approved script phrase is required.");
   }
+  if (!Number.isFinite(value.voice.minimum_alignment_confidence)
+    || value.voice.minimum_alignment_confidence < 0 || value.voice.minimum_alignment_confidence > 1) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_CONFIDENCE_INVALID", "Voice alignment confidence must be between zero and one.");
+  }
   const phraseIds = new Set<string>();
   for (const phrase of value.script.phrases) {
     if (!record(phrase) || !configured(phrase.id) || !configured(phrase.speech_text) || phraseIds.has(phrase.id)) {
@@ -45,8 +49,9 @@ function voiceManifest(value: unknown) {
   return value;
 }
 
-export function buildPromoVoiceGenerationJobInput(manifestValue: unknown, directionValue: unknown) {
+export function buildPromoVoiceGenerationJobInput(manifestValue: unknown, directionValue: unknown, reservationsValue: unknown = []) {
   const manifest = voiceManifest(manifestValue);
+  const reservations = Array.isArray(reservationsValue) ? reservationsValue.filter(record) : [];
   const direction = typeof directionValue === "string" ? directionValue : "";
   if (!VOICE_DIRECTIONS.has(direction)) {
     throw new PromoVoiceReadinessError("PROMO_VOICE_DIRECTION_INVALID", "Choose a supported voice direction.");
@@ -54,10 +59,14 @@ export function buildPromoVoiceGenerationJobInput(manifestValue: unknown, direct
   if (manifest.voice.takes.length >= 3) {
     throw new PromoVoiceReadinessError("PROMO_VOICE_TAKE_LIMIT", "A Promo Manifest can contain at most three voice takes.");
   }
-  if (manifest.voice.takes.some((take: any) => take?.direction === direction && take?.status !== "failed")) {
+  if (manifest.voice.takes.some((take: any) => take?.direction === direction && take?.status !== "failed")
+    || reservations.some(reservation => reservation.direction === direction)) {
     throw new PromoVoiceReadinessError("PROMO_VOICE_DIRECTION_EXISTS", "That voice direction already has an active take.");
   }
-  const usedTakeNumbers = new Set(manifest.voice.takes.map((take: any) => Number(take?.take_number)));
+  const usedTakeNumbers = new Set([
+    ...manifest.voice.takes.map((take: any) => Number(take?.take_number)),
+    ...reservations.map(reservation => Number(reservation.take_number)),
+  ]);
   const takeNumber = [1, 2, 3].find(number => !usedTakeNumbers.has(number));
   if (!takeNumber) throw new PromoVoiceReadinessError("PROMO_VOICE_TAKE_LIMIT", "A Promo Manifest can contain at most three voice takes.");
 
@@ -68,10 +77,6 @@ export function buildPromoVoiceGenerationJobInput(manifestValue: unknown, direct
   }
   if (!Number.isFinite(manifest.promo.target_seconds) || manifest.promo.target_seconds <= 0 || manifest.promo.target_seconds > 600) {
     throw new PromoVoiceReadinessError("PROMO_VOICE_TARGET_INVALID", "Voice target duration must be between 1 and 600 seconds.");
-  }
-  if (!Number.isFinite(manifest.voice.minimum_alignment_confidence)
-    || manifest.voice.minimum_alignment_confidence < 0 || manifest.voice.minimum_alignment_confidence > 1) {
-    throw new PromoVoiceReadinessError("PROMO_VOICE_CONFIDENCE_INVALID", "Voice alignment confidence must be between zero and one.");
   }
 
   return {

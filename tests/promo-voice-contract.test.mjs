@@ -54,6 +54,21 @@ test('voice generation fails closed until review and configuration are complete'
   const full = fixture();
   full.voice.takes = [1, 2, 3].map(take_number => ({ take_number, direction: 'natural', status: 'failed' }));
   assert.throws(() => buildPromoVoiceGenerationJobInput(full, 'warm_authority'), /at most three/i);
+
+  const invalidConfidence = fixture();
+  invalidConfidence.voice.minimum_alignment_confidence = 2;
+  assert.throws(() => buildPromoVoiceGenerationJobInput(invalidConfidence, 'natural'), /between zero and one/i);
+});
+
+test('voice generation honors server-side take reservations', () => {
+  const input = buildPromoVoiceGenerationJobInput(fixture(), 'warm_authority', [
+    { take_number: 1, direction: 'natural' },
+  ]);
+  assert.equal(input.take_number, 2);
+  assert.throws(
+    () => buildPromoVoiceGenerationJobInput(fixture(), 'natural', [{ take_number: 1, direction: 'natural' }]),
+    /already has an active take/i,
+  );
 });
 
 test('alignment is bound to an active manifest audio take and approved phrases', () => {
@@ -72,19 +87,27 @@ test('alignment is bound to an active manifest audio take and approved phrases',
   assert.throws(() => buildPromoVoiceAlignmentJobInput(manifest, 'invented'), /does not belong/i);
   manifest.voice.takes[0].audio_asset_id = null;
   assert.throws(() => buildPromoVoiceAlignmentJobInput(manifest, 'voice-take-1'), /generated audio asset/i);
+
+  const invalidConfidence = fixture();
+  invalidConfidence.voice.minimum_alignment_confidence = -0.1;
+  assert.throws(() => buildPromoVoiceAlignmentJobInput(invalidConfidence, 'voice-take-1'), /between zero and one/i);
 });
 
 test('voice jobs are resolved server-side while the deployed worker remains no-op only', async () => {
-  const [edge, worker, service, readme] = await Promise.all([
+  const [edge, worker, service, readme, migration, constants] = await Promise.all([
     read('../supabase/functions/promo-studio/index.ts'), read('../supabase/functions/promo-worker/index.ts'),
     read('../services/promoStudioService.ts'), read('../workers/promo-voice-worker/README.md'),
+    read('../supabase/migrations/20260825201900_reserve_promo_voice_take_numbers.sql'), read('../constants.ts'),
   ]);
   assert.match(edge, /\["capture", "voice_generate", "voice_align"\]\.includes\(jobType\)/);
-  assert.match(edge, /buildPromoVoiceGenerationJobInput\(revision\.manifest, body\.direction\)/);
+  assert.match(edge, /buildPromoVoiceGenerationJobInput\(revision\.manifest, body\.direction, \(voiceReservations \|\| \[\]\)\.map/);
   assert.match(edge, /buildPromoVoiceAlignmentJobInput\(revision\.manifest, body\.take_id\)/);
   assert.match(worker, /p_job_types: \["noop"\]/);
   assert.doesNotMatch(worker, /p_job_types: \["voice_generate"/);
   assert.match(service, /job_type: 'voice_generate', direction/);
   assert.match(service, /job_type: 'voice_align', take_id: takeId/);
   assert.match(readme, /intentionally not executable yet/i);
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS idx_promo_voice_generation_take_reservation/);
+  assert.match(migration, /status IN \('queued','running','succeeded'\)/);
+  assert.match(constants, /PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA/);
 });

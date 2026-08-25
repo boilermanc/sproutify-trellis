@@ -53,7 +53,7 @@ Existing provider credentials remain in their current server-side locations. No 
 - Creative planning contracts: 4 passing.
 - Approval gate contracts: 4 passing.
 - Capture queue contracts: 3 passing.
-- Voice queue contracts: 4 passing.
+- Voice queue contracts: 5 passing.
 - PS-002 proof contracts: 10 passing.
 - TypeScript: `npx tsc --noEmit` passes.
 - Edge Functions: Deno type-check passes for `promo-studio` and `promo-worker`.

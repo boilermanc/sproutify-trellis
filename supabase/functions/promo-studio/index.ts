@@ -410,11 +410,17 @@ Deno.serve(async (req: Request) => {
         if (sourceError || !source) throw new Error("This branch has no active capture source mapping.");
         input = buildPromoCaptureJobInput(revision.manifest, source, body.scenario_id);
       } else if (jobType === "voice_generate" || jobType === "voice_align") {
-        const { data: revision, error: revisionError } = await db.from("promo_manifest_revisions")
-          .select("manifest").eq("id", project.current_revision_id).single();
+        const [{ data: revision, error: revisionError }, { data: voiceReservations, error: reservationsError }] = await Promise.all([
+          db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
+          jobType === "voice_generate"
+            ? db.from("promo_jobs").select("input").eq("revision_id", project.current_revision_id)
+              .eq("job_type", "voice_generate").in("status", ["queued", "running", "succeeded"])
+            : Promise.resolve({ data: [], error: null }),
+        ]);
         if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for voice work.");
+        if (reservationsError) throw new Error("Could not verify existing voice take reservations.");
         input = jobType === "voice_generate"
-          ? buildPromoVoiceGenerationJobInput(revision.manifest, body.direction)
+          ? buildPromoVoiceGenerationJobInput(revision.manifest, body.direction, (voiceReservations || []).map((job: any) => job.input))
           : buildPromoVoiceAlignmentJobInput(revision.manifest, body.take_id);
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
