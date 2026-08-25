@@ -1654,6 +1654,34 @@ export interface MotionPostJob {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  latest_finish?: MotionPostFinishingJob | null;
+  latest_publication?: ScheduledPost | null;
+}
+
+export type MotionPostFinishingStatus =
+  | 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel_requested' | 'cancelled';
+
+export interface MotionPostFinishingJob {
+  id: string;
+  motion_post_job_id: string;
+  created_by: string;
+  status: MotionPostFinishingStatus;
+  progress: number;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  source_bucket: string;
+  source_path: string;
+  output_bucket: string;
+  output_path: string | null;
+  output_url: string | null;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface MusicGenConfig {
@@ -2191,6 +2219,8 @@ export interface ScheduledPost {
   post_id: string | null;
   published_at: string | null;
   source: string | null;
+  source_motion_post_id?: string | null;
+  source_motion_finish_id?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -2205,6 +2235,8 @@ export interface NewScheduledPost {
   media_urls: string[];
   scheduled_for: string;
   source?: string;
+  source_motion_post_id?: string | null;
+  source_motion_finish_id?: string | null;
   created_by?: string | null;
 }
 

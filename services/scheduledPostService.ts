@@ -34,13 +34,15 @@ function normalizePost(row: any): ScheduledPost {
 // ─── 1. uploadPostImage ────────────────────────────────────────────
 // Reuses the existing social media upload path (avatars bucket, social/
 // prefix) — no new storage bucket/policy needed.
-export async function uploadPostImage(branchSlug: string, file: File): Promise<string> {
+export async function uploadPostMedia(branchSlug: string, file: File): Promise<string> {
   const { url, error } = await uploadSocialMedia(branchSlug || 'post-scheduler', file);
   if (!url) {
     throw new Error(error || `Failed to upload ${file.name}`);
   }
   return url;
 }
+
+export const uploadPostImage = uploadPostMedia;
 
 // ─── 2. createScheduledPosts ───────────────────────────────────────
 // Bulk insert — a week's worth of drops in one go.
@@ -56,6 +58,8 @@ export async function createScheduledPosts(posts: NewScheduledPost[]): Promise<S
     media_urls: p.media_urls,
     scheduled_for: p.scheduled_for,
     source: p.source || 'upload',
+    source_motion_post_id: p.source_motion_post_id ?? null,
+    source_motion_finish_id: p.source_motion_finish_id ?? null,
     created_by: p.created_by ?? null,
   }));
 
