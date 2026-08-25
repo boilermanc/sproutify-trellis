@@ -440,6 +440,7 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(composer, /Title block position/);
   assert.match(composer, /document\.fonts\.load/);
   assert.match(composer, /await loadSelectedFonts\(\);\s*draw\(\);/);
+  assert.match(composer, /onSaved\(\{ \.\.\.concept, metadata_json: \{ \.\.\.concept\.metadata_json, typography:/);
   assert.match(composer, /text_v: vPos/);
   assert.match(composer, /text_h: hAlign/);
   assert.doesNotMatch(composer, /crop guide/i);
@@ -452,6 +453,8 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(fn, /VALID_COVER_FONTS\.has/);
   assert.match(fn, /\["top", "middle", "bottom"\]\.includes/);
   assert.match(fn, /\["left", "center", "right"\]\.includes/);
+  assert.match(fn, /A selected cover font is not supported/);
+  assert.match(fn, /The title position is invalid/);
   assert.match(page, /defaultTitleColor=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_color\}/);
   assert.match(page, /defaultTitleFont=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_font\}/);
   assert.match(page, /typography: selectedCoverConcept\?\.metadata_json\?\.typography/);

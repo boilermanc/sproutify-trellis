@@ -829,6 +829,13 @@ Deno.serve(async (req) => {
       if (binary.length > 15 * 1024 * 1024) throw new Error("The titled cover is larger than 15 MB.");
       const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
       if (bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error("The titled cover PNG is invalid.");
+      const titleFont = String(body.typography?.title_font || "");
+      const subtitleFont = String(body.typography?.subtitle_font || "");
+      const seriesFont = String(body.typography?.series_font || "");
+      const textV = String(body.typography?.text_v || "");
+      const textH = String(body.typography?.text_h || "");
+      if (!VALID_COVER_FONTS.has(titleFont) || !VALID_COVER_FONTS.has(subtitleFont) || !VALID_COVER_FONTS.has(seriesFont)) throw new Error("A selected cover font is not supported. Refresh Trellis and choose the font again.");
+      if (!["top", "middle", "bottom"].includes(textV) || !["left", "center", "right"].includes(textH)) throw new Error("The title position is invalid. Choose a position and save again.");
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
       const version = Number(previous?.version || 0) + 1;
       const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}-titled.png`;
@@ -841,13 +848,13 @@ Deno.serve(async (req) => {
         treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial",
         vintage_border: body.typography?.vintage_border !== false,
         title_color: HEX_COLOR_RE.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
-        title_font: VALID_COVER_FONTS.has(String(body.typography?.title_font || "")) ? body.typography.title_font : undefined,
+        title_font: titleFont,
         subtitle_color: HEX_COLOR_RE.test(String(body.typography?.subtitle_color || "")) ? body.typography.subtitle_color : undefined,
-        subtitle_font: VALID_COVER_FONTS.has(String(body.typography?.subtitle_font || "")) ? body.typography.subtitle_font : undefined,
+        subtitle_font: subtitleFont,
         series_color: HEX_COLOR_RE.test(String(body.typography?.series_color || "")) ? body.typography.series_color : undefined,
-        series_font: VALID_COVER_FONTS.has(String(body.typography?.series_font || "")) ? body.typography.series_font : undefined,
-        text_v: ["top", "middle", "bottom"].includes(String(body.typography?.text_v || "")) ? body.typography.text_v : undefined,
-        text_h: ["left", "center", "right"].includes(String(body.typography?.text_h || "")) ? body.typography.text_h : undefined,
+        series_font: seriesFont,
+        text_v: textV,
+        text_h: textH,
       };
       if (!typography.title) throw new Error("Add the album title before saving the cover.");
       await clearCoverSelections(db, album.id);

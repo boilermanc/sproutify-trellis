@@ -282,9 +282,13 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     try {
       await loadSelectedFonts();
       draw();
-      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont, subtitle_color: subtitleColor, subtitle_font: subtitleFont, series_color: seriesColor, series_font: seriesFont, text_v: vPos, text_h: hAlign });
+      const typography = { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont, subtitle_color: subtitleColor, subtitle_font: subtitleFont, series_color: seriesColor, series_font: seriesFont, text_v: vPos, text_h: hAlign };
+      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), typography);
       setSaved(true);
-      onSaved(concept);
+      // Keep the exact submitted choices through the selected-asset remount.
+      // The server also validates and stores them; merging here prevents a
+      // delayed or incomplete response from visually snapping to defaults.
+      onSaved({ ...concept, metadata_json: { ...concept.metadata_json, typography: { ...concept.metadata_json?.typography, ...typography } } });
       window.setTimeout(() => setSaved(false), 3500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the titled cover.');
