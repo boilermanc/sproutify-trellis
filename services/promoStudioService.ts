@@ -114,6 +114,18 @@ export async function createPromoRevision(projectId: string, manifest: PromoMani
   });
 }
 
+export async function approvePromoClaim(projectId: string, claimId: string) {
+  return callPromo<{ revision: PromoRevision; approval: Record<string, unknown> }>('approve_claim', {
+    project_id: projectId, claim_id: claimId,
+  });
+}
+
+export async function approvePromoScript(projectId: string) {
+  return callPromo<{ revision: PromoRevision; approval: Record<string, unknown> }>('approve_script', {
+    project_id: projectId,
+  });
+}
+
 export async function queuePromoJob(projectId: string, jobType: string, input: Record<string, unknown> = {}) {
   return (await callPromo<{ job: PromoJob }>('create_job', {
     project_id: projectId, job_type: jobType, input,

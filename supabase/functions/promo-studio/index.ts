@@ -2,7 +2,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   PROMO_APPROVAL_DECISIONS, PROMO_APPROVAL_GATES, PROMO_JOB_TYPES,
-  cleanPromoText, createDraftPromoManifest, fingerprintPromoJson, isPromoUuid,
+  applyPromoClaimApproval, applyPromoScriptApproval, cleanPromoText, createDraftPromoManifest,
+  fingerprintPromoJson, isPromoUuid,
   sanitizePromoJson, sanitizePromoText, validatePromoCreate, validatePromoRevision,
 } from "../_shared/promo-studio.ts";
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
@@ -73,6 +74,62 @@ function safeFilename(value: unknown) {
 async function sha256Hex(bytes: Uint8Array<ArrayBuffer>) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function persistPromoReviewProjection(db: any, projectId: string, revisionId: string, manifest: Record<string, any>) {
+  const writes = await Promise.all([
+    manifest.evidence.claims.length ? db.from("promo_claims").insert(manifest.evidence.claims.map((claim: any) => ({
+      project_id: projectId, revision_id: revisionId, claim_key: claim.id, claim_text: claim.text,
+      claim_type: claim.claim_type, evidence_status: claim.status, evidence_refs: claim.evidence_refs, approved: claim.approved,
+    }))) : Promise.resolve({ error: null }),
+    manifest.scenes.length ? db.from("promo_scenes").insert(manifest.scenes.map((scene: any) => ({
+      project_id: projectId, revision_id: revisionId, scene_key: scene.id, position: scene.position,
+      name: scene.name, purpose: scene.purpose, phrase_anchor: scene.anchor,
+      duration_policy: scene.duration, visual_kind: scene.visual.kind, layout: scene.layout,
+      provenance: { claim_ids: scene.claim_ids, capture_scenario_id: scene.visual.capture_scenario_id },
+    }))) : Promise.resolve({ error: null }),
+    manifest.captures.scenarios.length ? db.from("promo_capture_scenarios").insert(manifest.captures.scenarios.map((scenario: any) => ({
+      project_id: projectId, revision_id: revisionId, scenario_key: scenario.key,
+      scenario_version: scenario.version, repository_ref: scenario.repository_ref,
+      commit_sha: scenario.commit_sha, environment: scenario.environment, route: scenario.route,
+      auth_profile_key: scenario.auth_profile_key, definition: scenario, status: scenario.status,
+    }))) : Promise.resolve({ error: null }),
+  ]);
+  const error = writes.find(result => result.error)?.error;
+  if (error) throw new Error(`Could not persist Promo Studio review data: ${error.message}`);
+}
+
+async function createManifestRevision(db: any, input: {
+  project: any; current: any; candidate: Record<string, any>; userId: string; reason: string; diff?: unknown[];
+}) {
+  const revisionId = crypto.randomUUID();
+  const revisionNumber = Number(input.current.revision_number) + 1;
+  const candidate = structuredClone(input.candidate);
+  if (!candidate?.promo) throw new Error("Manifest promo identity is required.");
+  Object.assign(candidate.promo, {
+    id: input.project.id, organization_id: input.project.organization_id, owner_id: input.project.created_by,
+    revision_id: revisionId, revision: revisionNumber, parent_revision_id: input.current.id,
+    updated_at: new Date().toISOString(),
+  });
+  const manifest = validatePromoRevision(candidate, input.project.id, revisionId, revisionNumber);
+  const fingerprint = await fingerprintPromoJson(manifest);
+  const { data: revision, error } = await db.from("promo_manifest_revisions").insert({
+    id: revisionId, project_id: input.project.id, revision_number: revisionNumber, parent_revision_id: input.current.id,
+    created_by: input.userId, reason: input.reason, manifest, manifest_fingerprint: fingerprint,
+    diff: sanitizePromoJson(input.diff || []),
+  }).select("*").single();
+  if (error) throw new Error(`Could not create Promo Manifest revision: ${error.message}`);
+  try {
+    await persistPromoReviewProjection(db, input.project.id, revisionId, manifest);
+    const { data: activated, error: projectError } = await db.from("promo_projects")
+      .update({ current_revision_id: revisionId, status: manifest.promo.status })
+      .eq("id", input.project.id).eq("current_revision_id", input.current.id).select("id").maybeSingle();
+    if (projectError || !activated) throw new Error(projectError?.message || "Project changed while the revision was being saved. Reload and try again.");
+  } catch (revisionError) {
+    await db.from("promo_manifest_revisions").delete().eq("id", revisionId);
+    throw revisionError;
+  }
+  return { revision, manifest, fingerprint, revisionId, revisionNumber };
 }
 
 Deno.serve(async (req: Request) => {
@@ -282,28 +339,46 @@ Deno.serve(async (req: Request) => {
       if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
       const { data: current, error: currentError } = await db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).single();
       if (currentError) throw new Error("Could not load the active Promo Manifest.");
-      const revisionId = crypto.randomUUID();
-      const revisionNumber = Number(current.revision_number) + 1;
-      const candidate = structuredClone(body.manifest);
-      if (!candidate?.promo) throw new Error("Manifest promo identity is required.");
-      Object.assign(candidate.promo, {
-        id: project.id, organization_id: project.organization_id, owner_id: project.created_by,
-        revision_id: revisionId, revision: revisionNumber, parent_revision_id: current.id,
-        updated_at: new Date().toISOString(),
-      });
-      const manifest = validatePromoRevision(candidate, project.id, revisionId, revisionNumber);
-      const fingerprint = await fingerprintPromoJson(manifest);
       const reason = sanitizePromoText(body.reason, 1000) || "Updated draft";
-      const { data: revision, error } = await db.from("promo_manifest_revisions").insert({
-        id: revisionId, project_id: project.id, revision_number: revisionNumber, parent_revision_id: current.id,
-        created_by: userId, reason, manifest, manifest_fingerprint: fingerprint,
-        diff: Array.isArray(body.diff) ? sanitizePromoJson(body.diff) : [],
-      }).select("*").single();
-      if (error) throw new Error(`Could not create Promo Manifest revision: ${error.message}`);
-      const { error: projectError } = await db.from("promo_projects").update({ current_revision_id: revision.id, status: manifest.promo.status }).eq("id", project.id);
-      if (projectError) throw new Error(`Could not activate Promo Manifest revision: ${projectError.message}`);
+      const { revision, manifest, fingerprint, revisionId, revisionNumber } = await createManifestRevision(db, {
+        project, current, candidate: body.manifest, userId, reason,
+        diff: Array.isArray(body.diff) ? body.diff : [],
+      });
       await audit(db, { projectId: project.id, revisionId, event: "manifest.revised", stage: manifest.promo.status as string, actorId: userId, details: { revision_number: revisionNumber, fingerprint, reason } });
       return json({ revision });
+    }
+
+    if (action === "approve_claim" || action === "approve_script") {
+      if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
+      const { data: current, error: currentError } = await db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).single();
+      if (currentError || !current) throw new Error("Could not load the active Promo Manifest.");
+      const claimId = action === "approve_claim" ? cleanPromoText(body.claim_id, 80) : null;
+      const candidate = action === "approve_claim"
+        ? applyPromoClaimApproval(current.manifest, claimId)
+        : applyPromoScriptApproval(current.manifest);
+      const gate = action === "approve_claim" ? "claims" : "script";
+      const subjectType = action === "approve_claim" ? "claim" : "script";
+      const subjectId = action === "approve_claim" ? claimId! : "approved-script";
+      const reason = action === "approve_claim" ? `Approved claim ${claimId}` : "Approved script for audio review";
+      const created = await createManifestRevision(db, {
+        project, current, candidate, userId, reason,
+        diff: [{ op: "approval", gate, subject_type: subjectType, subject_id: subjectId, decision: "approved" }],
+      });
+      const { data: approval, error: approvalError } = await db.from("promo_approvals").insert({
+        project_id: project.id, revision_id: created.revisionId, gate, subject_type: subjectType,
+        subject_id: subjectId, decision: "approved", decided_by: userId, reason,
+      }).select("*").single();
+      if (approvalError) {
+        await db.from("promo_projects").update({ current_revision_id: current.id, status: current.manifest.promo.status })
+          .eq("id", project.id).eq("current_revision_id", created.revisionId);
+        await db.from("promo_manifest_revisions").delete().eq("id", created.revisionId);
+        throw new Error(`Could not record Promo Studio approval: ${approvalError.message}`);
+      }
+      await audit(db, {
+        projectId: project.id, revisionId: created.revisionId, event: "approval.recorded", stage: gate, actorId: userId,
+        details: { decision: "approved", subject_type: subjectType, subject_id: subjectId, fingerprint: created.fingerprint },
+      });
+      return json({ revision: created.revision, approval }, 201);
     }
 
     if (action === "archive_project") {
@@ -357,6 +432,7 @@ Deno.serve(async (req: Request) => {
       const gate = cleanPromoText(body.gate, 40);
       const decision = cleanPromoText(body.decision, 40);
       if (!PROMO_APPROVAL_GATES.has(gate) || !PROMO_APPROVAL_DECISIONS.has(decision)) throw new Error("Approval gate or decision is invalid.");
+      if (decision === "approved" && ["claims", "script"].includes(gate)) throw new Error("Claims and scripts must use their gated approval actions.");
       const revisionId = cleanPromoText(body.revision_id || project.current_revision_id, 80);
       const { data: revision } = await db.from("promo_manifest_revisions").select("id").eq("id", revisionId).eq("project_id", project.id).maybeSingle();
       if (!revision) throw new Error("Approval revision does not belong to this project.");

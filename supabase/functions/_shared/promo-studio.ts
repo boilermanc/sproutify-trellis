@@ -5,7 +5,7 @@ export const PROMO_JOB_TYPES = new Set([
   "music_generate", "gpu_media_generate", "scene_render", "preview_render", "final_render",
   "format_export", "publish",
 ]);
-export const PROMO_APPROVAL_GATES = new Set(["script", "storyboard", "voice", "music", "assets", "preview", "final", "publish"]);
+export const PROMO_APPROVAL_GATES = new Set(["claims", "script", "storyboard", "voice", "music", "assets", "preview", "final", "publish"]);
 export const PROMO_APPROVAL_DECISIONS = new Set(["approved", "changes_requested", "rejected", "revoked"]);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,6 +77,41 @@ export function validatePromoRevision(value: unknown, projectId: string, revisio
     throw new Error("Manifest contains an unsupported format.");
   }
   return sanitizePromoJson(value) as Record<string, any>;
+}
+
+export function applyPromoClaimApproval(value: unknown, claimIdValue: unknown): Record<string, any> {
+  if (!record(value) || !record(value.evidence) || !Array.isArray(value.evidence.claims) || !record(value.safety)) {
+    throw new Error("Manifest claim ledger is invalid.");
+  }
+  const claimId = cleanPromoText(claimIdValue, 80);
+  const manifest = structuredClone(value);
+  const claim = manifest.evidence.claims.find((item: any) => item?.id === claimId);
+  if (!claim) throw new Error("Claim does not belong to the active manifest.");
+  if (!["verified", "user_attested"].includes(claim.status)) throw new Error("Only verified or user-attested claims can be approved.");
+  if (claim.approved === true) throw new Error("Claim is already approved in the active revision.");
+  claim.approved = true;
+  manifest.safety.claim_approval_ids = [...new Set([
+    ...(Array.isArray(manifest.safety.claim_approval_ids) ? manifest.safety.claim_approval_ids : []), claimId,
+  ])];
+  manifest.script.status = "review";
+  manifest.promo.status = "script_review";
+  return manifest;
+}
+
+export function applyPromoScriptApproval(value: unknown): Record<string, any> {
+  if (!record(value) || !record(value.evidence) || !Array.isArray(value.evidence.claims) || !record(value.script) || !record(value.promo)) {
+    throw new Error("Manifest script review state is invalid.");
+  }
+  const manifest = structuredClone(value);
+  if (manifest.script.status === "approved") throw new Error("Script is already approved in the active revision.");
+  if (!cleanPromoText(manifest.script.approved_text, 12000) || !Array.isArray(manifest.script.phrases) || !manifest.script.phrases.length || !Array.isArray(manifest.script.segments) || !manifest.script.segments.length) {
+    throw new Error("Script content and phrase structure are required before approval.");
+  }
+  const blocking = manifest.evidence.claims.filter((claim: any) => !["verified", "user_attested"].includes(claim?.status) || claim?.approved !== true);
+  if (blocking.length) throw new Error("Every claim must be verified and approved before script approval.");
+  manifest.script.status = "approved";
+  manifest.promo.status = "audio_review";
+  return manifest;
 }
 
 export function canonicalPromoJson(value: unknown): string {
