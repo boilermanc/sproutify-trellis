@@ -428,14 +428,24 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(composer, /FONT_OPTIONS/);
   assert.match(composer, /TREATMENT_DEFAULT_FONT/);
   assert.match(composer, /Playfair Display/);
+  assert.match(composer, /Title block position/);
+  assert.match(composer, /document\.fonts\.load/);
+  assert.match(composer, /await loadSelectedFonts\(\);\s*draw\(\);/);
+  assert.match(composer, /text_v: vPos/);
+  assert.match(composer, /text_h: hAlign/);
   assert.doesNotMatch(composer, /crop guide/i);
   assert.doesNotMatch(composer, /VIDEO_CROP_FRACTION/);
   assert.match(service, /title_color\?: string/);
   assert.match(service, /title_font\?: string/);
+  assert.match(service, /text_v\?: string/);
+  assert.match(service, /text_h\?: string/);
   assert.match(fn, /title_color: \/\^#\[0-9a-fA-F\]\{6\}\$\/\.test/);
   assert.match(fn, /VALID_COVER_FONTS\.has/);
+  assert.match(fn, /\["top", "middle", "bottom"\]\.includes/);
+  assert.match(fn, /\["left", "center", "right"\]\.includes/);
   assert.match(page, /defaultTitleColor=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_color\}/);
   assert.match(page, /defaultTitleFont=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_font\}/);
+  assert.match(page, /typography: selectedCoverConcept\?\.metadata_json\?\.typography/);
   assert.match(html, /Playfair\+Display/);
 });
 
