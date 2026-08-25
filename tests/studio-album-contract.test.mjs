@@ -104,7 +104,20 @@ test('music generation carries the planned runtime into the Lyria prompt', async
   const fn = await read('supabase/functions/generate-session-track/index.ts');
   assert.match(fn, /const useClip = duration === 30/);
   assert.match(fn, /Create an approximately \$\{formatTargetDuration\(duration\)\} piece/);
-  assert.match(fn, /input: `\$\{durationDirection\} \$\{track\.prompt\}`/);
+  assert.match(fn, /input: `\$\{durationDirection\} \$\{vocalDirection\} \$\{track\.prompt\}`/);
+});
+
+test('Studio previews stop the previous audio and instrumental generation forbids every form of voice', async () => {
+  const page = await read('pages/StudioAlbums.tsx');
+  const worker = await read('supabase/functions/generate-session-track/index.ts');
+  const studio = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(page, /const activeAudioRef = useRef<HTMLAudioElement \| null>\(null\)/);
+  assert.match(page, /previousAudio !== nextAudio\) previousAudio\.pause\(\)/);
+  assert.match(page, /onPlay=\{handleAudioPlay\}/);
+  assert.match(worker, /track\.vocal_style === "instrumental"/);
+  assert.match(worker, /STRICTLY INSTRUMENTAL/);
+  assert.match(worker, /no vocals, singing, spoken words, chants, humming, vocal samples, choir, or human voice of any kind/);
+  assert.match(studio, /vocal_style: album\.vocal_direction/);
 });
 
 test('Studio planning does not promise sub-30-second Lyria tracks', async () => {

@@ -68,7 +68,14 @@ function buildDurationAwarePrompt(track: Track): { model: string; input: string 
   const durationDirection = useClip
     ? "Create a complete 30-second clip."
     : `Create an approximately ${formatTargetDuration(duration)} piece. Shape the arrangement to finish naturally near ${formatTargetDuration(duration)}; the requested runtime is a target, not permission to cut off the ending.`;
-  return { model, input: `${durationDirection} ${track.prompt}` };
+  const vocalDirection = track.vocal_style === "instrumental"
+    ? "STRICTLY INSTRUMENTAL. Use instruments only: no vocals, singing, spoken words, chants, humming, vocal samples, choir, or human voice of any kind."
+    : track.vocal_style === "mostly_instrumental"
+      ? "Keep the piece predominantly instrumental; any voice must be sparse and secondary."
+      : track.vocal_style === "vocals"
+        ? "Vocals are allowed and should follow the supplied creative direction."
+        : "Follow the supplied vocal direction conservatively.";
+  return { model, input: `${durationDirection} ${vocalDirection} ${track.prompt}` };
 }
 
 async function generateAudio(track: Track, key: string): Promise<Uint8Array> {
