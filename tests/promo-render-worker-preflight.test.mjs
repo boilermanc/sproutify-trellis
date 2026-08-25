@@ -31,6 +31,9 @@ test('preflight rejects tampering, expired leases, source drift, and non-UUID as
   const expired = createRekkrdRenderClaimFixture();
   expired.job.lease_expires_at = '2020-01-01T00:00:00.000Z';
   assert.throws(() => inspect(expired), error => error.code === 'PROMO_RENDER_LEASE_EXPIRED');
+  const malformedLease = createRekkrdRenderClaimFixture();
+  malformedLease.job.lease_expires_at = 'not-a-date';
+  assert.throws(() => inspect(malformedLease), error => error.code === 'PROMO_RENDER_LEASE_EXPIRED');
   const drifted = createRekkrdRenderClaimFixture();
   drifted.compositionSourceSha256 = 'f'.repeat(64);
   assert.throws(() => inspect(drifted), error => error.code === 'PROMO_RENDER_COMPOSITION_FINGERPRINT_INVALID');
@@ -38,6 +41,31 @@ test('preflight rejects tampering, expired leases, source drift, and non-UUID as
   invalidAssetId.job.input.timeline.voice_asset_id = 'asset-voice';
   invalidAssetId.job.input_fingerprint = fingerprintPromoInput(invalidAssetId.job.input);
   assert.throws(() => inspect(invalidAssetId), error => error.code === 'PROMO_RENDER_AUDIO_ASSET_INVALID');
+});
+
+test('presentation blocker requires approval provenance bound to the target branch', () => {
+  const empty = createRekkrdRenderClaimFixture();
+  empty.job.input.presentation = {};
+  empty.job.input_fingerprint = fingerprintPromoInput(empty.job.input);
+  assert.equal(inspect(empty).activation_blockers.includes('PROMO_RENDER_PRESENTATION_REQUIRED'), true);
+
+  const approved = createRekkrdRenderClaimFixture();
+  approved.job.input.presentation = {
+    approved: true,
+    approval_id: '90000000-0000-4000-8000-000000000201',
+    source_branch_id: approved.project.branch_id,
+    target_branch_id: approved.project.branch_id,
+  };
+  approved.job.input_fingerprint = fingerprintPromoInput(approved.job.input);
+  assert.equal(inspect(approved).activation_blockers.includes('PROMO_RENDER_PRESENTATION_REQUIRED'), false);
+
+  const wrongTarget = createRekkrdRenderClaimFixture();
+  wrongTarget.job.input.presentation = {
+    ...approved.job.input.presentation,
+    target_branch_id: '90000000-0000-4000-8000-000000000202',
+  };
+  wrongTarget.job.input_fingerprint = fingerprintPromoInput(wrongTarget.job.input);
+  assert.equal(inspect(wrongTarget).activation_blockers.includes('PROMO_RENDER_PRESENTATION_REQUIRED'), true);
 });
 
 test('final preflight revalidates selected preview and latest approval after claim', () => {

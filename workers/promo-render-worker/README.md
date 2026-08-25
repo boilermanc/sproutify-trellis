@@ -35,7 +35,9 @@ versioned contract update. Before enabling render claims, Trellis still needs:
 - output checksum, measured loudness, tool fingerprints, cost, retries, and provenance audit data;
 - immutable manifest revision plus private preview/final `promo_assets` registration.
 
-The private download boundary and post-claim preflight revalidation are implemented,
+Presentation activation requires an approved provenance envelope containing an
+approval ID plus source and target branch IDs; the target must match the live
+project branch. The private download boundary and post-claim preflight revalidation are implemented,
 so a queued final job cannot outlive a revoke or preview selection change.
 Activation remains blocked until the registry enables the composition, the
 server job contains approved cross-branch presentation data, and the generic

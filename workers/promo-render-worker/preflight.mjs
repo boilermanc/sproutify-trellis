@@ -43,7 +43,8 @@ const validateClaim = (job, workerId, now) => {
     || typeof workerId !== 'string' || !workerId.trim() || job.worker_id !== workerId.trim()) {
     fail('PROMO_RENDER_CLAIM_INVALID', 'Render claim does not belong to this worker.');
   }
-  if (!job.lease_expires_at || Date.parse(job.lease_expires_at) <= now.getTime()) {
+  const leaseExpiresAt = Date.parse(job.lease_expires_at);
+  if (!Number.isFinite(leaseExpiresAt) || leaseExpiresAt <= now.getTime()) {
     fail('PROMO_RENDER_LEASE_EXPIRED', 'Render claim lease is not active.');
   }
   if (!SHA256.test(String(job.input_fingerprint || '')) || !record(job.input)
@@ -160,7 +161,14 @@ export function inspectPromoRenderClaim({
   const asset_plan = buildAssetPlan(job, assets);
   const blockers = [];
   if (job.input.render_profile.composition_worker_enabled !== true) blockers.push('PROMO_RENDER_COMPOSITION_DISABLED');
-  if (!record(job.input.presentation)) blockers.push('PROMO_RENDER_PRESENTATION_REQUIRED');
+  const presentation = job.input.presentation;
+  if (!record(presentation) || presentation.approved !== true
+    || !UUID.test(String(presentation.approval_id || ''))
+    || !UUID.test(String(presentation.source_branch_id || ''))
+    || !UUID.test(String(presentation.target_branch_id || ''))
+    || presentation.target_branch_id !== project.branch_id) {
+    blockers.push('PROMO_RENDER_PRESENTATION_REQUIRED');
+  }
   if (!SHA256.test(String(pipeline_fingerprint || ''))
     || pipeline_fingerprint !== job.input.render_profile.expected_ffmpeg_fingerprint) {
     blockers.push('PROMO_RENDER_PIPELINE_FINGERPRINT_MISMATCH');

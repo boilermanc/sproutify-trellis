@@ -73,7 +73,10 @@ export function createRekkrdRenderClaimFixture({ mode = 'preview' } = {}) {
     worker_id: workerId, lease_token: ids.lease, lease_expires_at: '2099-01-01T00:00:00.000Z',
     input, input_fingerprint: fingerprintPromoInput(input),
   };
-  const project = { id: manifest.promo.id, current_revision_id: manifest.promo.revision_id, selected_preview_render_id: selectedPreviewAssetId };
+  const project = {
+    id: manifest.promo.id, branch_id: manifest.promo.branch.id,
+    current_revision_id: manifest.promo.revision_id, selected_preview_render_id: selectedPreviewAssetId,
+  };
   const componentPath = path.join(repoRoot, 'workers', 'clip-render-worker', 'remotion', 'PromoVerticalStory.tsx');
   const pipelinePath = path.join(repoRoot, 'work', 'promo-studio', 'vertical-ui-story-v1', 'scripts', 'render-sample.mjs');
   const normalizedHash = file => sha256Hex(Buffer.from(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), 'utf8'));
