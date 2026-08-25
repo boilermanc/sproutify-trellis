@@ -25,6 +25,7 @@
     "test:promo-voice": "node --test tests/promo-voice-contract.test.mjs",
     "test:promo-music": "node --test tests/promo-music-contract.test.mjs",
     "test:promo-render": "node --test tests/promo-render-contract.test.mjs",
+    "test:promo-composition": "node --test tests/promo-composition-contract.test.mjs",
     "test:promo-preview": "node --test tests/promo-preview-approval-contract.test.mjs",
     "test:promo-render-completion": "node --test tests/promo-render-completion-contract.test.mjs",
     "test:promo-foundation": "node --test tests/promo-job-claim.test.mjs",
