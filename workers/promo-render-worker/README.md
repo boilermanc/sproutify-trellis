@@ -6,9 +6,13 @@ worker must continue claiming only `noop` jobs.
 
 The PS-002 `PromoProof` composition proved the Remotion and FFmpeg toolchain,
 but it still contains Rekkrd-specific styling and is not a production template
-for every branch. Before enabling render claims, Trellis needs:
+for every branch. The server now pins composition keys and versions in the
+branch-aware registry at `supabase/functions/_shared/promo-compositions.ts`.
+The Rekkrd proof is allowlisted only for Rekkrd, and the branch-neutral
+`vertical-ui-story@v1` contract is reserved for every branch. Both remain
+worker-disabled. Before enabling render claims, Trellis still needs:
 
-- a versioned, branch-neutral composition registry; unknown composition keys must fail closed;
+- the real `vertical-ui-story@v1` Remotion implementation and a registry change to `worker_enabled`;
 - private `promo-assets` downloads resolved by asset ID immediately before rendering;
 - Remotion rendering isolated from the Supabase Edge Function runtime;
 - FFmpeg two-pass loudness normalization to -14 LUFS / -1.5 dBTP;

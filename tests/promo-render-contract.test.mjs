@@ -2,9 +2,15 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { buildPromoRenderJobInput } from '../supabase/functions/_shared/promo-render.ts';
+import { buildPromoRenderJobInput as buildServerPromoRenderJobInput } from '../supabase/functions/_shared/promo-render.ts';
+import { PROMO_COMPOSITION_REGISTRY_VERSION } from '../supabase/functions/_shared/promo-compositions.ts';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
+const buildPromoRenderJobInput = (manifest, assets, approvals, selectedPreviewAssetId, jobType, format) =>
+  buildServerPromoRenderJobInput(
+    manifest, assets, approvals, selectedPreviewAssetId, jobType, format,
+    { id: manifest.promo.branch.id, slug: manifest.promo.branch.slug },
+  );
 
 async function fixture() {
   const manifest = JSON.parse(await read('../features/promo-studio/schemas/fixtures/rekkrd.manifest.v1.json'));
@@ -72,6 +78,36 @@ test('rendering fails closed until capture, audio, timeline, assets, and profile
   wrongProfile.manifest.render.pixel_format = 'yuv444p';
   assert.throws(() => buildPromoRenderJobInput(wrongProfile.manifest, wrongProfile.assets, [], null, 'preview_render', '9:16'), /proven vertical delivery profile/i);
 
+  const unknownComposition = await fixture();
+  unknownComposition.manifest.render.composition = 'BrowserSuppliedComposition';
+  assert.throws(
+    () => buildPromoRenderJobInput(unknownComposition.manifest, unknownComposition.assets, [], null, 'preview_render', '9:16'),
+    error => error.code === 'PROMO_RENDER_COMPOSITION_UNKNOWN',
+  );
+
+  const wrongVersion = await fixture();
+  wrongVersion.manifest.render.composition_version = 'ps-002-v2';
+  assert.throws(
+    () => buildPromoRenderJobInput(wrongVersion.manifest, wrongVersion.assets, [], null, 'preview_render', '9:16'),
+    error => error.code === 'PROMO_RENDER_COMPOSITION_UNKNOWN',
+  );
+
+  const crossBranchProof = await fixture();
+  crossBranchProof.manifest.promo.branch.slug = 'another-branch';
+  assert.throws(
+    () => buildPromoRenderJobInput(crossBranchProof.manifest, crossBranchProof.assets, [], null, 'preview_render', '9:16'),
+    error => error.code === 'PROMO_RENDER_COMPOSITION_SCOPE_INVALID',
+  );
+
+  const mismatchedBranch = await fixture();
+  assert.throws(
+    () => buildServerPromoRenderJobInput(
+      mismatchedBranch.manifest, mismatchedBranch.assets, [], null, 'preview_render', '9:16',
+      { id: mismatchedBranch.manifest.promo.branch.id, slug: 'another-branch' },
+    ),
+    error => error.code === 'PROMO_RENDER_BRANCH_MISMATCH',
+  );
+
   const unsafeArea = await fixture();
   unsafeArea.manifest.format_variants[0].safe_area.top = 1900;
   assert.throws(() => buildPromoRenderJobInput(unsafeArea.manifest, unsafeArea.assets, [], null, 'preview_render', '9:16'), /safe area/i);
@@ -79,6 +115,28 @@ test('rendering fails closed until capture, audio, timeline, assets, and profile
   const unapprovedClaim = await fixture();
   unapprovedClaim.manifest.evidence.claims[0].approved = false;
   assert.throws(() => buildPromoRenderJobInput(unapprovedClaim.manifest, unapprovedClaim.assets, [], null, 'preview_render', '9:16'), /every claim/i);
+});
+
+test('branch-neutral compositions resolve only from the pinned registry', async () => {
+  const firstBranch = await fixture();
+  firstBranch.manifest.promo.branch.slug = 'atl-urban-farms';
+  firstBranch.manifest.render.composition = 'vertical-ui-story';
+  firstBranch.manifest.render.composition_version = 'v1';
+  const firstInput = buildPromoRenderJobInput(firstBranch.manifest, firstBranch.assets, [], null, 'preview_render', '9:16');
+
+  const secondBranch = await fixture();
+  secondBranch.manifest.promo.branch.slug = 'farm-sproutify';
+  secondBranch.manifest.render.composition = 'vertical-ui-story';
+  secondBranch.manifest.render.composition_version = 'v1';
+  const secondInput = buildPromoRenderJobInput(secondBranch.manifest, secondBranch.assets, [], null, 'preview_render', '9:16');
+
+  for (const input of [firstInput, secondInput]) {
+    assert.equal(input.render_profile.composition, 'vertical-ui-story');
+    assert.equal(input.render_profile.composition_version, 'v1');
+    assert.equal(input.render_profile.composition_registry_version, PROMO_COMPOSITION_REGISTRY_VERSION);
+    assert.equal(input.render_profile.composition_status, 'contract_only');
+    assert.equal(input.render_profile.composition_worker_enabled, false);
+  }
 });
 
 test('final render requires current preview approval and approved input assets', async () => {
@@ -118,7 +176,7 @@ test('render jobs are server-resolved while the production composition worker re
     read('../services/promoStudioService.ts'), read('../workers/promo-render-worker/README.md'),
     read('../workers/clip-render-worker/proofs/ps-002/PromoProof.tsx'),
   ]);
-  assert.match(edge, /revision\.manifest, assets \|\| \[\], approvals \|\| \[\], project\.selected_preview_render_id, jobType, body\.format/);
+  assert.match(edge, /revision\.manifest, assets \|\| \[\], approvals \|\| \[\], project\.selected_preview_render_id, jobType, body\.format, branch/);
   assert.match(edge, /"preview_render", "final_render"/);
   assert.match(worker, /p_job_types: \["noop"\]/);
   assert.doesNotMatch(worker, /p_job_types: \["preview_render"/);

@@ -1,3 +1,9 @@
+import {
+  findPromoComposition,
+  PROMO_COMPOSITION_REGISTRY_VERSION,
+  promoCompositionAllowsBranch,
+} from "./promo-compositions.ts";
+
 const SHA256 = /^[a-f0-9]{64}$/i;
 const SAFE_KEY = /^[A-Za-z][A-Za-z0-9._-]{0,79}$/;
 
@@ -29,6 +35,7 @@ export function buildPromoRenderJobInput(
   selectedPreviewAssetIdValue: unknown,
   jobTypeValue: unknown,
   formatValue: unknown,
+  authoritativeBranchValue: unknown,
 ) {
   if (!record(manifestValue) || !record(manifestValue.promo) || !record(manifestValue.script)
     || !record(manifestValue.captions) || !record(manifestValue.voice) || !record(manifestValue.music)
@@ -73,6 +80,23 @@ export function buildPromoRenderJobInput(
     || !near(render.integrated_lufs, -14) || !near(render.true_peak_dbfs, -1.5)
     || !SHA256.test(String(render.ffmpeg_fingerprint || ""))) {
     throw new PromoRenderReadinessError("PROMO_RENDER_PROFILE_INVALID", "Render settings do not match the proven vertical delivery profile.");
+  }
+  const composition = findPromoComposition(render.composition, render.composition_version);
+  if (!composition) {
+    throw new PromoRenderReadinessError("PROMO_RENDER_COMPOSITION_UNKNOWN", "The requested render composition is not registered.");
+  }
+  if (!record(authoritativeBranchValue) || !configured(authoritativeBranchValue.id)
+    || !configured(authoritativeBranchValue.slug)
+    || manifestValue.promo.branch?.id !== authoritativeBranchValue.id
+    || manifestValue.promo.branch?.slug !== authoritativeBranchValue.slug) {
+    throw new PromoRenderReadinessError("PROMO_RENDER_BRANCH_MISMATCH", "The active manifest does not match the project's branch.");
+  }
+  if (!promoCompositionAllowsBranch(composition, authoritativeBranchValue.slug)) {
+    throw new PromoRenderReadinessError("PROMO_RENDER_COMPOSITION_SCOPE_INVALID", "The requested render composition is not available for this branch.");
+  }
+  if (!composition.formats.includes(format) || composition.width !== variant.width
+    || composition.height !== variant.height || composition.fps !== render.fps) {
+    throw new PromoRenderReadinessError("PROMO_RENDER_COMPOSITION_FORMAT_INVALID", "The registered composition does not support this render format.");
   }
 
   const phraseById = new Map(manifestValue.script.phrases.map((phrase: any) => [phrase?.id, phrase]));
@@ -218,8 +242,11 @@ export function buildPromoRenderJobInput(
       music_asset_id: selectedMusic.audio_asset_id,
     },
     render_profile: {
-      composition: render.composition,
-      composition_version: render.composition_version,
+      composition: composition.key,
+      composition_version: composition.version,
+      composition_registry_version: PROMO_COMPOSITION_REGISTRY_VERSION,
+      composition_status: composition.status,
+      composition_worker_enabled: composition.worker_enabled,
       video_codec: "h264",
       pixel_format: "yuv420p",
       audio_codec: "aac",
