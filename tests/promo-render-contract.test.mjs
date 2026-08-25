@@ -6,10 +6,17 @@ import { buildPromoRenderJobInput as buildServerPromoRenderJobInput } from '../s
 import { PROMO_COMPOSITION_REGISTRY_VERSION } from '../supabase/functions/_shared/promo-compositions.ts';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
+const brandIdentityFor = manifest => ({
+  id: '90000000-0000-4000-8000-000000000003', branch_id: manifest.promo.branch.slug,
+  name: `Identity for ${manifest.promo.branch.slug}`, status: 'active',
+  color_palette: { primary: '#112233', secondary: '#223344', accent: '#cc5500', neutral: '#f4f4f4' },
+  typography: { heading: 'Source Heading', body: 'Source Body' }, updated_at: '2026-08-25T12:00:00.000Z',
+});
 const buildPromoRenderJobInput = (manifest, assets, approvals, selectedPreviewAssetId, jobType, format) =>
   buildServerPromoRenderJobInput(
     manifest, assets, approvals, selectedPreviewAssetId, jobType, format,
-    { id: manifest.promo.branch.id, slug: manifest.promo.branch.slug },
+    { id: manifest.promo.branch.id, slug: manifest.promo.branch.slug, name: manifest.promo.branch.display_name, is_active: true },
+    brandIdentityFor(manifest),
   );
 
 async function fixture() {
@@ -103,7 +110,8 @@ test('rendering fails closed until capture, audio, timeline, assets, and profile
   assert.throws(
     () => buildServerPromoRenderJobInput(
       mismatchedBranch.manifest, mismatchedBranch.assets, [], null, 'preview_render', '9:16',
-      { id: mismatchedBranch.manifest.promo.branch.id, slug: 'another-branch' },
+      { id: mismatchedBranch.manifest.promo.branch.id, slug: 'another-branch', name: 'Another Branch', is_active: true },
+      brandIdentityFor(mismatchedBranch.manifest),
     ),
     error => error.code === 'PROMO_RENDER_BRANCH_MISMATCH',
   );
@@ -138,6 +146,47 @@ test('branch-neutral compositions resolve only from the pinned registry', async 
     assert.equal(input.render_profile.composition_worker_enabled, false);
     assert.match(input.render_profile.composition_source_fingerprint_sha256, /^[a-f0-9]{64}$/);
   }
+});
+
+test('presentation is approved, branch-bound, and preserves Rekkrd locked styling', async () => {
+  const [cardStylesSource, presentationSource] = await Promise.all([
+    read('../services/brandCardStyles.ts'), read('../supabase/functions/_shared/promo-presentation.ts'),
+  ]);
+  for (const approvedToken of ['#14100c', '#1e1811', '#efe9e0', '#9a8f80', '#e8621a', 'Playfair Display', 'JetBrains Mono']) {
+    assert.match(cardStylesSource, new RegExp(approvedToken, 'i'));
+    assert.match(presentationSource, new RegExp(approvedToken, 'i'));
+  }
+  const rekkrd = await fixture();
+  const rekkrdInput = buildPromoRenderJobInput(rekkrd.manifest, rekkrd.assets, [], null, 'preview_render', '9:16');
+  assert.deepEqual(rekkrdInput.presentation.brand, {
+    name: rekkrd.manifest.promo.branch.display_name, logo_asset_id: null,
+    background: '#14100c', surface: '#1e1811', foreground: '#efe9e0', muted: '#9a8f80', accent: '#e8621a',
+    display_font: 'Playfair Display', label_font: 'JetBrains Mono',
+  });
+  assert.equal(rekkrdInput.presentation.approval_source, 'active_brand_identity+locked_style_registry');
+  assert.equal(rekkrdInput.presentation.target_branch_id, rekkrd.manifest.promo.branch.id);
+
+  const generic = await fixture();
+  generic.manifest.promo.branch.slug = 'atlurbanfarms';
+  generic.manifest.promo.branch.display_name = 'ATL Urban Farms';
+  generic.manifest.render.composition = 'vertical-ui-story';
+  generic.manifest.render.composition_version = 'v1';
+  const genericInput = buildPromoRenderJobInput(generic.manifest, generic.assets, [], null, 'preview_render', '9:16');
+  assert.deepEqual(genericInput.presentation.brand, {
+    name: 'ATL Urban Farms', logo_asset_id: null,
+    background: '#112233', surface: '#223344', foreground: '#f4f4f4', muted: '#f4f4f4', accent: '#cc5500',
+    display_font: 'Source Heading', label_font: 'Source Body',
+  });
+  assert.equal(genericInput.presentation.approval_source, 'active_brand_identity');
+
+  assert.throws(
+    () => buildServerPromoRenderJobInput(
+      generic.manifest, generic.assets, [], null, 'preview_render', '9:16',
+      { id: generic.manifest.promo.branch.id, slug: generic.manifest.promo.branch.slug, name: 'ATL Urban Farms', is_active: true },
+      null,
+    ),
+    error => error.code === 'PROMO_PRESENTATION_IDENTITY_NOT_READY',
+  );
 });
 
 test('final render requires current preview approval and approved input assets', async () => {
@@ -178,6 +227,7 @@ test('render jobs are server-resolved while the production composition worker re
     read('../workers/clip-render-worker/proofs/ps-002/PromoProof.tsx'),
   ]);
   assert.match(edge, /revision\.manifest, assets \|\| \[\], approvals \|\| \[\], project\.selected_preview_render_id, jobType, body\.format, branch/);
+  assert.match(edge, /brandIdentities\[0\]/);
   assert.match(edge, /"preview_render", "final_render"/);
   assert.match(worker, /p_job_types: \["noop"\]/);
   assert.doesNotMatch(worker, /p_job_types: \["preview_render"/);

@@ -35,13 +35,17 @@ versioned contract update. Before enabling render claims, Trellis still needs:
 - output checksum, measured loudness, tool fingerprints, cost, retries, and provenance audit data;
 - immutable manifest revision plus private preview/final `promo_assets` registration.
 
-Presentation activation requires an approved provenance envelope containing an
-approval ID plus source and target branch IDs; the target must match the live
-project branch. The private download boundary and post-claim preflight revalidation are implemented,
+The server now resolves an approved presentation envelope from the live branch
+and its single active Brand Identity. The envelope pins its approval record,
+source timestamp, source and target branch IDs, palette, typography, and an
+optional approved private logo asset. Rekkrd additionally uses its existing
+locked style registry values. Missing or ambiguous active identities fail
+closed, and the worker requires both branch IDs to match the live project.
+The private download boundary and post-claim preflight revalidation are implemented,
 so a queued final job cannot outlive a revoke or preview selection change.
 Activation remains blocked until the registry enables the composition, the
-server job contains approved cross-branch presentation data, and the generic
-FFmpeg pipeline receives its own approved fingerprint.
+generic FFmpeg pipeline receives its own approved fingerprint, and each target
+branch has one complete active Brand Identity.
 
 The worker must accept only asset IDs and normalized timeline data from the
 server-created job. It must never accept browser URLs, storage paths, captions,

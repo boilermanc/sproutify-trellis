@@ -11,6 +11,7 @@ const manifestPath = path.join(repoRoot, 'features', 'promo-studio', 'schemas', 
 const assetRoot = path.join(repoRoot, 'work', 'promo-studio', 'ps-002', 'assets');
 const ids = Object.freeze({
   job: '90000000-0000-4000-8000-000000000001', lease: '90000000-0000-4000-8000-000000000002',
+  brandIdentity: '90000000-0000-4000-8000-000000000003',
   capture: '90000000-0000-4000-8000-000000000101', logo: '90000000-0000-4000-8000-000000000102',
   voice: '90000000-0000-4000-8000-000000000103', music: '90000000-0000-4000-8000-000000000104',
   preview: '90000000-0000-4000-8000-000000000105',
@@ -64,7 +65,12 @@ export function createRekkrdRenderClaimFixture({ mode = 'preview' } = {}) {
   const input = buildPromoRenderJobInput(
     manifest, assets, approvals, selectedPreviewAssetId,
     mode === 'final' ? 'final_render' : 'preview_render', '9:16',
-    { id: manifest.promo.branch.id, slug: manifest.promo.branch.slug },
+    { id: manifest.promo.branch.id, slug: manifest.promo.branch.slug, name: 'Rekkrd', is_active: true },
+    {
+      id: ids.brandIdentity, branch_id: manifest.promo.branch.slug, name: 'Rekkrd', status: 'active',
+      color_palette: { primary: '#1a2528', secondary: '#dd6e42', accent: '#4f6d7a', neutral: '#ffffff' },
+      typography: { heading: 'Playfair Display', body: 'Inter' }, updated_at: '2026-07-03T00:00:00.000Z',
+    },
   );
   const workerId = 'promo-render-fixture';
   const job = {

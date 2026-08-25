@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
+const HEX = /^#[0-9a-f]{6}$/i;
 const SAFE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*\\)[^\u0000-\u001f]+$/;
 const MAX_ASSET_BYTES = 1024 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 3 * MAX_ASSET_BYTES;
@@ -126,6 +127,9 @@ const buildAssetPlan = (job, assets) => {
   add(job.input.timeline.voice_asset_id, 'voice');
   add(job.input.timeline.music_asset_id, 'music');
   for (const scene of job.input.timeline.scenes) add(scene.visual.asset_id, `scene:${scene.scene_id}`);
+  if (UUID.test(String(job.input.presentation?.brand?.logo_asset_id || ''))) {
+    add(job.input.presentation.brand.logo_asset_id, 'brand:logo');
+  }
   const rowById = new Map(assets.filter(record).map(asset => [asset.id, asset]));
   const plan = [];
   let totalBytes = 0;
@@ -162,11 +166,19 @@ export function inspectPromoRenderClaim({
   const blockers = [];
   if (job.input.render_profile.composition_worker_enabled !== true) blockers.push('PROMO_RENDER_COMPOSITION_DISABLED');
   const presentation = job.input.presentation;
-  if (!record(presentation) || presentation.approved !== true
+  const brand = presentation?.brand;
+  if (!record(presentation) || presentation.schema_version !== '1.0.0' || presentation.approved !== true
     || !UUID.test(String(presentation.approval_id || ''))
+    || !['active_brand_identity', 'active_brand_identity+locked_style_registry'].includes(presentation.approval_source)
     || !UUID.test(String(presentation.source_branch_id || ''))
     || !UUID.test(String(presentation.target_branch_id || ''))
-    || presentation.target_branch_id !== project.branch_id) {
+    || presentation.source_branch_id !== project.branch_id || presentation.target_branch_id !== project.branch_id
+    || !Number.isFinite(Date.parse(presentation.source_updated_at)) || !record(brand)
+    || typeof brand.name !== 'string' || !brand.name.trim() || brand.name.trim().length > 120
+    || (brand.logo_asset_id !== null && !UUID.test(String(brand.logo_asset_id || '')))
+    || ![brand.background, brand.surface, brand.foreground, brand.muted, brand.accent].every(value => HEX.test(String(value || '')))
+    || typeof brand.display_font !== 'string' || !brand.display_font.trim() || brand.display_font.trim().length > 100
+    || typeof brand.label_font !== 'string' || !brand.label_font.trim() || brand.label_font.trim().length > 100) {
     blockers.push('PROMO_RENDER_PRESENTATION_REQUIRED');
   }
   if (!SHA256.test(String(pipeline_fingerprint || ''))
