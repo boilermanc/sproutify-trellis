@@ -99,6 +99,14 @@ test('rendering fails closed until capture, audio, timeline, assets, and profile
     error => error.code === 'PROMO_RENDER_COMPOSITION_UNKNOWN',
   );
 
+  const wrongPipeline = await fixture();
+  wrongPipeline.manifest.render.composition = 'vertical-ui-story';
+  wrongPipeline.manifest.render.composition_version = 'v1';
+  assert.throws(
+    () => buildPromoRenderJobInput(wrongPipeline.manifest, wrongPipeline.assets, [], null, 'preview_render', '9:16'),
+    error => error.code === 'PROMO_RENDER_PIPELINE_FINGERPRINT_INVALID',
+  );
+
   const crossBranchProof = await fixture();
   crossBranchProof.manifest.promo.branch.slug = 'another-branch';
   assert.throws(
@@ -130,12 +138,14 @@ test('branch-neutral compositions resolve only from the pinned registry', async 
   firstBranch.manifest.promo.branch.slug = 'atl-urban-farms';
   firstBranch.manifest.render.composition = 'vertical-ui-story';
   firstBranch.manifest.render.composition_version = 'v1';
+  firstBranch.manifest.render.ffmpeg_fingerprint = '0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e';
   const firstInput = buildPromoRenderJobInput(firstBranch.manifest, firstBranch.assets, [], null, 'preview_render', '9:16');
 
   const secondBranch = await fixture();
   secondBranch.manifest.promo.branch.slug = 'farm-sproutify';
   secondBranch.manifest.render.composition = 'vertical-ui-story';
   secondBranch.manifest.render.composition_version = 'v1';
+  secondBranch.manifest.render.ffmpeg_fingerprint = '0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e';
   const secondInput = buildPromoRenderJobInput(secondBranch.manifest, secondBranch.assets, [], null, 'preview_render', '9:16');
 
   for (const input of [firstInput, secondInput]) {
@@ -145,6 +155,7 @@ test('branch-neutral compositions resolve only from the pinned registry', async 
     assert.equal(input.render_profile.composition_status, 'render_verified');
     assert.equal(input.render_profile.composition_worker_enabled, false);
     assert.match(input.render_profile.composition_source_fingerprint_sha256, /^[a-f0-9]{64}$/);
+    assert.equal(input.render_profile.expected_ffmpeg_fingerprint, '0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e');
   }
 });
 
@@ -171,6 +182,7 @@ test('presentation is approved, branch-bound, and preserves Rekkrd locked stylin
   generic.manifest.promo.branch.display_name = 'ATL Urban Farms';
   generic.manifest.render.composition = 'vertical-ui-story';
   generic.manifest.render.composition_version = 'v1';
+  generic.manifest.render.ffmpeg_fingerprint = '0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e';
   const genericInput = buildPromoRenderJobInput(generic.manifest, generic.assets, [], null, 'preview_render', '9:16');
   assert.deepEqual(genericInput.presentation.brand, {
     name: 'ATL Urban Farms', logo_asset_id: null,

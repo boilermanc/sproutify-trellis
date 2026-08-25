@@ -27,6 +27,7 @@ export function createRekkrdRenderClaimFixture({ mode = 'preview' } = {}) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   manifest.render.composition = 'vertical-ui-story';
   manifest.render.composition_version = 'v1';
+  manifest.render.ffmpeg_fingerprint = '0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e';
   const idMap = new Map(Object.entries(sourceByOriginalId).map(([oldId, source]) => [oldId, source.id]));
   for (const asset of manifest.assets) asset.id = idMap.get(asset.id);
   for (const scene of manifest.scenes) scene.visual.asset_id = idMap.get(scene.visual.asset_id);
@@ -84,7 +85,7 @@ export function createRekkrdRenderClaimFixture({ mode = 'preview' } = {}) {
     current_revision_id: manifest.promo.revision_id, selected_preview_render_id: selectedPreviewAssetId,
   };
   const componentPath = path.join(repoRoot, 'workers', 'clip-render-worker', 'remotion', 'PromoVerticalStory.tsx');
-  const pipelinePath = path.join(repoRoot, 'work', 'promo-studio', 'vertical-ui-story-v1', 'scripts', 'render-sample.mjs');
+  const pipelinePath = path.join(repoRoot, 'workers', 'promo-render-worker', 'pipeline.mjs');
   const normalizedHash = file => sha256Hex(Buffer.from(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), 'utf8'));
   return { job, project, approvals, assets, bytesByAssetId, workerId,
     compositionSourceSha256: normalizedHash(componentPath), pipelineFingerprint: normalizedHash(pipelinePath) };

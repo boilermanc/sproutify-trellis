@@ -29,9 +29,7 @@ versioned contract update. Before enabling render claims, Trellis still needs:
 
 - promotion of the implemented `vertical-ui-story@v1` composition from visual proof to a registry-approved worker build;
 - Remotion rendering isolated from the Supabase Edge Function runtime;
-- FFmpeg two-pass loudness normalization to -14 LUFS / -1.5 dBTP;
-- exact H.264 High, yuv420p, AAC 48 kHz, TV-range, fast-start finalization;
-- ffprobe verification for 1080x1920, 30 fps, duration, streams, codecs, and color range;
+- execution of the pinned generic render pipeline in an isolated worker runtime;
 - output checksum, measured loudness, tool fingerprints, cost, retries, and provenance audit data;
 - immutable manifest revision plus private preview/final `promo_assets` registration.
 
@@ -43,9 +41,14 @@ locked style registry values. Missing or ambiguous active identities fail
 closed, and the worker requires both branch IDs to match the live project.
 The private download boundary and post-claim preflight revalidation are implemented,
 so a queued final job cannot outlive a revoke or preview selection change.
-Activation remains blocked until the registry enables the composition, the
-generic FFmpeg pipeline receives its own approved fingerprint, and each target
-branch has one complete active Brand Identity.
+The generic pipeline is now an executable, bounded argument-array contract at
+`workers/promo-render-worker/pipeline.mjs`. Its normalized source fingerprint
+is pinned in the composition registry and the server rejects manifests that do
+not match it. The Rekkrd fixture rerender passed the production profile at
+1080x1920, 30 fps, exactly 10 seconds, -14.11 LUFS, and -1.84 dBTP. Activation
+now remains blocked only until the isolated worker executor is implemented and
+the registry deliberately enables the composition. Each target branch must
+also retain one complete active Brand Identity.
 
 The worker must accept only asset IDs and normalized timeline data from the
 server-created job. It must never accept browser URLs, storage paths, captions,

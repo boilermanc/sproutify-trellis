@@ -87,6 +87,12 @@ export function buildPromoRenderJobInput(
   if (!composition) {
     throw new PromoRenderReadinessError("PROMO_RENDER_COMPOSITION_UNKNOWN", "The requested render composition is not registered.");
   }
+  if (render.ffmpeg_fingerprint !== composition.pipeline_fingerprint_sha256) {
+    throw new PromoRenderReadinessError(
+      "PROMO_RENDER_PIPELINE_FINGERPRINT_INVALID",
+      "The active manifest does not pin the registered render pipeline.",
+    );
+  }
   if (!record(authoritativeBranchValue) || !configured(authoritativeBranchValue.id)
     || !configured(authoritativeBranchValue.slug)
     || manifestValue.promo.branch?.id !== authoritativeBranchValue.id
@@ -258,7 +264,7 @@ export function buildPromoRenderJobInput(
       audio_sample_rate: 48000,
       integrated_lufs: -14,
       true_peak_dbfs: -1.5,
-      expected_ffmpeg_fingerprint: render.ffmpeg_fingerprint,
+      expected_ffmpeg_fingerprint: composition.pipeline_fingerprint_sha256,
     },
     presentation,
     review: {
