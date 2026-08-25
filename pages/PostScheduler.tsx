@@ -3,12 +3,12 @@ import {
   CalendarClock, UploadCloud, ImagePlus, Loader2, X, Trash2, Clock,
   CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook, Music,
   Send, Sparkles, Info, RefreshCw, Image as ImageIcon, Pencil, Save, Zap,
-  Eye, Bookmark, Share2, Users, MousePointerClick,
+  Eye, Bookmark, Share2, Users, MousePointerClick, Video,
 } from 'lucide-react';
 import { BranchContext, ScheduledPost, NewScheduledPost } from '../types';
 import {
   createScheduledPosts, fetchScheduledPosts, cancelScheduledPost,
-  uploadPostImage, buildSchedule, updateScheduledPost,
+  uploadPostMedia, buildSchedule, updateScheduledPost,
 } from '../services/scheduledPostService';
 import { fetchLatestInsights, getDisplayInsights, PostInsightSnapshot } from '../services/socialInsightsService';
 
@@ -25,6 +25,7 @@ interface StagingRow {
   file: File;
   previewUrl: string;
   url: string | null;
+  mediaType: 'image' | 'video';
   uploading: boolean;
   uploadError: string | null;
   caption: string;
@@ -84,7 +85,7 @@ function rowBlockingReason(row: StagingRow): string | null {
   if (row.uploading) return 'still uploading';
   if (!row.caption.trim()) return 'needs a caption';
   if ((row.platform === 'instagram' || row.platform === 'tiktok') && !row.url) {
-    return `needs an image — ${row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} requires media`;
+    return `needs media — ${row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} requires an image or video`;
   }
   return null;
 }
@@ -216,15 +217,18 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   // ── Upload handling ──
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    if (!selectedBranch) { addToast?.('Choose a brand before uploading images.', 'error'); return; }
+    if (!selectedBranch) { addToast?.('Choose a brand before uploading media.', 'error'); return; }
 
     const files = Array.from(fileList).filter(f => {
-      if (!f.type.startsWith('image/')) {
-        addToast?.(`${f.name} is not an image — skipped.`, 'error');
+      const isImage = f.type.startsWith('image/');
+      const isVideo = f.type === 'video/mp4' || /\.mp4$/i.test(f.name);
+      if (!isImage && !isVideo) {
+        addToast?.(`${f.name} is not an image or video — skipped.`, 'error');
         return false;
       }
-      if (f.size > 10 * 1024 * 1024) {
-        addToast?.(`${f.name} is over 10MB — skipped.`, 'error');
+      const limitMb = isVideo ? 50 : 10;
+      if (f.size > limitMb * 1024 * 1024) {
+        addToast?.(`${f.name} is over ${limitMb}MB — skipped.`, 'error');
         return false;
       }
       return true;
@@ -236,6 +240,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       file,
       previewUrl: URL.createObjectURL(file),
       url: null,
+      mediaType: file.type.startsWith('video/') ? 'video' : 'image',
       uploading: true,
       uploadError: null,
       caption: '',
@@ -246,7 +251,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
 
     for (const row of newRows) {
       try {
-        const url = await uploadPostImage(selectedBranch.slug, row.file);
+        const url = await uploadPostMedia(selectedBranch.slug, row.file);
         setRows(prev => prev.map(r => (r.localId === row.localId ? { ...r, url, uploading: false } : r)));
       } catch (e) {
         const message = e instanceof Error ? e.message : `Failed to upload ${row.file.name}.`;
@@ -314,7 +319,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         branch_slug: selectedBranch.slug,
         platform: r.platform,
         caption: r.caption.trim(),
-        media_type: 'image',
+        media_type: r.mediaType,
         media_urls: r.url ? [r.url] : [],
         scheduled_for: r.scheduledFor,
         source: 'upload',
@@ -533,12 +538,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
           }`}
         >
           <UploadCloud size={20} />
-          <span className="font-bold">{isDragging ? 'Drop the images here' : 'Drag images here, or click to browse'}</span>
-          <span className="text-xs text-slate-300">PNG or JPG, up to 10MB each — multiple files at once</span>
+          <span className="font-bold">{isDragging ? 'Drop the media here' : 'Drag images or videos here, or click to browse'}</span>
+          <span className="text-xs text-slate-300">Images up to 10MB · MP4 video up to 50MB · multiple files at once</span>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4"
             multiple
             className="hidden"
             onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
@@ -630,7 +635,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                 return (
                 <div key={row.localId} className="flex flex-col lg:flex-row gap-3 border border-slate-200 rounded-xl p-3">
                   <div className="relative w-full lg:w-28 h-28 shrink-0 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
-                    <img src={row.previewUrl} alt="" className="w-full h-full object-cover" />
+                    {row.mediaType === 'video' ? <video src={row.previewUrl} muted playsInline className="w-full h-full object-cover" /> : <img src={row.previewUrl} alt="" className="w-full h-full object-cover" />}
                     {row.uploading && (
                       <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
                         <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
@@ -673,7 +678,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                             if (!selectedBranch) return;
                             updateRow(row.localId, { uploading: true, uploadError: null });
                             try {
-                              const url = await uploadPostImage(selectedBranch.slug, row.file);
+                              const url = await uploadPostMedia(selectedBranch.slug, row.file);
                               updateRow(row.localId, { url, uploading: false });
                             } catch (e) {
                               updateRow(row.localId, { uploading: false, uploadError: e instanceof Error ? e.message : 'Upload failed.' });
@@ -696,7 +701,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                     {needsImage && (
                       <p className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        Image required for {row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} — upload one, retry the failed upload, or switch this row to Facebook.
+                        Media required for {row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} — upload an image or video, retry the failed upload, or switch this row to Facebook.
                       </p>
                     )}
                     {imageOptional && (
@@ -720,7 +725,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             {/* Save to queue */}
             <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
               <p className="text-[11px] text-slate-400">
-                {readyRows.length} of {rows.length} image{rows.length === 1 ? '' : 's'} uploaded
+                {readyRows.length} of {rows.length} media file{rows.length === 1 ? '' : 's'} uploaded
               </p>
               <button
                 type="button"
@@ -736,7 +741,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         )}
 
         {rows.length === 0 && (
-          <p className="text-center text-xs text-slate-300 py-2">No images staged yet — drop some in above.</p>
+          <p className="text-center text-xs text-slate-300 py-2">No media staged yet — drop images or videos above.</p>
         )}
       </div>
 
@@ -801,10 +806,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                       <div key={post.id} className="border border-slate-100 rounded-xl p-2.5 space-y-2">
                         <div className="flex items-center gap-3">
                           {post.media_urls[0] ? (
-                            <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                            post.media_type === 'video'
+                              ? <video src={post.media_urls[0]} muted playsInline preload="metadata" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                              : <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                              <ImageIcon className="w-4 h-4 text-slate-300" />
+                              {post.media_type === 'video' ? <Video className="w-4 h-4 text-slate-300" /> : <ImageIcon className="w-4 h-4 text-slate-300" />}
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
@@ -933,10 +940,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                       <div key={post.id} className="border border-slate-100 rounded-xl p-2.5 space-y-1.5">
                         <div className="flex items-center gap-3">
                           {post.media_urls[0] ? (
-                            <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                            post.media_type === 'video'
+                              ? <video src={post.media_urls[0]} muted playsInline preload="metadata" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                              : <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                              <ImageIcon className="w-4 h-4 text-slate-300" />
+                              {post.media_type === 'video' ? <Video className="w-4 h-4 text-slate-300" /> : <ImageIcon className="w-4 h-4 text-slate-300" />}
                             </div>
                           )}
                           <div className="min-w-0 flex-1">

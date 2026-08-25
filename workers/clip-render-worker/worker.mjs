@@ -59,6 +59,16 @@ async function upload(pathInBucket, buf, contentType) {
   return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${pathInBucket}`;
 }
 
+async function uploadPublic(bucket, pathInBucket, buf, contentType) {
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${pathInBucket}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': contentType, 'x-upsert': 'false' },
+    body: buf,
+  });
+  if (![200, 201].includes(r.status)) throw new Error(`Public upload failed ${r.status}: ${await r.text()}`);
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${pathInBucket}`;
+}
+
 async function uploadPrivate(bucket, pathInBucket, buf, contentType) {
   const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${pathInBucket}`, {
     method: 'POST',
@@ -281,6 +291,45 @@ async function renderMediaFinish(job) {
   }
 }
 
+async function renderMotionPostFinish(job) {
+  const jobs = await rest(`motion_post_jobs?id=eq.${job.motion_post_job_id}&created_by=eq.${job.created_by}&select=*`);
+  const sourceJob = jobs?.[0];
+  if (!sourceJob || !['ready', 'published'].includes(sourceJob.status)) throw new Error('Motion Post finishing source is unavailable');
+  if (sourceJob.output_bucket !== job.source_bucket || sourceJob.output_path !== job.source_path) {
+    throw new Error('Motion Post finishing source no longer matches the original output');
+  }
+  const sourceUrl = await signPrivateAsset(job.source_bucket, job.source_path, 3600);
+  const tmp = mkdtempSync(path.join(tmpdir(), 'motionpostfinish-'));
+  try {
+    const source = path.join(tmp, 'source.mp4');
+    const out = path.join(tmp, 'finished.mp4');
+    await download(sourceUrl, source);
+    const sourceProbe = ffprobe(source);
+    if (!sourceProbe.ok) throw new Error('Could not inspect the Motion Post source video');
+    const inputProps = {
+      sourceUrl,
+      durationSec: Number(sourceProbe.duration || sourceJob.duration_seconds || 1),
+      width: Number(sourceProbe.width || 1080),
+      height: Number(sourceProbe.height || 1920),
+      cues: job.text_cues || [],
+      style: job.style || {},
+    };
+    const serveUrl = await getServeUrl();
+    const composition = await selectComposition({ serveUrl, id: 'MediaFinishing', inputProps });
+    await renderMedia({ composition, serveUrl, codec: 'h264', outputLocation: out, inputProps });
+    const data = readFileSync(out);
+    const storagePath = `${job.created_by}/${job.motion_post_job_id}/finishes/${job.id}/output.mp4`;
+    const outputUrl = await uploadPublic(job.output_bucket || 'motion-posts', storagePath, data, 'video/mp4');
+    await patch('motion_post_finishing_jobs', job.id, {
+      status: 'succeeded', progress: 100, output_path: storagePath, output_url: outputUrl,
+      completed_at: new Date().toISOString(), error_message: null,
+    });
+    console.log(`[motion-post-finish] ${job.id} -> ${storagePath}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 async function renderPlatformExport(job) {
   const [assets, outputs] = await Promise.all([
     rest(`media_assets?id=eq.${job.source_asset_id}&select=*`),
@@ -371,6 +420,18 @@ async function claimNextFinish() {
   return job;
 }
 
+async function claimNextMotionPostFinish() {
+  const jobs = await rest('motion_post_finishing_jobs?status=eq.queued&order=queued_at.asc&limit=1&select=*');
+  const job = jobs?.[0];
+  if (!job) return null;
+  if (Number(job.attempts || 0) >= Number(job.max_attempts || 2)) {
+    await patch('motion_post_finishing_jobs', job.id, { status: 'failed', error_message: 'Finishing retry limit reached.', completed_at: new Date().toISOString() });
+    return null;
+  }
+  await patch('motion_post_finishing_jobs', job.id, { status: 'running', progress: 5, attempts: Number(job.attempts || 0) + 1, started_at: new Date().toISOString() });
+  return job;
+}
+
 async function claimNextPlatformExport() {
   const jobs = await rest('media_platform_exports?status=eq.queued&order=queued_at.asc&limit=1&select=*');
   const job = jobs?.[0];
@@ -388,12 +449,19 @@ async function loop() {
   for (;;) {
     let job = null;
     let finishJob = null;
+    let motionPostFinishJob = null;
     let platformExportJob = null;
     try {
       platformExportJob = await claimNextPlatformExport();
       if (platformExportJob) {
         console.log(`[platform-export-job] ${platformExportJob.id}`);
         await renderPlatformExport(platformExportJob);
+        continue;
+      }
+      motionPostFinishJob = await claimNextMotionPostFinish();
+      if (motionPostFinishJob) {
+        console.log(`[motion-post-finish-job] ${motionPostFinishJob.id}`);
+        await renderMotionPostFinish(motionPostFinishJob);
         continue;
       }
       finishJob = await claimNextFinish();
@@ -418,12 +486,16 @@ async function loop() {
         try { await patch('media_finishing_jobs', finishJob.id, { status: 'failed', progress: 0, error_message: String(e.message || e).slice(0, 500), completed_at: new Date().toISOString() }); }
         catch { /* best effort */ }
       }
+      if (motionPostFinishJob) {
+        try { await patch('motion_post_finishing_jobs', motionPostFinishJob.id, { status: 'failed', progress: 0, error_message: String(e.message || e).slice(0, 500), completed_at: new Date().toISOString() }); }
+        catch { /* best effort */ }
+      }
       if (job) {
         try { await patch('trellis_clip_render_jobs', job.id, { status: 'failed', error_message: String(e.message || e).slice(0, 500) }); }
         catch { /* best effort */ }
       }
     }
-    if (!job && !finishJob && !platformExportJob) await new Promise(r => setTimeout(r, POLL_MS));
+    if (!job && !finishJob && !motionPostFinishJob && !platformExportJob) await new Promise(r => setTimeout(r, POLL_MS));
   }
 }
 

@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase';
-import { MotionPostAudioOption, MotionPostJob } from '../types';
-import { publishToSocial } from './socialService';
+import {
+  MediaTextCue, MediaTextStyle, MotionPostAudioOption, MotionPostFinishingJob,
+  MotionPostJob, ScheduledPost,
+} from '../types';
 
 const BUCKET = 'motion-posts';
 
@@ -61,13 +63,43 @@ export async function pollMotionPost(jobId: string): Promise<MotionPostJob> {
   const { data, error } = await supabase.functions.invoke('motion-posts', { body: { op: 'poll', job_id: jobId } });
   if (error) throw new Error(await functionError(error, 'Could not refresh the Motion Post.'));
   if (!data?.job) throw new Error(data?.error || 'Motion Post not found.');
-  return data.job as MotionPostJob;
+  return (await hydrateMotionPosts([data.job as MotionPostJob]))[0];
 }
 
 export async function listMotionPosts(): Promise<MotionPostJob[]> {
   const { data, error } = await supabase.from('motion_post_jobs').select('*').order('created_at', { ascending: false }).limit(50);
   if (error) throw new Error(`Could not load Motion Posts: ${error.message}`);
-  return (data || []) as MotionPostJob[];
+  return hydrateMotionPosts((data || []) as MotionPostJob[]);
+}
+
+async function hydrateMotionPosts(jobs: MotionPostJob[]): Promise<MotionPostJob[]> {
+  if (!jobs.length) return jobs;
+  const ids = jobs.map(job => job.id);
+  const [finishes, publications] = await Promise.all([
+    supabase.from('motion_post_finishing_jobs').select('*').in('motion_post_job_id', ids).order('created_at', { ascending: false }),
+    supabase.from('scheduled_social_posts').select('*').in('source_motion_post_id', ids).order('created_at', { ascending: false }),
+  ]);
+  if (finishes.error) throw new Error(`Could not load text renders: ${finishes.error.message}`);
+  // Older deployments can briefly lack the provenance columns while the UI
+  // rolls out. Treat that as no queued publications, but do not hide other DB errors.
+  if (publications.error && !/source_motion_post_id/i.test(publications.error.message)) {
+    throw new Error(`Could not load queued Reels: ${publications.error.message}`);
+  }
+  const latestFinish = new Map<string, MotionPostFinishingJob>();
+  for (const row of (finishes.data || []) as MotionPostFinishingJob[]) {
+    if (!latestFinish.has(row.motion_post_job_id)) latestFinish.set(row.motion_post_job_id, row);
+  }
+  const latestPublication = new Map<string, ScheduledPost>();
+  for (const row of (publications.data || []) as ScheduledPost[]) {
+    if (row.source_motion_post_id && !latestPublication.has(row.source_motion_post_id)) {
+      latestPublication.set(row.source_motion_post_id, row);
+    }
+  }
+  return jobs.map(job => ({
+    ...job,
+    latest_finish: latestFinish.get(job.id) || null,
+    latest_publication: latestPublication.get(job.id) || null,
+  }));
 }
 
 export async function listMotionPostAudio(): Promise<MotionPostAudioOption[]> {
@@ -76,25 +108,31 @@ export async function listMotionPostAudio(): Promise<MotionPostAudioOption[]> {
   return (data?.tracks || []) as MotionPostAudioOption[];
 }
 
-async function setPublishStatus(jobId: string, status: 'ready' | 'publishing' | 'published', errorMessage?: string) {
+export async function queueMotionPostFinish(input: {
+  job_id: string;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  idempotency_key: string;
+}): Promise<MotionPostFinishingJob> {
   const { data, error } = await supabase.functions.invoke('motion-posts', {
-    body: { op: 'mark_publish_status', job_id: jobId, status, error_message: errorMessage || '' },
+    body: { op: 'queue_finish', ...input },
   });
-  if (error) throw new Error(await functionError(error, 'Could not update publish status.'));
-  return data?.job as MotionPostJob;
+  if (error) throw new Error(await functionError(error, 'Could not queue the text render.'));
+  if (!data?.finishing_job) throw new Error(data?.error || 'The finishing service returned no job.');
+  return data.finishing_job as MotionPostFinishingJob;
 }
 
-export async function publishMotionPost(job: MotionPostJob): Promise<MotionPostJob> {
-  if (!job.output_url) throw new Error('This Motion Post has no finished video.');
-  if (!job.branch_id) throw new Error('Choose a branch with an Instagram connection before publishing.');
-  if (!job.caption?.trim()) throw new Error('Add a caption before publishing.');
-  await setPublishStatus(job.id, 'publishing');
-  const outcome = await publishToSocial(job.branch_id, job.caption, job.output_url, null, undefined, {
-    media_type: 'video', media_urls: [job.output_url],
+export async function queueMotionPostPublication(input: {
+  job_id: string;
+  finishing_job_id?: string | null;
+  caption: string;
+  scheduled_for: string;
+  idempotency_key: string;
+}): Promise<ScheduledPost> {
+  const { data, error } = await supabase.functions.invoke('motion-posts', {
+    body: { op: 'queue_publish', ...input },
   });
-  if (!outcome.ok) {
-    await setPublishStatus(job.id, 'ready', outcome.error);
-    throw new Error(outcome.error || 'Instagram publishing failed.');
-  }
-  return setPublishStatus(job.id, 'published');
+  if (error) throw new Error(await functionError(error, 'Could not queue the Reel.'));
+  if (!data?.publication) throw new Error(data?.error || 'The publisher returned no queue record.');
+  return data.publication as ScheduledPost;
 }
