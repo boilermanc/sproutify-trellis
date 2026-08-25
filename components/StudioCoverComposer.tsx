@@ -15,6 +15,9 @@ interface Props {
   defaultSubtitleFont?: string;
   defaultSeriesColor?: string;
   defaultSeriesFont?: string;
+  defaultTreatment?: string;
+  defaultTextV?: string;
+  defaultTextH?: string;
   onSaved: (concept: StudioCoverConcept) => void;
 }
 
@@ -27,6 +30,18 @@ const TREATMENTS = [
   { id: 'after_dark', label: 'After Dark' },
 ] as const;
 type Treatment = typeof TREATMENTS[number]['id'];
+const isTreatment = (value: unknown): value is Treatment => TREATMENTS.some(item => item.id === value);
+type VPos = 'top' | 'middle' | 'bottom';
+type HAlign = 'left' | 'center' | 'right';
+const V_POS: VPos[] = ['top', 'middle', 'bottom'];
+const H_ALIGN: HAlign[] = ['left', 'center', 'right'];
+const isVPos = (value: unknown): value is VPos => V_POS.includes(value as VPos);
+const isHAlign = (value: unknown): value is HAlign => H_ALIGN.includes(value as HAlign);
+const TREATMENT_DEFAULT_POSITION: Record<Treatment, { v: VPos; h: HAlign }> = {
+  riviera_editorial: { v: 'top', h: 'right' },
+  travel_poster: { v: 'top', h: 'left' },
+  after_dark: { v: 'bottom', h: 'left' },
+};
 const TREATMENT_DEFAULT_COLOR: Record<Treatment, string> = {
   riviera_editorial: '#87351f',
   travel_poster: '#d64b1d',
@@ -85,35 +100,44 @@ function drawLetterspaced(ctx: CanvasRenderingContext2D, text: string, x: number
 const DEFAULT_SERIES_COLOR = '#fff4d6';
 const DEFAULT_SERIES_FONT: FontId = 'inter';
 
-export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultTitle, defaultSubtitle = '', defaultSeries = 'Rekkrd After Dark', defaultTitleColor, defaultTitleFont, defaultSubtitleColor, defaultSubtitleFont, defaultSeriesColor, defaultSeriesFont, onSaved }) => {
+export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultTitle, defaultSubtitle = '', defaultSeries = 'Rekkrd After Dark', defaultTitleColor, defaultTitleFont, defaultSubtitleColor, defaultSubtitleFont, defaultSeriesColor, defaultSeriesFont, defaultTreatment, defaultTextV, defaultTextH, onSaved }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
+  const savedTypography = source.metadata_json?.typography;
+  const initialTreatment = isTreatment(defaultTreatment) ? defaultTreatment : isTreatment(savedTypography?.treatment) ? savedTypography.treatment : 'riviera_editorial';
   const [title, setTitle] = useState(defaultTitle);
   const [subtitle, setSubtitle] = useState(defaultSubtitle);
   const [series, setSeries] = useState(defaultSeries || 'Rekkrd After Dark');
-  const [treatment, setTreatment] = useState<Treatment>('riviera_editorial');
-  const [titleColor, setTitleColor] = useState(defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
-  const [titleFont, setTitleFont] = useState<FontId>(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial);
-  const [subtitleColor, setSubtitleColor] = useState(defaultSubtitleColor || defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
-  const [subtitleFont, setSubtitleFont] = useState<FontId>(isFontId(defaultSubtitleFont) ? defaultSubtitleFont : (isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial));
+  const [treatment, setTreatment] = useState<Treatment>(initialTreatment);
+  const [titleColor, setTitleColor] = useState(defaultTitleColor || TREATMENT_DEFAULT_COLOR[initialTreatment]);
+  const [titleFont, setTitleFont] = useState<FontId>(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT[initialTreatment]);
+  const [subtitleColor, setSubtitleColor] = useState(defaultSubtitleColor || defaultTitleColor || TREATMENT_DEFAULT_COLOR[initialTreatment]);
+  const [subtitleFont, setSubtitleFont] = useState<FontId>(isFontId(defaultSubtitleFont) ? defaultSubtitleFont : (isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT[initialTreatment]));
   const [seriesColor, setSeriesColor] = useState(defaultSeriesColor || DEFAULT_SERIES_COLOR);
   const [seriesFont, setSeriesFont] = useState<FontId>(isFontId(defaultSeriesFont) ? defaultSeriesFont : DEFAULT_SERIES_FONT);
-  const [vintageBorder, setVintageBorder] = useState(true);
+  const [vPos, setVPos] = useState<VPos>(isVPos(defaultTextV) ? defaultTextV : isVPos(savedTypography?.text_v) ? savedTypography.text_v : TREATMENT_DEFAULT_POSITION[initialTreatment].v);
+  const [hAlign, setHAlign] = useState<HAlign>(isHAlign(defaultTextH) ? defaultTextH : isHAlign(savedTypography?.text_h) ? savedTypography.text_h : TREATMENT_DEFAULT_POSITION[initialTreatment].h);
+  const [vintageBorder, setVintageBorder] = useState(savedTypography?.vintage_border !== false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const savedTreatment = isTreatment(defaultTreatment) ? defaultTreatment : isTreatment(source.metadata_json?.typography?.treatment) ? source.metadata_json.typography.treatment : 'riviera_editorial';
     setTitle(defaultTitle);
     setSubtitle(defaultSubtitle);
     setSeries(defaultSeries || 'Rekkrd After Dark');
-    setTitleColor(defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
-    setTitleFont(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial);
-    setSubtitleColor(defaultSubtitleColor || defaultTitleColor || TREATMENT_DEFAULT_COLOR.riviera_editorial);
-    setSubtitleFont(isFontId(defaultSubtitleFont) ? defaultSubtitleFont : (isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT.riviera_editorial));
+    setTreatment(savedTreatment);
+    setTitleColor(defaultTitleColor || TREATMENT_DEFAULT_COLOR[savedTreatment]);
+    setTitleFont(isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT[savedTreatment]);
+    setSubtitleColor(defaultSubtitleColor || defaultTitleColor || TREATMENT_DEFAULT_COLOR[savedTreatment]);
+    setSubtitleFont(isFontId(defaultSubtitleFont) ? defaultSubtitleFont : (isFontId(defaultTitleFont) ? defaultTitleFont : TREATMENT_DEFAULT_FONT[savedTreatment]));
     setSeriesColor(defaultSeriesColor || DEFAULT_SERIES_COLOR);
     setSeriesFont(isFontId(defaultSeriesFont) ? defaultSeriesFont : DEFAULT_SERIES_FONT);
-  }, [defaultSeries, defaultSubtitle, defaultTitle, defaultTitleColor, defaultTitleFont, defaultSubtitleColor, defaultSubtitleFont, defaultSeriesColor, defaultSeriesFont, source.id]);
+    setVintageBorder(source.metadata_json?.typography?.vintage_border !== false);
+    setVPos(isVPos(defaultTextV) ? defaultTextV : isVPos(source.metadata_json?.typography?.text_v) ? source.metadata_json.typography.text_v : TREATMENT_DEFAULT_POSITION[savedTreatment].v);
+    setHAlign(isHAlign(defaultTextH) ? defaultTextH : isHAlign(source.metadata_json?.typography?.text_h) ? source.metadata_json.typography.text_h : TREATMENT_DEFAULT_POSITION[savedTreatment].h);
+  }, [defaultSeries, defaultSubtitle, defaultTitle, defaultTitleColor, defaultTitleFont, defaultSubtitleColor, defaultSubtitleFont, defaultSeriesColor, defaultSeriesFont, defaultTreatment, defaultTextV, defaultTextH, source.id]);
 
   const changeTreatment = (next: Treatment) => {
     setTreatment(next);
@@ -121,7 +145,17 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     setTitleFont(TREATMENT_DEFAULT_FONT[next]);
     setSubtitleColor(TREATMENT_DEFAULT_COLOR[next]);
     setSubtitleFont(TREATMENT_DEFAULT_FONT[next]);
+    setVPos(TREATMENT_DEFAULT_POSITION[next].v);
+    setHAlign(TREATMENT_DEFAULT_POSITION[next].h);
   };
+
+  const loadSelectedFonts = useCallback(async () => {
+    await Promise.all([
+      document.fonts.load(`700 94px ${FONT_FAMILY[titleFont]}`, title.trim() || 'Album'),
+      document.fonts.load(`${treatment === 'travel_poster' ? '700' : 'italic'} 31px ${FONT_FAMILY[subtitleFont]}`, subtitle.trim() || 'Subtitle'),
+      document.fonts.load(`700 24px ${FONT_FAMILY[seriesFont]}`, series.trim() || 'Series'),
+    ]);
+  }, [series, seriesFont, subtitle, subtitleFont, title, titleFont, treatment]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -155,50 +189,38 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     ctx.shadowBlur = 12;
     ctx.shadowOffsetY = 3;
 
-    if (treatment === 'riviera_editorial') {
-      ctx.fillStyle = titleColor;
-      ctx.textAlign = 'right';
-      let size = 72;
-      let lines: string[] = [];
-      do {
-        ctx.font = `700 ${size}px ${fontFamily}`;
-        lines = wrapText(ctx, title, 500, 3);
-        size -= lines.length > 3 || lines.some(line => ctx.measureText(line).width > 500) ? 4 : 0;
-      } while (size > 44 && lines.some(line => ctx.measureText(line).width > 500));
-      lines.forEach((line, index) => ctx.fillText(line, 952, 105 + index * size * 0.92));
-      if (subtitle.trim()) {
-        ctx.font = `italic 30px ${subtitleFontFamily}`;
-        ctx.fillStyle = subtitleColor;
-        ctx.fillText(subtitle, 952, 135 + lines.length * size * 0.92);
-      }
-    } else if (treatment === 'travel_poster') {
-      ctx.fillStyle = titleColor;
-      ctx.textAlign = 'left';
-      let size = 94;
-      let lines: string[] = [];
-      while (size >= 54) {
-        ctx.font = `700 ${size}px ${fontFamily}`;
-        lines = wrapText(ctx, title.toUpperCase(), 650, 3);
-        if (lines.every(line => ctx.measureText(line).width <= 650)) break;
-        size -= 4;
-      }
-      lines.forEach((line, index) => ctx.fillText(line, 66, 112 + index * size * 0.91));
-      if (subtitle.trim()) {
-        ctx.font = `700 30px ${subtitleFontFamily}`;
-        ctx.fillStyle = subtitleColor;
-        ctx.fillText(subtitle.toUpperCase(), 70, 145 + lines.length * size * 0.91);
-      }
-    } else {
-      ctx.fillStyle = titleColor;
-      ctx.textAlign = 'left';
-      ctx.font = `700 82px ${fontFamily}`;
-      const lines = wrapText(ctx, title, 830, 3);
-      lines.forEach((line, index) => ctx.fillText(line, 70, 700 + index * 84));
-      if (subtitle.trim()) {
-        ctx.font = `italic 31px ${subtitleFontFamily}`;
-        ctx.fillStyle = subtitleColor;
-        ctx.fillText(subtitle, 74, 700 - 54);
-      }
+    const maxWidth = treatment === 'riviera_editorial' ? 500 : treatment === 'travel_poster' ? 650 : 830;
+    let size = treatment === 'riviera_editorial' ? 72 : treatment === 'travel_poster' ? 94 : 82;
+    const minimumSize = treatment === 'riviera_editorial' ? 44 : 54;
+    const titleText = treatment === 'travel_poster' ? title.toUpperCase() : title;
+    let lines: string[] = [];
+    while (size >= minimumSize) {
+      ctx.font = `700 ${size}px ${fontFamily}`;
+      lines = wrapText(ctx, titleText, maxWidth, 3);
+      if (lines.every(line => ctx.measureText(line).width <= maxWidth)) break;
+      size -= 4;
+    }
+    const lineHeight = size * (treatment === 'after_dark' ? 1.02 : 0.92);
+    const subtitleSize = treatment === 'after_dark' ? 31 : 30;
+    const subtitleBlock = subtitle.trim() ? subtitleSize * 1.35 + 12 : 0;
+    const totalHeight = lines.length * lineHeight + subtitleBlock;
+    const top = vPos === 'top' ? 70 : vPos === 'middle' ? Math.max(50, (H - totalHeight) / 2) : H - 92 - totalHeight;
+    const x = hAlign === 'left' ? 70 : hAlign === 'center' ? W / 2 : W - 70;
+    ctx.textAlign = hAlign;
+
+    if (treatment === 'after_dark' && subtitle.trim()) {
+      ctx.font = `italic ${subtitleSize}px ${subtitleFontFamily}`;
+      ctx.fillStyle = subtitleColor;
+      ctx.fillText(subtitle, x, top + subtitleSize);
+    }
+    ctx.font = `700 ${size}px ${fontFamily}`;
+    ctx.fillStyle = titleColor;
+    const titleTop = top + (treatment === 'after_dark' ? subtitleBlock : 0);
+    lines.forEach((line, index) => ctx.fillText(line, x, titleTop + size + index * lineHeight));
+    if (treatment !== 'after_dark' && subtitle.trim()) {
+      ctx.font = `${treatment === 'travel_poster' ? '700' : 'italic'} ${subtitleSize}px ${subtitleFontFamily}`;
+      ctx.fillStyle = subtitleColor;
+      ctx.fillText(treatment === 'travel_poster' ? subtitle.toUpperCase() : subtitle, x, titleTop + lines.length * lineHeight + subtitleSize + 8);
     }
 
     ctx.shadowColor = 'rgba(0,0,0,0.65)';
@@ -209,7 +231,7 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     drawLetterspaced(ctx, (series.trim() || 'Rekkrd After Dark').toUpperCase(), W / 2, H - 36, 5, 'center');
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
-  }, [series, seriesColor, seriesFont, subtitle, subtitleColor, subtitleFont, title, titleColor, titleFont, treatment, vintageBorder]);
+  }, [hAlign, series, seriesColor, seriesFont, subtitle, subtitleColor, subtitleFont, title, titleColor, titleFont, treatment, vintageBorder, vPos]);
 
   useEffect(() => {
     let cancelled = false;
@@ -235,7 +257,13 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source.id, source.image_url]);
 
-  useEffect(() => { draw(); }, [draw]);
+  useEffect(() => {
+    let cancelled = false;
+    void loadSelectedFonts()
+      .then(() => { if (!cancelled) draw(); })
+      .catch(() => { if (!cancelled) setError('Could not load the selected cover font. Try choosing it again.'); });
+    return () => { cancelled = true; };
+  }, [draw, loadSelectedFonts]);
 
   const save = async () => {
     const canvas = canvasRef.current;
@@ -244,7 +272,9 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
     setSaved(false);
     setError(null);
     try {
-      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont, subtitle_color: subtitleColor, subtitle_font: subtitleFont, series_color: seriesColor, series_font: seriesFont });
+      await loadSelectedFonts();
+      draw();
+      const concept = await saveStudioCoverComposite(albumId, source.id, canvas.toDataURL('image/png'), { title, subtitle, series: series.trim() || 'Rekkrd After Dark', treatment, vintage_border: vintageBorder, title_color: titleColor, title_font: titleFont, subtitle_color: subtitleColor, subtitle_font: subtitleFont, series_color: seriesColor, series_font: seriesFont, text_v: vPos, text_h: hAlign });
       setSaved(true);
       onSaved(concept);
       window.setTimeout(() => setSaved(false), 3500);
@@ -261,6 +291,14 @@ export const StudioCoverComposer: React.FC<Props> = ({ albumId, source, defaultT
       <canvas ref={canvasRef} width={W} height={H} className="aspect-square w-full rounded-xl border border-amber-200 bg-slate-900" />
       <div className="space-y-3">
         <label className="block text-xs font-bold text-slate-700">Typography style<select value={treatment} onChange={event => changeTreatment(event.target.value as Treatment)} className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm">{TREATMENTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+
+        <div className="rounded-xl border border-amber-200 bg-white/60 p-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Title block position</p>
+          <p className="mt-1 text-xs text-slate-500">Move the album title and subtitle together.</p>
+          <div className="mt-2 grid grid-cols-3 gap-1.5" aria-label="Title block position">
+            {V_POS.flatMap(vertical => H_ALIGN.map(horizontal => <button key={`${vertical}-${horizontal}`} type="button" onClick={() => { setVPos(vertical); setHAlign(horizontal); }} aria-label={`${vertical} ${horizontal}`} className={`flex h-9 items-center justify-center rounded-lg border ${vPos === vertical && hAlign === horizontal ? 'border-amber-700 bg-amber-700 text-white' : 'border-amber-200 bg-white text-slate-500 hover:border-amber-400'}`}><span className={`h-2 w-2 rounded-full ${vPos === vertical && hAlign === horizontal ? 'bg-white' : 'bg-current'}`} /></button>))}
+          </div>
+        </div>
 
         <div className="rounded-xl border border-amber-200 bg-white/60 p-3 space-y-2.5">
           <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Album title</p>

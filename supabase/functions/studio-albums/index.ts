@@ -846,6 +846,8 @@ Deno.serve(async (req) => {
         subtitle_font: VALID_COVER_FONTS.has(String(body.typography?.subtitle_font || "")) ? body.typography.subtitle_font : undefined,
         series_color: HEX_COLOR_RE.test(String(body.typography?.series_color || "")) ? body.typography.series_color : undefined,
         series_font: VALID_COVER_FONTS.has(String(body.typography?.series_font || "")) ? body.typography.series_font : undefined,
+        text_v: ["top", "middle", "bottom"].includes(String(body.typography?.text_v || "")) ? body.typography.text_v : undefined,
+        text_h: ["left", "center", "right"].includes(String(body.typography?.text_h || "")) ? body.typography.text_h : undefined,
       };
       if (!typography.title) throw new Error("Add the album title before saving the cover.");
       await clearCoverSelections(db, album.id);
