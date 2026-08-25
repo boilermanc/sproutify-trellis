@@ -13,6 +13,8 @@ export interface PromoProject {
   requested_formats: Array<'9:16' | '16:9' | '1:1'>;
   status: string;
   current_revision_id: string | null;
+  selected_preview_render_id: string | null;
+  final_approved_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -160,6 +162,22 @@ export async function queuePromoRender(projectId: string, mode: 'preview' | 'fin
   return (await callPromo<{ job: PromoJob }>('create_job', {
     project_id: projectId, job_type: mode === 'preview' ? 'preview_render' : 'final_render', format,
   })).job;
+}
+
+export async function selectPromoPreview(projectId: string, assetId: string) {
+  return callPromo<{ project: PromoProject; asset: Record<string, unknown> }>('select_preview', {
+    project_id: projectId, asset_id: assetId,
+  });
+}
+
+export async function reviewPromoPreview(
+  projectId: string,
+  decision: 'approved' | 'changes_requested' | 'rejected' | 'revoked',
+  reason = '',
+) {
+  return (await callPromo<{ approval: Record<string, unknown> }>('review_preview', {
+    project_id: projectId, decision, reason,
+  })).approval;
 }
 
 export async function cancelPromoJob(projectId: string, jobId: string) {

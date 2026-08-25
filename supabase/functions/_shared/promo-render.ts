@@ -26,6 +26,7 @@ export function buildPromoRenderJobInput(
   manifestValue: unknown,
   assetRowsValue: unknown,
   approvalsValue: unknown,
+  selectedPreviewAssetIdValue: unknown,
   jobTypeValue: unknown,
   formatValue: unknown,
 ) {
@@ -184,9 +185,19 @@ export function buildPromoRenderJobInput(
     }
   }
   const approvals = Array.isArray(approvalsValue) ? approvalsValue.filter(record) : [];
+  const selectedPreviewAssetId = typeof selectedPreviewAssetIdValue === "string" ? selectedPreviewAssetIdValue : "";
+  const selectedPreviewAsset = rowById.get(selectedPreviewAssetId);
   const latestPreviewDecision = approvals
-    .filter(approval => approval.revision_id === manifestValue.promo.revision_id && approval.gate === "preview")
+    .filter(approval => approval.revision_id === manifestValue.promo.revision_id && approval.gate === "preview"
+      && approval.subject_type === "asset" && approval.subject_id === selectedPreviewAssetId)
     .sort((left, right) => String(right.created_at || "").localeCompare(String(left.created_at || "")))[0];
+  if (jobType === "final_render" && (!record(selectedPreviewAsset) || selectedPreviewAsset.kind !== "render_preview"
+    || selectedPreviewAsset.revision_id !== manifestValue.promo.revision_id || selectedPreviewAsset.status !== "ready"
+    || selectedPreviewAsset.storage_bucket !== "promo-assets" || !configured(selectedPreviewAsset.storage_path)
+    || selectedPreviewAsset.mime_type !== "video/mp4" || selectedPreviewAsset.width !== 1080
+    || selectedPreviewAsset.height !== 1920 || !SHA256.test(String(selectedPreviewAsset.checksum_sha256 || "")))) {
+    throw new PromoRenderReadinessError("PROMO_RENDER_PREVIEW_NOT_SELECTED", "Select a verified current-revision preview before final rendering.");
+  }
   if (jobType === "final_render" && latestPreviewDecision?.decision !== "approved") {
     throw new PromoRenderReadinessError("PROMO_RENDER_PREVIEW_NOT_APPROVED", "Approve the current preview before final rendering.");
   }
@@ -220,6 +231,7 @@ export function buildPromoRenderJobInput(
     review: {
       provenance_overlay: jobType === "preview_render",
       generated_visual_scene_ids: generatedVisualSceneIds,
+      approved_preview_asset_id: jobType === "final_render" ? selectedPreviewAssetId : null,
     },
     qa: {
       expected_width: 1080,

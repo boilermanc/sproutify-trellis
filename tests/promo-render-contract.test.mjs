@@ -16,16 +16,30 @@ async function fixture() {
     storage_path: `${manifest.promo.id}/${asset.id}/asset`,
     checksum_sha256: asset.checksum_sha256,
   }));
+  const selectedPreviewAssetId = '11111111-1111-4111-8111-111111111111';
+  assets.push({
+    id: selectedPreviewAssetId,
+    revision_id: manifest.promo.revision_id,
+    kind: 'render_preview',
+    status: 'ready',
+    storage_bucket: 'promo-assets',
+    storage_path: `${manifest.promo.id}/${selectedPreviewAssetId}/preview.mp4`,
+    mime_type: 'video/mp4',
+    checksum_sha256: 'a'.repeat(64),
+    width: 1080,
+    height: 1920,
+  });
   const approvals = [{
-    revision_id: manifest.promo.revision_id, gate: 'preview', decision: 'approved', created_at: '2026-08-25T20:00:00.000Z',
+    revision_id: manifest.promo.revision_id, gate: 'preview', subject_type: 'asset', subject_id: selectedPreviewAssetId,
+    decision: 'approved', created_at: '2026-08-25T20:00:00.000Z',
   }];
-  return { manifest, assets, approvals };
+  return { manifest, assets, approvals, selectedPreviewAssetId };
 }
 
 test('preview render input is vertical, asset-ID-only, and derives caption text from approved display copy', async () => {
   const { manifest, assets } = await fixture();
   manifest.captions.cues[0].text = 'browser supplied replacement';
-  const input = buildPromoRenderJobInput(manifest, assets, [], 'preview_render', '9:16');
+  const input = buildPromoRenderJobInput(manifest, assets, [], null, 'preview_render', '9:16');
   assert.equal(input.mode, 'preview');
   assert.deepEqual(input.format, {
     name: '9:16', width: 1080, height: 1920, crop_policy: 'contain',
@@ -39,57 +53,63 @@ test('preview render input is vertical, asset-ID-only, and derives caption text 
 test('rendering fails closed until capture, audio, timeline, assets, and profile are ready', async () => {
   const unverified = await fixture();
   unverified.manifest.captures.scenarios[0].assertions[0].passed = false;
-  assert.throws(() => buildPromoRenderJobInput(unverified.manifest, unverified.assets, [], 'preview_render', '9:16'), /verified capture assertions/i);
+  assert.throws(() => buildPromoRenderJobInput(unverified.manifest, unverified.assets, [], null, 'preview_render', '9:16'), /verified capture assertions/i);
 
   const missingAsset = await fixture();
   missingAsset.assets = missingAsset.assets.filter(asset => asset.id !== missingAsset.manifest.voice.selected_take_id);
   missingAsset.assets = missingAsset.assets.filter(asset => asset.id !== 'asset-voice-kore');
-  assert.throws(() => buildPromoRenderJobInput(missingAsset.manifest, missingAsset.assets, [], 'preview_render', '9:16'), /checksum-verified private asset/i);
+  assert.throws(() => buildPromoRenderJobInput(missingAsset.manifest, missingAsset.assets, [], null, 'preview_render', '9:16'), /checksum-verified private asset/i);
 
   const shortMusic = await fixture();
   shortMusic.manifest.music.takes[0].duration_seconds = 5;
-  assert.throws(() => buildPromoRenderJobInput(shortMusic.manifest, shortMusic.assets, [], 'preview_render', '9:16'), /covering the full render/i);
+  assert.throws(() => buildPromoRenderJobInput(shortMusic.manifest, shortMusic.assets, [], null, 'preview_render', '9:16'), /covering the full render/i);
 
   const badTimeline = await fixture();
   badTimeline.manifest.scenes[0].duration.preferred_seconds = 6;
-  assert.throws(() => buildPromoRenderJobInput(badTimeline.manifest, badTimeline.assets, [], 'preview_render', '9:16'), /fill the target render timebase/i);
+  assert.throws(() => buildPromoRenderJobInput(badTimeline.manifest, badTimeline.assets, [], null, 'preview_render', '9:16'), /fill the target render timebase/i);
 
   const wrongProfile = await fixture();
   wrongProfile.manifest.render.pixel_format = 'yuv444p';
-  assert.throws(() => buildPromoRenderJobInput(wrongProfile.manifest, wrongProfile.assets, [], 'preview_render', '9:16'), /proven vertical delivery profile/i);
+  assert.throws(() => buildPromoRenderJobInput(wrongProfile.manifest, wrongProfile.assets, [], null, 'preview_render', '9:16'), /proven vertical delivery profile/i);
 
   const unsafeArea = await fixture();
   unsafeArea.manifest.format_variants[0].safe_area.top = 1900;
-  assert.throws(() => buildPromoRenderJobInput(unsafeArea.manifest, unsafeArea.assets, [], 'preview_render', '9:16'), /safe area/i);
+  assert.throws(() => buildPromoRenderJobInput(unsafeArea.manifest, unsafeArea.assets, [], null, 'preview_render', '9:16'), /safe area/i);
 
   const unapprovedClaim = await fixture();
   unapprovedClaim.manifest.evidence.claims[0].approved = false;
-  assert.throws(() => buildPromoRenderJobInput(unapprovedClaim.manifest, unapprovedClaim.assets, [], 'preview_render', '9:16'), /every claim/i);
+  assert.throws(() => buildPromoRenderJobInput(unapprovedClaim.manifest, unapprovedClaim.assets, [], null, 'preview_render', '9:16'), /every claim/i);
 });
 
 test('final render requires current preview approval and approved input assets', async () => {
   const missingApproval = await fixture();
-  assert.throws(() => buildPromoRenderJobInput(missingApproval.manifest, missingApproval.assets, [], 'final_render', '9:16'), /Approve the current preview/i);
+  assert.throws(() => buildPromoRenderJobInput(missingApproval.manifest, missingApproval.assets, [], missingApproval.selectedPreviewAssetId, 'final_render', '9:16'), /Approve the current preview/i);
 
   const unapprovedAsset = await fixture();
   unapprovedAsset.manifest.assets.find(asset => asset.id === 'asset-music-lyria').provenance.approved = false;
-  assert.throws(() => buildPromoRenderJobInput(unapprovedAsset.manifest, unapprovedAsset.assets, unapprovedAsset.approvals, 'final_render', '9:16'), /every input asset to be approved/i);
+  assert.throws(() => buildPromoRenderJobInput(unapprovedAsset.manifest, unapprovedAsset.assets, unapprovedAsset.approvals, unapprovedAsset.selectedPreviewAssetId, 'final_render', '9:16'), /every input asset to be approved/i);
 
   const revokedPreview = await fixture();
   revokedPreview.approvals.push({
     revision_id: revokedPreview.manifest.promo.revision_id,
     gate: 'preview',
+    subject_type: 'asset',
+    subject_id: revokedPreview.selectedPreviewAssetId,
     decision: 'revoked',
     created_at: '2026-08-25T20:01:00.000Z',
   });
-  assert.throws(() => buildPromoRenderJobInput(revokedPreview.manifest, revokedPreview.assets, revokedPreview.approvals, 'final_render', '9:16'), /Approve the current preview/i);
+  assert.throws(() => buildPromoRenderJobInput(revokedPreview.manifest, revokedPreview.assets, revokedPreview.approvals, revokedPreview.selectedPreviewAssetId, 'final_render', '9:16'), /Approve the current preview/i);
+
+  const wrongSelection = await fixture();
+  assert.throws(() => buildPromoRenderJobInput(wrongSelection.manifest, wrongSelection.assets, wrongSelection.approvals, '22222222-2222-4222-8222-222222222222', 'final_render', '9:16'), /Select a verified current-revision preview/i);
 
   const ready = await fixture();
-  const input = buildPromoRenderJobInput(ready.manifest, ready.assets, ready.approvals, 'final_render', '9:16');
+  const input = buildPromoRenderJobInput(ready.manifest, ready.assets, ready.approvals, ready.selectedPreviewAssetId, 'final_render', '9:16');
   assert.equal(input.mode, 'final');
   assert.equal(input.review.provenance_overlay, false);
   assert.equal(input.render_profile.integrated_lufs, -14);
   assert.equal(input.render_profile.true_peak_dbfs, -1.5);
+  assert.equal(input.review.approved_preview_asset_id, ready.selectedPreviewAssetId);
 });
 
 test('render jobs are server-resolved while the production composition worker remains disabled', async () => {
@@ -98,7 +118,7 @@ test('render jobs are server-resolved while the production composition worker re
     read('../services/promoStudioService.ts'), read('../workers/promo-render-worker/README.md'),
     read('../workers/clip-render-worker/proofs/ps-002/PromoProof.tsx'),
   ]);
-  assert.match(edge, /buildPromoRenderJobInput\(revision\.manifest, assets \|\| \[\], approvals \|\| \[\], jobType, body\.format\)/);
+  assert.match(edge, /revision\.manifest, assets \|\| \[\], approvals \|\| \[\], project\.selected_preview_render_id, jobType, body\.format/);
   assert.match(edge, /"preview_render", "final_render"/);
   assert.match(worker, /p_job_types: \["noop"\]/);
   assert.doesNotMatch(worker, /p_job_types: \["preview_render"/);
