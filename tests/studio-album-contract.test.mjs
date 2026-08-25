@@ -25,6 +25,23 @@ test('batch generation reports partial failures instead of hiding queued tracks'
   assert.match(fn, /return json\(\{ tracks, failures \}, failures\.length \? 207 : 201\)/);
 });
 
+test('an untestable track can be reversibly left out without falsely approving it', async () => {
+  const migration = await read('supabase/migrations/20260825182123_add_studio_track_master_inclusion.sql');
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(migration, /included_in_master BOOLEAN NOT NULL DEFAULT TRUE/);
+  assert.match(fn, /body\.action === "set_track_master_inclusion"/);
+  assert.match(fn, /const includedTracks = \(tracks \|\| \[\]\)\.filter/);
+  assert.match(fn, /track\.included_in_master !== false/);
+  assert.match(fn, /Track inclusion is locked after the master build begins/);
+  assert.match(fn, /\.eq\("included_in_master", true\)\.eq\("review_status", "approved"\)/);
+  assert.match(service, /setStudioTrackMasterInclusion/);
+  assert.match(page, /Leave out/);
+  assert.match(page, /left out of master/);
+  assert.match(page, /includedTracks\.length > 0 && approvedAudioCount === includedTracks\.length/);
+});
+
 test('Studio limits active Lyria workers and automatically recovers stale track jobs', async () => {
   const fn = await read('supabase/functions/studio-albums/index.ts');
   assert.match(fn, /const MAX_CONCURRENT_STUDIO_TRACKS = 3/);

@@ -98,6 +98,10 @@ export async function reorderStudioTracks(albumId: string, trackIds: string[]): 
   return (await callStudio('reorder_tracks', { album_id: albumId, track_ids: trackIds })).tracks as StudioTrack[];
 }
 
+export async function setStudioTrackMasterInclusion(trackId: string, included: boolean): Promise<StudioTrack> {
+  return (await callStudio('set_track_master_inclusion', { track_id: trackId, included })).track as StudioTrack;
+}
+
 export async function generatePlannedStudioTrack(trackId: string): Promise<StudioTrack> {
   return (await callStudio('generate_planned_track', { track_id: trackId })).track as StudioTrack;
 }

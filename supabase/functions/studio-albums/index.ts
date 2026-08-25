@@ -424,7 +424,7 @@ async function preparePublicationDraft(db: any, album: any, userId: string, yout
   // to the approved square cover only if no thumbnail was designed.
   const { data: thumbnail } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
   const { data: cover } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
-  const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("track_number,title,duration_seconds").eq("album_id", album.id).eq("review_status", "approved").order("track_number");
+  const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("track_number,title,duration_seconds").eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "approved").order("track_number");
   if (tracksError) throw new Error(tracksError.message);
   let elapsed = 0;
   const chapters = (tracks || []).map((track: any) => {
@@ -507,23 +507,24 @@ async function syncStudioMaster(db: any, albumId: string) {
 async function queueStudioMaster(db: any, album: any, userId: string) {
   const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("*").eq("album_id", album.id).order("track_number");
   if (tracksError) throw new Error(tracksError.message);
-  if (!tracks?.length) throw new Error("Add and approve at least one generated track before building the full MP3.");
-  const unapproved = tracks.filter((track: any) => track.review_status !== "approved");
+  const includedTracks = (tracks || []).filter((track: any) => track.included_in_master !== false);
+  if (!includedTracks.length) throw new Error("Include and approve at least one generated track before building the full MP3.");
+  const unapproved = includedTracks.filter((track: any) => track.review_status !== "approved");
   if (unapproved.length) throw new Error(`Approve all generated tracks before building the full MP3 (${unapproved.length} remaining).`);
-  if (tracks.some((track: any) => !track.legacy_generation_id)) throw new Error("Every approved track needs a completed generation before the full MP3 can be built.");
-  const legacyIds = tracks.map((track: any) => track.legacy_generation_id);
+  if (includedTracks.some((track: any) => !track.legacy_generation_id)) throw new Error("Every included track needs a completed generation before the full MP3 can be built.");
+  const legacyIds = includedTracks.map((track: any) => track.legacy_generation_id);
   const { data: legacyTracks, error: legacyError } = await db.from("trellis_music_tracks").select("*").in("id", legacyIds);
   if (legacyError) throw new Error(legacyError.message);
   const legacyById = new Map<string, any>((legacyTracks || []).map((track: any) => [track.id, track]));
-  const stitchTracks = await Promise.all(tracks.map(async (track: any) => {
+  const stitchTracks = await Promise.all(includedTracks.map(async (track: any) => {
     const legacy = legacyById.get(track.legacy_generation_id);
     if (!legacy || legacy.status !== "completed" || !legacy.storage_bucket || !legacy.storage_path) throw new Error(`“${track.title}” is not ready for mastering.`);
     const { data: signed, error: signError } = await db.storage.from(legacy.storage_bucket).createSignedUrl(legacy.storage_path, 60 * 60);
     if (signError || !signed?.signedUrl) throw new Error(signError?.message || `Could not prepare “${track.title}” for mastering.`);
     return { id: legacy.id, track_number: track.track_number, audio_url: signed.signedUrl };
   }));
-  const totalDuration = tracks.reduce((total: number, track: any) => total + Number(track.duration_seconds || 0), 0);
-  const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Master] ${album.title}`, target_duration_seconds: totalDuration, actual_duration_seconds: null, genre: album.genre, mood: album.mood, track_count: tracks.length, avg_track_length_seconds: Math.round(totalDuration / tracks.length), status: "stitching", final_audio_url: null, error_message: null }).select("*").single();
+  const totalDuration = includedTracks.reduce((total: number, track: any) => total + Number(track.duration_seconds || 0), 0);
+  const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Master] ${album.title}`, target_duration_seconds: totalDuration, actual_duration_seconds: null, genre: album.genre, mood: album.mood, track_count: includedTracks.length, avg_track_length_seconds: Math.round(totalDuration / includedTracks.length), status: "stitching", final_audio_url: null, error_message: null }).select("*").single();
   if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the master adapter.");
   const { data: render, error: renderError } = await db.from("trellis_music_renders").insert({ session_id: legacySession.id, render_type: "master", status: "queued", track_ids: legacyIds }).select("*").single();
   if (renderError || !render) throw new Error(renderError?.message || "Could not queue the master render.");
@@ -590,8 +591,9 @@ Deno.serve(async (req) => {
       const { data, error } = await db.from("studio_tracks").select("*").eq("album_id", body.album_id).order("track_number");
       if (error) throw new Error(error.message);
       const tracks = await Promise.all((data || []).map((track: any) => syncLegacyTrack(db, track.id)));
-      const statuses = tracks.map((track: any) => track.review_status);
-      if (tracks.length && statuses.every((status: string) => status === "approved")) await db.from("studio_albums").update({ music_generation_status: "complete", status: album.master_status === "approved" ? album.status : "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
+      const includedTracks = tracks.filter((track: any) => track.included_in_master !== false);
+      const statuses = includedTracks.map((track: any) => track.review_status);
+      if (includedTracks.length && statuses.every((status: string) => status === "approved")) await db.from("studio_albums").update({ music_generation_status: "complete", status: album.master_status === "approved" ? album.status : "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
       else if (statuses.some((status: string) => status === "regenerating")) await db.from("studio_albums").update({ music_generation_status: "processing", status: "track_generation", updated_at: new Date().toISOString() }).eq("id", album.id);
       else if (statuses.some((status: string) => ["pending_review", "rejected", "failed"].includes(status))) await db.from("studio_albums").update({ status: "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
       return json({ tracks, master: await syncStudioMaster(db, album.id), video: await videoWithAsset(db, album), publication: await publicationForAlbum(db, album.id) });
@@ -658,6 +660,18 @@ Deno.serve(async (req) => {
       const { data: tracks } = await db.from("studio_tracks").select("*").eq("album_id", album.id).order("track_number");
       return json({ tracks: await Promise.all((tracks || []).map((track: any) => trackWithAsset(db, track.id))) });
     }
+    if (body.action === "set_track_master_inclusion") {
+      const { data: track, error: trackError } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
+      if (trackError || !track) throw new Error("Track not found.");
+      const album = await getOwnedAlbum(db, track.album_id, user.id);
+      if (!["not_started", "failed"].includes(album.master_status)) throw new Error("Track inclusion is locked after the master build begins.");
+      if (track.review_status === "regenerating") throw new Error("Wait for this track to finish generating before changing its master inclusion.");
+      const included = body.included === true;
+      const { error: updateError } = await db.from("studio_tracks").update({ included_in_master: included, updated_at: new Date().toISOString() }).eq("id", track.id);
+      if (updateError) throw new Error(updateError.message);
+      await db.from("studio_albums").update({ music_generation_status: included ? "processing" : album.music_generation_status, status: "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
+      return json({ track: await trackWithAsset(db, track.id) });
+    }
     if (body.action === "approve_planned_track") {
       const { data: studioTrack, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
       if (error || !studioTrack) throw new Error("Track not found.");
@@ -669,7 +683,7 @@ Deno.serve(async (req) => {
     }
     if (body.action === "approve_all_planned_tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "locked", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("review_status", "planned").is("legacy_generation_id", null).select("*");
+      const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "locked", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "planned").is("legacy_generation_id", null).select("*");
       if (error) throw new Error(error.message);
       return json({ tracks: tracks || [] });
     }
@@ -683,7 +697,7 @@ Deno.serve(async (req) => {
     }
     if (body.action === "generate_all_approved_tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data: approvedPlans, error } = await db.from("studio_tracks").select("*").eq("album_id", album.id).eq("review_status", "locked").is("legacy_generation_id", null).order("track_number");
+      const { data: approvedPlans, error } = await db.from("studio_tracks").select("*").eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "locked").is("legacy_generation_id", null).order("track_number");
       if (error) throw new Error(error.message);
       if (!approvedPlans?.length) throw new Error("Approve at least one planned track before generating.");
       const tracks: any[] = [];
@@ -733,18 +747,18 @@ Deno.serve(async (req) => {
     if (body.action === "approve_all_generated_tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const now = new Date().toISOString();
-      const { data: readyTracks, error: readyError } = await db.from("studio_tracks").select("id").eq("album_id", album.id).eq("review_status", "pending_review").not("studio_asset_id", "is", null);
+      const { data: readyTracks, error: readyError } = await db.from("studio_tracks").select("id").eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "pending_review").not("studio_asset_id", "is", null);
       if (readyError) throw new Error(readyError.message);
       const readyIds = (readyTracks || []).map((track: any) => track.id);
       if (!readyIds.length) {
-        const { count } = await db.from("studio_tracks").select("id", { count: "exact", head: true }).eq("album_id", album.id).neq("review_status", "approved");
+        const { count } = await db.from("studio_tracks").select("id", { count: "exact", head: true }).eq("album_id", album.id).eq("included_in_master", true).neq("review_status", "approved");
         return json({ tracks: [], remaining_review_count: count || 0 });
       }
       const { error } = await db.from("studio_tracks").update({ review_status: "approved", approved_at: now, rejection_reason: null, updated_at: now }).in("id", readyIds);
       if (error) throw new Error(error.message);
       const tracks = await Promise.all(readyIds.map((trackId: string) => trackWithAsset(db, trackId)));
-      const { data: remaining } = await db.from("studio_tracks").select("id, review_status").eq("album_id", album.id);
-      const remainingReviewCount = (remaining || []).filter((track: any) => track.review_status !== "approved").length;
+      const { data: remaining } = await db.from("studio_tracks").select("id, review_status, included_in_master").eq("album_id", album.id);
+      const remainingReviewCount = (remaining || []).filter((track: any) => track.included_in_master !== false && track.review_status !== "approved").length;
       if (remainingReviewCount === 0) await db.from("studio_albums").update({ music_generation_status: "complete", status: "track_review", updated_at: now }).eq("id", album.id);
       return json({ tracks, remaining_review_count: remainingReviewCount });
     }

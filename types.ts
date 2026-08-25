@@ -642,6 +642,7 @@ export interface StudioTrack {
   prompt: string | null;
   duration_seconds: number | null;
   review_status: 'planned' | 'generated' | 'pending_review' | 'approved' | 'rejected' | 'regenerating' | 'locked' | 'failed';
+  included_in_master: boolean;
   rejection_reason: string | null;
   narrative_purpose?: string | null;
   energy?: number | null;
