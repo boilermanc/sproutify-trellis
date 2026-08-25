@@ -221,7 +221,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
 
     const files = Array.from(fileList).filter(f => {
       const isImage = f.type.startsWith('image/');
-      const isVideo = f.type.startsWith('video/');
+      const isVideo = f.type === 'video/mp4' || /\.mp4$/i.test(f.name);
       if (!isImage && !isVideo) {
         addToast?.(`${f.name} is not an image or video — skipped.`, 'error');
         return false;
@@ -543,7 +543,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,video/mp4,video/quicktime"
+            accept="image/*,video/mp4"
             multiple
             className="hidden"
             onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
