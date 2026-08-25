@@ -138,6 +138,18 @@ export async function queuePromoCapture(projectId: string, scenarioId: string) {
   })).job;
 }
 
+export async function queuePromoVoiceGeneration(projectId: string, direction: 'natural' | 'warm_authority' | 'launch_energy') {
+  return (await callPromo<{ job: PromoJob }>('create_job', {
+    project_id: projectId, job_type: 'voice_generate', direction,
+  })).job;
+}
+
+export async function queuePromoVoiceAlignment(projectId: string, takeId: string) {
+  return (await callPromo<{ job: PromoJob }>('create_job', {
+    project_id: projectId, job_type: 'voice_align', take_id: takeId,
+  })).job;
+}
+
 export async function cancelPromoJob(projectId: string, jobId: string) {
   return (await callPromo<{ job: PromoJob }>('cancel_job', { project_id: projectId, job_id: jobId })).job;
 }

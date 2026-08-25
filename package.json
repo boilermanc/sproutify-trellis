@@ -22,6 +22,7 @@
     "test:promo-creative": "node --test tests/promo-creative-plan.test.mjs",
     "test:promo-approvals": "node --test tests/promo-approval-gates.test.mjs",
     "test:promo-capture": "node --test tests/promo-capture-contract.test.mjs",
+    "test:promo-voice": "node --test tests/promo-voice-contract.test.mjs",
     "test:promo-foundation": "node --test tests/promo-job-claim.test.mjs",
     "test:cards": "node --test tests/card-direction-copy.test.mjs",
     "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs tests/youtube-oauth-contract.test.mjs",
