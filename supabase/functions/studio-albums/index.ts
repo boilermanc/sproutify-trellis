@@ -15,7 +15,7 @@ const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https:
 const configuredImageModel = Deno.env.get("IMAGE_MODEL") || "";
 const IMAGE_MODEL = configuredImageModel.startsWith("imagen-") ? "gemini-3.1-flash-image" : configuredImageModel || "gemini-3.1-flash-image";
 const IMAGE_EDIT_MODEL = Deno.env.get("IMAGE_EDIT_MODEL") || "gemini-3.1-flash-image";
-const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains"]);
+const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains", "dm_serif", "libre_baskerville", "cinzel", "anton", "league_spartan", "poppins", "raleway", "caveat"]);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const cleanText = (value: unknown, limit: number) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
