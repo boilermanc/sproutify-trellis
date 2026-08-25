@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Award, RefreshCw, Loader2, Sparkles, ImageOff, ArrowUpDown, Info, Bookmark, Share2, Eye,
+  Check, ChevronDown,
 } from 'lucide-react';
 import { ApiKeyConfig, BranchContext, CardTemplate, CardPalette } from '../types';
 import { supabase } from '../lib/supabase';
@@ -134,7 +135,10 @@ const PostPerformance: React.FC<PostPerformanceProps> = ({ apiKeys, branchContex
   const [posts, setPosts] = useState<PublishedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [branchFilter, setBranchFilter] = useState<string>('all');
+  // An empty selection means "all brands". Keep the pending dropdown choices
+  // separate so the page only changes when the user presses Apply.
+  const [pendingBranchFilters, setPendingBranchFilters] = useState<string[]>([]);
+  const [appliedBranchFilters, setAppliedBranchFilters] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('saves');
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -205,9 +209,34 @@ const PostPerformance: React.FC<PostPerformanceProps> = ({ apiKeys, branchContex
   }, [posts, branchContext]);
 
   const scopedPosts = useMemo(
-    () => (branchFilter === 'all' ? posts : posts.filter(p => p.branch_slug === branchFilter)),
-    [posts, branchFilter],
+    () => (
+      appliedBranchFilters.length === 0
+        ? posts
+        : posts.filter(p => !!p.branch_slug && appliedBranchFilters.includes(p.branch_slug))
+    ),
+    [posts, appliedBranchFilters],
   );
+
+  const branchFilterLabel = useMemo(() => {
+    if (appliedBranchFilters.length === 0) return 'All brands';
+    if (appliedBranchFilters.length === 1) return branchLabel(appliedBranchFilters[0]);
+    return `${appliedBranchFilters.length} brands`;
+  }, [appliedBranchFilters, branchContext]);
+
+  const togglePendingBranch = (slug: string) => {
+    setPendingBranchFilters(current => (
+      current.includes(slug)
+        ? current.filter(selectedSlug => selectedSlug !== slug)
+        : [...current, slug]
+    ));
+  };
+
+  const applyBranchFilters = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAppliedBranchFilters(pendingBranchFilters);
+    setAiResult(null);
+    setAiError(null);
+    event.currentTarget.closest('details')?.removeAttribute('open');
+  };
 
   const measuredCount = useMemo(() => scopedPosts.filter(p => p.insight).length, [scopedPosts]);
 
@@ -405,21 +434,101 @@ Keep it under 300 words.`;
       ) : (
         <>
           {/* Branch scoping */}
-          {branchOptions.length > 1 && (
+          {branchOptions.length > 0 && (
             <div className="flex items-center justify-end">
-              <select
-                value={branchFilter}
-                onChange={e => { setBranchFilter(e.target.value); setAiResult(null); }}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-600 focus:outline-none focus:border-emerald-500 transition"
-                title="Creative is per-brand — compare within one brand at a time"
-              >
-                <option value="all">All brands</option>
-                {branchOptions.map(slug => (
-                  <option key={slug} value={slug}>{branchLabel(slug)}</option>
-                ))}
-              </select>
+              <details className="relative group">
+                <summary
+                  className="list-none cursor-pointer flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition [&::-webkit-details-marker]:hidden"
+                  aria-label="Filter post performance by brand"
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Branches</span>
+                  <span>{branchFilterLabel}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+
+                <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                  <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Choose one or more brands
+                  </p>
+                  <div className="max-h-64 space-y-1 overflow-y-auto">
+                    <label className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={pendingBranchFilters.length === 0}
+                        onChange={() => setPendingBranchFilters([])}
+                        className="sr-only"
+                      />
+                      <span className={`flex h-4 w-4 items-center justify-center rounded border ${
+                        pendingBranchFilters.length === 0 ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300 bg-white'
+                      }`}>
+                        {pendingBranchFilters.length === 0 && <Check className="h-3 w-3 text-white" />}
+                      </span>
+                      All brands
+                    </label>
+                    {branchOptions.map(slug => {
+                      const isSelected = pendingBranchFilters.includes(slug);
+                      return (
+                        <label key={slug} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => togglePendingBranch(slug)}
+                            className="sr-only"
+                          />
+                          <span className={`flex h-4 w-4 items-center justify-center rounded border ${
+                            isSelected ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300 bg-white'
+                          }`}>
+                            {isSelected && <Check className="h-3 w-3 text-white" />}
+                          </span>
+                          {branchLabel(slug)}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={applyBranchFilters}
+                      className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-emerald-700"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
           )}
+
+          {/* AI advisor */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Sage: What's Working?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={handleAskAdvisor}
+                disabled={aiLoading || measuredCount === 0}
+                className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest transition disabled:opacity-40 shadow-sm"
+              >
+                {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Ask Sage
+              </button>
+            </div>
+
+            {measuredCount === 0 ? (
+              <p className="text-xs text-slate-400">Sage needs at least one post with synced engagement data before it can spot a pattern.</p>
+            ) : aiError ? (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-700">{aiError}</div>
+            ) : aiResult ? (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{aiResult}</div>
+            ) : (
+              <p className="text-xs text-slate-400">
+                Sage will only cite the numbers in the leaderboard below — including each post's original creative rationale from Card Studio — and will say "not enough data" rather than guess when a template hasn't run long enough.
+              </p>
+            )}
+          </div>
 
           {measuredCount === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center space-y-2">
@@ -577,36 +686,6 @@ Keep it under 300 words.`;
             </>
           )}
 
-          {/* AI advisor */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Sage: What's Working?</h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleAskAdvisor}
-                disabled={aiLoading || measuredCount === 0}
-                className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest transition disabled:opacity-40 shadow-sm"
-              >
-                {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                Ask Sage
-              </button>
-            </div>
-
-            {measuredCount === 0 ? (
-              <p className="text-xs text-slate-400">Sage needs at least one post with synced engagement data before it can spot a pattern.</p>
-            ) : aiError ? (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-700">{aiError}</div>
-            ) : aiResult ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{aiResult}</div>
-            ) : (
-              <p className="text-xs text-slate-400">
-                Sage will only cite the numbers in the leaderboard above — including each post's original creative rationale from Card Studio — and will say "not enough data" rather than guess when a template hasn't run long enough.
-              </p>
-            )}
-          </div>
         </>
       )}
     </div>
