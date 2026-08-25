@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Branch } from '../types';
 import {
-  cancelPromoJob, createPromoProject, createPromoRevision, generatePromoCreativePlan,
+  approvePromoClaim, approvePromoScript, cancelPromoJob, createPromoProject, createPromoRevision, generatePromoCreativePlan,
   getPromoProject, listPromoProjects, queuePromoJob,
   retryPromoJob, type PromoJob, type PromoProject, type PromoProjectDetail,
 } from '../services/promoStudioService';
@@ -135,6 +135,30 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
     } finally { setBusy(false); }
   };
 
+  const approveClaim = async (claimId: string) => {
+    if (!selectedId) return;
+    try {
+      setBusy(true);
+      await approvePromoClaim(selectedId, claimId);
+      await loadDetail(selectedId);
+      addToast('Claim approved in a new immutable revision.');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not approve the claim.', 'error');
+    } finally { setBusy(false); }
+  };
+
+  const approveScript = async () => {
+    if (!selectedId) return;
+    try {
+      setBusy(true);
+      await approvePromoScript(selectedId);
+      await loadDetail(selectedId);
+      addToast('Script approved. The project is ready for audio review.');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not approve the script.', 'error');
+    } finally { setBusy(false); }
+  };
+
   const mutateJob = async (job: PromoJob, action: 'cancel' | 'retry') => {
     try {
       setBusy(true);
@@ -144,6 +168,13 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
   };
 
   const manifest = detail?.revision?.manifest;
+  const scriptHasUnsavedChanges = !!manifest && manifest.script.phrases.some(phrase =>
+    (scriptDrafts[phrase.id]?.display_text ?? phrase.display_text) !== phrase.display_text
+    || (scriptDrafts[phrase.id]?.speech_text ?? phrase.speech_text) !== phrase.speech_text
+  );
+  const claimsReadyForScript = !!manifest && manifest.evidence.claims.every(claim =>
+    ['verified', 'user_attested'].includes(claim.status) && claim.approved
+  );
   const stages = manifest ? [
     { name: 'Evidence', icon: GitBranch, ready: !!manifest.evidence.repository && !!manifest.evidence.capture_environment, note: manifest.evidence.repository ? `${manifest.evidence.repository.full_name}@${manifest.evidence.repository.commit_sha.slice(0, 7)}` : detail?.source ? `${detail.source.repository_full_name}@${detail.source.default_ref} mapped; ${detail.source.capture_base_url ? 'capture environment mapped' : 'capture environment required'}` : 'Branch repository and capture environment required' },
     { name: 'Script', icon: FileCode2, ready: manifest.script.status === 'approved', note: manifest.script.approved_text ? `${manifest.script.phrases.length} timed phrase${manifest.script.phrases.length === 1 ? '' : 's'}` : 'Script has not been drafted' },
@@ -208,11 +239,11 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
 
             {manifest.evidence.claims.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Claims review</p><h2 className="mt-1 text-xl font-black text-slate-900">Evidence before approval</h2><p className="mt-2 text-sm text-slate-500">Generated claims remain unapproved. Unsupported claims block strict-mode final approval.</p></div><ShieldCheck className="h-6 w-6 text-violet-500" /></div>
-              <div className="mt-5 space-y-3">{manifest.evidence.claims.map(claim => <div key={claim.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-black text-slate-900">{claim.text}</p><p className="mt-1 text-xs text-slate-500">{claim.claim_type.replace(/_/g, ' ')}</p></div><div className="flex gap-2"><span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase ${claim.status === 'verified' ? statusClass.ready : statusClass.failed}`}>{claim.status}</span><span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase text-amber-700">Not approved</span></div></div><div className="mt-3 flex flex-wrap gap-2">{claim.evidence_refs.map(ref => <code key={ref} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-600">{ref}</code>)}</div></div>)}</div>
+              <div className="mt-5 space-y-3">{manifest.evidence.claims.map(claim => <div key={claim.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-black text-slate-900">{claim.text}</p><p className="mt-1 text-xs text-slate-500">{claim.claim_type.replace(/_/g, ' ')}</p></div><div className="flex flex-wrap justify-end gap-2"><span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase ${['verified', 'user_attested'].includes(claim.status) ? statusClass.ready : statusClass.failed}`}>{claim.status.replace(/_/g, ' ')}</span><span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase ${claim.approved ? statusClass.ready : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{claim.approved ? 'Approved' : 'Not approved'}</span>{!claim.approved && ['verified', 'user_attested'].includes(claim.status) && <button disabled={busy} onClick={() => void approveClaim(claim.id)} className="rounded-lg bg-slate-950 px-3 py-1.5 text-[10px] font-black uppercase text-white disabled:opacity-40">Approve claim</button>}</div></div><div className="mt-3 flex flex-wrap gap-2">{claim.evidence_refs.map(ref => <code key={ref} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-600">{ref}</code>)}</div></div>)}</div>
             </section>}
 
             {manifest.script.phrases.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Script review</p><h2 className="mt-1 text-xl font-black text-slate-900">Display and spoken text</h2><p className="mt-2 text-sm text-slate-500">Speech text may use pronunciation spelling without changing the on-screen wording.</p></div><button disabled={busy || manifest.script.phrases.some(phrase => !(scriptDrafts[phrase.id]?.display_text ?? '').trim() || !(scriptDrafts[phrase.id]?.speech_text ?? '').trim())} onClick={() => void saveScriptDraft()} className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">Save new revision</button></div>
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Script review</p><h2 className="mt-1 text-xl font-black text-slate-900">Display and spoken text</h2><p className="mt-2 text-sm text-slate-500">Speech text may use pronunciation spelling without changing the on-screen wording.</p></div><div className="flex flex-wrap justify-end gap-2"><button disabled={busy || !scriptHasUnsavedChanges || manifest.script.phrases.some(phrase => !(scriptDrafts[phrase.id]?.display_text ?? '').trim() || !(scriptDrafts[phrase.id]?.speech_text ?? '').trim())} onClick={() => void saveScriptDraft()} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-700 disabled:opacity-40">Save new revision</button><button disabled={busy || scriptHasUnsavedChanges || !claimsReadyForScript || manifest.script.status === 'approved'} onClick={() => void approveScript()} className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">{manifest.script.status === 'approved' ? 'Script approved' : 'Approve script & continue'}</button></div></div>
               <div className="mt-5 space-y-4">{manifest.script.phrases.map((phrase, index) => <div key={phrase.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-center justify-between"><p className="text-xs font-black uppercase tracking-widest text-violet-600">Phrase {index + 1}</p><span className="text-[10px] font-bold uppercase text-slate-400">{phrase.emphasis} emphasis</span></div><label className="mt-3 block text-xs font-bold text-slate-500">On-screen text<textarea rows={2} value={scriptDrafts[phrase.id]?.display_text ?? phrase.display_text} onChange={event => setScriptDrafts(current => ({ ...current, [phrase.id]: { display_text: event.target.value, speech_text: current[phrase.id]?.speech_text ?? phrase.speech_text } }))} className="mt-1 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-violet-400" /></label><label className="mt-3 block text-xs font-bold text-slate-500">Voice text<textarea rows={2} value={scriptDrafts[phrase.id]?.speech_text ?? phrase.speech_text} onChange={event => setScriptDrafts(current => ({ ...current, [phrase.id]: { display_text: current[phrase.id]?.display_text ?? phrase.display_text, speech_text: event.target.value } }))} className="mt-1 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-violet-400" /></label><div className="mt-3 flex flex-wrap gap-2">{phrase.evidence_refs.map(ref => <code key={ref} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-600">{ref}</code>)}</div></div>)}</div>
             </section>}
 

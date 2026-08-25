@@ -20,6 +20,8 @@ test('browser mutations use only the Promo Studio Edge Function', async () => {
   assert.match(service, /functions\.invoke\('promo-studio'/);
   assert.match(service, /'generate_creative_plan'/);
   assert.match(service, /'create_revision'/);
+  assert.match(service, /'approve_claim'/);
+  assert.match(service, /'approve_script'/);
   assert.doesNotMatch(service, /\.from\(['"]promo_/);
 });
 
@@ -31,6 +33,8 @@ test('Creative Director output enters explicit claims and script review', async 
   assert.match(page, /Script review/);
   assert.match(page, /Unsupported claims block strict-mode final approval/);
   assert.match(page, /Generate evidence plan/);
+  assert.match(page, /Approve claim/);
+  assert.match(page, /Approve script & continue/);
   assert.match(edge, /action === "generate_creative_plan"/);
   assert.match(edge, /parsePromoCreativePlan\(sanitizePromoJson\(rawPlan\), evidence\)/);
   assert.match(edge, /status: "script_review"/);
