@@ -99,7 +99,7 @@ test('voice jobs are resolved server-side while the deployed worker remains no-o
     read('../services/promoStudioService.ts'), read('../workers/promo-voice-worker/README.md'),
     read('../supabase/migrations/20260825201900_reserve_promo_voice_take_numbers.sql'), read('../constants.ts'),
   ]);
-  assert.match(edge, /\["capture", "voice_generate", "voice_align", "music_generate"\]\.includes\(jobType\)/);
+  assert.match(edge, /\["capture", "voice_generate", "voice_align", "music_generate", "preview_render", "final_render"\]\.includes\(jobType\)/);
   assert.match(edge, /buildPromoVoiceGenerationJobInput\(revision\.manifest, body\.direction, \(voiceReservations \|\| \[\]\)\.map/);
   assert.match(edge, /buildPromoVoiceAlignmentJobInput\(revision\.manifest, body\.take_id\)/);
   assert.match(worker, /p_job_types: \["noop"\]/);
