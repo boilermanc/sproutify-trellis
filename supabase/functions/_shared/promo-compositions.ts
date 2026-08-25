@@ -1,17 +1,6 @@
-export const PROMO_COMPOSITION_REGISTRY_VERSION = "1.0.0" as const;
+import type { PromoCompositionDefinition } from "./types.ts";
 
-export type PromoCompositionDefinition = Readonly<{
-  key: string;
-  version: string;
-  status: "proof_only" | "contract_only" | "worker_enabled";
-  branch_scope: "all" | "allowlist";
-  branch_slugs: readonly string[];
-  formats: readonly string[];
-  width: number;
-  height: number;
-  fps: number;
-  worker_enabled: boolean;
-}>;
+export const PROMO_COMPOSITION_REGISTRY_VERSION = "1.0.0" as const;
 
 export const PROMO_COMPOSITIONS: readonly PromoCompositionDefinition[] = Object.freeze([
   Object.freeze({
@@ -25,11 +14,12 @@ export const PROMO_COMPOSITIONS: readonly PromoCompositionDefinition[] = Object.
     height: 1920,
     fps: 30,
     worker_enabled: false,
+    source_fingerprint_sha256: "828b5ba150bd7fecf18f25c5edeba0fb5c9887d229fe2bcfd60868e84be7298f",
   }),
   Object.freeze({
     key: "vertical-ui-story",
     version: "v1",
-    status: "contract_only",
+    status: "render_verified",
     branch_scope: "all",
     branch_slugs: Object.freeze([]),
     formats: Object.freeze(["9:16"]),
@@ -37,6 +27,7 @@ export const PROMO_COMPOSITIONS: readonly PromoCompositionDefinition[] = Object.
     height: 1920,
     fps: 30,
     worker_enabled: false,
+    source_fingerprint_sha256: "6f404ce3c28134c95c478735f8d1abd409a1d5fced689996feeff1c8237f7210",
   }),
 ]);
 

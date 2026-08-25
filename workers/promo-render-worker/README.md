@@ -10,9 +10,11 @@ for every branch. The server now pins composition keys and versions in the
 branch-aware registry at `supabase/functions/_shared/promo-compositions.ts`.
 The Rekkrd proof is allowlisted only for Rekkrd, and the branch-neutral
 `vertical-ui-story@v1` contract is reserved for every branch. Both remain
-worker-disabled. Before enabling render claims, Trellis still needs:
+worker-disabled. The generic component's LF-normalized UTF-8 source fingerprint
+is pinned in the registry, so its implementation cannot change without a
+versioned contract update. Before enabling render claims, Trellis still needs:
 
-- the real `vertical-ui-story@v1` Remotion implementation and a registry change to `worker_enabled`;
+- promotion of the implemented `vertical-ui-story@v1` composition from visual proof to a registry-approved worker build;
 - private `promo-assets` downloads resolved by asset ID immediately before rendering;
 - Remotion rendering isolated from the Supabase Edge Function runtime;
 - FFmpeg two-pass loudness normalization to -14 LUFS / -1.5 dBTP;

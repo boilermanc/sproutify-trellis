@@ -134,8 +134,9 @@ test('branch-neutral compositions resolve only from the pinned registry', async 
     assert.equal(input.render_profile.composition, 'vertical-ui-story');
     assert.equal(input.render_profile.composition_version, 'v1');
     assert.equal(input.render_profile.composition_registry_version, PROMO_COMPOSITION_REGISTRY_VERSION);
-    assert.equal(input.render_profile.composition_status, 'contract_only');
+    assert.equal(input.render_profile.composition_status, 'render_verified');
     assert.equal(input.render_profile.composition_worker_enabled, false);
+    assert.match(input.render_profile.composition_source_fingerprint_sha256, /^[a-f0-9]{64}$/);
   }
 });
 

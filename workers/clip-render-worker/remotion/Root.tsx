@@ -2,6 +2,7 @@ import React from 'react';
 import { Composition } from 'remotion';
 import { ClipBeat, BeatProps } from './Templates';
 import { MediaFinishing, MediaFinishingProps } from './MediaFinishing';
+import { PromoVerticalStory, promoVerticalStoryDefaultProps } from './PromoVerticalStory';
 
 const FPS = 30;
 
@@ -30,6 +31,18 @@ export const Root: React.FC = () => <>
       durationInFrames: Math.max(FPS, Math.round((props.durationSec || 6) * FPS)),
       width: Math.max(2, Math.round((props.width || 854) / 2) * 2),
       height: Math.max(2, Math.round((props.height || 480) / 2) * 2),
+    })}
+  />
+  <Composition
+    id="vertical-ui-story"
+    component={PromoVerticalStory}
+    width={1080}
+    height={1920}
+    fps={FPS}
+    durationInFrames={FPS * 10}
+    defaultProps={promoVerticalStoryDefaultProps}
+    calculateMetadata={({ props }) => ({
+      durationInFrames: Math.max(FPS, Math.round((props.duration_seconds || 10) * FPS)),
     })}
   />
 </>;

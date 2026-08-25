@@ -247,6 +247,7 @@ export function buildPromoRenderJobInput(
       composition_registry_version: PROMO_COMPOSITION_REGISTRY_VERSION,
       composition_status: composition.status,
       composition_worker_enabled: composition.worker_enabled,
+      composition_source_fingerprint_sha256: composition.source_fingerprint_sha256,
       video_codec: "h264",
       pixel_format: "yuv420p",
       audio_codec: "aac",

@@ -53,6 +53,21 @@ Optional env: `ASSET_BUCKET` (default `clip-assets`), `POLL_MS` (default 5000).
 npm run studio    # opens Remotion Studio on the ClipBeat composition
 ```
 
+## Promo Studio composition
+
+The same bundle contains the branch-neutral `vertical-ui-story` composition at
+1080x1920 and 30 fps. It consumes worker-resolved media sources, normalized
+scenes and captions, approved brand presentation, safe areas, and review
+metadata. It contains no branch-specific copy, routes, claims, or styling.
+
+```bash
+npm run render:promo-sample
+```
+
+That command uses Rekkrd only as fixture data and writes ignored visual and
+delivery-QA artifacts under `work/promo-studio/vertical-ui-story-v1/output`.
+The deployed Promo worker still claims only `noop` jobs.
+
 ## The 7 templates
 
 `motion_graphic`, `kinetic_quote_card`, `animation`, `ui_callout`, `timeline`,

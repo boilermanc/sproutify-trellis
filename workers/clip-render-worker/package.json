@@ -6,7 +6,8 @@
   "description": "Renders Clip Studio assets and private post-generation text finishes for Trellis.",
   "scripts": {
     "start": "node worker.mjs",
-    "studio": "remotion studio remotion/index.ts"
+    "studio": "remotion studio remotion/index.ts",
+    "render:promo-sample": "node ../../work/promo-studio/vertical-ui-story-v1/scripts/render-sample.mjs"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.515",
