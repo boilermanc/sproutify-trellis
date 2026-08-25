@@ -17,6 +17,8 @@ export interface StudioStylePreset {
   instruments: string[];
   prompt_guidance: string;
   artwork_direction: string;
+  mood_collection?: string;
+  paired_art_style_id?: string;
 }
 
 export const STUDIO_STYLE_PRESETS: StudioStylePreset[] = [
@@ -43,6 +45,33 @@ export const STUDIO_STYLE_PRESETS: StudioStylePreset[] = [
     bpm_range: '72–94 BPM', instruments: ['Rhodes electric piano', 'mellow organ', 'clean guitar', 'upright bass', 'brushed drums', 'soft percussion'],
     prompt_guidance: 'Keep arrangements airy and melodic with gentle pocket, warm keys, subtle organ color, and no nightlife or romance language.',
     artwork_direction: 'Soft morning light, warm wood, coffee, houseplants, linen textures, calm editorial photography or illustration.',
+  },
+  {
+    id: 'quiet_intelligence', name: 'Quiet Intelligence', tagline: 'Low-cortisol ambient jazz with space, restraint, and architectural calm.',
+    genre: 'Minimalist Ambient Jazz', mood: 'Calm, intelligent, introspective, luxurious', era: 'Contemporary with subtle mid-century influence',
+    theme: 'A serene modernist interior designed for deep focus and quiet confidence', vocal_direction: 'instrumental', preferred_track_seconds: 150,
+    bpm_range: '68–78 BPM', instruments: ['Rhodes electric piano', 'felt piano', 'warm upright bass', 'brushed drums', 'muted trumpet', 'breathy tenor saxophone', 'subtle atmospheric pads'],
+    prompt_guidance: 'Keep the pulse soft and nearly flat, with sparse short phrases, generous silence, seventh and ninth chords, warm tape color, dark room ambience, soft transients, and spacious reverb. No vocals, catchy hooks, bright solos, upbeat café jazz, swing exaggeration, bebop, funk, jazz-hop beats, dramatic builds, busy percussion, or excessive vinyl crackle.',
+    artwork_direction: 'Serene modernist architecture, warm natural materials, precise negative space, soft shadow, muted charcoal and amber, premium editorial restraint without text.',
+    mood_collection: 'Quiet Intelligence', paired_art_style_id: 'cinematic_architectural_minimalism',
+  },
+  {
+    id: 'smooth_noir_jazz', name: 'Smooth Noir Jazz', tagline: 'Slow saxophone, smoky piano and late-night cinematic elegance.',
+    genre: 'Slow Smooth Noir Jazz', mood: 'Intimate, reflective, romantic, smoky, slightly melancholic', era: '1940s–1960s inspired contemporary',
+    theme: 'An elegant late-night lounge after the story has already happened', vocal_direction: 'instrumental', preferred_track_seconds: 150,
+    bpm_range: '55–70 BPM', instruments: ['breathy tenor saxophone', 'dark acoustic piano', 'slow upright bass', 'brushed snare', 'muted kick', 'delicate ride cymbal', 'restrained jazz guitar', 'muted trumpet', 'occasional strings'],
+    prompt_guidance: 'Use dark minor-seventh, major-seventh, and ninth-chord harmony with a slow, memorable but understated saxophone melody, generous narration space, warm tape color, soft transients, subtle room ambience, and dark natural reverb. Allow only restrained hints of Latin-jazz rhythm. No upbeat swing, bebop, cheerful café jazz, bright brass sections, energetic solos, trap drums, lo-fi hip-hop beats, excessive vinyl crackle, vocals, action scoring, or exaggerated detective clichés.',
+    artwork_direction: 'Cinematic vintage-noir luxury interior after midnight, one elegant solitary figure, rain-streaked glass, warm practical lamps, deep shadows, atmospheric haze, desaturated charcoal and amber, and restrained analog-film character.',
+    mood_collection: 'After Midnight', paired_art_style_id: 'cinematic_vintage_noir',
+  },
+  {
+    id: 'positive_chill_house', name: 'Positive Chill House', tagline: 'Warm electronic grooves, wordless textures, and relaxed morning energy.',
+    genre: 'Positive Chill House', mood: 'Fresh, optimistic, productive, emotionally light', era: 'Contemporary polished electronic',
+    theme: 'Sunlight entering a beautiful modern home at the beginning of a productive day', vocal_direction: 'instrumental', preferred_track_seconds: 120,
+    bpm_range: '105–115 BPM', instruments: ['soft four-on-the-floor kick', 'warm rounded electronic bass', 'finger snaps', 'delicate shakers', 'restrained hi-hats', 'airy synth pads', 'electric piano', 'soft melodic plucks', 'abstract wordless vocal textures'],
+    prompt_guidance: 'Maintain a steady, quietly energizing house pulse with bright simple motifs, smooth transitions, soft transients, clean modern production, and a warm spacious mix. Wordless vocal textures may appear only as subtle atmospheric instrumentation, never intelligible lyrics. No festival EDM, heavy bass drops, aggressive sidechain pumping, nightclub energy, tropical-house clichés, prominent vocals, bright corporate music, ukulele, trap drums, harsh synth leads, or dramatic cinematic tension.',
+    artwork_direction: 'Sunlit lifestyle editorial in a beautiful contemporary home, with one naturally relaxed stylish person, enormous windows, warm morning light, cream textiles, pale walls, light oak, subtle greenery, restrained lifestyle details, and generous negative space.',
+    mood_collection: 'Morning Flow', paired_art_style_id: 'sunlit_lifestyle_editorial',
   },
   {
     id: 'midnight_jazz', name: 'Midnight Jazz', tagline: 'Polished, mysterious jazz for focused evening listening.',

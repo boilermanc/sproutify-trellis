@@ -161,6 +161,8 @@ const StudioAlbums: React.FC<Props> = ({ branches, branchSocialAccounts, addToas
     if (!selected) return;
     const preset = getStudioStylePreset(selected.style_preset_id);
     setVisualDirection(String(selected.style_profile?.artwork_direction || preset.artwork_direction));
+    const pairedArtStyleId = String(selected.style_profile?.paired_art_style_id || preset.paired_art_style_id || '');
+    if (EPISODE_ART_STYLES.some(style => style.id === pairedArtStyleId)) setCoverStyleId(pairedArtStyleId);
   }, [selected?.id]);
   const loadCoverConcepts = useCallback(async (albumId: string) => { try { setCoverConcepts(await getStudioCoverConcepts(albumId)); } catch (error) { addToast(error instanceof Error ? error.message : 'Could not load cover concepts.', 'error'); } }, [addToast]);
   useEffect(() => { if (selected?.release_identity_status === 'approved') loadCoverConcepts(selected.id); }, [selected?.id, selected?.release_identity_status, loadCoverConcepts]);
@@ -224,6 +226,7 @@ const StudioAlbums: React.FC<Props> = ({ branches, branchSocialAccounts, addToas
     setStylePresetId(preset.id);
     setForm(current => ({ ...current, genre: preset.genre, mood: preset.mood, era: preset.era, theme: preset.theme, vocal_direction: preset.vocal_direction, description: current.description || preset.tagline }));
     setCoverDirection(preset.artwork_direction);
+    if (preset.paired_art_style_id && EPISODE_ART_STYLES.some(style => style.id === preset.paired_art_style_id)) setCoverStyleId(preset.paired_art_style_id);
   };
   const update = (field: keyof typeof EMPTY, value: string | number) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -235,7 +238,7 @@ const StudioAlbums: React.FC<Props> = ({ branches, branchSocialAccounts, addToas
       const preset = getStudioStylePreset(stylePresetId);
       const targetSeconds = Math.max(60, Number(form.targetMinutes)) * 60;
       planStudioRuntime(targetSeconds, preset.preferred_track_seconds);
-      const album = await createStudioAlbum({ ...form, target_duration_seconds: targetSeconds, description: form.description || undefined, style_preset_id: preset.id, style_profile: { bpm_range: preset.bpm_range, instruments: preset.instruments, prompt_guidance: preset.prompt_guidance, artwork_direction: preset.artwork_direction, preferred_track_seconds: preset.preferred_track_seconds } });
+      const album = await createStudioAlbum({ ...form, target_duration_seconds: targetSeconds, description: form.description || undefined, style_preset_id: preset.id, style_profile: { bpm_range: preset.bpm_range, instruments: preset.instruments, prompt_guidance: preset.prompt_guidance, artwork_direction: preset.artwork_direction, preferred_track_seconds: preset.preferred_track_seconds, mood_collection: preset.mood_collection, paired_art_style_id: preset.paired_art_style_id } });
       setAlbums(current => [album, ...current]); setSelected(album); setTracks([]); setMaster(null); setVideo(null); setForm(EMPTY); setStylePresetId(DEFAULT_STYLE.id); addToast(`Album “${album.title}” created.`, 'success');
     } catch (error) { addToast(error instanceof Error ? error.message : 'Could not create album.', 'error'); }
     finally { setCreating(false); }

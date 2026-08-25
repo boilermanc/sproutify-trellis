@@ -126,6 +126,40 @@ test('Studio cover generation treats subject and Riviera direction as hard const
   assert.match(fn, /No tropical jungle, waterfall, volcano/);
 });
 
+test('Studio image options include Cinematic Architectural Minimalism for Quiet Intelligence releases', async () => {
+  const constants = await read('constants.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(constants, /id: 'cinematic_architectural_minimalism'/);
+  assert.match(constants, /name: 'Cinematic Architectural Minimalism'/);
+  assert.match(constants, /Monumental spaces, sculptural materials, warm shadows and quiet luxury\./);
+  assert.match(constants, /expansive negative space/);
+  assert.match(constants, /No bright colors, busy decor/);
+  assert.match(constants, /No people by default; if scale is essential, use only one tiny distant figure/);
+  assert.match(page, /EPISODE_ART_STYLES\.map\(style => <option/);
+});
+
+test('Studio image options include Cinematic Vintage Noir and persist paired mood selections', async () => {
+  const constants = await read('constants.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(constants, /id: 'cinematic_vintage_noir'/);
+  assert.match(constants, /name: 'Cinematic Vintage Noir'/);
+  assert.match(constants, /rain-streaked window/);
+  assert.match(constants, /No modern nightclub, neon or cyberpunk colors/);
+  assert.match(constants, /visible weapons/);
+  assert.match(page, /paired_art_style_id: preset\.paired_art_style_id/);
+  assert.match(page, /setCoverStyleId\(pairedArtStyleId\)/);
+});
+
+test('Studio image options include Sunlit Lifestyle Editorial for Morning Flow', async () => {
+  const constants = await read('constants.ts');
+  assert.match(constants, /id: 'sunlit_lifestyle_editorial'/);
+  assert.match(constants, /name: 'Sunlit Lifestyle Editorial'/);
+  assert.match(constants, /Warm morning light, relaxed luxury and clean modern living\./);
+  assert.match(constants, /one or two purposeful lifestyle details/);
+  assert.match(constants, /No staged stock-photo smiles/);
+  assert.match(constants, /generous negative space for later typography or product overlays/);
+});
+
 test('Studio covers are editable, removable, and titled before approval', async () => {
   const page = await read('pages/StudioAlbums.tsx');
   const composer = await read('components/StudioCoverComposer.tsx');

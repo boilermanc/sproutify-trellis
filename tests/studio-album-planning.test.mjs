@@ -36,3 +36,37 @@ test('rejects an impossible distribution instead of silently overshooting', () =
 test('includes the requested creative starting points', () => {
   assert.deepEqual(planning.STUDIO_STYLE_PRESETS.slice(0, 3).map(preset => preset.id), ['groovy_organ', 'jazz_spy', 'saturday_morning_lounge']);
 });
+
+test('includes the low-cortisol Quiet Intelligence preset with restrained generation guidance', () => {
+  const preset = planning.getStudioStylePreset('quiet_intelligence');
+  assert.equal(preset.name, 'Quiet Intelligence');
+  assert.equal(preset.genre, 'Minimalist Ambient Jazz');
+  assert.equal(preset.bpm_range, '68–78 BPM');
+  assert.equal(preset.vocal_direction, 'instrumental');
+  assert.match(preset.prompt_guidance, /generous silence/i);
+  assert.match(preset.prompt_guidance, /No vocals/);
+  assert.ok(preset.instruments.includes('Rhodes electric piano'));
+  assert.ok(preset.instruments.includes('muted trumpet'));
+  assert.equal(preset.paired_art_style_id, 'cinematic_architectural_minimalism');
+});
+
+test('includes the After Midnight Smooth Noir Jazz preset and its visual pairing', () => {
+  const preset = planning.getStudioStylePreset('smooth_noir_jazz');
+  assert.equal(preset.name, 'Smooth Noir Jazz');
+  assert.equal(preset.mood_collection, 'After Midnight');
+  assert.equal(preset.bpm_range, '55–70 BPM');
+  assert.equal(preset.paired_art_style_id, 'cinematic_vintage_noir');
+  assert.match(preset.prompt_guidance, /memorable but understated saxophone melody/i);
+  assert.match(preset.prompt_guidance, /No upbeat swing/);
+});
+
+test('includes the Morning Flow Positive Chill House preset and its visual pairing', () => {
+  const preset = planning.getStudioStylePreset('positive_chill_house');
+  assert.equal(preset.name, 'Positive Chill House');
+  assert.equal(preset.mood_collection, 'Morning Flow');
+  assert.equal(preset.bpm_range, '105–115 BPM');
+  assert.equal(preset.vocal_direction, 'instrumental');
+  assert.equal(preset.paired_art_style_id, 'sunlit_lifestyle_editorial');
+  assert.match(preset.prompt_guidance, /never intelligible lyrics/i);
+  assert.match(preset.prompt_guidance, /No festival EDM/);
+});
