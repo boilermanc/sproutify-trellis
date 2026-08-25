@@ -57,6 +57,14 @@ const FONT_OPTIONS = [
   { id: 'montserrat', label: 'Montserrat', family: '"Montserrat", Arial, sans-serif' },
   { id: 'inter', label: 'Inter', family: '"Inter", Arial, sans-serif' },
   { id: 'jetbrains', label: 'JetBrains Mono', family: '"JetBrains Mono", "Courier New", monospace' },
+  { id: 'dm_serif', label: 'DM Serif Display', family: '"DM Serif Display", Georgia, serif' },
+  { id: 'libre_baskerville', label: 'Libre Baskerville', family: '"Libre Baskerville", Georgia, serif' },
+  { id: 'cinzel', label: 'Cinzel', family: '"Cinzel", Georgia, serif' },
+  { id: 'anton', label: 'Anton', family: '"Anton", Impact, sans-serif' },
+  { id: 'league_spartan', label: 'League Spartan', family: '"League Spartan", Arial, sans-serif' },
+  { id: 'poppins', label: 'Poppins', family: '"Poppins", Arial, sans-serif' },
+  { id: 'raleway', label: 'Raleway', family: '"Raleway", Arial, sans-serif' },
+  { id: 'caveat', label: 'Caveat', family: '"Caveat", cursive' },
 ] as const;
 type FontId = typeof FONT_OPTIONS[number]['id'];
 const FONT_FAMILY: Record<FontId, string> = Object.fromEntries(FONT_OPTIONS.map(item => [item.id, item.family])) as Record<FontId, string>;

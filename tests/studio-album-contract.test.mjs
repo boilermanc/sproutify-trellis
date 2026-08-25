@@ -428,6 +428,15 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(composer, /FONT_OPTIONS/);
   assert.match(composer, /TREATMENT_DEFAULT_FONT/);
   assert.match(composer, /Playfair Display/);
+  assert.match(composer, /DM Serif Display/);
+  assert.match(composer, /Libre Baskerville/);
+  assert.match(composer, /Cinzel/);
+  assert.match(composer, /Anton/);
+  assert.match(composer, /League Spartan/);
+  assert.match(composer, /Poppins/);
+  assert.match(composer, /Raleway/);
+  assert.match(composer, /Caveat/);
+  assert.match(fn, /"dm_serif", "libre_baskerville", "cinzel", "anton", "league_spartan", "poppins", "raleway", "caveat"/);
   assert.match(composer, /Title block position/);
   assert.match(composer, /document\.fonts\.load/);
   assert.match(composer, /await loadSelectedFonts\(\);\s*draw\(\);/);
@@ -447,6 +456,11 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(page, /defaultTitleFont=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_font\}/);
   assert.match(page, /typography: selectedCoverConcept\?\.metadata_json\?\.typography/);
   assert.match(html, /Playfair\+Display/);
+  assert.match(html, /DM\+Serif\+Display/);
+  assert.match(html, /League\+Spartan/);
+  const thumbnailComposer = await read('components/StudioThumbnailComposer.tsx');
+  assert.match(thumbnailComposer, /DM Serif Display/);
+  assert.match(thumbnailComposer, /await loadSelectedFont\(\);\s*draw\(\);/);
 });
 
 test('the title can optionally be burned onto the video by rendering from the thumbnail', async () => {

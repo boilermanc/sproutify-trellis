@@ -25,6 +25,14 @@ const FONT_OPTIONS = [
   { id: 'playfair', label: 'Playfair Display', family: '"Playfair Display", Georgia, serif' },
   { id: 'abril', label: 'Abril Fatface', family: '"Abril Fatface", Georgia, serif' },
   { id: 'cormorant', label: 'Cormorant Garamond', family: '"Cormorant Garamond", Georgia, serif' },
+  { id: 'dm_serif', label: 'DM Serif Display', family: '"DM Serif Display", Georgia, serif' },
+  { id: 'libre_baskerville', label: 'Libre Baskerville', family: '"Libre Baskerville", Georgia, serif' },
+  { id: 'cinzel', label: 'Cinzel', family: '"Cinzel", Georgia, serif' },
+  { id: 'anton', label: 'Anton', family: '"Anton", Impact, sans-serif' },
+  { id: 'league_spartan', label: 'League Spartan', family: '"League Spartan", Arial, sans-serif' },
+  { id: 'poppins', label: 'Poppins', family: '"Poppins", Arial, sans-serif' },
+  { id: 'raleway', label: 'Raleway', family: '"Raleway", Arial, sans-serif' },
+  { id: 'caveat', label: 'Caveat', family: '"Caveat", cursive' },
 ] as const;
 type FontId = typeof FONT_OPTIONS[number]['id'];
 const FONT_FAMILY: Record<FontId, string> = Object.fromEntries(FONT_OPTIONS.map(item => [item.id, item.family])) as Record<FontId, string>;
@@ -75,6 +83,10 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
     setVPos(isVPos(defaultTextV) ? defaultTextV : 'bottom');
     setHAlign(isHAlign(defaultTextH) ? defaultTextH : 'left');
   }, [defaultTitle, defaultSubtitle, defaultTitleColor, defaultTitleFont, defaultTextV, defaultTextH, sourceImageUrl]);
+
+  const loadSelectedFont = useCallback(async () => {
+    await document.fonts.load(`700 118px ${FONT_FAMILY[titleFont]}`, title.trim() || 'Title');
+  }, [title, titleFont]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -164,13 +176,21 @@ export const StudioThumbnailComposer: React.FC<Props> = ({ albumId, sourceImageU
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceImageUrl]);
 
-  useEffect(() => { draw(); }, [draw]);
+  useEffect(() => {
+    let cancelled = false;
+    void loadSelectedFont()
+      .then(() => { if (!cancelled) draw(); })
+      .catch(() => { if (!cancelled) setError('Could not load the selected thumbnail font. Try choosing it again.'); });
+    return () => { cancelled = true; };
+  }, [draw, loadSelectedFont]);
 
   const save = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     setSaving(true); setSaved(false); setError(null);
     try {
+      await loadSelectedFont();
+      draw();
       const concept = await saveStudioThumbnailComposite(albumId, canvas.toDataURL('image/png'), { title, subtitle, title_color: titleColor, title_font: titleFont, text_v: vPos, text_h: hAlign });
       setSaved(true); onSaved(concept); window.setTimeout(() => setSaved(false), 3500);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not save the thumbnail.'); }
