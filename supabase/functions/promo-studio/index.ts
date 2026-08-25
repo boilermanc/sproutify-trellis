@@ -11,6 +11,7 @@ import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
 import { buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
 import { buildPromoVoiceAlignmentJobInput, buildPromoVoiceGenerationJobInput } from "../_shared/promo-voice.ts";
 import { buildPromoMusicGenerationJobInput } from "../_shared/promo-music.ts";
+import { buildPromoRenderJobInput } from "../_shared/promo-render.ts";
 import {
   buildPromoCreativeDirectorPrompt, materializePromoCreativePlan, parsePromoCreativePlan,
 } from "../_shared/promo-creative-plan.ts";
@@ -398,7 +399,7 @@ Deno.serve(async (req: Request) => {
       if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
       const jobType = cleanPromoText(body.job_type, 60);
       if (!PROMO_JOB_TYPES.has(jobType)) throw new Error("Unsupported Promo Studio job type.");
-      const serverResolvedJob = ["capture", "voice_generate", "voice_align", "music_generate"].includes(jobType);
+      const serverResolvedJob = ["capture", "voice_generate", "voice_align", "music_generate", "preview_render", "final_render"].includes(jobType);
       const dependencies = serverResolvedJob ? [] : (Array.isArray(body.dependency_job_ids) ? body.dependency_job_ids : []);
       if (dependencies.some((id: unknown) => !isPromoUuid(id))) throw new Error("Job dependencies must be valid job IDs.");
       let input: unknown;
@@ -434,6 +435,17 @@ Deno.serve(async (req: Request) => {
         input = buildPromoMusicGenerationJobInput(
           revision.manifest, body.direction, (musicReservations || []).map((job: any) => job.input),
         );
+      } else if (jobType === "preview_render" || jobType === "final_render") {
+        const [{ data: revision, error: revisionError }, { data: assets, error: assetsError }, { data: approvals, error: approvalsError }] = await Promise.all([
+          db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
+          db.from("promo_assets").select("id,revision_id,status,storage_bucket,storage_path,checksum_sha256")
+            .eq("project_id", project.id).eq("revision_id", project.current_revision_id),
+          db.from("promo_approvals").select("revision_id,gate,decision,created_at").eq("project_id", project.id)
+            .eq("revision_id", project.current_revision_id),
+        ]);
+        if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for rendering.");
+        if (assetsError || approvalsError) throw new Error("Could not verify render assets and approvals.");
+        input = buildPromoRenderJobInput(revision.manifest, assets || [], approvals || [], jobType, body.format);
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
       }
