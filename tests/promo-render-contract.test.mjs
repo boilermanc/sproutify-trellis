@@ -182,7 +182,7 @@ test('render jobs are server-resolved while the production composition worker re
   assert.match(worker, /p_job_types: \["noop"\]/);
   assert.doesNotMatch(worker, /p_job_types: \["preview_render"/);
   assert.match(service, /mode === 'preview' \? 'preview_render' : 'final_render'/);
-  assert.match(readme, /intentionally not executable yet/i);
+  assert.match(readme, /non-claiming worker preflight/i);
   assert.match(proof, /#13232b/);
   assert.match(readme, /Rekkrd-specific styling/i);
 });
