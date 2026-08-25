@@ -1,8 +1,21 @@
 # Promo render worker boundary
 
-This directory is intentionally not executable yet. Promo Studio now creates
-server-authoritative `preview_render` and `final_render` jobs, but the deployed
-worker must continue claiming only `noop` jobs.
+This directory now contains a non-claiming worker preflight and private-asset
+download boundary. Promo Studio creates server-authoritative `preview_render`
+and `final_render` jobs, but production claims remain disabled and the deployed
+worker continues claiming only `noop` jobs.
+
+Run the deterministic local inspection from the repository root:
+
+```bash
+node workers/promo-render-worker/scripts/dry-run.mjs
+```
+
+The inspection verifies claim ownership and lease, the canonical input
+fingerprint, the pinned composition source, current project revision, selected
+preview approval, UUID-only private asset references, bounded object paths and
+sizes, and byte-for-byte download checksums. It reports every remaining
+activation blocker without claiming or mutating a production job.
 
 The PS-002 `PromoProof` composition proved the Remotion and FFmpeg toolchain,
 but it still contains Rekkrd-specific styling and is not a production template
@@ -15,16 +28,18 @@ is pinned in the registry, so its implementation cannot change without a
 versioned contract update. Before enabling render claims, Trellis still needs:
 
 - promotion of the implemented `vertical-ui-story@v1` composition from visual proof to a registry-approved worker build;
-- private `promo-assets` downloads resolved by asset ID immediately before rendering;
 - Remotion rendering isolated from the Supabase Edge Function runtime;
 - FFmpeg two-pass loudness normalization to -14 LUFS / -1.5 dBTP;
 - exact H.264 High, yuv420p, AAC 48 kHz, TV-range, fast-start finalization;
 - ffprobe verification for 1080x1920, 30 fps, duration, streams, codecs, and color range;
 - output checksum, measured loudness, tool fingerprints, cost, retries, and provenance audit data;
 - immutable manifest revision plus private preview/final `promo_assets` registration.
-- a post-claim preflight that revalidates the project's selected preview and its
-  latest asset-bound approval, so a queued final job cannot outlive a revoke or
-  preview selection change.
+
+The private download boundary and post-claim preflight revalidation are implemented,
+so a queued final job cannot outlive a revoke or preview selection change.
+Activation remains blocked until the registry enables the composition, the
+server job contains approved cross-branch presentation data, and the generic
+FFmpeg pipeline receives its own approved fingerprint.
 
 The worker must accept only asset IDs and normalized timeline data from the
 server-created job. It must never accept browser URLs, storage paths, captions,
