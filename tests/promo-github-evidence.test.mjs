@@ -53,3 +53,15 @@ test('whole-repository and parent traversal permissions are rejected', () => {
   assert.throws(() => validateGitHubEvidenceInput({ ...input, permitted_paths: ['.'] }), /bounded/i);
   assert.throws(() => validateGitHubEvidenceInput({ ...input, permitted_paths: ['../other'] }), /repository-relative/i);
 });
+
+test('private repository access reports the exact missing server credential', async () => {
+  const notFound = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  await assert.rejects(
+    buildGitHubEvidenceMap(input, { fetcher: notFound }),
+    /server-side GITHUB_READ_TOKEN/,
+  );
+  await assert.rejects(
+    buildGitHubEvidenceMap(input, { token: 'configured-token', fetcher: notFound }),
+    /failed \(404\)/,
+  );
+});

@@ -10,6 +10,7 @@ Updated: 2026-08-25
 - PS-005: authenticated `promo-studio` Edge Function for projects, revisions, jobs, approvals, private asset transfers, fingerprints, sanitization, and audit events.
 - PS-006: first-class Promo Studio navigation route, create/reopen workspace, branch and format selection, actual manifest gate status, job controls, and loading/empty/error states.
 - PS-007 foundation: bounded GitHub evidence adapter with commit pinning, allow/deny paths, secret filters, file count/size caps, framework/routes/test-selector/feature/asset extraction, citations, and audit events.
+- PS-008: strict Creative Director plan schema, evidence-bound claims/script/storyboard/capture/music plan, immutable review revision, Claims Review, and editable display/speech phrases. Generated output remains data-only and cannot create jobs or approve claims.
 - Durable no-op worker: a filtered service worker proves claim/lease/complete behavior without claiming future job types.
 
 ## Exact deployment artifacts
@@ -18,7 +19,8 @@ Updated: 2026-08-25
 - Master Schema Engine mapping: `constants.ts` imports the migration verbatim with Vite `?raw`.
 - User API: `supabase/functions/promo-studio/index.ts`
 - No-op worker: `supabase/functions/promo-worker/index.ts`
-- Shared server contracts: `supabase/functions/_shared/promo-studio.ts`, `supabase/functions/_shared/github-evidence.ts`
+- Shared server contracts: `supabase/functions/_shared/promo-studio.ts`, `supabase/functions/_shared/github-evidence.ts`, `supabase/functions/_shared/promo-creative-plan.ts`
+- Function import map: `supabase/functions/promo-studio/deno.json`
 - Browser service: `services/promoStudioService.ts`
 - UI: `pages/PromoStudio.tsx`, plus `App.tsx`, `components/Layout.tsx`, and `types.ts`
 - Canonical client/worker manifest: `features/promo-studio/schemas/promoManifest.ts`
@@ -40,23 +42,23 @@ Existing provider credentials remain in their current server-side locations. No 
 - Promo Manifest contracts: 9 passing.
 - Edge boundary/draft contracts: 5 passing.
 - Database/RLS/job static contracts: 6 passing.
-- Promo route/browser-boundary/worker contracts: 3 passing.
-- GitHub evidence security/extraction contracts: 3 passing.
+- Promo route/browser-boundary/worker contracts: 4 passing.
+- GitHub evidence security/extraction contracts: 4 passing.
+- Creative planning contracts: 4 passing.
 - PS-002 proof contracts: 10 passing.
 - TypeScript: `npx tsc --noEmit` passes.
 - Edge Functions: Deno type-check passes for `promo-studio` and `promo-worker`.
-- Production: `npm run build` passes.
+- Production: `npm run build` passes; `promo-studio` is active; the `main` frontend deployment for PR #27 passed.
 - Diff hygiene: `git diff --check` passes.
 
 ## Blockers carried forward
 
-1. Docker Desktop is not running, so the migration, RLS, concurrent-claim behavior, and Edge Functions could not be exercised against a local Supabase stack. Static and type-level tests pass; this is not a substitute for database execution.
-2. The migration has not been applied to the Hub Supabase project and the two functions have not been deployed. The UI therefore intentionally shows its deployment-unavailable state in the current live environment.
-3. The pinned Rekkrd fixture identifies `boilermanc/rekkrd` at commit `64bff1062609df08de827884328a64ffada01d63`, but a live GitHub API scan needs read access if that repository is private.
-4. A production Rekkrd capture URL, capture auth profile, fixture-account owner, and allowed production routes are still external decisions. The local PS-002 capture remains valid evidence for the proof only.
-5. Voice-provider production selection is still open. PS-002 proves Google Gemini TTS and preserves display text separately from pronunciation text; no production voice was selected or claimed.
-6. The no-op worker is intentionally the only executable worker type. Evidence planning, capture, voice, alignment, music, rendering, export, and publishing remain queued architecture until their corresponding workers are implemented.
+1. Docker Desktop is not running, so production-backed verification is stronger than the unavailable local-stack check, but concurrent-claim behavior still lacks a local integration test.
+2. `GITHUB_READ_TOKEN` is not configured in the Hub function secrets. Rekkrd is private, so production evidence scanning and Creative Director generation stop before the provider call with an explicit credential blocker.
+3. A production Rekkrd capture URL, capture auth profile, fixture-account owner, and allowed production routes are still external decisions. The local PS-002 capture remains valid evidence for the proof only.
+4. Voice-provider production selection is still open. PS-002 proves Google Gemini TTS and preserves display text separately from pronunciation text; no production voice was selected or claimed.
+5. The no-op worker is intentionally the only executable worker type. Capture, voice, alignment, music, rendering, export, and publishing remain queued architecture until their corresponding workers are implemented.
 
-## Next unblocked issue
+## Next gate
 
-PS-008: build the normalized brief, claims ledger, strictly validated Creative Director output, script/phrase editor, preliminary storyboard, capture plan, and music brief. Raw model output must remain data-only and cannot create jobs, captures, provider requests, or publishing actions.
+Exercise PS-008 against the private Rekkrd repository after a fine-grained, read-only `GITHUB_READ_TOKEN` is configured. Until then, continue only with provider-independent review and worker foundations; do not fabricate repository evidence or weaken access controls.
