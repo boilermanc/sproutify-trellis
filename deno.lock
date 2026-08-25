@@ -21,7 +21,8 @@
         "npm:react@^19.2.3",
         "npm:tailwindcss@3.4.17",
         "npm:typescript@~5.8.2",
-        "npm:vite@^6.2.0"
+        "npm:vite@^6.2.0",
+        "npm:zod@^4.4.3"
       ]
     }
   }

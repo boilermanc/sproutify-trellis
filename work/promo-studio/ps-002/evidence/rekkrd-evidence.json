@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-08-25T00:00:00Z",
+  "trellis_commit": "7331564632f3a0bbb50bd6fa51b4b35ceeb1523b",
+  "project": {
+    "branch_slug": "rekkrd",
+    "branch_id": "f609040b-3098-4bb1-93b1-aabf5e910fd7",
+    "public_site": "https://rekkrd.com",
+    "instagram_handle": "@rekkrdapp"
+  },
+  "repository": {
+    "owner": "boilermanc",
+    "name": "rekkrd",
+    "local_path": "C:/Users/clint/Documents/Github/crowe_collection",
+    "ref": "main",
+    "commit_sha": "64bff1062609df08de827884328a64ffada01d63",
+    "working_tree_dirty": true,
+    "capture_source_files_dirty": true,
+    "capture_source_diff_sha256": "d2082d6f2416741ea15928cfb03c72571c60de6bfe1189d9ab3d52ba741246d9",
+    "status": "verified_local_checkout"
+  },
+  "environment": {
+    "candidate_url": "https://rekkrd.com/listening-room",
+    "verified_result": "public_marketing_homepage",
+    "capture_base_url": null,
+    "fixture_account": null,
+    "status": "blocked_missing_authenticated_product_state"
+  },
+  "development_capture_environment": {
+    "base_url": "http://127.0.0.1:4174",
+    "route": "/preview?screen=Stakkd&capture=1",
+    "auth_required": false,
+    "fixture_kind": "checked_in_synthetic_dev_fixture",
+    "status": "verified_for_stakkd_preview"
+  },
+  "verified_facts": [
+    {
+      "id": "rekkrd-listening-room-route-reference",
+      "fact": "Trellis contains a checked-in link to https://rekkrd.com/listening-room.",
+      "evidence": [
+        "supabase/migrations/20260824223413_update_rekkrd_founder_footer.sql:137"
+      ]
+    },
+    {
+      "id": "rekkrd-discogs-companion-positioning",
+      "fact": "Trellis's Rekkrd content strategy describes Rekkrd as a collection-management companion with two-way Discogs sync, not a Discogs replacement.",
+      "evidence": [
+        ".trellis/spec/projects/rekkrd/content-strategy.md"
+      ]
+    },
+    {
+      "id": "rekkrd-stakkd-signal-chain",
+      "fact": "The Rekkrd Stakkd mobile screen presents saved audio gear as an ordered signal chain.",
+      "evidence": [
+        "index.tsx:38",
+        "index.tsx:103",
+        "src/components/mobile/PreviewGallery.tsx:79",
+        "src/components/mobile/PreviewGallery.tsx:160",
+        "src/components/mobile/PreviewGallery.tsx:170",
+        "src/components/mobile/StakkdScreen.tsx:17",
+        "src/components/mobile/StakkdScreen.tsx:22"
+      ]
+    }
+  ],
+  "unverified_for_capture": [
+    "Listening Room authenticated UI state",
+    "Stakkd builder UI state",
+    "Discogs import review UI state",
+    "stable capture selectors",
+    "safe synthetic fixture data"
+  ]
+}
