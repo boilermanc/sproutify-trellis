@@ -43,8 +43,23 @@ export interface PromoJob {
   created_at: string;
 }
 
+export interface PromoBranchSource {
+  id: string;
+  branch_id: string;
+  repository_provider: 'github';
+  repository_full_name: string;
+  default_ref: string;
+  permitted_paths: string[];
+  prohibited_paths: string[];
+  capture_base_url: string | null;
+  capture_auth_profile_key: string | null;
+  capture_fixture_key: string | null;
+  is_active: boolean;
+}
+
 export interface PromoProjectDetail {
   project: PromoProject;
+  source: PromoBranchSource | null;
   revision: PromoRevision | null;
   revisions: PromoRevision[];
   jobs: PromoJob[];

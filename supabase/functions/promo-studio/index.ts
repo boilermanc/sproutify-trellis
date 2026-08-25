@@ -133,11 +133,14 @@ Deno.serve(async (req: Request) => {
     const project = await requireProject(db, userId, operator, body.project_id);
 
     if (action === "scan_repository_evidence") {
+      const { data: source } = await db.from("promo_branch_sources").select("*")
+        .eq("branch_id", project.branch_id).eq("is_active", true).maybeSingle();
+      if (!source) throw new Error("This branch has no verified product repository mapping.");
       const map = await buildGitHubEvidenceMap({
-        repository: body.repository,
-        ref: body.ref,
-        permitted_paths: body.permitted_paths,
-        prohibited_paths: body.prohibited_paths,
+        repository: source.repository_full_name,
+        ref: source.default_ref,
+        permitted_paths: source.permitted_paths,
+        prohibited_paths: source.prohibited_paths,
       }, { token: Deno.env.get("GITHUB_READ_TOKEN") || Deno.env.get("GITHUB_TOKEN") || undefined });
       await audit(db, {
         projectId: project.id, revisionId: project.current_revision_id,
@@ -152,16 +155,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "get_project") {
-      const [revision, revisions, jobs, approvals, assets, events] = await Promise.all([
+      const [revision, revisions, jobs, approvals, assets, events, source] = await Promise.all([
         project.current_revision_id ? db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).maybeSingle() : { data: null, error: null },
         db.from("promo_manifest_revisions").select("id,revision_number,parent_revision_id,reason,schema_version,manifest_fingerprint,immutable_at,created_at,created_by").eq("project_id", project.id).order("revision_number", { ascending: false }).limit(50),
         db.from("promo_jobs").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
         db.from("promo_approvals").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
         db.from("promo_assets").select("*").eq("project_id", project.id).neq("status", "archived").order("created_at", { ascending: false }).limit(200),
         db.from("promo_events").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
+        db.from("promo_branch_sources").select("*").eq("branch_id", project.branch_id).eq("is_active", true).maybeSingle(),
       ]);
-      for (const result of [revision, revisions, jobs, approvals, assets, events]) if (result.error) throw new Error(`Could not load Promo Studio project: ${result.error.message}`);
-      return json({ project, revision: revision.data, revisions: revisions.data || [], jobs: jobs.data || [], approvals: approvals.data || [], assets: assets.data || [], events: events.data || [] });
+      for (const result of [revision, revisions, jobs, approvals, assets, events, source]) if (result.error) throw new Error(`Could not load Promo Studio project: ${result.error.message}`);
+      return json({ project, source: source.data, revision: revision.data, revisions: revisions.data || [], jobs: jobs.data || [], approvals: approvals.data || [], assets: assets.data || [], events: events.data || [] });
     }
 
     if (action === "create_revision") {
