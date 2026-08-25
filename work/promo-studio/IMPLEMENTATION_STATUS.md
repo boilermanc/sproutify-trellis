@@ -13,6 +13,7 @@ Updated: 2026-08-25
 - PS-008: strict Creative Director plan schema, evidence-bound claims/script/storyboard/capture/music plan, immutable review revision, Claims Review, and editable display/speech phrases. Generated output remains data-only and cannot create jobs or approve claims.
 - Review gates: verified/user-attested claim approval and script approval now create immutable revisions and approval records; generic revision saves cannot bypass either gate.
 - Capture worker contract: capture queue input is resolved from the active manifest and branch source server-side, contains no URL/fixture/auth secrets, and fails closed until the production environment and fixture are configured. The executable worker remains disabled.
+- Voice worker contract: generation and alignment inputs are resolved from the approved active manifest, preserve pronunciation-safe speech text separately from display copy, use opaque voice profiles, and exclude browser-supplied provider settings and credentials. The executable worker remains disabled pending a provider decision.
 - Durable no-op worker: a filtered service worker proves claim/lease/complete behavior without claiming future job types.
 
 ## Exact deployment artifacts
@@ -23,6 +24,7 @@ Updated: 2026-08-25
 - No-op worker: `supabase/functions/promo-worker/index.ts`
 - Shared server contracts: `supabase/functions/_shared/promo-studio.ts`, `supabase/functions/_shared/github-evidence.ts`, `supabase/functions/_shared/promo-creative-plan.ts`
 - Capture queue contract: `supabase/functions/_shared/promo-capture.ts`
+- Voice queue contract: `supabase/functions/_shared/promo-voice.ts`
 - Future worker boundary: `workers/promo-capture-worker/README.md`
 - Function import map: `supabase/functions/promo-studio/deno.json`
 - Browser service: `services/promoStudioService.ts`
@@ -51,6 +53,7 @@ Existing provider credentials remain in their current server-side locations. No 
 - Creative planning contracts: 4 passing.
 - Approval gate contracts: 4 passing.
 - Capture queue contracts: 3 passing.
+- Voice queue contracts: 5 passing.
 - PS-002 proof contracts: 10 passing.
 - TypeScript: `npx tsc --noEmit` passes.
 - Edge Functions: Deno type-check passes for `promo-studio` and `promo-worker`.

@@ -3,6 +3,7 @@ import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integratio
 import PROMO_STUDIO_SQL_SCHEMA from './supabase/migrations/20260825162352_add_promo_studio_foundation.sql?raw';
 import PROMO_BRANCH_SOURCES_SQL_SCHEMA from './supabase/migrations/20260825175823_add_promo_branch_sources.sql?raw';
 import PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA from './supabase/migrations/20260825191617_add_promo_claim_approval_gate.sql?raw';
+import PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA from './supabase/migrations/20260825201900_reserve_promo_voice_take_numbers.sql?raw';
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -2755,6 +2756,7 @@ USING (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select au
 ${PROMO_STUDIO_SQL_SCHEMA}
 ${PROMO_BRANCH_SOURCES_SQL_SCHEMA}
 ${PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA}
+${PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

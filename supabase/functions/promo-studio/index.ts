@@ -9,6 +9,7 @@ import {
 } from "../_shared/promo-studio.ts";
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
 import { buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
+import { buildPromoVoiceAlignmentJobInput, buildPromoVoiceGenerationJobInput } from "../_shared/promo-voice.ts";
 import {
   buildPromoCreativeDirectorPrompt, materializePromoCreativePlan, parsePromoCreativePlan,
 } from "../_shared/promo-creative-plan.ts";
@@ -396,7 +397,8 @@ Deno.serve(async (req: Request) => {
       if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
       const jobType = cleanPromoText(body.job_type, 60);
       if (!PROMO_JOB_TYPES.has(jobType)) throw new Error("Unsupported Promo Studio job type.");
-      const dependencies = jobType === "capture" ? [] : (Array.isArray(body.dependency_job_ids) ? body.dependency_job_ids : []);
+      const serverResolvedJob = ["capture", "voice_generate", "voice_align"].includes(jobType);
+      const dependencies = serverResolvedJob ? [] : (Array.isArray(body.dependency_job_ids) ? body.dependency_job_ids : []);
       if (dependencies.some((id: unknown) => !isPromoUuid(id))) throw new Error("Job dependencies must be valid job IDs.");
       let input: unknown;
       if (jobType === "capture") {
@@ -407,11 +409,24 @@ Deno.serve(async (req: Request) => {
         if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for capture.");
         if (sourceError || !source) throw new Error("This branch has no active capture source mapping.");
         input = buildPromoCaptureJobInput(revision.manifest, source, body.scenario_id);
+      } else if (jobType === "voice_generate" || jobType === "voice_align") {
+        const [{ data: revision, error: revisionError }, { data: voiceReservations, error: reservationsError }] = await Promise.all([
+          db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
+          jobType === "voice_generate"
+            ? db.from("promo_jobs").select("input").eq("revision_id", project.current_revision_id)
+              .eq("job_type", "voice_generate").in("status", ["queued", "running", "succeeded"])
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for voice work.");
+        if (reservationsError) throw new Error("Could not verify existing voice take reservations.");
+        input = jobType === "voice_generate"
+          ? buildPromoVoiceGenerationJobInput(revision.manifest, body.direction, (voiceReservations || []).map((job: any) => job.input))
+          : buildPromoVoiceAlignmentJobInput(revision.manifest, body.take_id);
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
       }
       const inputFingerprint = await fingerprintPromoJson(input);
-      const idempotencyKey = (jobType === "capture" ? "" : cleanPromoText(body.idempotency_key, 200)) || `${project.current_revision_id}:${jobType}:${inputFingerprint}`;
+      const idempotencyKey = (serverResolvedJob ? "" : cleanPromoText(body.idempotency_key, 200)) || `${project.current_revision_id}:${jobType}:${inputFingerprint}`;
       const { data, error } = await db.from("promo_jobs").insert({
         project_id: project.id, revision_id: project.current_revision_id, created_by: userId,
         job_type: jobType, idempotency_key: idempotencyKey, dependency_job_ids: dependencies,
