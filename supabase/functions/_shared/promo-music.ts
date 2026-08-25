@@ -95,7 +95,7 @@ export function buildPromoMusicGenerationJobInput(manifestValue: unknown, direct
       tempo_min_bpm: brief.tempo_min_bpm,
       tempo_max_bpm: brief.tempo_max_bpm,
       instrumentation: brief.instrumentation,
-      energy_arc: brief.energy_arc,
+      energy_arc: brief.energy_arc.map((cue: any) => ({ phrase_id: cue.phrase_id, direction: cue.direction })),
       accent_phrase_ids: brief.accent_phrase_ids,
       ending: brief.ending,
       avoid: brief.avoid,

@@ -31,11 +31,17 @@ function fixture() {
 }
 
 test('music generation is structured, instrumental, and provider-neutral', () => {
-  const input = buildPromoMusicGenerationJobInput(fixture(), 'balanced');
+  const manifest = fixture();
+  const brief = JSON.parse(manifest.music.brief);
+  brief.energy_arc[0].provider = 'browser-provider';
+  brief.energy_arc[0].api_key = 'browser-secret';
+  manifest.music.brief = JSON.stringify(brief);
+  const input = buildPromoMusicGenerationJobInput(manifest, 'balanced');
   assert.equal(input.take_number, 1);
   assert.equal(input.target_seconds, 10);
   assert.equal(input.instrumental, true);
   assert.equal(input.brief.energy_arc[1].phrase_id, 'phrase-2');
+  assert.deepEqual(input.brief.energy_arc[0], { phrase_id: 'phrase-1', direction: 'open gently' });
   assert.doesNotMatch(JSON.stringify(input), /provider|model|api.?key|token|password|audio_url|storage/i);
 });
 
