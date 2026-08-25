@@ -8,6 +8,7 @@ import {
   sanitizePromoJson, sanitizePromoText, validatePromoCreate, validatePromoRevision,
 } from "../_shared/promo-studio.ts";
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
+import { buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
 import {
   buildPromoCreativeDirectorPrompt, materializePromoCreativePlan, parsePromoCreativePlan,
 } from "../_shared/promo-creative-plan.ts";
@@ -395,11 +396,22 @@ Deno.serve(async (req: Request) => {
       if (!project.current_revision_id) throw new Error("Project has no active manifest revision.");
       const jobType = cleanPromoText(body.job_type, 60);
       if (!PROMO_JOB_TYPES.has(jobType)) throw new Error("Unsupported Promo Studio job type.");
-      const dependencies = Array.isArray(body.dependency_job_ids) ? body.dependency_job_ids : [];
+      const dependencies = jobType === "capture" ? [] : (Array.isArray(body.dependency_job_ids) ? body.dependency_job_ids : []);
       if (dependencies.some((id: unknown) => !isPromoUuid(id))) throw new Error("Job dependencies must be valid job IDs.");
-      const input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
+      let input: unknown;
+      if (jobType === "capture") {
+        const [{ data: revision, error: revisionError }, { data: source, error: sourceError }] = await Promise.all([
+          db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
+          db.from("promo_branch_sources").select("*").eq("branch_id", project.branch_id).eq("is_active", true).maybeSingle(),
+        ]);
+        if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for capture.");
+        if (sourceError || !source) throw new Error("This branch has no active capture source mapping.");
+        input = buildPromoCaptureJobInput(revision.manifest, source, body.scenario_id);
+      } else {
+        input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});
+      }
       const inputFingerprint = await fingerprintPromoJson(input);
-      const idempotencyKey = cleanPromoText(body.idempotency_key, 200) || `${project.current_revision_id}:${jobType}:${inputFingerprint}`;
+      const idempotencyKey = (jobType === "capture" ? "" : cleanPromoText(body.idempotency_key, 200)) || `${project.current_revision_id}:${jobType}:${inputFingerprint}`;
       const { data, error } = await db.from("promo_jobs").insert({
         project_id: project.id, revision_id: project.current_revision_id, created_by: userId,
         job_type: jobType, idempotency_key: idempotencyKey, dependency_job_ids: dependencies,
