@@ -596,7 +596,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'promo-studio' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
 
 export interface StudioAlbum {
   id: string;

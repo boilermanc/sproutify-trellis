@@ -1,0 +1,35 @@
+{
+  "key": "rekkrd.stakkd.preview",
+  "version": 1,
+  "repository": "boilermanc/rekkrd",
+  "commit_sha": "64bff1062609df08de827884328a64ffada01d63",
+  "source_worktree_dirty": true,
+  "source_diff_sha256": "d2082d6f2416741ea15928cfb03c72571c60de6bfe1189d9ab3d52ba741246d9",
+  "base_url": "http://127.0.0.1:4174",
+  "route": "/preview?screen=Stakkd&capture=1",
+  "auth_profile_key": null,
+  "fixture_identity": "src/components/mobile/PreviewGallery.tsx#GEAR",
+  "viewport": { "width": 1320, "height": 1356 },
+  "setup": [],
+  "steps": [
+    { "action": "goto", "path": "/preview?screen=Stakkd&capture=1" },
+    { "action": "wait_for_load_state", "state": "networkidle" }
+  ],
+  "assertions": [
+    { "kind": "visible_text", "value": "Stakkd", "result": "passed_manual_visual" },
+    { "kind": "visible_text", "value": "5 Pieces · Signal chain", "result": "passed_manual_visual" },
+    { "kind": "image_count", "value": 0, "result": "passed_automated" },
+    { "kind": "minimum_svg_count", "value": 5, "result": "passed_automated" }
+  ],
+  "masks": [],
+  "output": { "kind": "still", "width": 1320, "height": 1356 },
+  "contains_pii": false,
+  "capture_sha256": "0c10d913a06fb4ec95a10df2a3b27226c47d812cf60388e755a9ceb6eedf657a",
+  "status": "captured",
+  "notes": [
+    "The route is development-only and renders the real StakkdScreen component.",
+    "Gear values come from a checked-in synthetic fixture, not a customer account.",
+    "The repository working tree was dirty and StakkdScreen.tsx contained the recorded category-icon fallback diff at capture time.",
+    "The capture script blocks service workers and asserts that no fixture images are rendered."
+  ]
+}

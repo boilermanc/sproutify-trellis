@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "proof_id": "ps-002-rekkrd-vertical",
+  "project": {
+    "branch_slug": "rekkrd",
+    "branch_id": "f609040b-3098-4bb1-93b1-aabf5e910fd7",
+    "display_name": "Rekkrd"
+  },
+  "duration_seconds": 10,
+  "fps": 30,
+  "format": { "width": 1080, "height": 1920 },
+  "script": {
+    "text": "See your audio gear as a signal chain. Stakkd puts your system in order.",
+    "speech_text": "See your audio gear as a signal chain. Stacked puts your system in order.",
+    "pronunciation_overrides": [
+      { "display": "Stakkd", "spoken": "Stacked" }
+    ],
+    "evidence_ids": ["rekkrd-stakkd-signal-chain"]
+  },
+  "capture": {
+    "kind": "real_ui_capture",
+    "media_type": "still",
+    "file": "rekkrd-stakkd-preview.png",
+    "scenario_key": "rekkrd.stakkd.preview",
+    "scenario_version": 1,
+    "environment": "local_dev_preview",
+    "route": "/preview?screen=Stakkd&capture=1",
+    "commit_sha": "64bff1062609df08de827884328a64ffada01d63",
+    "source_worktree_dirty": true,
+    "source_diff_sha256": "d2082d6f2416741ea15928cfb03c72571c60de6bfe1189d9ab3d52ba741246d9",
+    "assertions_passed": true,
+    "assertion_mode": "automated_dom_and_manual_visual",
+    "contains_pii": false,
+    "checksum_sha256": "0c10d913a06fb4ec95a10df2a3b27226c47d812cf60388e755a9ceb6eedf657a"
+  },
+  "voice": {
+    "file": "gemini-voice-kore.wav",
+    "provider": "google-gemini-tts",
+    "model": "gemini-2.5-flash-preview-tts",
+    "voice_id": "Kore",
+    "timing_source": "ffmpeg_silence_detection_and_manual_phrase_alignment",
+    "checksum_sha256": "3ec919387c874f60ce2128205740724082f19a9702c722184857d30577f9685d"
+  },
+  "music": {
+    "file": "lyria-stakkd-bed.mp3",
+    "provider": "google-lyria",
+    "model": "lyria-3-clip-preview",
+    "provider_job_id": "v1_ChcyTHFOYXNuVE84V0lxdHNQbU1EdTBRaxIXMkxxTmFzblRPOFdJcXRzUG1NRHUwUWs",
+    "checksum_sha256": "8e57e40b29b4ed522affa563e89071fa04ad282a1c50bba1323d23c6b7600c14",
+    "prompt": "Instrumental only. Warm analog hi-fi pulse, restrained percussion, soft synth bass, 94 BPM, no vocals, no artist references, designed as unobtrusive product-demo underscore."
+  },
+  "captions": [
+    { "start_seconds": 0.32, "end_seconds": 1.52, "text": "See your audio gear" },
+    { "start_seconds": 1.52, "end_seconds": 2.74, "text": "as a signal chain" },
+    { "start_seconds": 3.17, "end_seconds": 4.03, "text": "Stakkd" },
+    { "start_seconds": 4.03, "end_seconds": 5.45, "text": "puts your system in order" }
+  ],
+  "provenance_label": "REAL UI · SYNTHETIC FIXTURE",
+  "end_card": {
+    "logo_file": "rekkrd-app-icon.png",
+    "logo_checksum_sha256": "d24ebd753511478b217c898464a18f478e9210bcd48c4965e7357dd470660c12",
+    "title": "Stakkd",
+    "subtitle": "Your system, in order."
+  }
+}

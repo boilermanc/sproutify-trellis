@@ -13,6 +13,7 @@ import SocialHub from './pages/SocialHub';
 import VideoAdLab from './pages/VideoAdLab';
 import MediaGeneration from './pages/MediaGeneration';
 import MotionPosts from './pages/MotionPosts';
+import PromoStudio from './pages/PromoStudio';
 import TrellisStudio from './pages/TrellisStudio';
 import StudioAlbums from './pages/StudioAlbums';
 import TrellisEpisodes from './pages/TrellisEpisodes';
@@ -494,6 +495,7 @@ const AppContent: React.FC = () => {
       case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
       case 'media-generation': return <MediaGeneration branches={branches} addToast={addToast} />;
       case 'motion-posts': return <MotionPosts branches={branches} addToast={addToast} />;
+      case 'promo-studio': return <PromoStudio branches={branches} addToast={addToast} />;
       case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
       case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
       case 'trellis-episodes': return <TrellisEpisodes branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;

@@ -65,6 +65,7 @@ const NAV_GROUPS = [
       { id: 'video-ad-lab', label: 'Creative Studio', icon: Sparkles },
       { id: 'media-generation', label: 'Media Generation', icon: Video },
       { id: 'motion-posts', label: 'Motion Posts', icon: Video },
+      { id: 'promo-studio', label: 'Promo Studio', icon: Clapperboard },
       { id: 'post-scheduler', label: 'Post Scheduler', icon: CalendarClock },
       { id: 'card-studio', label: 'Card Studio', icon: LayoutTemplate },
       { id: 'ad-performance', label: 'Ad Performance', icon: TrendingUp },

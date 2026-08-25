@@ -1,0 +1,384 @@
+{
+  "schema_version": "1.0.0",
+  "promo": {
+    "id": "8fcd4250-5ac0-4ff4-bc4f-a4a2718bc308",
+    "organization_id": "00000000-0000-0000-0000-000000000001",
+    "owner_id": "11111111-1111-4111-8111-111111111111",
+    "revision_id": "22222222-2222-4222-8222-222222222222",
+    "revision": 1,
+    "parent_revision_id": null,
+    "branch": {
+      "id": "f609040b-3098-4bb1-93b1-aabf5e910fd7",
+      "slug": "rekkrd",
+      "display_name": "Rekkrd"
+    },
+    "title": "Rekkrd Stakkd proof",
+    "status": "final_review",
+    "target_seconds": 10,
+    "formats": ["9:16"],
+    "created_at": "2026-08-25T16:00:00.000Z",
+    "updated_at": "2026-08-25T16:00:00.000Z"
+  },
+  "request": {
+    "prompt": "Create a truthful ten-second vertical proof showing the Rekkrd Stakkd signal chain.",
+    "supplied_script": null,
+    "audience": "Audio equipment collectors",
+    "goal": "Demonstrate one verified Rekkrd product feature",
+    "cta": null,
+    "target_seconds": 10,
+    "formats": ["9:16"]
+  },
+  "evidence": {
+    "repository": {
+      "provider": "github",
+      "full_name": "boilermanc/rekkrd",
+      "ref": "main",
+      "commit_sha": "64bff1062609df08de827884328a64ffada01d63",
+      "source_worktree_dirty": true,
+      "source_diff_sha256": "d2082d6f2416741ea15928cfb03c72571c60de6bfe1189d9ab3d52ba741246d9",
+      "permitted_paths": [
+        "src/components/mobile/StakkdScreen.tsx",
+        "src/components/mobile/PreviewGallery.tsx",
+        "src/config/signalChainIcons.ts",
+        "public/rekkrd-app-icon.png"
+      ],
+      "prohibited_paths": [".env", ".env.local", "node_modules", ".git"]
+    },
+    "capture_environment": "local_dev_preview",
+    "routes": [
+      {
+        "id": "route-stakkd-preview",
+        "path": "/preview?screen=Stakkd&capture=1",
+        "evidence_refs": ["src:preview-gallery", "src:stakkd-screen"]
+      }
+    ],
+    "facts": [
+      {
+        "id": "fact-stakkd-chain",
+        "text": "The Stakkd screen presents saved audio gear as an ordered signal chain.",
+        "evidence_refs": ["src:stakkd-screen", "capture:stakkd-preview"]
+      }
+    ],
+    "claims": [
+      {
+        "id": "claim-stakkd-chain",
+        "text": "Stakkd puts audio gear in signal-chain order.",
+        "claim_type": "product_feature",
+        "status": "verified",
+        "evidence_refs": ["fact-stakkd-chain"],
+        "approved": true
+      }
+    ],
+    "source_refs": [
+      {
+        "id": "src:preview-gallery",
+        "kind": "repository",
+        "locator": "src/components/mobile/PreviewGallery.tsx#GEAR",
+        "checksum_sha256": null
+      },
+      {
+        "id": "src:stakkd-screen",
+        "kind": "repository",
+        "locator": "src/components/mobile/StakkdScreen.tsx",
+        "checksum_sha256": null
+      },
+      {
+        "id": "capture:stakkd-preview",
+        "kind": "capture",
+        "locator": "capture-stakkd-preview",
+        "checksum_sha256": "0c10d913a06fb4ec95a10df2a3b27226c47d812cf60388e755a9ceb6eedf657a"
+      }
+    ]
+  },
+  "brand": {
+    "profile_id": "rekkrd-brand",
+    "palette": {
+      "background": "#1e0d14",
+      "surface": "#2e1520",
+      "accent": "#c2485e",
+      "text": "#faf0f2"
+    },
+    "font_families": ["Georgia", "Arial"],
+    "asset_ids": ["asset-rekkrd-logo"],
+    "voice_profile": {
+      "name": "Rekkrd Voice",
+      "persona": "Collector and enthusiast, not announcer",
+      "qualities": ["relaxed", "confident", "warm", "restrained"],
+      "pace_wpm": 145,
+      "avoid": ["radio commercial", "hard sell", "exaggerated excitement"]
+    },
+    "sonic_profile": {
+      "qualities": ["warm analog", "restrained", "product-demo underscore"],
+      "avoid": ["vocals", "artist imitation", "hard sell"]
+    },
+    "prohibited_language": ["best", "guaranteed", "official Discogs replacement"],
+    "prohibited_styles": ["unlicensed third-party UI", "undisclosed generated product UI"]
+  },
+  "script": {
+    "status": "approved",
+    "approved_text": "See your audio gear as a signal chain. Stakkd puts your system in order.",
+    "source_refs": ["claim-stakkd-chain"],
+    "pronunciations": {
+      "Rekkrd": "record",
+      "Stakkd": "stacked"
+    },
+    "phrases": [
+      {
+        "id": "phrase-1",
+        "display_text": "See your audio gear as a signal chain.",
+        "speech_text": "See your audio gear as a signal chain.",
+        "evidence_refs": ["claim-stakkd-chain"],
+        "emphasis": "light"
+      },
+      {
+        "id": "phrase-2",
+        "display_text": "Stakkd puts your system in order.",
+        "speech_text": "Stacked puts your system in order.",
+        "evidence_refs": ["claim-stakkd-chain"],
+        "emphasis": "strong"
+      }
+    ],
+    "segments": [
+      {
+        "id": "segment-1",
+        "phrase_ids": ["phrase-1", "phrase-2"],
+        "delivery_note": "Warm, assured product-demo voice; natural pace and no added words."
+      }
+    ]
+  },
+  "assets": [
+    {
+      "id": "asset-stakkd-capture",
+      "kind": "capture_still",
+      "role": "primary_product_ui",
+      "storage_bucket": null,
+      "storage_path": "work/promo-studio/ps-002/assets/rekkrd-stakkd-preview.png",
+      "mime_type": "image/png",
+      "checksum_sha256": "0c10d913a06fb4ec95a10df2a3b27226c47d812cf60388e755a9ceb6eedf657a",
+      "duration_seconds": null,
+      "width": 1320,
+      "height": 1356,
+      "provenance": {
+        "source_kind": "real_ui_capture",
+        "source_ref": "capture-stakkd-preview",
+        "generated": false,
+        "approved": true
+      }
+    },
+    {
+      "id": "asset-rekkrd-logo",
+      "kind": "brand_logo",
+      "role": "end_card_logo",
+      "storage_bucket": null,
+      "storage_path": "work/promo-studio/ps-002/assets/rekkrd-app-icon.png",
+      "mime_type": "image/png",
+      "checksum_sha256": "d24ebd753511478b217c898464a18f478e9210bcd48c4965e7357dd470660c12",
+      "duration_seconds": null,
+      "width": 1024,
+      "height": 1024,
+      "provenance": {
+        "source_kind": "repository",
+        "source_ref": "public/rekkrd-app-icon.png",
+        "generated": false,
+        "approved": true
+      }
+    },
+    {
+      "id": "asset-voice-kore",
+      "kind": "voice_master",
+      "role": "selected_voice_master",
+      "storage_bucket": null,
+      "storage_path": "work/promo-studio/ps-002/assets/gemini-voice-kore.wav",
+      "mime_type": "audio/wav",
+      "checksum_sha256": "3ec919387c874f60ce2128205740724082f19a9702c722184857d30577f9685d",
+      "duration_seconds": 5.690958,
+      "width": null,
+      "height": null,
+      "provenance": {
+        "source_kind": "provider",
+        "source_ref": "google-gemini-tts/gemini-2.5-flash-preview-tts/Kore",
+        "generated": true,
+        "approved": true
+      }
+    },
+    {
+      "id": "asset-music-lyria",
+      "kind": "music_master",
+      "role": "selected_music_master",
+      "storage_bucket": null,
+      "storage_path": "work/promo-studio/ps-002/assets/lyria-stakkd-bed.mp3",
+      "mime_type": "audio/mpeg",
+      "checksum_sha256": "8e57e40b29b4ed522affa563e89071fa04ad282a1c50bba1323d23c6b7600c14",
+      "duration_seconds": 30.772167,
+      "width": null,
+      "height": null,
+      "provenance": {
+        "source_kind": "provider",
+        "source_ref": "google-lyria/lyria-3-clip-preview",
+        "generated": true,
+        "approved": true
+      }
+    }
+  ],
+  "captures": {
+    "scenarios": [
+      {
+        "id": "capture-stakkd-preview",
+        "key": "rekkrd.stakkd.preview",
+        "version": 1,
+        "repository_ref": "boilermanc/rekkrd@main",
+        "commit_sha": "64bff1062609df08de827884328a64ffada01d63",
+        "source_diff_sha256": "d2082d6f2416741ea15928cfb03c72571c60de6bfe1189d9ab3d52ba741246d9",
+        "environment": "local_dev_preview",
+        "route": "/preview?screen=Stakkd&capture=1",
+        "fixture": "src/components/mobile/PreviewGallery.tsx#GEAR",
+        "auth_profile_key": null,
+        "viewport": { "width": 1320, "height": 1356 },
+        "selectors": ["h1", "body"],
+        "masks": [],
+        "assertions": [
+          { "kind": "visible_text", "value": "Stakkd", "passed": true },
+          { "kind": "image_count", "value": 0, "passed": true },
+          { "kind": "minimum_svg_count", "value": 5, "passed": true }
+        ],
+        "contains_pii": false,
+        "artifact_asset_ids": ["asset-stakkd-capture"],
+        "status": "verified"
+      }
+    ]
+  },
+  "voice": {
+    "profile_id": "rekkrd-brand-voice",
+    "selected_take_id": "voice-take-b",
+    "timing_source": "manual_phrase_alignment",
+    "minimum_alignment_confidence": 0.8,
+    "takes": [
+      {
+        "id": "voice-take-b",
+        "take_number": 2,
+        "direction": "warm_authority",
+        "provider": "google-gemini-tts",
+        "model": "gemini-2.5-flash-preview-tts",
+        "voice_id": "Kore",
+        "settings": { "pace": "natural", "warmth": "warm", "pronunciations": { "Stakkd": "Stacked" } },
+        "provider_job_id": null,
+        "audio_asset_id": "asset-voice-kore",
+        "alignment_asset_id": null,
+        "duration_seconds": 5.690958,
+        "selected": true,
+        "status": "ready",
+        "words": [],
+        "phrases": [
+          { "phrase_id": "phrase-1", "start_seconds": 0.32, "end_seconds": 2.74, "confidence": 1 },
+          { "phrase_id": "phrase-2", "start_seconds": 3.17, "end_seconds": 5.45, "confidence": 1 }
+        ]
+      }
+    ]
+  },
+  "music": {
+    "profile_id": "rekkrd-sonic-identity",
+    "brief": "Warm analog hi-fi pulse, restrained percussion, soft synth bass, 94 BPM, instrumental only.",
+    "selected_take_id": "music-take-b",
+    "takes": [
+      {
+        "id": "music-take-b",
+        "take_number": 2,
+        "direction": "balanced",
+        "provider": "google-lyria",
+        "model": "lyria-3-clip-preview",
+        "provider_job_id": "v1_ChcyTHFOYXNuVE84V0lxdHNQbU1EdTBRaxIXMkxxTmFzblRPOFdJcXRzUG1NRHUwUWs",
+        "audio_asset_id": "asset-music-lyria",
+        "duration_seconds": 30.772167,
+        "selected": true,
+        "status": "ready",
+        "cue_markers": [
+          { "name": "stakkd_reveal", "at_seconds": 0.32, "confidence": null },
+          { "name": "logo_resolve", "at_seconds": 7, "confidence": null }
+        ]
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "scene-stakkd",
+      "position": 0,
+      "name": "Stakkd signal chain",
+      "purpose": "Show the verified ordered gear interface",
+      "claim_ids": ["claim-stakkd-chain"],
+      "anchor": { "phrase_id": "phrase-1", "edge": "start" },
+      "duration": { "mode": "flex", "min_seconds": 5, "preferred_seconds": 7, "max_seconds": 7, "locked": false },
+      "visual": {
+        "kind": "real_ui_capture",
+        "asset_id": "asset-stakkd-capture",
+        "capture_scenario_id": "capture-stakkd-preview",
+        "generated_visual_disclosed": false
+      },
+      "transition": { "type": "fade", "duration_seconds": 0.4 },
+      "layout": { "motion": "slow_push", "provenance_label": "REAL UI · SYNTHETIC FIXTURE" }
+    },
+    {
+      "id": "scene-end-card",
+      "position": 1,
+      "name": "Rekkrd resolve",
+      "purpose": "Resolve on the approved Rekkrd app icon",
+      "claim_ids": [],
+      "anchor": { "phrase_id": "phrase-2", "edge": "end" },
+      "duration": { "mode": "fixed", "min_seconds": 3, "preferred_seconds": 3, "max_seconds": 3, "locked": true },
+      "visual": {
+        "kind": "repository_asset",
+        "asset_id": "asset-rekkrd-logo",
+        "capture_scenario_id": null,
+        "generated_visual_disclosed": false
+      },
+      "transition": { "type": "fade", "duration_seconds": 0.4 },
+      "layout": { "title": "Stakkd", "subtitle": "Your system, in order." }
+    }
+  ],
+  "captions": {
+    "language": "en-US",
+    "timing_source": "voice_phrases",
+    "style": { "position": "lower_third", "case": "sentence", "max_lines": 2 },
+    "safe_area": { "top": 120, "right": 72, "bottom": 235, "left": 72 },
+    "cues": [
+      { "id": "caption-1", "phrase_id": "phrase-1", "start_seconds": 0.32, "end_seconds": 2.74, "text": "See your audio gear as a signal chain" },
+      { "id": "caption-2", "phrase_id": "phrase-2", "start_seconds": 3.17, "end_seconds": 5.45, "text": "Stakkd puts your system in order" }
+    ]
+  },
+  "sfx": [],
+  "format_variants": [
+    {
+      "format": "9:16",
+      "width": 1080,
+      "height": 1920,
+      "safe_area": { "top": 96, "right": 48, "bottom": 180, "left": 48 },
+      "crop_policy": "contain",
+      "typography": { "caption_px": 68, "title_px": 116 }
+    }
+  ],
+  "render": {
+    "composition": "PromoProof",
+    "composition_version": "ps-002-v1",
+    "fps": 30,
+    "video_codec": "h264",
+    "pixel_format": "yuv420p",
+    "audio_codec": "aac",
+    "audio_sample_rate": 48000,
+    "integrated_lufs": -14,
+    "true_peak_dbfs": -1.5,
+    "ffmpeg_fingerprint": "3b507045648c68790fbd57b9562445a25277eca5a70dc5ea8994fc46ddd595be"
+  },
+  "safety": {
+    "strict_claims": true,
+    "provenance_preview_overlay": true,
+    "generated_visual_disclosures": [],
+    "capture_redactions": [],
+    "claim_approval_ids": ["claim-stakkd-chain"]
+  },
+  "run_lineage": {
+    "job_ids": [],
+    "provider_ids": ["v1_ChcyTHFOYXNuVE84V0lxdHNQbU1EdTBRaxIXMkxxTmFzblRPOFdJcXRzUG1NRHUwUWs"],
+    "retries": 0,
+    "output_checksums": [],
+    "estimated_cost_usd": 0
+  }
+}

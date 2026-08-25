@@ -13,6 +13,12 @@
     "test:studio": "node --test tests/studio-album-planning.test.mjs tests/studio-album-contract.test.mjs",
     "test:media-generation": "node --test tests/media-generation-contract.test.mjs",
     "test:motion-posts": "node --test tests/motion-posts-contract.test.mjs",
+    "test:promo-proof": "node --test tests/promo-proof-contract.test.mjs",
+    "test:promo-manifest": "node --test tests/promo-manifest-contract.test.mjs",
+    "test:promo-edge": "node --test tests/promo-edge-contract.test.mjs",
+    "test:promo-ui-worker": "node --test tests/promo-ui-worker-contract.test.mjs",
+    "test:promo-evidence": "node --test tests/promo-github-evidence.test.mjs",
+    "test:promo-foundation": "node --test tests/promo-job-claim.test.mjs",
     "test:cards": "node --test tests/card-direction-copy.test.mjs",
     "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs tests/youtube-oauth-contract.test.mjs",
     "test:social-oauth": "node --test tests/social-oauth-contract.test.mjs",
@@ -27,7 +33,8 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-email-editor": "^1.7.11",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
