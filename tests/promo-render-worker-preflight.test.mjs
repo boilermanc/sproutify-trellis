@@ -11,17 +11,15 @@ const inspect = fixture => inspectPromoRenderClaim({
   composition_source_sha256: fixture.compositionSourceSha256, pipeline_fingerprint: fixture.pipelineFingerprint,
 });
 
-test('private asset plan passes structural preflight but remains activation-blocked', () => {
+test('private asset plan passes structural preflight and activation contract', () => {
   const fixture = createRekkrdRenderClaimFixture();
   const preflight = inspect(fixture);
   assert.equal(preflight.asset_plan.length, 4);
-  assert.equal(preflight.activation_ready, false);
-  assert.deepEqual(preflight.activation_blockers, [
-    'PROMO_RENDER_COMPOSITION_DISABLED',
-  ]);
+  assert.equal(preflight.activation_ready, true);
+  assert.deepEqual(preflight.activation_blockers, []);
   assert.equal(preflight.asset_plan.find(asset => asset.asset_id === fixture.job.input.presentation.brand.logo_asset_id)
     .roles.includes('brand:logo'), true);
-  assert.throws(() => assertPromoRenderActivationReady(preflight), error => error.code === 'PROMO_RENDER_ACTIVATION_BLOCKED');
+  assert.equal(assertPromoRenderActivationReady(preflight), preflight);
   assert.equal(preflight.asset_plan.every(asset => asset.storage_bucket === 'promo-assets' && !('signed_url' in asset)), true);
 });
 

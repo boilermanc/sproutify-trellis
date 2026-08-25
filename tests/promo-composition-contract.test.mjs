@@ -21,9 +21,9 @@ test('vertical-ui-story is registered at the proven vertical profile', async () 
   assert.match(root, /fps=\{FPS\}/);
   assert.match(root, /durationInFrames=\{FPS \* 10\}/);
   assert.match(registry, /key: "vertical-ui-story"[\s\S]*version: "v1"/);
-  assert.match(registry, /key: "vertical-ui-story"[\s\S]*worker_enabled: false/);
+  assert.match(registry, /key: "vertical-ui-story"[\s\S]*worker_enabled: true/);
   const definition = PROMO_COMPOSITIONS.find(item => item.key === 'vertical-ui-story' && item.version === 'v1');
-  assert.equal(definition?.status, 'render_verified');
+  assert.equal(definition?.status, 'worker_enabled');
   const composition = (await read('../workers/clip-render-worker/remotion/PromoVerticalStory.tsx')).replace(/\r\n/g, '\n');
   assert.equal(
     createHash('sha256').update(composition, 'utf8').digest('hex'),

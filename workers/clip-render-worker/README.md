@@ -66,7 +66,40 @@ npm run render:promo-sample
 
 That command uses Rekkrd only as fixture data and writes ignored visual and
 delivery-QA artifacts under `work/promo-studio/vertical-ui-story-v1/output`.
-The deployed Promo worker still claims only `noop` jobs.
+The deployed Edge worker still claims only `noop` jobs. The separate Node 22
+Promo worker claims only `preview_render` and `final_render` jobs, and remains
+disabled unless `PROMO_RENDER_CLAIMS_ENABLED=true` is set on its host.
+
+Install the external worker without enabling claims first:
+
+```bash
+ssh your-server
+cd /path/to/sproutify-trellis/workers/clip-render-worker
+npm ci
+node promo-worker.mjs
+```
+
+The disabled process exits without initializing a Supabase client. For a
+persistent host, copy `promo-render.service.example`, replace only
+`__TRELLIS_REPO_ROOT__` and `__NODE_BIN__`, and install it as
+`/etc/systemd/system/trellis-promo-render.service`. Copy
+`promo-render.env.example` to `/etc/trellis/promo-render.env`, replace the Hub
+service-role placeholder, restrict the file to the service account, and leave
+claims false for the first start. Verify Node 22.12+, FFmpeg, ffprobe, and Chrome,
+then change only `PROMO_RENDER_CLAIMS_ENABLED=true` and restart the unit.
+
+```bash
+node --version
+ffmpeg -version
+ffprobe -version
+sudo systemctl daemon-reload
+sudo systemctl enable --now trellis-promo-render
+sudo systemctl status trellis-promo-render --no-pager
+journalctl -u trellis-promo-render -n 100 --no-pager
+```
+
+The environment file is the only required credential surface. Do not expose the
+Hub service-role key through Vite, the browser, logs, or a checked-in file.
 
 ## The 7 templates
 

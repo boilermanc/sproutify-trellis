@@ -22,5 +22,7 @@ Verified fixture result on 2026-08-25:
 - -14.11 integrated LUFS and -1.84 dBTP;
 - real Rekkrd UI capture and approved Rekkrd icon from PS-002.
 
-The composition remains `worker_enabled: false`; this proof does not authorize
-the deployed worker to claim Promo render jobs.
+The composition is now `worker_enabled: true` after the isolated Node executor
+rerendered this fixture through the pinned pipeline with identical delivery QA.
+Production claims remain independently default-off through
+`PROMO_RENDER_CLAIMS_ENABLED` until the external process is installed.

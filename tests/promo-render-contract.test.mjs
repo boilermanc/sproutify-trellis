@@ -152,8 +152,8 @@ test('branch-neutral compositions resolve only from the pinned registry', async 
     assert.equal(input.render_profile.composition, 'vertical-ui-story');
     assert.equal(input.render_profile.composition_version, 'v1');
     assert.equal(input.render_profile.composition_registry_version, PROMO_COMPOSITION_REGISTRY_VERSION);
-    assert.equal(input.render_profile.composition_status, 'render_verified');
-    assert.equal(input.render_profile.composition_worker_enabled, false);
+    assert.equal(input.render_profile.composition_status, 'worker_enabled');
+    assert.equal(input.render_profile.composition_worker_enabled, true);
     assert.match(input.render_profile.composition_source_fingerprint_sha256, /^[a-f0-9]{64}$/);
     assert.equal(input.render_profile.expected_ffmpeg_fingerprint, '0a9e6171f5890e5308058f3ed06f3abfd68361d5cbae97c45b5b481613bb258e');
   }
@@ -232,7 +232,7 @@ test('final render requires current preview approval and approved input assets',
   assert.equal(input.review.approved_preview_asset_id, ready.selectedPreviewAssetId);
 });
 
-test('render jobs are server-resolved while the production composition worker remains disabled', async () => {
+test('render jobs are server-resolved while the deployed Edge worker remains noop-only', async () => {
   const [edge, worker, service, readme, proof] = await Promise.all([
     read('../supabase/functions/promo-studio/index.ts'), read('../supabase/functions/promo-worker/index.ts'),
     read('../services/promoStudioService.ts'), read('../workers/promo-render-worker/README.md'),
