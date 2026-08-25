@@ -19,8 +19,13 @@ const extensionByMime = Object.freeze({
 });
 
 const run = (command, args, label) => {
-  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error(`${label} failed: ${(result.stderr || result.stdout || '').slice(-2000)}`);
+  const result = spawnSync(command, args, {
+    encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600000, killSignal: 'SIGKILL',
+  });
+  if (result.error) throw new Error(`${label} failed to run ${command}: ${result.error.message}`);
+  if (result.status !== 0) {
+    throw new Error(`${label} failed (status ${result.status}, signal ${result.signal || 'none'}): ${(result.stderr || result.stdout || '').slice(-2000)}`);
+  }
   return result;
 };
 

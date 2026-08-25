@@ -89,6 +89,32 @@ test('enabled runtime claims only render jobs and completes through the isolated
   assert.equal(uploads[1].options.metadata.sha256, uploads[1].options.metadata.payload_fingerprint_sha256);
 });
 
+test('runtime rejects an oversized private response while streaming without content-length', async () => {
+  const fixture = activate(createRekkrdRenderClaimFixture());
+  let renderCalls = 0;
+  const db = {
+    rpc: async name => ({ data: name === 'claim_promo_job' ? [fixture.job] : true, error: null }),
+    from: table => query(table === 'promo_projects' ? [fixture.project]
+      : table === 'promo_approvals' ? fixture.approvals : fixture.assets),
+    storage: { from: () => ({
+      createSignedUrl: async () => ({ data: { signedUrl: 'https://storage.invalid/object' }, error: null }),
+      upload: async () => ({ error: null }), remove: async () => ({ error: null }),
+    }) },
+  };
+  const oversizedBytes = Math.max(...fixture.assets.map(item => item.file_size_bytes)) + 1;
+  const runtime = createPromoRenderRuntime({
+    environment: {
+      SUPABASE_URL: 'https://horvjqqifgrzxesuxtfm.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'server-only',
+      PROMO_RENDER_CLAIMS_ENABLED: 'true', PROMO_RENDER_WORKER_ID: fixture.workerId,
+    },
+    clientFactory: () => db,
+    render: async () => { renderCalls += 1; return artifact(); },
+    fetchImpl: async () => new Response(Buffer.alloc(oversizedBytes)),
+  });
+  await assert.rejects(runtime.processOnce(), /exceeded the download limit/);
+  assert.equal(renderCalls, 0);
+});
+
 test('runtime source keeps credentials server-only and documents Node 22 plus exact dependencies', async () => {
   const [runtime, workerPackage, service, environment] = await Promise.all([
     read('../workers/clip-render-worker/promo-worker.mjs'), read('../workers/clip-render-worker/package.json'),
@@ -105,6 +131,8 @@ test('runtime source keeps credentials server-only and documents Node 22 plus ex
   assert.equal(packageValue.engines.node, '>=22.12.0');
   assert.match(service, /EnvironmentFile=\/etc\/trellis\/promo-render\.env/);
   assert.match(service, /ExecStart=__NODE_BIN__\/node promo-worker\.mjs/);
+  assert.match(service, /User=__SERVICE_USER__/);
+  assert.match(service, /Group=__SERVICE_GROUP__/);
   assert.match(environment, /PROMO_RENDER_CLAIMS_ENABLED=false/);
   assert.match(environment, /SUPABASE_SERVICE_ROLE_KEY=REPLACE_WITH_HUB_SERVICE_ROLE_KEY/);
   assert.doesNotMatch(environment, /eyJ[A-Za-z0-9_-]+\./);

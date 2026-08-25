@@ -81,17 +81,21 @@ node promo-worker.mjs
 
 The disabled process exits without initializing a Supabase client. For a
 persistent host, copy `promo-render.service.example`, replace only
-`__TRELLIS_REPO_ROOT__` and `__NODE_BIN__`, and install it as
+`__TRELLIS_REPO_ROOT__`, `__NODE_BIN__`, `__SERVICE_USER__`, and
+`__SERVICE_GROUP__`, and install it as
 `/etc/systemd/system/trellis-promo-render.service`. Copy
 `promo-render.env.example` to `/etc/trellis/promo-render.env`, replace the Hub
-service-role placeholder, restrict the file to the service account, and leave
-claims false for the first start. Verify Node 22.12+, FFmpeg, ffprobe, and Chrome,
-then change only `PROMO_RENDER_CLAIMS_ENABLED=true` and restart the unit.
+service-role placeholder, restrict the file to the non-root service account,
+and ensure that account can write the worker directory and its Remotion browser
+cache. Leave claims false for the first start. Verify Node 22.12+, FFmpeg,
+ffprobe, and Chrome, then change only `PROMO_RENDER_CLAIMS_ENABLED=true` and
+restart the unit.
 
 ```bash
 node --version
 ffmpeg -version
 ffprobe -version
+npx remotion browser ensure
 sudo systemctl daemon-reload
 sudo systemctl enable --now trellis-promo-render
 sudo systemctl status trellis-promo-render --no-pager

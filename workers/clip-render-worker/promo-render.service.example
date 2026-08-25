@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_GROUP__
 WorkingDirectory=__TRELLIS_REPO_ROOT__/workers/clip-render-worker
 EnvironmentFile=/etc/trellis/promo-render.env
 ExecStart=__NODE_BIN__/node promo-worker.mjs

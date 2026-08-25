@@ -62,11 +62,28 @@ export function createPromoRenderRuntime({
     fetchAsset: async (url, { max_bytes: maximumBytes }) => {
       const response = await fetchImpl(url, { cache: 'no-store', signal: AbortSignal.timeout(120000) });
       if (!response.ok) throw new Error(`Private render asset download failed with HTTP ${response.status}.`);
-      const declared = Number(response.headers.get('content-length'));
+      const contentLength = response.headers.get('content-length');
+      const declared = contentLength === null ? NaN : Number(contentLength);
       if (Number.isFinite(declared) && declared > maximumBytes) throw new Error('Private render asset exceeds its registered size.');
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.length > maximumBytes) throw new Error('Private render asset exceeded the download limit.');
-      return bytes;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Private render asset response has no body.');
+      const chunks = [];
+      let totalBytes = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalBytes += value.byteLength;
+          if (totalBytes > maximumBytes) {
+            await reader.cancel('download limit exceeded');
+            throw new Error('Private render asset exceeded the download limit.');
+          }
+          chunks.push(Buffer.from(value));
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return Buffer.concat(chunks, totalBytes);
     },
     render,
     upload: async ({ bucket, path: storagePath, bytes, content_type: contentType, upsert, metadata }) => {
