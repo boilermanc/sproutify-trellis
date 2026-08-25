@@ -17,6 +17,7 @@ Updated: 2026-08-25
 - Music worker contract: generation inputs are resolved from the approved structured manifest, remain strictly instrumental, reserve take numbers atomically, and exclude browser prompts, provider settings, and credentials. Existing Lyria paths are documented as adapter candidates, not direct Promo persistence boundaries.
 - Render worker contract: preview/final inputs are resolved from the active manifest and checksum-verified private assets, captions are rebuilt from approved display phrases, vertical output is fixed to 1080x1920, and final rendering requires current preview approval. The Rekkrd proof composition is explicitly not enabled as a cross-branch production template.
 - Preview review contract: selection accepts only a ready 1080x1920 private asset produced by a succeeded current-revision preview job; decisions are bound to that selected asset, and final render readiness uses its latest decision.
+- Render completion contract: a service-role-only transaction verifies the active render lease, deterministic private Storage objects, checksums, delivery-profile QA, and tool/input fingerprints before registering the render plus QA assets and completing the job.
 - Durable no-op worker: a filtered service worker proves claim/lease/complete behavior without claiming future job types.
 
 ## Exact deployment artifacts
@@ -30,6 +31,7 @@ Updated: 2026-08-25
 - Voice queue contract: `supabase/functions/_shared/promo-voice.ts`
 - Music queue contract: `supabase/functions/_shared/promo-music.ts`
 - Render queue contract: `supabase/functions/_shared/promo-render.ts`
+- Render completion migration: `supabase/migrations/20260825211425_complete_promo_render_job.sql`
 - Future worker boundary: `workers/promo-capture-worker/README.md`
 - Function import map: `supabase/functions/promo-studio/deno.json`
 - Browser service: `services/promoStudioService.ts`
@@ -62,6 +64,7 @@ Existing provider credentials remain in their current server-side locations. No 
 - Music queue contracts: 4 passing.
 - Render queue contracts: 4 passing.
 - Preview review contracts: 3 passing.
+- Render completion contracts: 3 passing.
 - PS-002 proof contracts: 10 passing.
 - TypeScript: `npx tsc --noEmit` passes.
 - Edge Functions: Deno type-check passes for `promo-studio` and `promo-worker`.

@@ -5,6 +5,7 @@ import PROMO_BRANCH_SOURCES_SQL_SCHEMA from './supabase/migrations/2026082517582
 import PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA from './supabase/migrations/20260825191617_add_promo_claim_approval_gate.sql?raw';
 import PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA from './supabase/migrations/20260825201900_reserve_promo_voice_take_numbers.sql?raw';
 import PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA from './supabase/migrations/20260825203500_reserve_promo_music_take_numbers.sql?raw';
+import PROMO_RENDER_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260825211425_complete_promo_render_job.sql?raw';
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -2759,6 +2760,7 @@ ${PROMO_BRANCH_SOURCES_SQL_SCHEMA}
 ${PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA}
 ${PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA}
 ${PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA}
+${PROMO_RENDER_COMPLETION_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

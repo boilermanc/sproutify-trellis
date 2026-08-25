@@ -23,3 +23,45 @@ for every branch. Before enabling render claims, Trellis needs:
 The worker must accept only asset IDs and normalized timeline data from the
 server-created job. It must never accept browser URLs, storage paths, captions,
 FFmpeg flags, composition source, executable code, or credentials.
+
+## Completion transaction
+
+After rendering and QA, the worker must generate two UUIDs and upload only to
+these deterministic private paths:
+
+- `<project_id>/<render_asset_id>/preview.mp4` for `preview_render`, or
+  `<project_id>/<render_asset_id>/final.mp4` for `final_render`;
+- `<project_id>/<qa_asset_id>/qa.json` for the machine-readable QA report.
+
+Each upload must set Storage custom metadata containing `sha256`, `job_id`,
+`input_fingerprint`, and `kind`. The QA upload must also include
+`payload_fingerprint_sha256`, calculated as SHA-256 over the UTF-8 PostgreSQL
+JSONB text representation of the submitted QA object. That representation
+removes duplicate keys, orders keys using PostgreSQL JSONB ordering (UTF-8 byte
+length, then byte value), normalizes numbers, and uses one ASCII space after
+each comma and colon. The worker must upload those exact canonical UTF-8 bytes
+as `qa.json`; its `sha256` and `payload_fingerprint_sha256` metadata values must
+therefore be identical. Upload with `contentType: video/mp4` or
+`application/json` as appropriate and without upsert.
+
+The `duration_seconds`, `integrated_lufs`, and `true_peak_dbfs` JSON numbers
+must use plain decimal notation: no exponent, no leading zero (except zero
+itself), and no trailing zero in a fractional part. For example, use `10.5`,
+not `10.50` or `1.05e1`. This preserves identical numeric text in JavaScript
+and PostgreSQL JSONB.
+
+It must then call `complete_promo_render_job` with the active worker lease,
+checksums, sizes, measured duration, output fingerprint, and QA report. That
+service-role-only RPC verifies object presence and the delivery profile before
+binding the reported checksums and sizes to Storage metadata, atomically
+registering both assets, completing the attempt and job, and writing the audit
+event. Render workers must not use the generic `complete_promo_job`
+RPC. A `false` result means the lease or contract is invalid; the worker must
+not report success.
+
+The QA report must contain `schema_version`, `passed`, `input_fingerprint`,
+`output_checksum_sha256`, `ffmpeg_fingerprint`, `width`, `height`, `fps`,
+`video_codec`, `pixel_format`, `audio_codec`, `audio_sample_rate`, `faststart`,
+`color_range`, `duration_seconds`, `integrated_lufs`, and `true_peak_dbfs`.
+Measured and reported durations must agree within 0.001 seconds, and measured
+duration must be within 0.05 seconds of `timeline.target_seconds`.
