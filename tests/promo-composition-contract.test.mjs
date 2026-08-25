@@ -46,14 +46,17 @@ test('every registered composition fingerprint pins its exact normalized source'
 });
 
 test('composition is branch-neutral, deterministic, and data-driven', async () => {
-  const composition = await read('../workers/clip-render-worker/remotion/PromoVerticalStory.tsx');
-  assert.match(composition, /scenes: PromoVerticalScene\[\]/);
-  assert.match(composition, /captions: PromoVerticalCaption\[\]/);
-  assert.match(composition, /voice_source\?: string/);
-  assert.match(composition, /music_source\?: string/);
-  assert.match(composition, /brand: \{/);
-  assert.match(composition, /safe_area: \{/);
-  assert.match(composition, /review\?: \{ overlay\?: string; provenance_label\?: string \}/);
+  const [composition, types] = await Promise.all([
+    read('../workers/clip-render-worker/remotion/PromoVerticalStory.tsx'),
+    read('../workers/clip-render-worker/remotion/types.ts'),
+  ]);
+  assert.match(types, /scenes: PromoVerticalScene\[\]/);
+  assert.match(types, /captions: PromoVerticalCaption\[\]/);
+  assert.match(types, /voice_source\?: string/);
+  assert.match(types, /music_source\?: string/);
+  assert.match(types, /brand: \{/);
+  assert.match(types, /safe_area: \{/);
+  assert.match(types, /review\?: \{ overlay\?: string; provenance_label\?: string \}/);
   assert.match(composition, /<Img /);
   assert.match(composition, /<Video /);
   assert.match(composition, /<Audio /);
