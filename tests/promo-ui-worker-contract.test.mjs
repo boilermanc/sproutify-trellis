@@ -18,7 +18,23 @@ test('Promo Studio is a first-class Trellis route and branch-scoped workspace', 
 test('browser mutations use only the Promo Studio Edge Function', async () => {
   const service = await read('../services/promoStudioService.ts');
   assert.match(service, /functions\.invoke\('promo-studio'/);
+  assert.match(service, /'generate_creative_plan'/);
+  assert.match(service, /'create_revision'/);
   assert.doesNotMatch(service, /\.from\(['"]promo_/);
+});
+
+test('Creative Director output enters explicit claims and script review', async () => {
+  const [page, edge] = await Promise.all([
+    read('../pages/PromoStudio.tsx'), read('../supabase/functions/promo-studio/index.ts'),
+  ]);
+  assert.match(page, /Claims review/);
+  assert.match(page, /Script review/);
+  assert.match(page, /Unsupported claims block strict-mode final approval/);
+  assert.match(page, /Generate evidence plan/);
+  assert.match(edge, /action === "generate_creative_plan"/);
+  assert.match(edge, /parsePromoCreativePlan\(sanitizePromoJson\(rawPlan\), evidence\)/);
+  assert.match(edge, /status: "script_review"/);
+  assert.match(edge, /approved: false/);
 });
 
 test('no-op worker claims only no-op jobs and completes with lease identity', async () => {

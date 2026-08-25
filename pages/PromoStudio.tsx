@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import type { Branch } from '../types';
 import {
-  cancelPromoJob, createPromoProject, getPromoProject, listPromoProjects, queuePromoJob,
+  cancelPromoJob, createPromoProject, createPromoRevision, generatePromoCreativePlan,
+  getPromoProject, listPromoProjects, queuePromoJob,
   retryPromoJob, type PromoJob, type PromoProject, type PromoProjectDetail,
 } from '../services/promoStudioService';
 
@@ -41,6 +42,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [scriptDrafts, setScriptDrafts] = useState<Record<string, { display_text: string; speech_text: string }>>({});
 
   const loadProjects = useCallback(async () => {
     try {
@@ -67,6 +69,11 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
   useEffect(() => { void loadProjects(); }, [loadProjects]);
   useEffect(() => { if (selectedId) void loadDetail(selectedId); else setDetail(null); }, [loadDetail, selectedId]);
   useEffect(() => { if (!branchId && activeBranches[0]) setBranchId(activeBranches[0].id); }, [activeBranches, branchId]);
+  useEffect(() => {
+    setScriptDrafts(Object.fromEntries((detail?.revision?.manifest.script.phrases || []).map(phrase => [phrase.id, {
+      display_text: phrase.display_text, speech_text: phrase.speech_text,
+    }])));
+  }, [detail?.revision?.id]);
 
   const createProject = async () => {
     if (!title.trim() || !prompt.trim() || !branchId || formats.length === 0) return;
@@ -97,6 +104,35 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
       addToast('Foundation check queued.');
     } catch (error) { addToast(error instanceof Error ? error.message : 'Could not queue foundation check.', 'error'); }
     finally { setBusy(false); }
+  };
+
+  const generateCreativePlan = async () => {
+    if (!selectedId) return;
+    try {
+      setBusy(true);
+      await generatePromoCreativePlan(selectedId);
+      await loadDetail(selectedId);
+      addToast('Evidence-bound creative plan is ready for review.');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not generate the creative plan.', 'error');
+    } finally { setBusy(false); }
+  };
+
+  const saveScriptDraft = async () => {
+    if (!selectedId || !manifest) return;
+    try {
+      setBusy(true);
+      const next = structuredClone(manifest);
+      next.script.phrases = next.script.phrases.map(phrase => ({ ...phrase, ...scriptDrafts[phrase.id] }));
+      next.script.approved_text = next.script.phrases.map(phrase => phrase.display_text).join(' ');
+      next.script.status = 'review';
+      next.promo.status = 'script_review';
+      await createPromoRevision(selectedId, next, 'Edited Creative Director script draft');
+      await loadDetail(selectedId);
+      addToast('Script edits saved as a new immutable revision.');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not save the script draft.', 'error');
+    } finally { setBusy(false); }
   };
 
   const mutateJob = async (job: PromoJob, action: 'cancel' | 'retry') => {
@@ -164,11 +200,21 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
         <main className="space-y-6">
           {!detail || !manifest ? <section className="flex min-h-[420px] items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center"><div><Clapperboard className="mx-auto h-9 w-9 text-slate-300" /><h2 className="mt-4 text-lg font-black text-slate-800">Choose or create a promo</h2><p className="mt-2 text-sm text-slate-500">The project workspace will show only evidence and stages that actually exist.</p></div></section> : <>
             <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-violet-600">Revision {detail.revision?.revision_number}</p><h2 className="mt-1 text-2xl font-black text-slate-950">{detail.project.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{detail.project.request_prompt}</p></div><div className="flex gap-2"><button onClick={() => void loadDetail(detail.project.id)} className="rounded-xl border border-slate-200 p-2.5 text-slate-500"><RefreshCw className="h-4 w-4" /></button><button disabled={busy} onClick={() => void queueFoundationCheck()} className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"><Sparkles className="h-4 w-4" /> Test job foundation</button></div></div>
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-violet-600">Revision {detail.revision?.revision_number}</p><h2 className="mt-1 text-2xl font-black text-slate-950">{detail.project.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{detail.project.request_prompt}</p></div><div className="flex flex-wrap justify-end gap-2"><button onClick={() => void loadDetail(detail.project.id)} className="rounded-xl border border-slate-200 p-2.5 text-slate-500"><RefreshCw className="h-4 w-4" /></button><button disabled={busy} onClick={() => void queueFoundationCheck()} className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-600 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" /> Test foundation</button><button disabled={busy || !detail.source} onClick={() => void generateCreativePlan()} className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate evidence plan</button></div></div>
               <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Branch</p><p className="mt-1 text-sm font-bold text-slate-800">{manifest.promo.branch.display_name}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Deliverables</p><p className="mt-1 text-sm font-bold text-slate-800">{manifest.promo.formats.join(' · ')}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fingerprint</p><p className="mt-1 truncate font-mono text-xs text-slate-700" title={detail.revision?.manifest_fingerprint}>{detail.revision?.manifest_fingerprint.slice(0, 16)}…</p></div></div>
             </section>
 
             <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Production gates</p><h2 className="mt-1 text-xl font-black text-slate-900">What is real, and what is missing</h2></div><ShieldCheck className="h-6 w-6 text-violet-500" /></div><div className="mt-5 grid gap-3 md:grid-cols-2">{stages.map(stage => <div key={stage.name} className="flex items-start gap-3 rounded-2xl border border-slate-100 p-4"><div className={`rounded-xl p-2 ${stage.ready ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{stage.ready ? <CheckCircle2 className="h-4 w-4" /> : <stage.icon className="h-4 w-4" />}</div><div><p className="text-sm font-black text-slate-800">{stage.name}</p><p className="mt-1 text-xs leading-5 text-slate-500">{stage.note}</p></div></div>)}</div></section>
+
+            {manifest.evidence.claims.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Claims review</p><h2 className="mt-1 text-xl font-black text-slate-900">Evidence before approval</h2><p className="mt-2 text-sm text-slate-500">Generated claims remain unapproved. Unsupported claims block strict-mode final approval.</p></div><ShieldCheck className="h-6 w-6 text-violet-500" /></div>
+              <div className="mt-5 space-y-3">{manifest.evidence.claims.map(claim => <div key={claim.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-black text-slate-900">{claim.text}</p><p className="mt-1 text-xs text-slate-500">{claim.claim_type.replace(/_/g, ' ')}</p></div><div className="flex gap-2"><span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase ${claim.status === 'verified' ? statusClass.ready : statusClass.failed}`}>{claim.status}</span><span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase text-amber-700">Not approved</span></div></div><div className="mt-3 flex flex-wrap gap-2">{claim.evidence_refs.map(ref => <code key={ref} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-600">{ref}</code>)}</div></div>)}</div>
+            </section>}
+
+            {manifest.script.phrases.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Script review</p><h2 className="mt-1 text-xl font-black text-slate-900">Display and spoken text</h2><p className="mt-2 text-sm text-slate-500">Speech text may use pronunciation spelling without changing the on-screen wording.</p></div><button disabled={busy || manifest.script.phrases.some(phrase => !(scriptDrafts[phrase.id]?.display_text ?? '').trim() || !(scriptDrafts[phrase.id]?.speech_text ?? '').trim())} onClick={() => void saveScriptDraft()} className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">Save new revision</button></div>
+              <div className="mt-5 space-y-4">{manifest.script.phrases.map((phrase, index) => <div key={phrase.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-center justify-between"><p className="text-xs font-black uppercase tracking-widest text-violet-600">Phrase {index + 1}</p><span className="text-[10px] font-bold uppercase text-slate-400">{phrase.emphasis} emphasis</span></div><label className="mt-3 block text-xs font-bold text-slate-500">On-screen text<textarea rows={2} value={scriptDrafts[phrase.id]?.display_text ?? phrase.display_text} onChange={event => setScriptDrafts(current => ({ ...current, [phrase.id]: { display_text: event.target.value, speech_text: current[phrase.id]?.speech_text ?? phrase.speech_text } }))} className="mt-1 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-violet-400" /></label><label className="mt-3 block text-xs font-bold text-slate-500">Voice text<textarea rows={2} value={scriptDrafts[phrase.id]?.speech_text ?? phrase.speech_text} onChange={event => setScriptDrafts(current => ({ ...current, [phrase.id]: { display_text: current[phrase.id]?.display_text ?? phrase.display_text, speech_text: event.target.value } }))} className="mt-1 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-violet-400" /></label><div className="mt-3 flex flex-wrap gap-2">{phrase.evidence_refs.map(ref => <code key={ref} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-600">{ref}</code>)}</div></div>)}</div>
+            </section>}
 
             <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Durable orchestration</p><h2 className="mt-1 text-xl font-black text-slate-900">Jobs</h2></div><Clock3 className="h-5 w-5 text-slate-400" /></div><div className="mt-4 space-y-2">{detail.jobs.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No jobs queued for this revision.</p> : detail.jobs.map(job => <div key={job.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 p-4"><div><div className="flex items-center gap-2"><p className="text-sm font-black text-slate-800">{job.job_type.replace(/_/g, ' ')}</p><span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusClass[job.status] || statusClass.draft}`}>{job.status.replace(/_/g, ' ')}</span></div><p className="mt-1 text-xs text-slate-500">Attempt {job.attempt_count} · {job.progress}%{job.error_message ? ` · ${job.error_message}` : ''}</p></div><div className="flex gap-2">{!terminalJobs.has(job.status) && job.status !== 'cancel_requested' && <button disabled={busy} onClick={() => void mutateJob(job, 'cancel')} className="rounded-lg border border-slate-200 p-2 text-slate-500"><Square className="h-3.5 w-3.5" /></button>}{['failed', 'cancelled'].includes(job.status) && <button disabled={busy} onClick={() => void mutateJob(job, 'retry')} className="rounded-lg border border-slate-200 p-2 text-slate-500"><RotateCcw className="h-3.5 w-3.5" /></button>}</div></div>)}</div></section>
           </>}

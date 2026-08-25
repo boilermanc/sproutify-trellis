@@ -100,6 +100,20 @@ export async function getPromoProject(projectId: string) {
   return callPromo<PromoProjectDetail>('get_project', { project_id: projectId });
 }
 
+export async function generatePromoCreativePlan(projectId: string) {
+  return callPromo<{
+    revision: PromoRevision;
+    plan: Record<string, unknown>;
+    claims: PromoManifest['evidence']['claims'];
+  }>('generate_creative_plan', { project_id: projectId });
+}
+
+export async function createPromoRevision(projectId: string, manifest: PromoManifest, reason: string) {
+  return callPromo<{ revision: PromoRevision }>('create_revision', {
+    project_id: projectId, manifest, reason,
+  });
+}
+
 export async function queuePromoJob(projectId: string, jobType: string, input: Record<string, unknown> = {}) {
   return (await callPromo<{ job: PromoJob }>('create_job', {
     project_id: projectId, job_type: jobType, input,
