@@ -1,6 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { PromoManifest } from '../features/promo-studio/schemas/promoManifest';
+import type { PromoCaptureRun } from '../types';
 
 export interface PromoProject {
   id: string;
@@ -42,19 +43,6 @@ export interface PromoJob {
   attempt_count: number;
   error_code: string | null;
   error_message: string | null;
-  created_at: string;
-}
-
-export interface PromoCaptureRun {
-  id: string;
-  project_id: string;
-  revision_id: string;
-  scenario_id: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'stale';
-  video_asset_id: string | null;
-  still_asset_ids: string[];
-  trace_asset_id: string | null;
-  evidence: Record<string, unknown>;
   created_at: string;
 }
 

@@ -26,6 +26,19 @@ export interface AuthContextType {
   updatePassword: (password: string) => Promise<{ error: string | null }>;
 }
 
+export interface PromoCaptureRun {
+  id: string;
+  project_id: string;
+  revision_id: string;
+  scenario_id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'stale';
+  video_asset_id: string | null;
+  still_asset_ids: string[];
+  trace_asset_id: string | null;
+  evidence: Record<string, unknown>;
+  created_at: string;
+}
+
 // DEPRECATED: Use BrandIdentity instead. Keeping for backwards compatibility during migration.
 export interface Brand {
   id: string;

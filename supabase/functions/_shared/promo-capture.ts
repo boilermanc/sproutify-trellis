@@ -1,3 +1,7 @@
+import type {
+  PromoCaptureAssetRow, PromoCaptureRunResult, PromoCaptureScenarioRow,
+} from "./types.ts";
+
 const SHA = /^[a-f0-9]{40}$/i;
 const SHA256 = /^[a-f0-9]{64}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,6 +79,28 @@ export function buildPromoCaptureJobInput(manifestValue: unknown, sourceValue: u
   };
 }
 
+function captureScenarioRow(value: unknown): value is PromoCaptureScenarioRow {
+  return record(value) && typeof value.id === "string" && typeof value.scenario_key === "string"
+    && typeof value.scenario_version === "number" && typeof value.repository_ref === "string"
+    && typeof value.commit_sha === "string" && typeof value.route === "string"
+    && typeof value.status === "string" && record(value.definition) && typeof value.definition.id === "string";
+}
+
+function captureRunResult(value: unknown): value is PromoCaptureRunResult {
+  return record(value) && ["id", "job_id", "project_id", "revision_id", "scenario_id", "status", "video_asset_id", "trace_asset_id"]
+    .every(key => typeof value[key] === "string")
+    && Array.isArray(value.still_asset_ids) && value.still_asset_ids.every((id: unknown) => typeof id === "string")
+    && record(value.evidence) && Array.isArray(value.evidence.assertions)
+    && value.evidence.assertions.every(record) && Array.isArray(value.evidence.masks_applied);
+}
+
+function captureAssetRow(value: unknown): value is PromoCaptureAssetRow {
+  return record(value) && ["id", "project_id", "revision_id", "kind", "role", "status", "storage_bucket", "storage_path", "mime_type", "checksum_sha256"]
+    .every(key => typeof value[key] === "string") && typeof value.file_size_bytes === "number"
+    && (value.duration_seconds == null || typeof value.duration_seconds === "number")
+    && (value.width == null || typeof value.width === "number") && (value.height == null || typeof value.height === "number");
+}
+
 export function applyPromoCaptureAdoption(
   manifestValue: unknown,
   scenarioRowValue: unknown,
@@ -87,8 +113,14 @@ export function applyPromoCaptureAdoption(
     || !Array.isArray(assetRowsValue)) {
     throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_INVALID", "Capture adoption context is invalid.");
   }
-  const scenarioRow = scenarioRowValue as Record<string, any>;
-  const run = runValue as Record<string, any>;
+  if (!captureScenarioRow(scenarioRowValue)) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_INVALID", "Capture scenario context is invalid.");
+  }
+  if (!captureRunResult(runValue)) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_RUN_INVALID", "Capture run is not a succeeded current-revision result.");
+  }
+  const scenarioRow = scenarioRowValue;
+  const run = runValue;
   const scenario = manifestValue.captures.scenarios.find((item: any) => item?.id === scenarioRow.definition?.id);
   if (!record(scenario) || !["draft", "failed", "stale"].includes(scenario.status)
     || scenario.key !== scenarioRow.scenario_key || scenario.version !== scenarioRow.scenario_version
@@ -121,7 +153,7 @@ export function applyPromoCaptureAdoption(
   if (new Set(artifactIds).size !== artifactIds.length) {
     throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ASSET_INVALID", "Capture artifacts must be distinct.");
   }
-  const rows = new Map(assetRowsValue.filter(record).map((asset: any) => [asset.id, asset]));
+  const rows = new Map(assetRowsValue.filter(captureAssetRow).map(asset => [asset.id, asset]));
   if (rows.size !== artifactIds.length) {
     throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ASSET_INVALID", "Every capture artifact must be loaded exactly once.");
   }
@@ -130,7 +162,7 @@ export function applyPromoCaptureAdoption(
     ...run.still_asset_ids.map((id: string) => [id, "capture_still"] as [string, string]),
   ]);
   for (const assetId of artifactIds) {
-    const asset = rows.get(assetId) as Record<string, any> | undefined;
+    const asset = rows.get(assetId);
     if (!asset || asset.project_id !== manifestValue.promo.id || asset.revision_id !== manifestValue.promo.revision_id
       || asset.status !== "ready" || asset.kind !== expectedKinds.get(assetId)
       || asset.storage_bucket !== "promo-assets" || !configured(asset.storage_path)
@@ -151,7 +183,7 @@ export function applyPromoCaptureAdoption(
     if (existingAssetIds.has(assetId)) {
       throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ALREADY_APPLIED", "Capture artifact is already present in the active manifest.");
     }
-    const asset = rows.get(assetId) as Record<string, any>;
+    const asset = rows.get(assetId)!;
     manifest.assets.push({
       id: asset.id, kind: asset.kind, role: asset.role,
       storage_bucket: asset.storage_bucket, storage_path: asset.storage_path,

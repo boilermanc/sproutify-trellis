@@ -21,13 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_promo_revision_assets_asset
 ALTER TABLE public.promo_revision_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.promo_revision_assets FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.promo_revision_assets FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON TABLE public.promo_revision_assets TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.promo_revision_assets TO service_role;
-
-DROP POLICY IF EXISTS "Promo revision assets follow project access" ON public.promo_revision_assets;
-CREATE POLICY "Promo revision assets follow project access"
-  ON public.promo_revision_assets FOR SELECT TO authenticated
-  USING ((SELECT private.can_access_promo_project(project_id)));
 
 CREATE OR REPLACE FUNCTION private.validate_promo_revision_asset_binding()
 RETURNS trigger

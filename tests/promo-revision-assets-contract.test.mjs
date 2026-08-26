@@ -13,7 +13,8 @@ test('revision asset bindings preserve immutable origin and enforce project-scop
   assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /FORCE ROW LEVEL SECURITY/);
   assert.match(migration, /REVOKE ALL ON TABLE public\.promo_revision_assets FROM PUBLIC, anon, authenticated/);
-  assert.match(migration, /FOR SELECT TO authenticated[\s\S]*private\.can_access_promo_project\(project_id\)/);
+  assert.doesNotMatch(migration, /GRANT SELECT ON TABLE public\.promo_revision_assets TO authenticated/);
+  assert.doesNotMatch(migration, /CREATE POLICY[\s\S]*ON public\.promo_revision_assets/);
   assert.match(migration, /idx_promo_revision_assets_project/);
   assert.match(migration, /idx_promo_revision_assets_asset/);
   assert.match(migration, /AFTER INSERT ON public\.promo_assets/);
