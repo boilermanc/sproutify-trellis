@@ -18,7 +18,7 @@ const activate = fixture => {
 };
 const context = fixture => ({
   job: fixture.job, worker_id: fixture.workerId, project: fixture.project,
-  approvals: fixture.approvals, assets: fixture.assets,
+  approvals: fixture.approvals, assets: fixture.assets, asset_binding_ids: fixture.assetBindingIds,
   composition_source_sha256: fixture.compositionSourceSha256,
   pipeline_fingerprint: fixture.pipelineFingerprint,
 });

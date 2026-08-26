@@ -1,6 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { PromoManifest } from '../features/promo-studio/schemas/promoManifest';
+import type { PromoCaptureRun } from '../types';
 
 export interface PromoProject {
   id: string;
@@ -67,6 +68,7 @@ export interface PromoProjectDetail {
   jobs: PromoJob[];
   approvals: Array<Record<string, unknown>>;
   assets: Array<Record<string, unknown>>;
+  capture_runs: PromoCaptureRun[];
   events: Array<Record<string, unknown>>;
 }
 
@@ -125,6 +127,12 @@ export async function approvePromoClaim(projectId: string, claimId: string) {
 export async function approvePromoScript(projectId: string) {
   return callPromo<{ revision: PromoRevision; approval: Record<string, unknown> }>('approve_script', {
     project_id: projectId,
+  });
+}
+
+export async function adoptPromoCapture(projectId: string, captureRunId: string) {
+  return callPromo<{ revision: PromoRevision; capture_run_id: string }>('adopt_capture', {
+    project_id: projectId, capture_run_id: captureRunId,
   });
 }
 

@@ -84,7 +84,7 @@ const requireAdapter = (adapters, name) => {
 
 export async function executePromoRenderClaim({
   job, worker_id, project, approvals = [], assets = [], composition_source_sha256,
-  pipeline_fingerprint, adapters,
+  asset_binding_ids = [], pipeline_fingerprint, adapters,
 }) {
   const heartbeat = requireAdapter(adapters, 'heartbeat');
   const randomUuid = requireAdapter(adapters, 'randomUuid');
@@ -101,7 +101,8 @@ export async function executePromoRenderClaim({
   };
   try {
     const preflight = inspectPromoRenderClaim({
-      job, worker_id, project, approvals, assets, composition_source_sha256, pipeline_fingerprint,
+      job, worker_id, project, approvals, assets, asset_binding_ids,
+      composition_source_sha256, pipeline_fingerprint,
     });
     assertPromoRenderActivationReady(preflight);
     await keepLease(10);

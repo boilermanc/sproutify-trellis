@@ -20,9 +20,21 @@ test('browser mutations use only the Promo Studio Edge Function', async () => {
   assert.match(service, /functions\.invoke\('promo-studio'/);
   assert.match(service, /'generate_creative_plan'/);
   assert.match(service, /'create_revision'/);
+  assert.match(service, /'adopt_capture'/);
   assert.match(service, /'approve_claim'/);
   assert.match(service, /'approve_script'/);
   assert.doesNotMatch(service, /\.from\(['"]promo_/);
+});
+
+test('verified capture results are adopted through an immutable manifest revision', async () => {
+  const [page, edge] = await Promise.all([
+    read('../pages/PromoStudio.tsx'), read('../supabase/functions/promo-studio/index.ts'),
+  ]);
+  assert.match(page, /Capture results/);
+  assert.match(page, /Adopt verified capture/);
+  assert.match(edge, /action === "adopt_capture"/);
+  assert.match(edge, /applyPromoCaptureAdoption/);
+  assert.match(edge, /event: "capture\.adopted"/);
 });
 
 test('Creative Director output enters explicit claims and script review', async () => {

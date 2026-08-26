@@ -1,4 +1,10 @@
+import type {
+  PromoCaptureAssetRow, PromoCaptureRunResult, PromoCaptureScenarioRow,
+} from "./types.ts";
+
 const SHA = /^[a-f0-9]{40}$/i;
+const SHA256 = /^[a-f0-9]{64}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class PromoCaptureReadinessError extends Error {
   readonly code: string;
@@ -71,4 +77,138 @@ export function buildPromoCaptureJobInput(manifestValue: unknown, sourceValue: u
     branch_source_id: sourceValue.id,
     expected_commit_sha: scenario.commit_sha,
   };
+}
+
+function captureScenarioRow(value: unknown): value is PromoCaptureScenarioRow {
+  return record(value) && typeof value.id === "string" && typeof value.scenario_key === "string"
+    && typeof value.scenario_version === "number" && typeof value.repository_ref === "string"
+    && typeof value.commit_sha === "string" && typeof value.route === "string"
+    && typeof value.status === "string" && record(value.definition) && typeof value.definition.id === "string";
+}
+
+function captureRunResult(value: unknown): value is PromoCaptureRunResult {
+  return record(value) && ["id", "job_id", "project_id", "revision_id", "scenario_id", "status", "video_asset_id", "trace_asset_id"]
+    .every(key => typeof value[key] === "string")
+    && Array.isArray(value.still_asset_ids) && value.still_asset_ids.every((id: unknown) => typeof id === "string")
+    && record(value.evidence) && Array.isArray(value.evidence.assertions)
+    && value.evidence.assertions.every((assertion: unknown) => record(assertion) && assertion.passed === true)
+    && Array.isArray(value.evidence.masks_applied);
+}
+
+function captureAssetRow(value: unknown): value is PromoCaptureAssetRow {
+  return record(value) && ["id", "project_id", "revision_id", "kind", "role", "status", "storage_bucket", "storage_path", "mime_type", "checksum_sha256"]
+    .every(key => typeof value[key] === "string") && typeof value.file_size_bytes === "number"
+    && (value.duration_seconds == null || typeof value.duration_seconds === "number")
+    && (value.width == null || typeof value.width === "number") && (value.height == null || typeof value.height === "number");
+}
+
+export function applyPromoCaptureAdoption(
+  manifestValue: unknown,
+  scenarioRowValue: unknown,
+  runValue: unknown,
+  assetRowsValue: unknown,
+) {
+  if (!record(manifestValue) || !record(manifestValue.promo) || !record(manifestValue.captures)
+    || !Array.isArray(manifestValue.captures.scenarios) || !Array.isArray(manifestValue.assets)
+    || !Array.isArray(manifestValue.scenes) || !record(scenarioRowValue) || !record(runValue)
+    || !Array.isArray(assetRowsValue)) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_INVALID", "Capture adoption context is invalid.");
+  }
+  if (!captureScenarioRow(scenarioRowValue)) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_INVALID", "Capture scenario context is invalid.");
+  }
+  if (!captureRunResult(runValue)) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_RUN_INVALID", "Capture run is not a succeeded current-revision result.");
+  }
+  const scenarioRow = scenarioRowValue;
+  const run = runValue;
+  const scenario = manifestValue.captures.scenarios.find((item: any) => item?.id === scenarioRow.definition?.id);
+  if (!record(scenario) || !["draft", "failed", "stale"].includes(scenario.status)
+    || scenario.key !== scenarioRow.scenario_key || scenario.version !== scenarioRow.scenario_version
+    || scenario.commit_sha !== scenarioRow.commit_sha || scenario.route !== scenarioRow.route
+    || scenario.repository_ref !== scenarioRow.repository_ref || scenarioRow.status !== "verified") {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_SCENARIO_STALE", "Verified capture does not match the active manifest scenario.");
+  }
+  if (run.status !== "succeeded" || run.project_id !== manifestValue.promo.id
+    || run.revision_id !== manifestValue.promo.revision_id || run.scenario_id !== scenarioRow.id
+    || !UUID.test(String(run.id || "")) || !UUID.test(String(run.job_id || ""))
+    || !UUID.test(String(run.video_asset_id || ""))
+    || !UUID.test(String(run.trace_asset_id || "")) || !Array.isArray(run.still_asset_ids)
+    || !run.still_asset_ids.length || run.still_asset_ids.some((id: unknown) => !UUID.test(String(id || "")))
+    || !record(run.evidence)) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_RUN_INVALID", "Capture run is not a succeeded current-revision result.");
+  }
+  const evidence = run.evidence;
+  if (evidence.schema_version !== "1.0.0" || evidence.scenario_id !== scenario.id
+    || evidence.scenario_key !== scenario.key || evidence.scenario_version !== scenario.version
+    || evidence.commit_sha !== scenario.commit_sha || evidence.route !== scenario.route
+    || evidence.contains_pii !== false || !Array.isArray(evidence.assertions)
+    || !Array.isArray(evidence.masks_applied)
+    || JSON.stringify(evidence.masks_applied) !== JSON.stringify(scenario.masks)
+    || scenario.assertions.some((expected: any) => !evidence.assertions.some((actual: any) =>
+      actual?.kind === expected?.kind && JSON.stringify(actual?.value) === JSON.stringify(expected?.value)
+      && actual?.passed === true))) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_EVIDENCE_INVALID", "Capture run evidence does not satisfy the active scenario.");
+  }
+  const artifactIds = [run.video_asset_id, ...run.still_asset_ids, run.trace_asset_id];
+  if (new Set(artifactIds).size !== artifactIds.length) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ASSET_INVALID", "Capture artifacts must be distinct.");
+  }
+  const rows = new Map(assetRowsValue.filter(captureAssetRow).map(asset => [asset.id, asset]));
+  if (rows.size !== artifactIds.length) {
+    throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ASSET_INVALID", "Every capture artifact must be loaded exactly once.");
+  }
+  const expectedKinds = new Map<string, string>([
+    [run.video_asset_id, "capture_video"], [run.trace_asset_id, "capture_trace"],
+    ...run.still_asset_ids.map((id: string) => [id, "capture_still"] as [string, string]),
+  ]);
+  for (const assetId of artifactIds) {
+    const asset = rows.get(assetId);
+    if (!asset || asset.project_id !== manifestValue.promo.id || asset.revision_id !== manifestValue.promo.revision_id
+      || asset.status !== "ready" || asset.kind !== expectedKinds.get(assetId)
+      || asset.storage_bucket !== "promo-assets" || !configured(asset.storage_path)
+      || !SHA256.test(String(asset.checksum_sha256 || "")) || !Number.isSafeInteger(asset.file_size_bytes)
+      || asset.file_size_bytes < 1) {
+      throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ASSET_INVALID", "Capture artifact provenance or readiness is invalid.");
+    }
+  }
+  const manifest = structuredClone(manifestValue);
+  const adoptedScenario = manifest.captures.scenarios.find((item: any) => item?.id === scenario.id);
+  adoptedScenario.status = "verified";
+  adoptedScenario.assertions = scenario.assertions.map((assertion: any) => ({
+    kind: assertion.kind, value: assertion.value, passed: true,
+  }));
+  adoptedScenario.artifact_asset_ids = artifactIds;
+  const existingAssetIds = new Set(manifest.assets.map((asset: any) => asset?.id));
+  for (const assetId of artifactIds) {
+    if (existingAssetIds.has(assetId)) {
+      throw new PromoCaptureReadinessError("PROMO_CAPTURE_ADOPTION_ALREADY_APPLIED", "Capture artifact is already present in the active manifest.");
+    }
+    const asset = rows.get(assetId)!;
+    manifest.assets.push({
+      id: asset.id, kind: asset.kind, role: asset.role,
+      storage_bucket: asset.storage_bucket, storage_path: asset.storage_path,
+      mime_type: asset.mime_type, checksum_sha256: asset.checksum_sha256,
+      duration_seconds: asset.duration_seconds == null ? null : Number(asset.duration_seconds),
+      width: asset.width == null ? null : asset.width, height: asset.height == null ? null : asset.height,
+      provenance: {
+        source_kind: "real_ui_capture", source_ref: `${scenario.key}@${scenario.commit_sha}:${run.id}`,
+        generated: false, approved: false,
+      },
+    });
+  }
+  for (const scene of manifest.scenes) {
+    if (scene?.visual?.kind === "real_ui_capture" && scene.visual.capture_scenario_id === scenario.id) {
+      scene.visual.asset_id = run.video_asset_id;
+    }
+  }
+  manifest.run_lineage.job_ids = [...new Set([
+    ...(Array.isArray(manifest.run_lineage?.job_ids) ? manifest.run_lineage.job_ids : []),
+    run.job_id,
+  ])];
+  manifest.run_lineage.output_checksums = [...new Set([
+    ...(Array.isArray(manifest.run_lineage?.output_checksums) ? manifest.run_lineage.output_checksums : []),
+    ...artifactIds.map(id => rows.get(id)?.checksum_sha256).filter(Boolean),
+  ])];
+  return manifest;
 }

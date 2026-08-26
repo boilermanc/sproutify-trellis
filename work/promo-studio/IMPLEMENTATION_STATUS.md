@@ -15,6 +15,8 @@ Updated: 2026-08-26
 - Capture worker contract: capture queue input is resolved from the active manifest and branch source server-side, contains no URL/fixture/auth secrets, and fails closed until the production environment and fixture are configured. The executable worker remains disabled.
 - Atomic capture completion: a service-role-only transaction locks the active capture lease; revalidates the current revision, active branch source, pinned scenario, fixture/auth references, route, masks, and passing assertions; verifies deterministic private Storage objects and exact trace bytes; and registers the video, stills, trace, capture run, scenario status, attempt, job, and audit event together.
 - Isolated capture executor: provider-independent preflight and execution modules resolve only current server-side branch/scenario context, obtain fixture and auth secrets through injected worker adapters, verify bounded video/still/assertion/PII output, upload immutable artifacts, clean up rejected uploads, and call only `complete_promo_capture_job`. No browser provider or production polling loop is installed, and capture claims remain disabled.
+- Immutable capture adoption: a browser request may identify only a succeeded capture run. The server reloads the active revision, verified normalized scenario, exact ready artifacts, and unique completion audit lineage; then creates a child manifest revision that marks the scenario verified, binds its real UI video to matching scenes, records artifact provenance/checksums, and preserves the parent revision unchanged.
+- Cross-revision asset bindings: `promo_assets.revision_id` remains immutable origin ownership while `promo_revision_assets` explicitly authorizes reuse by child revisions. New assets receive an origin binding automatically, historical manifest references are backfilled, child revisions carry forward only parent-bound UUID assets, project consistency is enforced in the database, and render queue/worker preflight now require active-revision bindings.
 - Voice worker contract: generation and alignment inputs are resolved from the approved active manifest, preserve pronunciation-safe speech text separately from display copy, use opaque voice profiles, and exclude browser-supplied provider settings and credentials. The executable worker remains disabled pending a provider decision.
 - Music worker contract: generation inputs are resolved from the approved structured manifest, remain strictly instrumental, reserve take numbers atomically, and exclude browser prompts, provider settings, and credentials. Existing Lyria paths are documented as adapter candidates, not direct Promo persistence boundaries.
 - Render worker contract: preview/final inputs are resolved from the active manifest and checksum-verified private assets, captions are rebuilt from approved display phrases, vertical output is fixed to 1080x1920, and final rendering requires current preview approval. The Rekkrd proof composition is explicitly not enabled as a cross-branch production template.
@@ -40,6 +42,7 @@ Updated: 2026-08-26
 - Render queue contract: `supabase/functions/_shared/promo-render.ts`
 - Render completion migration: `supabase/migrations/20260825211425_complete_promo_render_job.sql`
 - Capture completion migration: `supabase/migrations/20260826180018_complete_promo_capture_job.sql`
+- Revision asset binding migration: `supabase/migrations/20260826183711_add_promo_revision_asset_bindings.sql`
 - Capture worker boundary: `workers/promo-capture-worker/preflight.mjs`, `workers/promo-capture-worker/executor.mjs`, `workers/promo-capture-worker/README.md`
 - External reference watchlist: `work/promo-studio/REFERENCE_WATCHLIST.md`
 - Function import map: `supabase/functions/promo-studio/deno.json`
@@ -68,7 +71,7 @@ Existing provider credentials remain in their current server-side locations. No 
 - GitHub evidence security/extraction contracts: 4 passing.
 - Creative planning contracts: 4 passing.
 - Approval gate contracts: 4 passing.
-- Capture queue/completion/executor contracts: 8 passing.
+- Capture queue/completion/adoption/executor contracts: 13 passing.
 - Voice queue contracts: 5 passing.
 - Music queue contracts: 4 passing.
 - Render queue contracts: 4 passing.
@@ -87,8 +90,7 @@ Existing provider credentials remain in their current server-side locations. No 
 3. A production Rekkrd capture URL, capture auth profile, fixture-account owner, and allowed production routes are still external decisions. The local PS-002 capture remains valid evidence for the proof only.
 4. Voice-provider production selection is still open. PS-002 proves Google Gemini TTS and preserves display text separately from pronunciation text; no production voice was selected or claimed.
 5. The deployed Edge worker remains intentionally no-op-only. Capture, voice, alignment, music, export, and publishing remain queued architecture. The render executor and composition contract are implemented and verified; production operation now requires installing the external Node process and enabling its independent claim switch.
-6. Capture completion deliberately does not mutate an immutable manifest revision. A follow-up server action must create a child revision that adopts verified capture asset IDs before those assets can satisfy render readiness.
 
 ## Next gate
 
-Exercise PS-008 against the private Rekkrd repository after a fine-grained, read-only `GITHUB_READ_TOKEN` is configured. Until then, continue only with provider-independent review and worker foundations; do not fabricate repository evidence or weaken access controls.
+Add the same immutable result-adoption boundary for completed voice/alignment and music jobs, then connect those server-verified outputs to the active manifest without enabling provider claims. Exercise private Rekkrd repository evidence only after a fine-grained, read-only `GITHUB_READ_TOKEN` is configured; do not fabricate repository evidence or weaken access controls.

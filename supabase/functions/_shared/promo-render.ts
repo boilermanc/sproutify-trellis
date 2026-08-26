@@ -38,6 +38,7 @@ export function buildPromoRenderJobInput(
   formatValue: unknown,
   authoritativeBranchValue: unknown,
   brandIdentityValue: unknown,
+  assetBindingIdsValue: unknown = null,
 ) {
   if (!record(manifestValue) || !record(manifestValue.promo) || !record(manifestValue.script)
     || !record(manifestValue.captions) || !record(manifestValue.voice) || !record(manifestValue.music)
@@ -206,10 +207,14 @@ export function buildPromoRenderJobInput(
   const manifestAssetById = new Map(manifestValue.assets.map((asset: any) => [asset?.id, asset]));
   const assetRows = Array.isArray(assetRowsValue) ? assetRowsValue.filter(record) : [];
   const rowById = new Map(assetRows.map(row => [row.id, row]));
+  const boundAssetIds = Array.isArray(assetBindingIdsValue)
+    ? new Set(assetBindingIdsValue.filter((assetId: unknown) => typeof assetId === "string"))
+    : null;
   for (const assetId of requiredAssetIds) {
     const asset = manifestAssetById.get(assetId);
     const row = rowById.get(assetId);
-    if (!record(asset) || !record(row) || row.status !== "ready" || row.revision_id !== manifestValue.promo.revision_id
+    if (!record(asset) || !record(row) || row.status !== "ready"
+      || (boundAssetIds ? !boundAssetIds.has(assetId) : row.revision_id !== manifestValue.promo.revision_id)
       || row.storage_bucket !== "promo-assets" || !configured(row.storage_path)
       || !SHA256.test(String(row.checksum_sha256 || "")) || row.checksum_sha256 !== asset.checksum_sha256) {
       throw new PromoRenderReadinessError("PROMO_RENDER_ASSET_NOT_READY", "Every render input must be a checksum-verified private asset from the active revision.");
@@ -226,7 +231,8 @@ export function buildPromoRenderJobInput(
       && approval.subject_type === "asset" && approval.subject_id === selectedPreviewAssetId)
     .sort((left, right) => String(right.created_at || "").localeCompare(String(left.created_at || "")))[0];
   if (jobType === "final_render" && (!record(selectedPreviewAsset) || selectedPreviewAsset.kind !== "render_preview"
-    || selectedPreviewAsset.revision_id !== manifestValue.promo.revision_id || selectedPreviewAsset.status !== "ready"
+    || (boundAssetIds ? !boundAssetIds.has(selectedPreviewAssetId) : selectedPreviewAsset.revision_id !== manifestValue.promo.revision_id)
+    || selectedPreviewAsset.status !== "ready"
     || selectedPreviewAsset.storage_bucket !== "promo-assets" || !configured(selectedPreviewAsset.storage_path)
     || selectedPreviewAsset.mime_type !== "video/mp4" || selectedPreviewAsset.width !== 1080
     || selectedPreviewAsset.height !== 1920 || !SHA256.test(String(selectedPreviewAsset.checksum_sha256 || "")))) {
