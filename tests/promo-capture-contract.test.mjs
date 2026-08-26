@@ -91,5 +91,6 @@ test('capture jobs are resolved server-side while the deployed worker remains no
   assert.match(worker, /p_job_types: \["noop"\]/);
   assert.doesNotMatch(worker, /p_job_types: \["capture"\]/);
   assert.match(service, /job_type: 'capture', scenario_id: scenarioId/);
-  assert.match(readme, /intentionally not executable yet/i);
+  assert.match(readme, /production claims remain disabled/i);
+  assert.match(readme, /provider-independent preflight and executor/i);
 });
