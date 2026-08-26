@@ -91,7 +91,8 @@ function captureRunResult(value: unknown): value is PromoCaptureRunResult {
     .every(key => typeof value[key] === "string")
     && Array.isArray(value.still_asset_ids) && value.still_asset_ids.every((id: unknown) => typeof id === "string")
     && record(value.evidence) && Array.isArray(value.evidence.assertions)
-    && value.evidence.assertions.every(record) && Array.isArray(value.evidence.masks_applied);
+    && value.evidence.assertions.every((assertion: unknown) => record(assertion) && assertion.passed === true)
+    && Array.isArray(value.evidence.masks_applied);
 }
 
 function captureAssetRow(value: unknown): value is PromoCaptureAssetRow {
@@ -174,7 +175,7 @@ export function applyPromoCaptureAdoption(
   const manifest = structuredClone(manifestValue);
   const adoptedScenario = manifest.captures.scenarios.find((item: any) => item?.id === scenario.id);
   adoptedScenario.status = "verified";
-  adoptedScenario.assertions = evidence.assertions.map((assertion: any) => ({
+  adoptedScenario.assertions = scenario.assertions.map((assertion: any) => ({
     kind: assertion.kind, value: assertion.value, passed: true,
   }));
   adoptedScenario.artifact_asset_ids = artifactIds;

@@ -80,6 +80,14 @@ test('adoption rejects stale evidence, PII, and incomplete or misclassified arti
   assert.throws(() => applyPromoCaptureAdoption(pii.manifest, pii.scenarioRow, pii.run, pii.assets),
     error => error.code === 'PROMO_CAPTURE_ADOPTION_EVIDENCE_INVALID');
 
+  const failedDuplicate = await fixture();
+  failedDuplicate.run.evidence.assertions.push({
+    ...failedDuplicate.run.evidence.assertions[0], passed: false,
+  });
+  assert.throws(() => applyPromoCaptureAdoption(
+    failedDuplicate.manifest, failedDuplicate.scenarioRow, failedDuplicate.run, failedDuplicate.assets,
+  ), error => error.code === 'PROMO_CAPTURE_ADOPTION_RUN_INVALID');
+
   const missingLineage = await fixture();
   missingLineage.run.job_id = null;
   assert.throws(() => applyPromoCaptureAdoption(missingLineage.manifest, missingLineage.scenarioRow, missingLineage.run, missingLineage.assets),
