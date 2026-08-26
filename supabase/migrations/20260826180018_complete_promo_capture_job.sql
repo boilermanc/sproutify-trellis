@@ -198,19 +198,20 @@ BEGIN
       OR artifact ->> 'file_size_bytes' !~ '^[1-9][0-9]*$'
       OR artifact ->> 'width' !~ '^[1-9][0-9]*$'
       OR artifact ->> 'height' !~ '^[1-9][0-9]*$'
-    THEN RETURN false; END IF;
+    THEN RAISE EXCEPTION 'Capture still descriptor failed validation'; END IF;
     BEGIN
       asset_id := (artifact ->> 'asset_id')::UUID;
       asset_size := (artifact ->> 'file_size_bytes')::BIGINT;
       asset_width := (artifact ->> 'width')::INTEGER;
       asset_height := (artifact ->> 'height')::INTEGER;
-    EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN RETURN false;
+    EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+      RAISE EXCEPTION 'Capture still descriptor types failed validation';
     END;
     asset_checksum := artifact ->> 'checksum_sha256';
     IF asset_id IN (p_video_asset_id, p_trace_asset_id)
       OR still_ids @> jsonb_build_array(asset_id)
       OR asset_width <> expected_width OR asset_height <> expected_height
-    THEN RETURN false; END IF;
+    THEN RAISE EXCEPTION 'Capture still identity or viewport failed validation'; END IF;
     asset_path := claimed.project_id::TEXT || '/' || asset_id::TEXT || '/capture.png';
     SELECT o.id, o.version, o.metadata, o.user_metadata INTO storage_object
     FROM storage.objects o WHERE o.bucket_id = 'promo-assets' AND o.name = asset_path;
@@ -224,7 +225,7 @@ BEGIN
       OR storage_object.user_metadata ->> 'job_id' IS DISTINCT FROM claimed.id::TEXT
       OR storage_object.user_metadata ->> 'input_fingerprint' IS DISTINCT FROM claimed.input_fingerprint
       OR storage_object.user_metadata ->> 'kind' IS DISTINCT FROM 'capture_still'
-    THEN RETURN false; END IF;
+    THEN RAISE EXCEPTION 'Capture still Storage object failed validation'; END IF;
     INSERT INTO public.promo_assets (
       id, project_id, revision_id, kind, role, status, storage_bucket, storage_path,
       mime_type, checksum_sha256, file_size_bytes, width, height, generated, approved, provenance
@@ -255,7 +256,7 @@ BEGIN
     OR storage_object.user_metadata ->> 'input_fingerprint' IS DISTINCT FROM claimed.input_fingerprint
     OR storage_object.user_metadata ->> 'kind' IS DISTINCT FROM 'capture_trace'
     OR storage_object.user_metadata ->> 'payload_fingerprint_sha256' IS DISTINCT FROM trace_payload_fingerprint
-  THEN RETURN false; END IF;
+  THEN RAISE EXCEPTION 'Capture trace Storage object failed validation'; END IF;
 
   INSERT INTO public.promo_assets (
     id, project_id, revision_id, kind, role, status, storage_bucket, storage_path,
@@ -308,7 +309,10 @@ BEGIN
       'output_fingerprint', p_output_fingerprint)
   );
   RETURN true;
-EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+-- Every rejection after the first asset insert raises into this handler. The
+-- PL/pgSQL exception block rolls back all statements in the function before
+-- returning false to the worker, preserving atomic registration.
+EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range OR raise_exception THEN
   RETURN false;
 END;
 $$;

@@ -21,6 +21,9 @@ test('capture completion is service-role-only, leased, branch-bound, and atomic'
   assert.match(migration, /UPDATE public\.promo_capture_scenarios SET status = 'verified'/);
   assert.match(migration, /UPDATE public\.promo_jobs[\s\S]*status = 'succeeded'/);
   assert.match(migration, /UPDATE public\.promo_job_attempts[\s\S]*status = 'succeeded'/);
+  assert.match(migration, /EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range OR raise_exception THEN/);
+  const afterFirstAssetInsert = migration.slice(migration.indexOf('INSERT INTO public.promo_assets'));
+  assert.doesNotMatch(afterFirstAssetInsert, /THEN RETURN false/);
   assert.match(migration, /REVOKE ALL ON FUNCTION public\.complete_promo_capture_job[\s\S]*FROM PUBLIC, anon, authenticated/);
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.complete_promo_capture_job[\s\S]*TO service_role/);
   assert.match(constants, /PROMO_CAPTURE_COMPLETION_SQL_SCHEMA/);
