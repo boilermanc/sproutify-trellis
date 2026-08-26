@@ -6,15 +6,18 @@
   "description": "Renders Clip Studio assets and private post-generation text finishes for Trellis.",
   "scripts": {
     "start": "node worker.mjs",
+    "start:promo": "node promo-worker.mjs",
     "studio": "remotion studio remotion/index.ts",
     "render:promo-sample": "node ../../work/promo-studio/vertical-ui-story-v1/scripts/render-sample.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.90.1",
     "@remotion/bundler": "4.0.515",
     "@remotion/cli": "4.0.515",
     "@remotion/renderer": "4.0.515",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "remotion": "4.0.515"
-  }
+  },
+  "engines": { "node": ">=22.12.0" }
 }

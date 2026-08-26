@@ -8,14 +8,10 @@ const preflight = inspectPromoRenderClaim({
   composition_source_sha256: fixture.compositionSourceSha256,
   pipeline_fingerprint: fixture.pipelineFingerprint,
 });
-let activationError = null;
-try { assertPromoRenderActivationReady(preflight); } catch (error) {
-  activationError = { code: error.code, message: error.message };
-}
+assertPromoRenderActivationReady(preflight);
 console.log(JSON.stringify({
-  status: 'preflight_verified_activation_blocked', job_id: preflight.job_id,
+  status: 'preflight_verified_activation_ready', job_id: preflight.job_id,
   input_asset_count: preflight.asset_plan.length, input_fingerprint: preflight.input_fingerprint,
   activation_ready: preflight.activation_ready, activation_blockers: preflight.activation_blockers,
-  activation_error: activationError,
 }, null, 2));
-if (preflight.activation_ready || preflight.activation_blockers.length === 0) process.exitCode = 1;
+if (!preflight.activation_ready || preflight.activation_blockers.length !== 0) process.exitCode = 1;

@@ -28,7 +28,7 @@
     "test:promo-composition": "node --test tests/promo-composition-contract.test.mjs",
     "test:promo-preview": "node --test tests/promo-preview-approval-contract.test.mjs",
     "test:promo-render-completion": "node --test tests/promo-render-completion-contract.test.mjs",
-    "test:promo-render-worker": "node --test tests/promo-render-worker-preflight.test.mjs",
+    "test:promo-render-worker": "node --test tests/promo-render-worker-preflight.test.mjs tests/promo-render-worker-executor.test.mjs tests/promo-render-runtime.test.mjs",
     "test:promo-foundation": "node --test tests/promo-job-claim.test.mjs",
     "test:cards": "node --test tests/card-direction-copy.test.mjs",
     "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs tests/youtube-oauth-contract.test.mjs",

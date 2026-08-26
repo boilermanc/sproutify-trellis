@@ -67,7 +67,7 @@ const validateInput = (job, compositionSourceSha256) => {
   }
   const profile = input.render_profile;
   if (!record(profile) || profile.composition !== 'vertical-ui-story' || profile.composition_version !== 'v1'
-    || profile.composition_registry_version !== '1.0.0' || profile.composition_status !== 'render_verified'
+    || profile.composition_registry_version !== '1.0.0' || profile.composition_status !== 'worker_enabled'
     || profile.video_codec !== 'h264' || profile.pixel_format !== 'yuv420p'
     || profile.audio_codec !== 'aac' || profile.audio_sample_rate !== 48000
     || profile.integrated_lufs !== -14 || profile.true_peak_dbfs !== -1.5

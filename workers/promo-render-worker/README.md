@@ -1,11 +1,13 @@
 # Promo render worker boundary
 
-This directory now contains a non-claiming worker preflight and private-asset
-download boundary. Promo Studio creates server-authoritative `preview_render`
-and `final_render` jobs, but production claims remain disabled and the deployed
-worker continues claiming only `noop` jobs.
+This directory contains the render preflight, private-asset download boundary,
+lease-aware executor, pinned delivery pipeline, and completion packaging.
+Promo Studio creates server-authoritative `preview_render` and `final_render`
+jobs. The composition contract is worker-enabled, while production claims remain disabled
+by default through `PROMO_RENDER_CLAIMS_ENABLED`; the
+deployed Edge worker continues claiming only `noop` jobs.
 
-Run the deterministic local inspection from the repository root:
+Run the deterministic non-claiming worker preflight from the repository root:
 
 ```bash
 node workers/promo-render-worker/scripts/dry-run.mjs
@@ -14,24 +16,18 @@ node workers/promo-render-worker/scripts/dry-run.mjs
 The inspection verifies claim ownership and lease, the canonical input
 fingerprint, the pinned composition source, current project revision, selected
 preview approval, UUID-only private asset references, bounded object paths and
-sizes, and byte-for-byte download checksums. It reports every remaining
-activation blocker without claiming or mutating a production job.
+sizes, and byte-for-byte download checksums. It verifies activation readiness
+without claiming or mutating a production job.
 
 The PS-002 `PromoProof` composition proved the Remotion and FFmpeg toolchain,
 but it still contains Rekkrd-specific styling and is not a production template
 for every branch. The server now pins composition keys and versions in the
 branch-aware registry at `supabase/functions/_shared/promo-compositions.ts`.
 The Rekkrd proof is allowlisted only for Rekkrd, and the branch-neutral
-`vertical-ui-story@v1` contract is reserved for every branch. Both remain
-worker-disabled. The generic component's LF-normalized UTF-8 source fingerprint
+`vertical-ui-story@v1` contract is reserved for every branch and is now
+worker-enabled. The generic component's LF-normalized UTF-8 source fingerprint
 is pinned in the registry, so its implementation cannot change without a
-versioned contract update. Before enabling render claims, Trellis still needs:
-
-- promotion of the implemented `vertical-ui-story@v1` composition from visual proof to a registry-approved worker build;
-- Remotion rendering isolated from the Supabase Edge Function runtime;
-- execution of the pinned generic render pipeline in an isolated worker runtime;
-- output checksum, measured loudness, tool fingerprints, cost, retries, and provenance audit data;
-- immutable manifest revision plus private preview/final `promo_assets` registration.
+versioned contract update.
 
 The server now resolves an approved presentation envelope from the live branch
 and its single active Brand Identity. The envelope pins its approval record,
@@ -45,10 +41,13 @@ The generic pipeline is now an executable, bounded argument-array contract at
 `workers/promo-render-worker/pipeline.mjs`. Its normalized source fingerprint
 is pinned in the composition registry and the server rejects manifests that do
 not match it. The Rekkrd fixture rerender passed the production profile at
-1080x1920, 30 fps, exactly 10 seconds, -14.11 LUFS, and -1.84 dBTP. Activation
-now remains blocked only until the isolated worker executor is implemented and
-the registry deliberately enables the composition. Each target branch must
-also retain one complete active Brand Identity.
+1080x1920, 30 fps, exactly 10 seconds, -14.11 LUFS, and -1.84 dBTP.
+The isolated Node executor now performs live-context revalidation, lease
+heartbeats, verified downloads, Remotion rendering, pinned FFmpeg finalization,
+delivery QA, immutable Storage uploads, orphan cleanup, and atomic render
+completion. Installing the Node 22 process with FFmpeg, ffprobe, Chrome, and
+server-only Supabase credentials is the remaining production operation. Each
+target branch must retain one complete active Brand Identity.
 
 The worker must accept only asset IDs and normalized timeline data from the
 server-created job. It must never accept browser URLs, storage paths, captions,
