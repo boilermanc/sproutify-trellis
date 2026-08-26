@@ -72,6 +72,7 @@ export function createRekkrdRenderClaimFixture({ mode = 'preview' } = {}) {
       color_palette: { primary: '#1a2528', secondary: '#dd6e42', accent: '#4f6d7a', neutral: '#ffffff' },
       typography: { heading: 'Playfair Display', body: 'Inter' }, updated_at: '2026-07-03T00:00:00.000Z',
     },
+    assets.map(asset => asset.id),
   );
   const workerId = 'promo-render-fixture';
   const job = {
@@ -87,6 +88,6 @@ export function createRekkrdRenderClaimFixture({ mode = 'preview' } = {}) {
   const componentPath = path.join(repoRoot, 'workers', 'clip-render-worker', 'remotion', 'PromoVerticalStory.tsx');
   const pipelinePath = path.join(repoRoot, 'workers', 'promo-render-worker', 'pipeline.mjs');
   const normalizedHash = file => sha256Hex(Buffer.from(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), 'utf8'));
-  return { job, project, approvals, assets, bytesByAssetId, workerId,
+  return { job, project, approvals, assets, assetBindingIds: assets.map(asset => asset.id), bytesByAssetId, workerId,
     compositionSourceSha256: normalizedHash(componentPath), pipelineFingerprint: normalizedHash(pipelinePath) };
 }

@@ -118,17 +118,19 @@ export function createPromoRenderRuntime({
     if (!job) return { claimed: false };
     let executorStarted = false;
     try {
-      const [project, approvalsResult, assetsResult] = await Promise.all([
+      const [project, approvalsResult, assetsResult, bindingsResult] = await Promise.all([
         single(db.from('promo_projects').select('id,branch_id,current_revision_id,selected_preview_render_id').eq('id', job.project_id), 'Could not reload the Promo project'),
         db.from('promo_approvals').select('revision_id,gate,subject_type,subject_id,decision,created_at').eq('project_id', job.project_id).eq('revision_id', job.revision_id),
-        db.from('promo_assets').select('id,project_id,revision_id,kind,status,storage_bucket,storage_path,mime_type,checksum_sha256,file_size_bytes,width,height').eq('project_id', job.project_id).eq('revision_id', job.revision_id),
+        db.from('promo_assets').select('id,project_id,revision_id,kind,status,storage_bucket,storage_path,mime_type,checksum_sha256,file_size_bytes,width,height').eq('project_id', job.project_id).eq('status', 'ready'),
+        db.from('promo_revision_assets').select('asset_id').eq('project_id', job.project_id).eq('revision_id', job.revision_id),
       ]);
-      if (approvalsResult.error || assetsResult.error) {
-        throw new Error(`Could not reload render context: ${approvalsResult.error?.message || assetsResult.error?.message}`);
+      if (approvalsResult.error || assetsResult.error || bindingsResult.error) {
+        throw new Error(`Could not reload render context: ${approvalsResult.error?.message || assetsResult.error?.message || bindingsResult.error?.message}`);
       }
       executorStarted = true;
       const result = await executePromoRenderClaim({
         job, worker_id: config.workerId, project, approvals: approvalsResult.data || [], assets: assetsResult.data || [],
+        asset_binding_ids: (bindingsResult.data || []).map(binding => binding.asset_id),
         composition_source_sha256: compositionSourceSha256, pipeline_fingerprint: pipelineFingerprint, adapters,
       });
       return { claimed: true, job_id: job.id, completed: result.completed };

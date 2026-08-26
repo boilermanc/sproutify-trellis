@@ -7,7 +7,7 @@ import { assertPromoRenderActivationReady, downloadVerifiedPromoAssets, fingerpr
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
 const inspect = fixture => inspectPromoRenderClaim({
   job: fixture.job, worker_id: fixture.workerId, project: fixture.project,
-  approvals: fixture.approvals, assets: fixture.assets,
+  approvals: fixture.approvals, assets: fixture.assets, asset_binding_ids: fixture.assetBindingIds,
   composition_source_sha256: fixture.compositionSourceSha256, pipeline_fingerprint: fixture.pipelineFingerprint,
 });
 
@@ -40,6 +40,9 @@ test('preflight rejects tampering, expired leases, source drift, and non-UUID as
   invalidAssetId.job.input.timeline.voice_asset_id = 'asset-voice';
   invalidAssetId.job.input_fingerprint = fingerprintPromoInput(invalidAssetId.job.input);
   assert.throws(() => inspect(invalidAssetId), error => error.code === 'PROMO_RENDER_AUDIO_ASSET_INVALID');
+  const unbound = createRekkrdRenderClaimFixture();
+  unbound.assetBindingIds = unbound.assetBindingIds.filter(id => id !== unbound.job.input.timeline.voice_asset_id);
+  assert.throws(() => inspect(unbound), error => error.code === 'PROMO_RENDER_ASSET_NOT_READY');
 });
 
 test('presentation blocker requires approval provenance bound to the target branch', () => {

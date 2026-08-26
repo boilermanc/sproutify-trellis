@@ -55,7 +55,10 @@ test('enabled runtime claims only render jobs and completes through the isolated
       return { data: true, error: null };
     },
     from: table => query(table === 'promo_projects' ? [fixture.project]
-      : table === 'promo_approvals' ? fixture.approvals : fixture.assets),
+      : table === 'promo_approvals' ? fixture.approvals
+        : table === 'promo_revision_assets' ? fixture.assetBindingIds.map(asset_id => ({
+          asset_id, project_id: fixture.project.id, revision_id: fixture.job.revision_id,
+        })) : fixture.assets),
     storage: { from: bucket => ({
       createSignedUrl: async storagePath => ({ data: { signedUrl: `https://storage.invalid/object?path=${encodeURIComponent(storagePath)}` }, error: null }),
       upload: async (storagePath, bytes, options) => { uploads.push({ bucket, storagePath, bytes, options }); return { error: null }; },
@@ -95,7 +98,10 @@ test('runtime rejects an oversized private response while streaming without cont
   const db = {
     rpc: async name => ({ data: name === 'claim_promo_job' ? [fixture.job] : true, error: null }),
     from: table => query(table === 'promo_projects' ? [fixture.project]
-      : table === 'promo_approvals' ? fixture.approvals : fixture.assets),
+      : table === 'promo_approvals' ? fixture.approvals
+        : table === 'promo_revision_assets' ? fixture.assetBindingIds.map(asset_id => ({
+          asset_id, project_id: fixture.project.id, revision_id: fixture.job.revision_id,
+        })) : fixture.assets),
     storage: { from: () => ({
       createSignedUrl: async () => ({ data: { signedUrl: 'https://storage.invalid/object' }, error: null }),
       upload: async () => ({ error: null }), remove: async () => ({ error: null }),

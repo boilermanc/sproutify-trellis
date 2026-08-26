@@ -12,11 +12,12 @@ const brandIdentityFor = manifest => ({
   color_palette: { primary: '#112233', secondary: '#223344', accent: '#cc5500', neutral: '#f4f4f4' },
   typography: { heading: 'Source Heading', body: 'Source Body' }, updated_at: '2026-08-25T12:00:00.000Z',
 });
-const buildPromoRenderJobInput = (manifest, assets, approvals, selectedPreviewAssetId, jobType, format) =>
+const buildPromoRenderJobInput = (manifest, assets, approvals, selectedPreviewAssetId, jobType, format, assetBindingIds = null) =>
   buildServerPromoRenderJobInput(
     manifest, assets, approvals, selectedPreviewAssetId, jobType, format,
     { id: manifest.promo.branch.id, slug: manifest.promo.branch.slug, name: manifest.promo.branch.display_name, is_active: true },
     brandIdentityFor(manifest),
+    assetBindingIds,
   );
 
 async function fixture() {
@@ -230,6 +231,24 @@ test('final render requires current preview approval and approved input assets',
   assert.equal(input.render_profile.integrated_lufs, -14);
   assert.equal(input.render_profile.true_peak_dbfs, -1.5);
   assert.equal(input.review.approved_preview_asset_id, ready.selectedPreviewAssetId);
+});
+
+test('active revision bindings allow immutable assets from a parent revision and reject unbound assets', async () => {
+  const carried = await fixture();
+  const originRevisionId = '33333333-3333-4333-8333-333333333333';
+  for (const asset of carried.assets) asset.revision_id = originRevisionId;
+  const requiredIds = carried.manifest.assets.map(asset => asset.id);
+  const input = buildPromoRenderJobInput(
+    carried.manifest, carried.assets, [], null, 'preview_render', '9:16', requiredIds,
+  );
+  assert.equal(input.mode, 'preview');
+
+  assert.throws(
+    () => buildPromoRenderJobInput(
+      carried.manifest, carried.assets, [], null, 'preview_render', '9:16', requiredIds.slice(1),
+    ),
+    error => error.code === 'PROMO_RENDER_ASSET_NOT_READY',
+  );
 });
 
 test('render jobs are server-resolved while the deployed Edge worker remains noop-only', async () => {

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Branch } from '../types';
 import {
-  approvePromoClaim, approvePromoScript, cancelPromoJob, createPromoProject, createPromoRevision, generatePromoCreativePlan,
+  adoptPromoCapture, approvePromoClaim, approvePromoScript, cancelPromoJob, createPromoProject, createPromoRevision, generatePromoCreativePlan,
   getPromoProject, listPromoProjects, queuePromoJob,
   retryPromoJob, type PromoJob, type PromoProject, type PromoProjectDetail,
 } from '../services/promoStudioService';
@@ -20,6 +20,7 @@ const formatOptions = ['9:16', '16:9', '1:1'] as const;
 const terminalJobs = new Set(['succeeded', 'failed', 'cancelled']);
 
 const statusClass: Record<string, string> = {
+  verified: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   succeeded: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   ready: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   failed: 'border-rose-200 bg-rose-50 text-rose-700',
@@ -159,6 +160,18 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
     } finally { setBusy(false); }
   };
 
+  const adoptCapture = async (captureRunId: string) => {
+    if (!selectedId) return;
+    try {
+      setBusy(true);
+      await adoptPromoCapture(selectedId, captureRunId);
+      await loadDetail(selectedId);
+      addToast('Verified capture adopted in a new immutable revision.');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not adopt the verified capture.', 'error');
+    } finally { setBusy(false); }
+  };
+
   const mutateJob = async (job: PromoJob, action: 'cancel' | 'retry') => {
     try {
       setBusy(true);
@@ -245,6 +258,14 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
             {manifest.script.phrases.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Script review</p><h2 className="mt-1 text-xl font-black text-slate-900">Display and spoken text</h2><p className="mt-2 text-sm text-slate-500">Speech text may use pronunciation spelling without changing the on-screen wording.</p></div><div className="flex flex-wrap justify-end gap-2"><button disabled={busy || !scriptHasUnsavedChanges || manifest.script.phrases.some(phrase => !(scriptDrafts[phrase.id]?.display_text ?? '').trim() || !(scriptDrafts[phrase.id]?.speech_text ?? '').trim())} onClick={() => void saveScriptDraft()} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-700 disabled:opacity-40">Save new revision</button><button disabled={busy || scriptHasUnsavedChanges || !claimsReadyForScript || manifest.script.status === 'approved'} onClick={() => void approveScript()} className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">{manifest.script.status === 'approved' ? 'Script approved' : 'Approve script & continue'}</button></div></div>
               <div className="mt-5 space-y-4">{manifest.script.phrases.map((phrase, index) => <div key={phrase.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-center justify-between"><p className="text-xs font-black uppercase tracking-widest text-violet-600">Phrase {index + 1}</p><span className="text-[10px] font-bold uppercase text-slate-400">{phrase.emphasis} emphasis</span></div><label className="mt-3 block text-xs font-bold text-slate-500">On-screen text<textarea rows={2} value={scriptDrafts[phrase.id]?.display_text ?? phrase.display_text} onChange={event => setScriptDrafts(current => ({ ...current, [phrase.id]: { display_text: event.target.value, speech_text: current[phrase.id]?.speech_text ?? phrase.speech_text } }))} className="mt-1 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-violet-400" /></label><label className="mt-3 block text-xs font-bold text-slate-500">Voice text<textarea rows={2} value={scriptDrafts[phrase.id]?.speech_text ?? phrase.speech_text} onChange={event => setScriptDrafts(current => ({ ...current, [phrase.id]: { display_text: current[phrase.id]?.display_text ?? phrase.display_text, speech_text: event.target.value } }))} className="mt-1 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-violet-400" /></label><div className="mt-3 flex flex-wrap gap-2">{phrase.evidence_refs.map(ref => <code key={ref} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-600">{ref}</code>)}</div></div>)}</div>
+            </section>}
+
+            {manifest.captures.scenarios.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Real UI evidence</p><h2 className="mt-1 text-xl font-black text-slate-900">Capture results</h2><p className="mt-2 text-sm text-slate-500">Succeeded captures stay attached to their source revision until explicitly adopted into a new immutable manifest.</p></div><Film className="h-6 w-6 text-violet-500" /></div>
+              <div className="mt-5 space-y-3">{manifest.captures.scenarios.map(scenario => {
+                const run = detail.capture_runs.find(item => item.status === 'succeeded' && item.evidence?.scenario_id === scenario.id);
+                return <div key={scenario.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 p-4"><div><div className="flex items-center gap-2"><p className="text-sm font-black text-slate-900">{scenario.key}</p><span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusClass[scenario.status] || statusClass.draft}`}>{scenario.status}</span></div><p className="mt-1 text-xs text-slate-500">{scenario.route} · {scenario.commit_sha.slice(0, 7)}</p></div>{scenario.status !== 'verified' && run ? <button disabled={busy} onClick={() => void adoptCapture(run.id)} className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-40">Adopt verified capture</button> : <span className="text-xs font-bold text-slate-400">{scenario.status === 'verified' ? `${scenario.artifact_asset_ids.length} artifacts bound` : run ? 'Awaiting adoption' : 'No succeeded run'}</span>}</div>;
+              })}</div>
             </section>}
 
             <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Durable orchestration</p><h2 className="mt-1 text-xl font-black text-slate-900">Jobs</h2></div><Clock3 className="h-5 w-5 text-slate-400" /></div><div className="mt-4 space-y-2">{detail.jobs.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No jobs queued for this revision.</p> : detail.jobs.map(job => <div key={job.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 p-4"><div><div className="flex items-center gap-2"><p className="text-sm font-black text-slate-800">{job.job_type.replace(/_/g, ' ')}</p><span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusClass[job.status] || statusClass.draft}`}>{job.status.replace(/_/g, ' ')}</span></div><p className="mt-1 text-xs text-slate-500">Attempt {job.attempt_count} · {job.progress}%{job.error_message ? ` · ${job.error_message}` : ''}</p></div><div className="flex gap-2">{!terminalJobs.has(job.status) && job.status !== 'cancel_requested' && <button disabled={busy} onClick={() => void mutateJob(job, 'cancel')} className="rounded-lg border border-slate-200 p-2 text-slate-500"><Square className="h-3.5 w-3.5" /></button>}{['failed', 'cancelled'].includes(job.status) && <button disabled={busy} onClick={() => void mutateJob(job, 'retry')} className="rounded-lg border border-slate-200 p-2 text-slate-500"><RotateCcw className="h-3.5 w-3.5" /></button>}</div></div>)}</div></section>

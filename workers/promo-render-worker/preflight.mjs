@@ -99,7 +99,7 @@ const validateInput = (job, compositionSourceSha256) => {
   }
 };
 
-const validateLiveContext = (job, project, approvals, assets) => {
+const validateLiveContext = (job, project, approvals, assets, boundAssetIds) => {
   if (!record(project) || project.id !== job.project_id || project.current_revision_id !== job.revision_id) {
     fail('PROMO_RENDER_REVISION_STALE', 'The claimed render no longer targets the active project revision.');
   }
@@ -109,7 +109,7 @@ const validateLiveContext = (job, project, approvals, assets) => {
     fail('PROMO_RENDER_PREVIEW_SELECTION_STALE', 'The selected preview changed after this final render was queued.');
   }
   const preview = assets.find(asset => asset?.id === previewId);
-  if (!record(preview) || preview.project_id !== job.project_id || preview.revision_id !== job.revision_id
+  if (!record(preview) || preview.project_id !== job.project_id || !boundAssetIds.has(previewId)
     || preview.kind !== 'render_preview' || preview.status !== 'ready' || preview.storage_bucket !== 'promo-assets') {
     fail('PROMO_RENDER_PREVIEW_STALE', 'The selected preview is no longer a ready current-revision asset.');
   }
@@ -121,7 +121,7 @@ const validateLiveContext = (job, project, approvals, assets) => {
   }
 };
 
-const buildAssetPlan = (job, assets) => {
+const buildAssetPlan = (job, assets, boundAssetIds) => {
   const roleById = new Map();
   const add = (id, role) => roleById.set(id, [...(roleById.get(id) || []), role]);
   add(job.input.timeline.voice_asset_id, 'voice');
@@ -135,7 +135,7 @@ const buildAssetPlan = (job, assets) => {
   let totalBytes = 0;
   for (const [assetId, roles] of roleById) {
     const asset = rowById.get(assetId);
-    if (!record(asset) || asset.project_id !== job.project_id || asset.revision_id !== job.revision_id
+    if (!record(asset) || asset.project_id !== job.project_id || !boundAssetIds.has(assetId)
       || asset.status !== 'ready' || asset.storage_bucket !== 'promo-assets'
       || !SAFE_PATH.test(String(asset.storage_path || ''))
       || !String(asset.storage_path).startsWith(`${job.project_id}/${assetId}/`)
@@ -157,12 +157,17 @@ const buildAssetPlan = (job, assets) => {
 
 export function inspectPromoRenderClaim({
   job, worker_id, now = new Date(), project, approvals = [], assets = [],
+  asset_binding_ids = [],
   composition_source_sha256, pipeline_fingerprint = null,
 }) {
   validateClaim(job, worker_id, now);
   validateInput(job, composition_source_sha256);
-  validateLiveContext(job, project, approvals, assets);
-  const asset_plan = buildAssetPlan(job, assets);
+  if (!Array.isArray(asset_binding_ids) || asset_binding_ids.some(assetId => !UUID.test(String(assetId || '')))) {
+    fail('PROMO_RENDER_ASSET_BINDINGS_INVALID', 'Render asset bindings are invalid.');
+  }
+  const boundAssetIds = new Set(asset_binding_ids);
+  validateLiveContext(job, project, approvals, assets, boundAssetIds);
+  const asset_plan = buildAssetPlan(job, assets, boundAssetIds);
   const blockers = [];
   if (job.input.render_profile.composition_worker_enabled !== true) blockers.push('PROMO_RENDER_COMPOSITION_DISABLED');
   const presentation = job.input.presentation;

@@ -8,7 +8,7 @@ import {
   sanitizePromoJson, sanitizePromoText, validatePromoCreate, validatePromoRevision,
 } from "../_shared/promo-studio.ts";
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
-import { buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
+import { applyPromoCaptureAdoption, buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
 import { buildPromoVoiceAlignmentJobInput, buildPromoVoiceGenerationJobInput } from "../_shared/promo-voice.ts";
 import { buildPromoMusicGenerationJobInput } from "../_shared/promo-music.ts";
 import { buildPromoRenderJobInput } from "../_shared/promo-render.ts";
@@ -104,8 +104,31 @@ async function persistPromoReviewProjection(db: any, projectId: string, revision
   if (error) throw new Error(`Could not persist Promo Studio review data: ${error.message}`);
 }
 
+async function persistPromoRevisionAssetBindings(db: any, input: {
+  projectId: string; sourceRevisionId: string; targetRevisionId: string;
+  manifest: Record<string, any>; adoptedAssetIds?: string[];
+}) {
+  const assetIds = [...new Set((Array.isArray(input.manifest.assets) ? input.manifest.assets : [])
+    .map((asset: any) => asset?.id))];
+  if (!assetIds.length) return;
+  if (assetIds.some(assetId => !isPromoUuid(assetId))) throw new Error("Manifest assets require materialized UUIDs before revision binding.");
+  const { data: sourceBindings, error: sourceError } = await db.from("promo_revision_assets")
+    .select("asset_id").eq("project_id", input.projectId).eq("revision_id", input.sourceRevisionId)
+    .in("asset_id", assetIds);
+  if (sourceError || sourceBindings?.length !== assetIds.length) {
+    throw new Error("Every manifest asset must already be bound to the active parent revision.");
+  }
+  const adopted = new Set(input.adoptedAssetIds || []);
+  const { error } = await db.from("promo_revision_assets").insert(assetIds.map(assetId => ({
+    project_id: input.projectId, revision_id: input.targetRevisionId, asset_id: assetId,
+    binding_reason: adopted.has(assetId) ? "capture_adoption" : "revision_carry_forward",
+  })));
+  if (error) throw new Error(`Could not bind Promo Studio revision assets: ${error.message}`);
+}
+
 async function createManifestRevision(db: any, input: {
-  project: any; current: any; candidate: Record<string, any>; userId: string; reason: string; diff?: unknown[];
+  project: any; current: any; candidate: Record<string, any>; userId: string; reason: string;
+  diff?: unknown[]; adoptedAssetIds?: string[];
 }) {
   const revisionId = crypto.randomUUID();
   const revisionNumber = Number(input.current.revision_number) + 1;
@@ -126,6 +149,10 @@ async function createManifestRevision(db: any, input: {
   if (error) throw new Error(`Could not create Promo Manifest revision: ${error.message}`);
   try {
     await persistPromoReviewProjection(db, input.project.id, revisionId, manifest);
+    await persistPromoRevisionAssetBindings(db, {
+      projectId: input.project.id, sourceRevisionId: input.current.id, targetRevisionId: revisionId,
+      manifest, adoptedAssetIds: input.adoptedAssetIds,
+    });
     const { data: activated, error: projectError } = await db.from("promo_projects")
       .update({
         current_revision_id: revisionId, status: manifest.promo.status,
@@ -333,17 +360,19 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "get_project") {
-      const [revision, revisions, jobs, approvals, assets, events, source] = await Promise.all([
+      const [revision, revisions, jobs, approvals, assets, captureRuns, events, source] = await Promise.all([
         project.current_revision_id ? db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).maybeSingle() : { data: null, error: null },
         db.from("promo_manifest_revisions").select("id,revision_number,parent_revision_id,reason,schema_version,manifest_fingerprint,immutable_at,created_at,created_by").eq("project_id", project.id).order("revision_number", { ascending: false }).limit(50),
         db.from("promo_jobs").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
         db.from("promo_approvals").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
         db.from("promo_assets").select("*").eq("project_id", project.id).neq("status", "archived").order("created_at", { ascending: false }).limit(200),
+        project.current_revision_id ? db.from("promo_capture_runs").select("*").eq("project_id", project.id)
+          .eq("revision_id", project.current_revision_id).order("created_at", { ascending: false }).limit(50) : { data: [], error: null },
         db.from("promo_events").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
         db.from("promo_branch_sources").select("*").eq("branch_id", project.branch_id).eq("is_active", true).maybeSingle(),
       ]);
-      for (const result of [revision, revisions, jobs, approvals, assets, events, source]) if (result.error) throw new Error(`Could not load Promo Studio project: ${result.error.message}`);
-      return json({ project, source: source.data, revision: revision.data, revisions: revisions.data || [], jobs: jobs.data || [], approvals: approvals.data || [], assets: assets.data || [], events: events.data || [] });
+      for (const result of [revision, revisions, jobs, approvals, assets, captureRuns, events, source]) if (result.error) throw new Error(`Could not load Promo Studio project: ${result.error.message}`);
+      return json({ project, source: source.data, revision: revision.data, revisions: revisions.data || [], jobs: jobs.data || [], approvals: approvals.data || [], assets: assets.data || [], capture_runs: captureRuns.data || [], events: events.data || [] });
     }
 
     if (action === "create_revision") {
@@ -358,6 +387,52 @@ Deno.serve(async (req: Request) => {
       });
       await audit(db, { projectId: project.id, revisionId, event: "manifest.revised", stage: manifest.promo.status as string, actorId: userId, details: { revision_number: revisionNumber, fingerprint, reason } });
       return json({ revision });
+    }
+
+    if (action === "adopt_capture") {
+      if (!project.current_revision_id || !isPromoUuid(body.capture_run_id)) {
+        throw new Error("A valid current capture run is required.");
+      }
+      const [{ data: current, error: currentError }, { data: run, error: runError }] = await Promise.all([
+        db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).single(),
+        db.from("promo_capture_runs").select("*").eq("id", body.capture_run_id)
+          .eq("project_id", project.id).eq("revision_id", project.current_revision_id)
+          .eq("status", "succeeded").maybeSingle(),
+      ]);
+      if (currentError || !current) throw new Error("Could not load the active Promo Manifest.");
+      if (runError || !run) throw new Error("Succeeded capture run not found on the active revision.");
+      const stillIds = Array.isArray(run.still_asset_ids) ? run.still_asset_ids : [];
+      const artifactIds = [run.video_asset_id, ...stillIds, run.trace_asset_id];
+      if (artifactIds.some(assetId => !isPromoUuid(assetId)) || new Set(artifactIds).size !== artifactIds.length) {
+        throw new Error("Capture run artifact identity is invalid.");
+      }
+      const [{ data: scenario, error: scenarioError }, { data: assets, error: assetsError }, { data: events, error: eventsError }] = await Promise.all([
+        db.from("promo_capture_scenarios").select("*").eq("id", run.scenario_id)
+          .eq("project_id", project.id).eq("revision_id", current.id).eq("status", "verified").maybeSingle(),
+        db.from("promo_assets").select("*").eq("project_id", project.id).eq("revision_id", current.id)
+          .in("id", artifactIds).eq("status", "ready"),
+        db.from("promo_events").select("job_id").eq("project_id", project.id).eq("revision_id", current.id)
+          .eq("event_type", "job.succeeded").eq("stage", "capture")
+          .contains("details", { capture_run_id: run.id }).limit(2),
+      ]);
+      if (scenarioError || !scenario) throw new Error("Verified capture scenario not found on the active revision.");
+      if (assetsError || assets?.length !== artifactIds.length) throw new Error("Verified capture artifacts are incomplete.");
+      if (eventsError || events?.length !== 1 || !isPromoUuid(events[0].job_id)) {
+        throw new Error("Capture completion audit lineage is missing or ambiguous.");
+      }
+      const candidate = applyPromoCaptureAdoption(current.manifest, scenario, { ...run, job_id: events[0].job_id }, assets);
+      const created = await createManifestRevision(db, {
+        project, current, candidate, userId, reason: `Adopted verified capture ${scenario.scenario_key}`,
+        adoptedAssetIds: artifactIds,
+        diff: [{ op: "capture_adoption", capture_run_id: run.id, scenario_key: scenario.scenario_key,
+          source_revision_id: current.id, artifact_asset_ids: artifactIds }],
+      });
+      await audit(db, {
+        projectId: project.id, revisionId: created.revisionId, event: "capture.adopted", stage: "capture",
+        actorId: userId, details: { capture_run_id: run.id, scenario_key: scenario.scenario_key,
+          source_revision_id: current.id, artifact_asset_ids: artifactIds, fingerprint: created.fingerprint },
+      });
+      return json({ revision: created.revision, capture_run_id: run.id }, 201);
     }
 
     if (action === "approve_claim" || action === "approve_script") {
@@ -448,26 +523,25 @@ Deno.serve(async (req: Request) => {
         const { data: branch, error: branchError } = await db.from("branches")
           .select("id,slug,name,is_active").eq("id", project.branch_id).eq("is_active", true).maybeSingle();
         if (branchError || !branch) throw new Error("Could not verify the active render branch.");
-        const [
-          { data: revision, error: revisionError },
-          { data: assets, error: assetsError },
-          { data: approvals, error: approvalsError },
-          { data: brandIdentities, error: brandIdentityError },
-        ] = await Promise.all([
-          db.from("promo_manifest_revisions").select("manifest").eq("id", project.current_revision_id).single(),
+        const { data: revision, error: revisionError } = await db.from("promo_manifest_revisions")
+          .select("manifest").eq("id", project.current_revision_id).single();
+        if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for rendering.");
+        const [{ data: assets, error: assetsError }, { data: bindings, error: bindingsError },
+          { data: approvals, error: approvalsError }, { data: brandIdentities, error: brandIdentityError }] = await Promise.all([
           db.from("promo_assets").select("id,revision_id,kind,status,storage_bucket,storage_path,mime_type,checksum_sha256,width,height")
-            .eq("project_id", project.id).eq("revision_id", project.current_revision_id),
+            .eq("project_id", project.id).eq("status", "ready"),
+          db.from("promo_revision_assets").select("asset_id").eq("project_id", project.id)
+            .eq("revision_id", project.current_revision_id),
           db.from("promo_approvals").select("revision_id,gate,subject_type,subject_id,decision,created_at").eq("project_id", project.id)
             .eq("revision_id", project.current_revision_id),
           db.from("brand_identities").select("id,branch_id,name,status,color_palette,typography,updated_at")
             .eq("branch_id", branch.slug).eq("status", "active").order("updated_at", { ascending: false }).limit(2),
         ]);
-        if (revisionError || !revision) throw new Error("Could not load the active Promo Manifest for rendering.");
-        if (assetsError || approvalsError || brandIdentityError) throw new Error("Could not verify render assets, approvals, and presentation.");
+        if (assetsError || bindingsError || approvalsError || brandIdentityError) throw new Error("Could not verify render assets, bindings, approvals, and presentation.");
         if (brandIdentities?.length !== 1) throw new Error("Rendering requires one unambiguous active Brand Identity for this branch.");
         input = buildPromoRenderJobInput(
           revision.manifest, assets || [], approvals || [], project.selected_preview_render_id, jobType, body.format, branch,
-          brandIdentities[0],
+          brandIdentities[0], (bindings || []).map((binding: any) => binding.asset_id),
         );
       } else {
         input = sanitizePromoJson(body.input && typeof body.input === "object" ? body.input : {});

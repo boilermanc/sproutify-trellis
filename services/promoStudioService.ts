@@ -45,6 +45,19 @@ export interface PromoJob {
   created_at: string;
 }
 
+export interface PromoCaptureRun {
+  id: string;
+  project_id: string;
+  revision_id: string;
+  scenario_id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'stale';
+  video_asset_id: string | null;
+  still_asset_ids: string[];
+  trace_asset_id: string | null;
+  evidence: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface PromoBranchSource {
   id: string;
   branch_id: string;
@@ -67,6 +80,7 @@ export interface PromoProjectDetail {
   jobs: PromoJob[];
   approvals: Array<Record<string, unknown>>;
   assets: Array<Record<string, unknown>>;
+  capture_runs: PromoCaptureRun[];
   events: Array<Record<string, unknown>>;
 }
 
@@ -125,6 +139,12 @@ export async function approvePromoClaim(projectId: string, claimId: string) {
 export async function approvePromoScript(projectId: string) {
   return callPromo<{ revision: PromoRevision; approval: Record<string, unknown> }>('approve_script', {
     project_id: projectId,
+  });
+}
+
+export async function adoptPromoCapture(projectId: string, captureRunId: string) {
+  return callPromo<{ revision: PromoRevision; capture_run_id: string }>('adopt_capture', {
+    project_id: projectId, capture_run_id: captureRunId,
   });
 }
 
