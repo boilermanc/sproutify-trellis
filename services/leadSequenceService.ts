@@ -107,6 +107,7 @@ export async function fetchLeadEmailOutbox(leadIds: string[]): Promise<LeadEmail
           ...fallbackStatus,
           ...(inferredOpen ? ['opened_inferred'] : []),
           ...(message.enrollment?.exit_reason === 'replied' ? ['replied'] : []),
+          ...(message.enrollment?.exit_reason === 'email_unsubscribe' ? ['unsubscribed'] : []),
         ].filter((status, index, statuses) => statuses.indexOf(status) === index),
       };
     })
