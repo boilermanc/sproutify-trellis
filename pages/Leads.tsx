@@ -34,7 +34,7 @@ import LeadBoard from '../components/leads/LeadBoard';
 import LeadDeepDive from '../components/leads/LeadDeepDive';
 import { fetchResearchStatusByLead, LeadResearchStatus } from '../services/manusService';
 import { fetchLeadEmailEngagement, EmailEngagementStatus } from '../services/emailReportingService';
-import LeadMetrics from '../components/leads/LeadMetrics';
+import LeadMetrics, { countUnsubscribedLeads } from '../components/leads/LeadMetrics';
 import { buildLeadCsv } from '../components/leads/leadCsv';
 import LeadBulkBar from '../components/leads/LeadBulkBar';
 import { runSequentialBulk } from '../components/leads/leadBulk';
@@ -42,6 +42,7 @@ import CrmModal from '../components/leads/CrmModal';
 import LeadSequencePanel from '../components/leads/LeadSequencePanel';
 import LeadEmailOutboxModal from '../components/leads/LeadEmailOutboxModal';
 import { controlLeadSequence, fetchLeadSequence, startLeadSequence } from '../services/leadSequenceService';
+import { fetchUnsubscribedEmails } from '../services/suppressionService';
 import {
   checkExistingLeads,
   createLead,
@@ -182,6 +183,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
   const [bulkProgress, setBulkProgress] = useState<{ completed: number; total: number } | null>(null);
   const [bulkFailures, setBulkFailures] = useState<Array<{ email: string; reason: string }>>([]);
   const [showEmailOutbox, setShowEmailOutbox] = useState(false);
+  const [unsubscribedEmails, setUnsubscribedEmails] = useState<Set<string> | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [leadForm, setLeadForm] = useState<NewLeadInput>(emptyLeadForm);
@@ -279,6 +281,20 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
 
   useEffect(() => { void loadLeads(); }, [loadLeads, refreshNonce]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setUnsubscribedEmails(null);
+    if (!activeBranch) return () => { cancelled = true; };
+    fetchUnsubscribedEmails([activeBranch.slug])
+      .then(emails => { if (!cancelled) setUnsubscribedEmails(emails); })
+      .catch(error => {
+        if (cancelled) return;
+        console.error('Failed to load lead unsubscribe total:', error);
+        setUnsubscribedEmails(null);
+      });
+    return () => { cancelled = true; };
+  }, [activeBranch?.slug, refreshNonce]);
+
   // Keep the list's deep-dive badges live while any research is in flight.
   const hasRunningResearch = Object.values(researchStatus).some(s => s === 'running' || s === 'queued');
   useEffect(() => {
@@ -333,6 +349,10 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
     () => leads.filter(lead => lead.pipeline_id === selectedPipelineId),
     [leads, selectedPipelineId]
   );
+
+  const unsubscribedCount = useMemo(() => (
+    unsubscribedEmails == null ? null : countUnsubscribedLeads(allPipelineLeads, unsubscribedEmails)
+  ), [allPipelineLeads, unsubscribedEmails]);
 
   const exportFilteredLeads = () => {
     if (!activeBranch || !selectedPipeline || filteredLeads.length === 0) return;
@@ -910,7 +930,7 @@ const Leads: React.FC<LeadsProps> = ({ branchContext, addToast }) => {
             </div>
           </div>
 
-          <LeadMetrics filteredLeads={filteredLeads} allPipelineLeads={allPipelineLeads} stages={selectedPipeline?.stages || []} />
+          <LeadMetrics filteredLeads={filteredLeads} allPipelineLeads={allPipelineLeads} stages={selectedPipeline?.stages || []} unsubscribedCount={unsubscribedCount} />
 
           {viewMode === 'list' && selectedLeadIds.size > 0 && <LeadBulkBar count={selectedLeadIds.size} stages={selectedPipeline?.stages || []} targetStage={bulkStage} pending={bulkPending} progress={bulkProgress} failures={bulkFailures} onTargetStageChange={setBulkStage} onApplyStage={() => void runBulkLeadUpdate('Stage change', lead => updateLeadStage(lead.id, bulkStage))} onMarkLost={() => void runBulkLeadUpdate('Mark lost', lead => updateLeadStage(lead.id, 'lost'))} onRecycle={() => void runBulkLeadUpdate('Recycle', lead => updateLead(lead.id, { status: 'recycled' }))} onClear={() => { setSelectedLeadIds(new Set()); setBulkFailures([]); }} />}
 
