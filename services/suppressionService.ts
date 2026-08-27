@@ -24,3 +24,17 @@ export async function fetchSuppressedEmails(branchScopes: string[] = []): Promis
     return new Set(); // fail open on read — never block a send because the list didn't load
   }
 }
+
+// Reporting needs to distinguish a voluntary unsubscribe from other suppression
+// reasons such as hard bounces or complaints. Unlike the send-time helper above,
+// this throws on failure so the UI can show an unknown value instead of a false 0.
+export async function fetchUnsubscribedEmails(branchScopes: string[] = []): Promise<Set<string>> {
+  const scopes = Array.from(new Set(['global', ...branchScopes.map((scope) => scope.toLowerCase())]));
+  const { data, error } = await supabase
+    .from('email_suppressions')
+    .select('email')
+    .eq('reason', 'unsubscribe')
+    .in('scope', scopes);
+  if (error) throw error;
+  return new Set((data || []).map((row: { email: string }) => String(row.email).trim().toLowerCase()).filter(Boolean));
+}

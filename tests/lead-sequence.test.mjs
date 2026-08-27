@@ -115,6 +115,12 @@ test('provides a live lead email outbox with recipient-level tracking statuses',
   assert.match(webhook, /recipient_email/);
 });
 
+test('shows a branch-aware unsubscribe total in the lead summary', () => {
+  assert.match(leadsPage, /fetchUnsubscribedEmails\(\[activeBranch\.slug\]\)/);
+  assert.match(leadsPage, /unsubscribedCount=\{unsubscribedCount\}/);
+  assert.match(sequenceService, /fetchLeadEmailOutbox/);
+});
+
 test('replies and negative delivery outcomes stop the sequence', () => {
   assert.match(webhook, /evt\?\.type === "email\.received"/);
   assert.match(webhook, /exit_reason: "replied"/);
