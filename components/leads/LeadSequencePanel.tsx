@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Clock3, Eye, Loader2, MailCheck, Pause, Play, Send, StopCircle, X } from 'lucide-react';
+import { Ban, Clock3, Eye, Loader2, MailCheck, Pause, Play, Send, StopCircle, X } from 'lucide-react';
 import { LeadEmailMessage, LeadEmailSequenceEnrollment, LeadEmailSequenceStep, LeadSequenceMode } from '../../types';
 import { renderLeadComplianceFooter, renderLeadSequenceHtml } from '../../supabase/functions/_shared/lead-sequence-template';
 
@@ -17,6 +17,25 @@ interface Props {
 const formatWhen = (value: string | null) => value
   ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   : 'Waiting for approval';
+
+const exitReasonDetails = (reason: string | null) => {
+  switch (reason) {
+    case 'email_unsubscribe':
+      return { label: 'Unsubscribed', message: 'This lead unsubscribed from Sproutify Farm emails. No sequence email can be selected or sent unless they explicitly resubscribe. An open may not appear when email images or tracking pixels were blocked.' };
+    case 'email_bounced':
+      return { label: 'Email bounced', message: 'This email address bounced. Verify or update the address before attempting another email.' };
+    case 'email_complained':
+      return { label: 'Spam complaint', message: 'This recipient marked an email as spam. Additional email sending is blocked.' };
+    case 'email_failed':
+      return { label: 'Delivery failed', message: 'Email delivery failed repeatedly. Verify the address before attempting another email.' };
+    case 'replied':
+      return { label: 'Lead replied', message: 'This lead replied, so automated follow-ups stopped. Continue the conversation from their reply.' };
+    case 'manual_stop':
+      return { label: 'Stopped manually', message: 'This sequence was stopped manually. Start a new sequence only if follow-up is still appropriate.' };
+    default:
+      return reason ? { label: 'Sequence stopped', message: `Email sending is blocked because the sequence ended: ${reason.replace(/_/g, ' ')}.` } : null;
+  }
+};
 
 const HUB_URL = ((import.meta as any).env?.VITE_SUPABASE_URL || 'https://horvjqqifgrzxesuxtfm.supabase.co').replace(/\/$/, '');
 
@@ -72,6 +91,7 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
     ? enrollment.steps.find(step => step.id === selectedStepId)
     : undefined;
   const approvalArmed = !!selectedApprovalStep;
+  const exitDetails = exitReasonDetails(enrollment.exit_reason);
   const previewEmail = previewRecipientEmail || 'lead@example.com';
   const previewHtml = previewStep
     ? renderLeadSequenceHtml(
@@ -84,7 +104,7 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
     <>
     <section className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.035] p-4">
       <div className="flex items-start justify-between gap-3">
-        <div><h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-200">{enrollment.sequence?.name || 'Lead sequence'}</h3><p className="mt-1 text-[10px] capitalize text-slate-500">{enrollment.mode} · {enrollment.status.replace(/_/g, ' ')}</p></div>
+        <div><h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-200">{enrollment.sequence?.name || 'Lead sequence'}</h3><p className={`mt-1 text-[10px] font-bold ${exitDetails ? 'text-rose-300' : 'capitalize text-slate-500'}`}>{enrollment.mode} · {exitDetails?.label || enrollment.status.replace(/_/g, ' ')}</p></div>
         {working && <Loader2 size={16} className="animate-spin text-cyan-300" />}
       </div>
       {enrollment.status === 'awaiting_approval' && <p className="mt-3 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.07] px-3 py-2 text-[10px] font-bold text-cyan-100">Click anywhere on an unsent email card to select it. Click its number only to preview.</p>}
@@ -106,7 +126,10 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
           </div>;
         })}
       </div>
-      {enrollment.exit_reason && <p className="mt-3 rounded-lg border border-rose-300/20 bg-rose-300/[0.07] px-3 py-2 text-[10px] font-bold text-rose-100">Sending locked: {enrollment.exit_reason.replace(/^email_/, '').replace(/_/g, ' ')}.</p>}
+      {exitDetails && <div className="mt-3 rounded-xl border-2 border-rose-400 bg-rose-950 px-4 py-3 text-white shadow-lg shadow-rose-950/30" role="alert">
+        <div className="flex items-center gap-2"><Ban size={16} className="shrink-0 text-rose-300" /><p className="text-[11px] font-black uppercase tracking-wider">Email sending blocked · {exitDetails.label}</p></div>
+        <p className="mt-2 text-[11px] font-bold leading-5 text-rose-50">{exitDetails.message}</p>
+      </div>}
       {active && <div className="mt-3 flex flex-wrap gap-2">
         {enrollment.status === 'awaiting_approval' && <button type="button" disabled={working || !approvalArmed} onClick={() => selectedApprovalStep && void run(() => onAction('approve_next', selectedApprovalStep.step_number))} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#071b25] disabled:cursor-not-allowed disabled:opacity-40"><Send size={12} />Approve & send{selectedApprovalStep ? ` email ${selectedApprovalStep.step_number}` : ''}</button>}
         {enrollment.status === 'active' && <button type="button" disabled={working} onClick={() => void run(() => onAction('pause'))} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-300"><Pause size={12} />Pause</button>}

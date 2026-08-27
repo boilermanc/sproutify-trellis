@@ -4,7 +4,7 @@ import { Lead } from '../../types';
 import { fetchLeadEmailOutbox, LeadEmailOutboxMessage } from '../../services/leadSequenceService';
 import CrmModal from './CrmModal';
 
-type StatusFilter = 'all' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'issues';
+type StatusFilter = 'all' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'unsubscribed' | 'issues';
 
 const FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -13,10 +13,11 @@ const FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'opened', label: 'Opened' },
   { value: 'clicked', label: 'Clicked' },
   { value: 'replied', label: 'Replied' },
+  { value: 'unsubscribed', label: 'Unsubscribed' },
   { value: 'issues', label: 'Issues' },
 ];
 
-const ISSUE_STATUSES = ['bounced', 'complained', 'failed', 'suppressed'];
+const ISSUE_STATUSES = ['bounced', 'complained', 'failed', 'suppressed', 'unsubscribed'];
 const POSITIVE_STATUSES = ['sent', 'delivered', 'opened', 'clicked', 'replied'];
 
 const formatWhen = (value: string | null): string => {
@@ -102,6 +103,7 @@ const LeadEmailOutboxModal: React.FC<Props> = ({ leads, scopeLabel, onClose }) =
     opened: messages.filter(hasOpened).length,
     clicked: messages.filter(message => message.events.includes('clicked')).length,
     replied: messages.filter(message => message.events.includes('replied')).length,
+    unsubscribed: messages.filter(message => message.events.includes('unsubscribed')).length,
     issues: messages.filter(message => message.events.some(status => ISSUE_STATUSES.includes(status))).length,
   }), [messages]);
 
@@ -171,7 +173,7 @@ const LeadEmailOutboxModal: React.FC<Props> = ({ leads, scopeLabel, onClose }) =
             </table>
           </div>
         )}
-        <div className="flex flex-col gap-1 text-right text-[10px] text-slate-500"><p>Showing {filtered.length} of {messages.length} outbound lead emails</p>{messages.some(message => message.events.includes('opened_inferred')) && <p>* Open inferred from a click by the lead when the tracking pixel was not loaded.</p>}</div>
+        <div className="flex flex-col gap-1 text-right text-[10px] text-slate-500"><p>Showing {filtered.length} of {messages.length} outbound lead emails</p>{messages.some(message => message.events.includes('opened_inferred')) && <p>* Open inferred from a click by the lead when the tracking pixel was not loaded.</p>}{messages.some(message => message.events.includes('unsubscribed') && !hasOpened(message)) && <p>An unsubscribe can be recorded even when no open is detected because open tracking depends on the recipient loading email images.</p>}</div>
       </div>
     </CrmModal>
   );
