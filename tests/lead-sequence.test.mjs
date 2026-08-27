@@ -66,6 +66,8 @@ test('explains setup and compliance locks instead of leaving email cards silentl
   assert.match(sequencePanel, /unless they explicitly resubscribe/);
   assert.match(sequencePanel, /tracking pixels were blocked/);
   assert.match(sequencePanel, /border-2 border-rose-400 bg-rose-950/);
+  assert.match(sequencePanel, /uppercase tracking-wider text-white/);
+  assert.match(sequencePanel, /leading-5 text-rose-100/);
   assert.match(sequencePanel, /role="alert"/);
 });
 

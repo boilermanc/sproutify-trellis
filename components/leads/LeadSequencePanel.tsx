@@ -127,8 +127,8 @@ const LeadSequencePanel: React.FC<Props> = ({ enrollment, loading, disabled, pre
         })}
       </div>
       {exitDetails && <div className="mt-3 rounded-xl border-2 border-rose-400 bg-rose-950 px-4 py-3 text-white shadow-lg shadow-rose-950/30" role="alert">
-        <div className="flex items-center gap-2"><Ban size={16} className="shrink-0 text-rose-300" /><p className="text-[11px] font-black uppercase tracking-wider">Email sending blocked · {exitDetails.label}</p></div>
-        <p className="mt-2 text-[11px] font-bold leading-5 text-rose-50">{exitDetails.message}</p>
+        <div className="flex items-center gap-2"><Ban size={16} className="shrink-0 text-white" /><p className="text-[11px] font-black uppercase tracking-wider text-white">Email sending blocked · {exitDetails.label}</p></div>
+        <p className="mt-2 text-[11px] font-bold leading-5 text-rose-100">{exitDetails.message}</p>
       </div>}
       {active && <div className="mt-3 flex flex-wrap gap-2">
         {enrollment.status === 'awaiting_approval' && <button type="button" disabled={working || !approvalArmed} onClick={() => selectedApprovalStep && void run(() => onAction('approve_next', selectedApprovalStep.step_number))} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-[#071b25] disabled:cursor-not-allowed disabled:opacity-40"><Send size={12} />Approve & send{selectedApprovalStep ? ` email ${selectedApprovalStep.step_number}` : ''}</button>}
