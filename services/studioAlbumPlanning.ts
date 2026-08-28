@@ -47,6 +47,15 @@ export const STUDIO_STYLE_PRESETS: StudioStylePreset[] = [
     artwork_direction: 'Soft morning light, warm wood, coffee, houseplants, linen textures, calm editorial photography or illustration.',
   },
   {
+    id: 'french_riviera_60s', name: 'French Riviera ’60s', tagline: 'Sunny cinematic lounge with bossa nova rhythms, elegant orchestration, and glamorous vintage Mediterranean style.',
+    genre: '1960s French Riviera Cinematic Lounge', mood: 'Sunny, playful, polished, sophisticated', era: 'Late 1960s inspired',
+    theme: 'Arriving at a luxury Cannes hotel in a vintage convertible in 1968', vocal_direction: 'instrumental', preferred_track_seconds: 150,
+    bpm_range: '105–120 BPM', instruments: ['brushed acoustic drums', 'warm upright bass', 'nylon-string bossa nova guitar', 'vibraphone', 'glockenspiel', 'flute', 'muted trumpet', 'Hammond organ', 'vintage electric piano', 'sweeping strings'],
+    prompt_guidance: 'Blend French and Italian film-score lounge, light bossa nova, orchestral pop, easy-listening jazz, and vintage production-library music. Use a lightly syncopated Latin swing, memorable cinematic melody, tasteful orchestral flourishes, smooth transitions, natural acoustic instruments, and warm analog tape character without heavy improvisation. No vocals, modern synthesizers, EDM drums, trap percussion, lo-fi hip-hop beats, heavy jazz solos, aggressive brass, disco bass, trailer percussion, dark suspense, or contemporary pop production.',
+    artwork_direction: 'Sun-faded late-1960s French Riviera travel editorial with a Cannes luxury hotel, Mediterranean coastline, vintage convertible, linen resort clothing, elegant old-money warmth, authentic Kodachrome color, and generous cinematic negative space.',
+    mood_collection: 'French Riviera ’60s', paired_art_style_id: 'photoreal_60s',
+  },
+  {
     id: 'quiet_intelligence', name: 'Quiet Intelligence', tagline: 'Low-cortisol ambient jazz with space, restraint, and architectural calm.',
     genre: 'Minimalist Ambient Jazz', mood: 'Calm, intelligent, introspective, luxurious', era: 'Contemporary with subtle mid-century influence',
     theme: 'A serene modernist interior designed for deep focus and quiet confidence', vocal_direction: 'instrumental', preferred_track_seconds: 150,

@@ -37,6 +37,20 @@ test('includes the requested creative starting points', () => {
   assert.deepEqual(planning.STUDIO_STYLE_PRESETS.slice(0, 3).map(preset => preset.id), ['groovy_organ', 'jazz_spy', 'saturday_morning_lounge']);
 });
 
+test('includes French Riviera ’60s as a distinct cinematic lounge preset', () => {
+  const preset = planning.getStudioStylePreset('french_riviera_60s');
+  assert.equal(preset.name, 'French Riviera ’60s');
+  assert.equal(preset.genre, '1960s French Riviera Cinematic Lounge');
+  assert.equal(preset.bpm_range, '105–120 BPM');
+  assert.equal(preset.vocal_direction, 'instrumental');
+  assert.equal(preset.paired_art_style_id, 'photoreal_60s');
+  assert.match(preset.prompt_guidance, /light bossa nova/);
+  assert.match(preset.prompt_guidance, /lightly syncopated Latin swing/);
+  assert.match(preset.prompt_guidance, /No vocals, modern synthesizers/);
+  assert.ok(preset.instruments.includes('nylon-string bossa nova guitar'));
+  assert.ok(preset.instruments.includes('sweeping strings'));
+});
+
 test('includes the low-cortisol Quiet Intelligence preset with restrained generation guidance', () => {
   const preset = planning.getStudioStylePreset('quiet_intelligence');
   assert.equal(preset.name, 'Quiet Intelligence');
