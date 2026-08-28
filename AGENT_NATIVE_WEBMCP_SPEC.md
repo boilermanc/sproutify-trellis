@@ -13,36 +13,6 @@ Trellis should become **agent-native**: important product capabilities should be
 
 The objective is not to let an agent click Trellis buttons more efficiently. The objective is to expose the **meaningful operations behind those buttons** as explicit tools.
 
-Example:
-
-```text
-Human UI:
-Promo Studio → project → template → script → voice → music → render
-
-Agent capability:
-create_promo({
-  project_id,
-  goal,
-  duration_seconds,
-  style,
-  reference_asset_ids,
-  voiceover,
-  music
-})
-```
-
-Trellis remains responsible for orchestration, provider selection, job execution, validation, persistence, permissions, and output assets. The agent is responsible for interpreting user intent and selecting appropriate Trellis capabilities.
-
-This architecture should support WebMCP-style browser/session integration where available, while keeping the underlying capability layer transport-independent so the same tools can later be exposed through other agent protocols or first-party in-app agents.
-
----
-
-## 2. Context and Design Thesis
-
-Trellis is already an orchestration platform rather than a simple content UI. The current architecture coordinates federated spoke data, Supabase, AI generation, n8n automation, media production, publishing, and project state. The repository's existing architecture explicitly describes Trellis as an orchestration layer rather than a data warehouse.
-
-The next architectural step is:
-
 ```text
 User intent
    ↓
@@ -57,157 +27,111 @@ Supabase · n8n · AI providers · render workers · publishing providers
 Auditable result / artifact / job
 ```
 
-This is preferable to making browser automation the primary integration surface:
+Trellis remains responsible for orchestration, provider selection, validation, persistence, permissions and outputs. The agent interprets user intent and selects appropriate capabilities.
 
-```text
-Agent → inspect DOM → infer button meaning → click → wait → inspect UI → repeat
-```
-
-Browser/computer-use automation remains useful as a compatibility fallback, but it should not be the canonical API for Trellis operations.
+The capability layer must be transport-independent. A WebMCP-style browser/session adapter can expose it now or when the target browser API is available, while the same canonical tools can later support MCP, first-party in-app agents, or other transports.
 
 ---
 
-## 3. Key Lesson from the WebMCP Conversion Model
+## 2. Repository Context
 
-A useful V1 does **not** require exposing the entire application.
+Trellis is already designed as an orchestration layer rather than a data warehouse. The current repository uses React 19 + TypeScript, Supabase, Gemini with provider-agnostic plans, n8n automation, and federated spoke data. Existing modules include Campaign Builder, Social Hub, Automations, Brand Intelligence, Clip Studio and other production workflows.
 
-The commercial WebMCP model shown in the reference material focuses on a small number of high-value actions such as:
+Clip Studio is especially relevant: its source → script → approval → B-roll → render → publish pipeline already demonstrates structured jobs, approval gates, assets and asynchronous work. Agent support should reuse those application patterns rather than create a parallel product.
 
-- `get_services`
-- `check_area`
-- `book_consult`
-- `request_quote`
-- `submit_intake`
+---
 
-The important principle is:
+## 3. Lesson from the WebMCP Conversion Slide
 
-> **One valuable action that works cleanly and reliably for agents is a legitimate V1.**
+The reference conversion model does not begin by exposing an entire website. It starts with a handful of high-value typed actions such as:
 
-For Trellis, we should follow the same pattern. Do not begin by converting every UI control into a tool. Identify a small number of valuable end-to-end jobs, expose them with excellent schemas and safety controls, instrument them, evaluate them, and expand from evidence.
+```text
+get_services
+check_area
+book_consult
+request_quote
+submit_intake
+```
 
-This also creates a future Sweetwater Technology competency: the patterns developed for Trellis can later be reused to make other Sweetwater applications agent-ready and, potentially, to provide agent-readiness/WebMCP conversion services to outside businesses.
+Its strongest product lesson is:
 
-That commercial possibility is **not** part of the Trellis implementation scope, but the architecture should avoid Trellis-specific assumptions that would prevent reuse.
+> **One valuable action that works cleanly for agents is a valid V1.**
+
+The slide also pairs initial setup with ongoing **monitoring + evaluations**. Trellis should adopt both ideas: start with a small, valuable vertical slice, instrument it heavily, prove reliability, then expand.
+
+The pattern may later be reusable across other Sweetwater Technology products or as an agent-readiness/WebMCP conversion offering. That commercial service is outside this implementation scope, but the Trellis architecture should avoid unnecessary Trellis-only coupling.
 
 ---
 
 ## 4. Goals
 
-### 4.1 Primary goals
-
 1. Expose meaningful Trellis operations as typed, discoverable agent tools.
-2. Reuse existing Trellis domain services rather than duplicate application logic.
-3. Respect the user's existing identity, branch, permissions, and authenticated context.
-4. Make destructive, costly, external, or publication actions explicitly controllable.
-5. Record every agent invocation in an auditable execution history.
-6. Provide deterministic schemas and structured results suitable for agent reasoning.
-7. Support asynchronous jobs for expensive media generation.
-8. Measure tool reliability with repeatable evaluations.
-9. Keep the capability layer independent of any single LLM vendor or browser protocol.
-10. Allow Trellis itself to remain the orchestrator of downstream AI/media providers.
+2. Reuse existing domain services; never duplicate business logic just for agents.
+3. Respect authenticated user, branch, permissions, RLS and application policy.
+4. Gate destructive, costly, external and publication actions appropriately.
+5. Record every invocation in an auditable execution history.
+6. Return structured results rather than UI prose.
+7. Support asynchronous jobs for expensive media operations.
+8. Measure reliability with repeatable evaluations.
+9. Remain independent of any single LLM vendor or browser protocol.
+10. Keep Trellis responsible for downstream provider orchestration.
 
-### 4.2 Non-goals
+### Non-goals for V1
 
-V1 will not:
-
-- expose every UI interaction as a tool;
-- allow agents to bypass RLS, authorization, approval gates, or application policy;
-- give an agent raw database access;
-- expose service-role credentials, provider API keys, or secrets;
-- replace the Trellis UI;
-- make generic DOM automation the primary product architecture;
-- automatically publish or spend money without the required authorization policy;
-- redesign existing Clip Studio, Episodes, Social Hub, Campaign Builder, or other modules merely to support agents.
+- Exposing every UI interaction.
+- Raw database access for agents.
+- Exposing service-role keys or provider credentials.
+- Replacing the Trellis UI.
+- Using DOM clicking as the canonical integration model.
+- Bypassing existing approval gates.
+- Automatic publishing/spending without required authorization.
+- Refactoring unrelated modules solely for agent support.
 
 ---
 
-## 5. Architectural Principle: UI and Agent Tools Share Domain Services
+## 5. Core Architecture Rule
 
-Agent tools must not contain independent business logic.
-
-Preferred pattern:
+UI and agent tools must share canonical domain services.
 
 ```text
-                 ┌───────────────┐
-Human UI ───────→│ Domain Service │──────→ persistence/providers/workers
-                 └───────▲───────┘
+                 ┌────────────────┐
+Human UI ───────→│ Domain Service │────→ DB/providers/workers
+                 └───────▲────────┘
                          │
 Agent Tool ──────────────┘
 ```
 
-Avoid:
+Do not implement the same workflow independently in UI code and agent code.
 
-```text
-Human UI → UI-specific implementation
-Agent Tool → separate implementation of same workflow
-```
-
-Every agent-capable feature should therefore be mapped as:
+Every candidate capability should be inventoried as:
 
 | UI action | Domain service | Agent tool | Permission | Confirmation | Result |
 |---|---|---|---|---|---|
-| Human-facing operation | canonical application function | typed capability | required scope | policy | structured output |
+| Human operation | Canonical function | Typed capability | Required scope | Policy | Structured output |
 
-This map becomes the authoritative agent capability inventory.
+This inventory becomes the authoritative conversion map.
 
 ---
 
-## 6. Capability Categories
+## 6. Risk Classes
 
-Every capability must be assigned one of four risk classes.
+### A — Read-only
+Examples: get project, list assets, get generation status, read brand guidance. Normally no extra confirmation after authentication/authorization.
 
-### Class A — Read-only
+### B — Reversible write
+Examples: create draft project, generate script draft, create storyboard, save generated asset. Audited; normally no extra confirmation when authorized.
 
-Examples:
+### C — Cost-bearing / consequential
+Examples: paid GPU render, premium model, bulk video variants. Enforce budget/cost policy; confirmation may be required above configurable thresholds.
 
-- get project
-- list project assets
-- get generation status
-- search brand library
-- retrieve campaign metadata
-
-Default behavior: no confirmation after normal authentication/authorization.
-
-### Class B — Reversible write
-
-Examples:
-
-- create draft project
-- generate script draft
-- create storyboard
-- save generated asset
-- update draft metadata
-
-Default behavior: may execute without an extra confirmation when authorized, but must be audited.
-
-### Class C — Cost-bearing / consequential
-
-Examples:
-
-- launch paid GPU render
-- generate multiple expensive video variants
-- invoke premium provider
-- bulk generation
-
-Default behavior: capability policy must evaluate expected cost/budget. Confirmation may be required above configurable thresholds.
-
-### Class D — External / destructive / irreversible
-
-Examples:
-
-- publish content
-- send campaign
-- delete project/assets
-- overwrite approved material
-- perform external account action
-
-Default behavior: explicit confirmation required unless a separately configured automation policy grants that exact action.
+### D — External / destructive / irreversible
+Examples: publish, send campaign, delete assets, overwrite approved material. Explicit confirmation required unless an independently configured automation policy authorizes that exact operation.
 
 ---
 
 ## 7. Tool Contract Standard
 
-Each tool definition must include:
+Each capability must define:
 
 ```ts
 interface TrellisAgentToolDefinition {
@@ -226,32 +150,21 @@ interface TrellisAgentToolDefinition {
 }
 ```
 
-### Naming
+Use verb-first `snake_case` business names:
 
-Use verb-first `snake_case` names that describe business intent, not UI implementation:
+```text
+create_promo
+generate_image
+generate_voiceover
+list_project_assets
+get_generation_status
+```
 
-Good:
-
-- `create_promo`
-- `generate_image`
-- `generate_voiceover`
-- `list_project_assets`
-- `get_generation_status`
-
-Avoid:
-
-- `click_generate_button`
-- `open_modal`
-- `select_tab`
-- `call_gemini`
-
-Provider details should normally remain implementation details unless provider selection is intentionally exposed as a user choice.
+Avoid UI or provider implementation names such as `click_generate_button`, `open_modal`, or `call_gemini`.
 
 ---
 
-## 8. Structured Result Envelope
-
-All tools should return a predictable envelope.
+## 8. Standard Result Envelope
 
 ```ts
 interface AgentToolResult<T> {
@@ -271,17 +184,13 @@ interface AgentToolResult<T> {
 }
 ```
 
-Agents should not have to parse UI prose to determine whether an operation succeeded.
+An agent should never need to parse UI copy to decide whether an operation succeeded.
 
 ---
 
-## 9. Authentication and Session Context
+## 9. Authentication and Execution Context
 
-Web/session-based invocation should reuse authenticated Trellis identity where the integration mechanism permits it.
-
-An authenticated browser session does **not** imply unrestricted capability access.
-
-Every invocation must resolve an execution context similar to:
+Where supported, a browser/WebMCP adapter should use the user's authenticated Trellis session. Session authentication does **not** imply unrestricted tool access.
 
 ```ts
 interface AgentExecutionContext {
@@ -296,51 +205,28 @@ interface AgentExecutionContext {
 
 Requirements:
 
-- Authorization is enforced server-side.
-- Supplied `user_id` or `branch_id` values are never trusted merely because an agent sent them.
-- Existing RLS and application-level access rules remain authoritative.
-- Service-role credentials are never exposed to browser/agent clients.
-- Cross-branch operations require explicit authorization.
-- The agent receives only the minimum context needed to complete the requested job.
+- Enforce authorization server-side.
+- Never trust user/branch IDs simply because the agent supplied them.
+- Existing RLS and application access rules remain authoritative.
+- Never expose service-role credentials to browser/agent clients.
+- Require authorization for cross-branch operations.
+- Minimize data returned to the agent.
 
 ---
 
 ## 10. Confirmation Model
 
-The tool layer must distinguish **intent recognition** from **authorization to execute**.
+Intent recognition is not authorization. If an agent infers that a user wants to publish, that alone cannot authorize a Class D action.
 
-An agent deciding that the user wants to publish is not, by itself, sufficient authorization for a Class D action.
+A capability may return `needs_confirmation` with a short summary. Final execution should use a short-lived confirmation token bound to the user, tool, material parameters, destination and expiration. A confirmation for one operation cannot authorize a materially different operation.
 
-A tool may return:
-
-```json
-{
-  "status": "needs_confirmation",
-  "confirmation": {
-    "action": "publish_clip",
-    "summary": "Publish Rekkrd launch clip to YouTube",
-    "expires_at": "..."
-  }
-}
-```
-
-The final execution must use a short-lived confirmation token bound to:
-
-- user;
-- tool;
-- material parameters;
-- target resource/account;
-- expiration.
-
-A confirmation for one action cannot authorize a materially different action.
+Existing human review gates remain policy boundaries. For example, Clip Studio's Approve → B-roll gate should not silently disappear when an agent invokes the workflow.
 
 ---
 
 ## 11. Async Job Model
 
-Media operations can take longer than an interactive tool invocation. Tools must not hold an agent/browser request open for an entire render.
-
-Pattern:
+Long media operations return immediately with a job ID:
 
 ```text
 Agent → generate_video(...)
@@ -353,17 +239,13 @@ Agent → get_job_status(job_id)
       ← completed + asset_id
 ```
 
-Where useful, future transports may support events/subscriptions, but polling must remain a reliable baseline.
-
-This aligns with the existing Trellis render/job architecture planned in Clip Studio.
+Polling is the baseline. Future transports may add events/subscriptions. This aligns with existing Trellis render-job patterns.
 
 ---
 
-## 12. Initial Trellis Capability Inventory
+## 12. Candidate Capability Inventory
 
-The following is the candidate inventory, not a commitment to expose all tools in V1.
-
-### Projects and assets
+### Projects / assets
 
 ```text
 get_project
@@ -375,7 +257,7 @@ get_asset
 search_asset_library
 ```
 
-### Brand intelligence
+### Brand Intelligence
 
 ```text
 get_brand_profile
@@ -397,10 +279,6 @@ create_promo
 
 ### Clip Studio
 
-Existing Clip Studio is an especially strong candidate because it already has a structured workflow: source → script → approval → B-roll → render → publish.
-
-Candidate tools:
-
 ```text
 create_clip_project
 add_clip_source
@@ -412,9 +290,7 @@ get_clip_status
 publish_clip
 ```
 
-The existing human approval gate before B-roll should remain a first-class policy boundary rather than being bypassed for agent use.
-
-### Campaign / social
+### Campaign / Social
 
 ```text
 get_campaign
@@ -432,15 +308,13 @@ get_automation_status
 run_automation
 ```
 
-High-risk automation creation/modification should be deferred until authorization and confirmation semantics are proven.
+Creation/modification of powerful automations should wait until authorization and confirmation semantics are proven.
 
 ---
 
-## 13. Recommended V1
+## 13. Recommended V1 Vertical Slice
 
-The reference conversion model argues for one valuable action working extremely well rather than many shallow actions.
-
-For Trellis, the recommended V1 is a **small creative-production vertical slice**:
+Start with four tools:
 
 ```text
 get_project
@@ -449,20 +323,9 @@ create_promo
 get_job_status
 ```
 
-### Why `create_promo` is the flagship action
+`create_promo` should be the flagship action because it demonstrates Trellis as an orchestrator rather than a thin model wrapper.
 
-It demonstrates Trellis's core value as an orchestrator rather than exposing a thin wrapper around a single model.
-
-A user/agent can express a business goal:
-
-```text
-Create a 30-second Rekkrd launch promo using the approved brand identity,
-existing project assets, voiceover, and a cinematic music bed.
-```
-
-The agent invokes one Trellis capability. Trellis then owns the internal production plan.
-
-Illustrative schema:
+Illustrative input:
 
 ```ts
 create_promo({
@@ -485,24 +348,19 @@ create_promo({
 })
 ```
 
-Return:
+Example intent:
 
-```text
-queued
-job_id
-production_plan summary
-estimated/known cost information when available
-```
+> Create a 30-second Rekkrd launch promo using the approved brand identity, existing project assets, voiceover, and a cinematic music bed.
 
-This creates a meaningful end-to-end proof that an external agent can operate Trellis without understanding its UI.
+The agent should not need to know how Trellis implements script generation, image/video generation, Lyra/music, voice, render workers or asset storage. Trellis owns that production plan.
 
 ---
 
-## 14. WebMCP Adapter Boundary
+## 14. Adapter Boundary
 
-Do not couple domain tools directly to a specific WebMCP/browser API.
+Do not couple domain tools directly to one WebMCP/browser API.
 
-Use an adapter structure conceptually similar to:
+Conceptual organization:
 
 ```text
 agent/
@@ -518,7 +376,7 @@ agent/
   adapters/
     webmcp.ts
     inApp.ts
-    mcp.ts        # future
+    mcp.ts
   tools/
     projects/
     assets/
@@ -526,17 +384,17 @@ agent/
     clips/
 ```
 
-Exact paths should be adjusted to existing repository conventions during implementation.
+Exact paths must be reconciled with repository conventions during implementation.
 
-The registry defines canonical Trellis capabilities. A WebMCP adapter translates those definitions into whatever browser-facing registration mechanism is supported. Future adapters can expose the same capabilities without rewriting business logic.
+The registry is canonical. Adapters translate registered capabilities into the target protocol without rewriting business logic.
 
 ---
 
-## 15. Capability Registry
+## 15. Capability Registry Requirements
 
 The registry is the source of truth for:
 
-- tool name/version;
+- name/version;
 - description;
 - input/output schema;
 - handler;
@@ -544,29 +402,13 @@ The registry is the source of truth for:
 - permission requirements;
 - confirmation policy;
 - cost policy;
-- availability/feature flag.
+- feature flag/availability.
 
-The application should be able to produce an internal capability manifest from this registry for debugging and evaluation.
-
-Example:
-
-```ts
-registerTool({
-  name: 'list_project_assets',
-  version: '1.0',
-  riskClass: 'A',
-  requiredPermissions: ['projects.read'],
-  inputSchema: ListProjectAssetsInput,
-  outputSchema: ListProjectAssetsOutput,
-  handler: listProjectAssets
-});
-```
+Trellis should be able to render an internal capability manifest from the registry for debugging, documentation and evaluation.
 
 ---
 
 ## 16. Audit and Observability
-
-The conversion-agency slide explicitly pairs setup with ongoing **monitoring + evaluations**. This is important technically even if Trellis never commercializes the service.
 
 Create an `agent_tool_invocations` audit record for every invocation.
 
@@ -594,23 +436,129 @@ created_at TIMESTAMPTZ
 completed_at TIMESTAMPTZ nullable
 ```
 
-Do **not** blindly persist sensitive prompts, secrets, credentials, or PII. Existing `sanitizePII()` requirements apply before persisted AI/agent payloads.
+Do not blindly persist prompts, secrets, credentials or PII. Existing `sanitizePII()` rules apply before persisted AI/agent payloads.
 
-Metrics should include:
+Track at minimum:
 
 - invocation count by tool/version;
 - completion rate;
-- schema validation failure rate;
-- authorization denial rate;
-- confirmation abandonment rate;
+- schema-validation failures;
+- authorization denials;
+- confirmation abandonment;
 - median/P95 latency;
 - job failure/retry rate;
 - cost by tool;
-- agent retry loops;
+- repeated agent retry loops;
 - human correction rate where measurable.
 
 ---
 
 ## 17. Evaluation Framework
 
-Agent-ready does not mean "the tool registered successfully." It means an agent can reliably achieve the intended business outcome
+"Agent-ready" means an agent can reliably achieve the intended business outcome, not merely that a tool registered successfully.
+
+Each production tool requires an evaluation suite with:
+
+1. happy-path requests;
+2. ambiguous requests;
+3. invalid/missing parameters;
+4. unauthorized branch/resource access;
+5. duplicate/retried invocation;
+6. provider/job failure;
+7. confirmation-required cases;
+8. cost-threshold cases where applicable;
+9. adversarial parameter attempts;
+10. output-schema validation.
+
+V1 release target:
+
+- 100% schema-valid outputs in controlled evals;
+- zero authorization bypasses;
+- zero unconfirmed Class D executions;
+- idempotent behavior for retry-sensitive writes;
+- ≥95% successful completion of the supported happy-path V1 tasks, excluding documented provider outages.
+
+Maintain a small set of natural-language agent scenarios, not only unit tests. Example:
+
+```text
+"Use the Rekkrd project and make a 30-second vertical launch promo from its approved assets."
+```
+
+The eval should verify correct tool selection, parameter resolution, permission behavior, job creation and final asset retrieval.
+
+---
+
+## 18. Idempotency and Retries
+
+Agents retry. Networks retry. Tool calls must assume duplicate delivery is possible.
+
+Cost-bearing or write operations should accept/generate an idempotency key. Replaying the same invocation must return the existing job/result rather than silently creating duplicate paid generations.
+
+Provider failures must return typed retryability information. Do not encourage an agent to retry permanent validation or permission failures.
+
+---
+
+## 19. Cost Controls
+
+Generation tools should support:
+
+- estimated cost where reasonably knowable;
+- actual cost capture after completion;
+- per-operation limits;
+- per-user/branch budgets where appropriate;
+- variant-count limits;
+- explicit policy for premium/on-demand GPU providers.
+
+The agent should not receive provider secrets. Provider routing remains inside Trellis.
+
+---
+
+## 20. Security Requirements
+
+1. Server-side authorization on every tool.
+2. Validate all inputs against schemas before execution.
+3. Treat agent-generated strings as untrusted input.
+4. Never expose service-role/provider secrets.
+5. Preserve Supabase RLS boundaries.
+6. Redact sensitive audit payloads.
+7. Bind confirmations to exact material actions.
+8. Apply rate limits and abuse controls.
+9. Prevent arbitrary URL/file access through loosely validated tool parameters.
+10. Log security-relevant denials without leaking sensitive details to the caller.
+
+Prompt injection found in project content, URLs, transcripts or brand material must not be allowed to redefine tool permissions or system policy.
+
+---
+
+## 21. Human UI Requirements
+
+Agent-native does not mean invisible automation. Trellis should eventually provide an Agent Activity surface showing:
+
+- recent invocations;
+- calling source/agent;
+- tool and status;
+- associated project/job;
+- cost where relevant;
+- pending confirmations;
+- failures;
+- timestamps.
+
+The existing application should remain the place where a user can inspect and control the work an agent caused Trellis to perform.
+
+---
+
+## 22. Phased Implementation
+
+### Phase A0 — Inventory / service boundary
+
+- Build the UI → service → capability map.
+- Identify which current UI flows already have reusable domain services.
+- Identify business logic trapped inside React components and document only the minimum extraction needed.
+- Lock V1 schemas before implementing transport adapters.
+
+**Exit:** approved capability inventory and V1 contracts.
+
+### Phase A1 — Runtime foundation
+
+- Tool registry.
+- Schema
