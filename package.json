@@ -24,7 +24,7 @@
     "test:social-accounts": "node --test tests/branch-social-accounts-contract.test.mjs tests/youtube-oauth-contract.test.mjs",
     "test:social-oauth": "node --test tests/social-oauth-contract.test.mjs",
     "content": "node scripts/content-intelligence.mjs",
-    "test:content": "node --test tests/content-intelligence.test.mjs tests/content-intelligence-ui.test.mjs",
+    "test:content": "node --test tests/content-intelligence.test.mjs tests/content-intelligence-ui.test.mjs tests/substack-channel.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
