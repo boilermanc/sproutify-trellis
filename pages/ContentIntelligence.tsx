@@ -19,6 +19,7 @@ import {
   ListChecks,
   Plus,
   RefreshCw,
+  Rss,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ import {
   HubContentExperiment,
 } from '../services/contentExperimentRegistryService';
 import ContentExperimentWorkspace from '../components/ContentExperimentWorkspace';
+import SubstackChannelPanel from '../components/SubstackChannelPanel';
 import {
   approveContentLearning,
   ContentLearningPromotion,
@@ -50,7 +52,7 @@ import {
   LearningConfidence,
 } from '../services/contentLearningPromotionService';
 
-type Tab = 'overview' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
+type Tab = 'overview' | 'channels' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
 
 interface Props {
   branchContext: BranchContext;
@@ -59,6 +61,7 @@ interface Props {
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof BrainCircuit }> = [
   { id: 'overview', label: 'Overview', icon: BrainCircuit },
+  { id: 'channels', label: 'Channels', icon: Rss },
   { id: 'guide', label: 'How It Works', icon: BookOpen },
   { id: 'topics', label: 'Topics', icon: Search },
   { id: 'assets', label: 'Assets', icon: FileText },
@@ -617,6 +620,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
         { label: 'Running experiments', value: runningCount, icon: Beaker, color: 'text-violet-600 bg-violet-50' },
         { label: 'Metric snapshots', value: performance.length, icon: Activity, color: 'text-amber-600 bg-amber-50' },
       ].map(item => <article key={item.label} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`inline-flex rounded-xl p-2.5 ${item.color}`}><item.icon size={19} /></div><p className="mt-5 text-3xl font-black text-slate-800">{item.value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</p></article>)}</section><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.topicClusters} empty="No topic landscape documented." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><MarkdownPanel markdown={project.openQuestions} empty="No open questions documented." /></section></div>{missingPartitions.length > 0 && <section className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><div className="flex items-start gap-3"><GitBranch className="mt-0.5 text-amber-600" size={20} /><div><h2 className="font-black text-amber-950">Branches awaiting a content partition</h2><p className="mt-1 text-sm text-amber-800">The framework supports them; each needs its own strategy and empty canonical knowledge files before tracking begins.</p><div className="mt-4 grid gap-2">{missingPartitions.map(branch => <code key={branch.slug} className="overflow-x-auto rounded-xl bg-white/70 px-3 py-2 text-xs text-amber-900">npm run content -- create-project --project {branch.slug} --name '{branch.name.replace(/'/g, "''")}'</code>)}</div></div></div></section>}</div>}
+      {tab === 'channels' && <SubstackChannelPanel addToast={addToast} />}
       {tab === 'guide' && <UsageGuide projectId={project.projectId} />}
       {tab === 'topics' && <TopicTable topics={topics} />}
       {tab === 'assets' && <div className="space-y-8"><PublishedCandidateReview projectId={project.projectId} posts={posts} topics={topics} addToast={addToast} onApproved={handleApproved} /><section><div className="mb-4"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Canonical registry</p><h2 className="mt-1 text-lg font-black text-slate-800">Registered assets</h2></div><AssetTable posts={posts} topics={topics} /></section></div>}
