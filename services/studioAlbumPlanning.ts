@@ -56,6 +56,15 @@ export const STUDIO_STYLE_PRESETS: StudioStylePreset[] = [
     mood_collection: 'French Riviera ’60s', paired_art_style_id: 'photoreal_60s',
   },
   {
+    id: 'mystical_new_age', name: 'Mystical New Age', tagline: 'Ethereal downtempo music with atmospheric synths, world percussion, distant voices, and a mysterious spiritual mood.',
+    genre: 'Mystical New Age Chillout', mood: 'Dreamlike, spiritual, mysterious, peaceful', era: '1990s-inspired contemporary',
+    theme: 'A luminous contemplative journey through ancient landscapes, mist, and quiet revelation', vocal_direction: 'mostly_instrumental', preferred_track_seconds: 150,
+    bpm_range: '75–90 BPM', instruments: ['deep soft electronic kick', 'restrained world percussion', 'breath-like rhythmic textures', 'warm synth bass', 'expansive atmospheric pads', 'haunting flute', 'distant choir textures', 'delicate wordless female vocalizations'],
+    prompt_guidance: 'Build a steady softened downtempo pulse around a simple repeating minor-key bass progression, recognizable ethereal melodies, expansive pads, subtle world percussion, distant choir color, and delicate wordless female vocal textures. Develop gradually through long reverb tails, gentle echoes, immersive stereo layers, and slow evolving transitions rather than verse-and-chorus sections. Keep the spiritual atmosphere mysterious, peaceful, warm, and emotionally uplifting rather than dark. No intelligible lyrics, pop vocals, EDM drops, bright dance synthesizers, aggressive drums, trap percussion, corporate music, jazz improvisation, acoustic singer-songwriter elements, horror effects, or trailer impacts.',
+    artwork_direction: 'Luminous contemplative nature and ancient stone architecture, soft mist, warm dawn light, expansive skies, subtle sacred geometry, calm human-scale detail, and an uplifting spiritual atmosphere without horror or dark occult imagery.',
+    mood_collection: 'Mystical New Age',
+  },
+  {
     id: 'quiet_intelligence', name: 'Quiet Intelligence', tagline: 'Low-cortisol ambient jazz with space, restraint, and architectural calm.',
     genre: 'Minimalist Ambient Jazz', mood: 'Calm, intelligent, introspective, luxurious', era: 'Contemporary with subtle mid-century influence',
     theme: 'A serene modernist interior designed for deep focus and quiet confidence', vocal_direction: 'instrumental', preferred_track_seconds: 150,

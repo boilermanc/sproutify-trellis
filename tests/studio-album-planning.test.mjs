@@ -51,6 +51,21 @@ test('includes French Riviera ’60s as a distinct cinematic lounge preset', () 
   assert.ok(preset.instruments.includes('sweeping strings'));
 });
 
+test('includes Mystical New Age as a pulsed, vocal-textured chillout preset', () => {
+  const preset = planning.getStudioStylePreset('mystical_new_age');
+  assert.equal(preset.name, 'Mystical New Age');
+  assert.equal(preset.genre, 'Mystical New Age Chillout');
+  assert.equal(preset.bpm_range, '75–90 BPM');
+  assert.equal(preset.vocal_direction, 'mostly_instrumental');
+  assert.equal(preset.mood_collection, 'Mystical New Age');
+  assert.equal(preset.paired_art_style_id, undefined);
+  assert.match(preset.prompt_guidance, /steady softened downtempo pulse/);
+  assert.match(preset.prompt_guidance, /rather than verse-and-chorus sections/);
+  assert.match(preset.prompt_guidance, /warm, and emotionally uplifting rather than dark/);
+  assert.match(preset.prompt_guidance, /No intelligible lyrics, pop vocals/);
+  assert.ok(preset.instruments.includes('delicate wordless female vocalizations'));
+});
+
 test('includes the low-cortisol Quiet Intelligence preset with restrained generation guidance', () => {
   const preset = planning.getStudioStylePreset('quiet_intelligence');
   assert.equal(preset.name, 'Quiet Intelligence');
