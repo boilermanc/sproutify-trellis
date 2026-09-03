@@ -27,6 +27,9 @@ test('brief generation injects client-side variation and uses the requested Gemi
 
 test('Card Studio wires an editable suggested brief with guarded loading state', () => {
   assert.match(cardStudio, /import \{ generateCardBrief \} from '\.\.\/services\/aiService'/);
+  assert.match(cardStudio, /const \[brief, setBrief\] = useState\(''\)/);
+  assert.match(cardStudio, /const \[activePreset, setActivePreset\] = useState<string \| null>\(null\)/);
+  assert.match(cardStudio, /placeholder="Describe what you want these cards to say—or click Suggest brief/);
   assert.match(cardStudio, /const \[isSuggestingBrief, setIsSuggestingBrief\] = useState\(false\)/);
   assert.match(cardStudio, /setBrief\(suggestion\)/);
   assert.match(cardStudio, /scriptureMode: selectedBranch\.slug === 'rejoice' \? scripturePolicy : undefined/);

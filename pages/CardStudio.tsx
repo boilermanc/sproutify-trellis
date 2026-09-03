@@ -257,8 +257,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   }, [branchOptions, branchId]);
   const selectedBranch = branchOptions.find((b) => b.id === branchId) || null;
 
-  const [brief, setBrief] = useState(CARD_BRIEF_PRESETS[0]?.brief || '');
-  const [activePreset, setActivePreset] = useState<string | null>(CARD_BRIEF_PRESETS[0]?.label ?? null);
+  const [brief, setBrief] = useState('');
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   const [count, setCount] = useState(3);
   const [scripturePolicy, setScripturePolicy] = useState<ScripturePolicy>('mix');
   const [creativeDirectionId, setCreativeDirectionId] = useState('variety');
@@ -1062,7 +1062,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
             value={brief}
             onChange={(e) => { setBrief(e.target.value); setActivePreset(null); }}
             rows={4}
-            placeholder="e.g. Create some Instagram ads, motivational ideas we'd post daily that tie into Rejoice..."
+            placeholder="Describe what you want these cards to say—or click Suggest brief for a fresh, brand-aware starting point. Include the audience, moment, tone, and action you want."
             className="w-full text-sm border border-slate-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-y"
           />
         </div>
