@@ -94,7 +94,7 @@ Existing provider credentials remain in their current server-side locations. No 
 - PS-002 proof contracts: 10 passing.
 - TypeScript: `npx tsc --noEmit` passes.
 - Edge Functions: Deno type-check passes for `promo-studio` and `promo-worker`.
-- Production build: `npm run build` passes. On 2026-09-03 the two audio/publishing migrations were applied to the Hub and `promo-studio` v17 was deployed with JWT verification; the guided frontend ships through the `main` release workflow.
+- Production build: `npm run build` passes. On 2026-09-03 the two audio/publishing migrations were applied to the Hub, `promo-studio` v17 was deployed with JWT verification, and the guided frontend was verified live at commit `df71060` through the `main` release workflow.
 - Responsive UI smoke check: desktop and 390px mobile Promo Studio layouts render without horizontal overflow or browser console warnings/errors.
 - Diff hygiene: `git diff --check` passes.
 
@@ -105,7 +105,8 @@ Existing provider credentials remain in their current server-side locations. No 
 3. Each branch still needs its verified repository/capture source configured. The Hub currently has nine active branches and active Brand Identities for eight; Sweetwater Urban Farms needs a completed active Brand Identity.
 4. Gemini TTS and exact phrase alignment are implemented, but the worker is not installed or enabled on the VPS. Per-profile voice choices must be added server-side where a branch should not use the default voice. Word-level timing remains intentionally absent until a trustworthy provider is selected.
 5. The deployed Edge worker remains intentionally no-op-only. Capture, music, voice, and render now have isolated external runtimes, but they still require VPS installation, server-only configuration, and one controlled job each before their independent claim switches are enabled. The active S1 scheduler is still required for production publishing.
+6. The production SSH endpoint is `sproutify-prod:2222`. Direct SSH from the Codex execution environment timed out before authentication, so the VPS worker installation could not be completed from this session.
 
 ## Next gate
 
-Confirm the `main` frontend release against `/build-info.txt`, then configure verified source records for each branch. Complete Sweetwater Urban Farms' Brand Identity; install capture, voice, music, and render services with all claim switches initially off; and run one approval-first non-Rekkrd smoke job stage by stage before enabling continuous claims. Exercise private repository evidence only after a fine-grained, read-only `GITHUB_READ_TOKEN` is configured; do not fabricate repository evidence or weaken access controls.
+Restore an SSH-capable route to `sproutify-prod:2222`, then configure verified source records for each branch. Complete Sweetwater Urban Farms' Brand Identity; install capture, voice, music, and render services with all claim switches initially off; and run one approval-first non-Rekkrd smoke job stage by stage before enabling continuous claims. Exercise private repository evidence only after a fine-grained, read-only `GITHUB_READ_TOKEN` is configured; do not fabricate repository evidence or weaken access controls.

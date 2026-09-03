@@ -1,5 +1,11 @@
 # Trellis Workers (IONOS VPS)
 
+Production SSH uses the saved `sproutify-prod` host alias on port `2222`:
+
+```bash
+ssh -p 2222 sproutify-prod
+```
+
 Two Flask workers back the heavy media steps of the AI content pipeline:
 
 | Worker | Port | Endpoint | Job |
