@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PROMO_CAMERA_MOVEMENT_IDS } from './cameraDirections.ts';
 
 export const PROMO_MANIFEST_SCHEMA_VERSION = '1.0.0' as const;
 export const PROMO_FORMATS = ['9:16', '16:9', '1:1'] as const;
@@ -145,6 +146,15 @@ const sceneSchema = z.object({
     asset_id: nonEmpty.nullable().default(null),
     capture_scenario_id: nonEmpty.nullable().default(null),
     generated_visual_disclosed: z.boolean(),
+    camera: z.object({
+      movement: z.enum(PROMO_CAMERA_MOVEMENT_IDS),
+      execution: z.enum(['source_generation', 'post_production', 'capture', 'reference_only']),
+      speed: z.enum(['still', 'slow', 'moderate', 'fast', 'adaptive']),
+      framing: nonEmpty.max(500),
+      end_frame: nonEmpty.max(500),
+      subject_action: z.string().trim().max(500).nullable(),
+      mood: z.string().trim().max(500).nullable(),
+    }).strict().nullable().default(null),
   }).strict(),
   transition: z.object({ type: z.enum(['cut', 'fade', 'dissolve', 'slide']), duration_seconds: z.number().nonnegative() }).strict(),
   layout: jsonObject,

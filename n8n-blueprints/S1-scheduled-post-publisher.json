@@ -219,7 +219,7 @@
           "conditions": [
             {
               "id": "has-generated-source",
-              "leftValue": "={{ $json.source_media_asset_id || '' }}",
+"leftValue": "={{ $json.source_media_asset_id || $json.source_promo_asset_id || '' }}",
               "rightValue": "",
               "operator": {
                 "type": "string",

@@ -43,6 +43,8 @@ export interface PromoJob {
   attempt_count: number;
   error_code: string | null;
   error_message: string | null;
+  input?: Record<string, any>;
+  output_asset_ids?: string[];
   created_at: string;
 }
 
@@ -60,6 +62,20 @@ export interface PromoBranchSource {
   is_active: boolean;
 }
 
+export interface PromoBranchReadiness {
+  branch_id: string;
+  branch_slug: string;
+  branch_name: string;
+  repository_ready: boolean;
+  brand_ready: boolean;
+  capture_ready: boolean;
+  instagram_ready: boolean;
+  generation_ready: boolean;
+  fully_ready: boolean;
+  blockers: string[];
+  source: PromoBranchSource | null;
+}
+
 export interface PromoProjectDetail {
   project: PromoProject;
   source: PromoBranchSource | null;
@@ -69,6 +85,8 @@ export interface PromoProjectDetail {
   approvals: Array<Record<string, unknown>>;
   assets: Array<Record<string, unknown>>;
   capture_runs: PromoCaptureRun[];
+  voice_takes: Array<Record<string, any>>;
+  music_takes: Array<Record<string, any>>;
   events: Array<Record<string, unknown>>;
 }
 
@@ -91,6 +109,23 @@ async function callPromo<T>(action: string, payload: Record<string, unknown> = {
 
 export async function listPromoProjects() {
   return (await callPromo<{ projects: PromoProject[] }>('list_projects')).projects;
+}
+
+export async function listPromoBranchReadiness() {
+  return callPromo<{ branches: PromoBranchReadiness[]; can_configure: boolean }>('list_branch_readiness');
+}
+
+export async function upsertPromoBranchSource(input: {
+  branch_id: string;
+  repository_full_name: string;
+  default_ref: string;
+  permitted_paths: string[];
+  prohibited_paths: string[];
+  capture_base_url: string | null;
+  capture_fixture_key: string | null;
+  capture_auth_profile_key: string | null;
+}) {
+  return callPromo<{ source: PromoBranchSource }>('upsert_branch_source', input);
 }
 
 export async function createPromoProject(input: {
@@ -133,6 +168,24 @@ export async function approvePromoScript(projectId: string) {
 export async function adoptPromoCapture(projectId: string, captureRunId: string) {
   return callPromo<{ revision: PromoRevision; capture_run_id: string }>('adopt_capture', {
     project_id: projectId, capture_run_id: captureRunId,
+  });
+}
+
+export async function adoptPromoVoiceGeneration(projectId: string, takeId: string) {
+  return callPromo<{ revision: PromoRevision; take_id: string; selected: false }>('adopt_voice_generation', {
+    project_id: projectId, take_id: takeId,
+  });
+}
+
+export async function adoptPromoVoiceAlignment(projectId: string, takeId: string) {
+  return callPromo<{ revision: PromoRevision; take_id: string; selected: true }>('adopt_voice_alignment', {
+    project_id: projectId, take_id: takeId,
+  });
+}
+
+export async function adoptPromoMusic(projectId: string, takeId: string) {
+  return callPromo<{ revision: PromoRevision; take_id: string; selected: true }>('adopt_music', {
+    project_id: projectId, take_id: takeId,
   });
 }
 
@@ -186,6 +239,23 @@ export async function reviewPromoPreview(
   return (await callPromo<{ approval: Record<string, unknown> }>('review_preview', {
     project_id: projectId, decision, reason,
   })).approval;
+}
+
+export async function schedulePromoFinalPublish(
+  projectId: string,
+  assetId: string,
+  caption: string,
+  scheduledFor: string,
+) {
+  return callPromo<{ scheduled_post_id: string }>('schedule_final_publish', {
+    project_id: projectId, asset_id: assetId, caption, scheduled_for: scheduledFor,
+  });
+}
+
+export async function signPromoAsset(projectId: string, assetId: string) {
+  return callPromo<{ asset_id: string; signed_url: string; expires_in: number }>('sign_asset', {
+    project_id: projectId, asset_id: assetId,
+  });
 }
 
 export async function cancelPromoJob(projectId: string, jobId: string) {

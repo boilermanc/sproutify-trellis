@@ -8,6 +8,8 @@ import PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA from './supabase/migrations/20260
 import PROMO_RENDER_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260825211425_complete_promo_render_job.sql?raw';
 import PROMO_CAPTURE_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260826180018_complete_promo_capture_job.sql?raw';
 import PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA from './supabase/migrations/20260826183711_add_promo_revision_asset_bindings.sql?raw';
+import PROMO_AUDIO_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260903160245_complete_promo_audio_jobs.sql?raw';
+import PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA from './supabase/migrations/20260903161325_link_promo_to_scheduled_publishing.sql?raw';
 
 export interface BriefAxis {
   name: string;
@@ -2888,6 +2890,8 @@ ${PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA}
 ${PROMO_RENDER_COMPLETION_SQL_SCHEMA}
 ${PROMO_CAPTURE_COMPLETION_SQL_SCHEMA}
 ${PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA}
+${PROMO_AUDIO_COMPLETION_SQL_SCHEMA}
+${PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

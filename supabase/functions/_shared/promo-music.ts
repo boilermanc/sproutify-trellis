@@ -21,6 +21,23 @@ function configuredStrings(value: unknown, min = 0, max = 20): value is string[]
   return Array.isArray(value) && value.length >= min && value.length <= max && value.every(configured);
 }
 
+function manifestAsset(row: Record<string, any>) {
+  if (!configured(row.id) || row.status !== "ready" || row.kind !== "music_master"
+    || !configured(row.role) || !configured(row.storage_bucket) || !configured(row.storage_path)
+    || row.mime_type !== "audio/wav" || !/^[a-f0-9]{64}$/i.test(String(row.checksum_sha256 || ""))) {
+    throw new PromoMusicReadinessError("PROMO_MUSIC_ASSET_INVALID", "Completed music asset is incomplete or not ready.");
+  }
+  return {
+    id: row.id, kind: row.kind, role: row.role, storage_bucket: row.storage_bucket,
+    storage_path: row.storage_path, mime_type: row.mime_type, checksum_sha256: row.checksum_sha256,
+    duration_seconds: Number(row.duration_seconds), width: null, height: null,
+    provenance: {
+      source_kind: "provider", source_ref: `job:${row.provenance?.job_id || "unknown"}`,
+      generated: true, approved: true,
+    },
+  };
+}
+
 function parseBrief(value: unknown) {
   if (!configured(value)) throw new PromoMusicReadinessError("PROMO_MUSIC_BRIEF_REQUIRED", "An approved structured music brief is required.");
   let brief: unknown;
@@ -101,4 +118,46 @@ export function buildPromoMusicGenerationJobInput(manifestValue: unknown, direct
       avoid: brief.avoid,
     },
   };
+}
+
+export function applyPromoMusicAdoption(
+  manifestValue: unknown,
+  takeValue: unknown,
+  audioAssetValue: unknown,
+  jobIdValue: unknown,
+) {
+  if (!record(manifestValue) || !record(manifestValue.music) || !Array.isArray(manifestValue.music.takes)
+    || !record(manifestValue.voice) || !record(manifestValue.promo) || !record(manifestValue.run_lineage)
+    || !Array.isArray(manifestValue.assets)) {
+    throw new PromoMusicReadinessError("PROMO_MUSIC_MANIFEST_INVALID", "Music manifest is invalid.");
+  }
+  if (!record(takeValue) || !record(audioAssetValue) || !configured(jobIdValue)
+    || !configured(takeValue.id) || !Number.isInteger(takeValue.take_number)
+    || !MUSIC_DIRECTIONS.has(takeValue.direction) || !configured(takeValue.provider)
+    || !configured(takeValue.model) || takeValue.status !== "ready" || takeValue.selected !== false
+    || takeValue.audio_asset_id !== audioAssetValue.id || !Number.isFinite(Number(takeValue.duration_seconds))
+    || Number(takeValue.duration_seconds) < Number(manifestValue.promo.target_seconds)) {
+    throw new PromoMusicReadinessError("PROMO_MUSIC_RESULT_INVALID", "Completed music generation result is invalid.");
+  }
+  if (manifestValue.music.takes.some((take: any) => take?.id === takeValue.id
+    || Number(take?.take_number) === Number(takeValue.take_number))) {
+    throw new PromoMusicReadinessError("PROMO_MUSIC_RESULT_DUPLICATE", "Music take is already present in the active manifest.");
+  }
+  const manifest = structuredClone(manifestValue);
+  const asset = manifestAsset(audioAssetValue);
+  manifest.assets.push(asset);
+  for (const take of manifest.music.takes) take.selected = false;
+  manifest.music.takes.push({
+    id: takeValue.id, take_number: Number(takeValue.take_number), direction: takeValue.direction,
+    provider: takeValue.provider, model: takeValue.model, provider_job_id: takeValue.provider_job_id || null,
+    audio_asset_id: takeValue.audio_asset_id, duration_seconds: Number(takeValue.duration_seconds),
+    selected: true, status: "ready", cue_markers: Array.isArray(takeValue.cue_markers) ? takeValue.cue_markers : [],
+  });
+  manifest.music.selected_take_id = takeValue.id;
+  manifest.run_lineage.job_ids = [...new Set([...(manifest.run_lineage.job_ids || []), jobIdValue])];
+  if (configured(takeValue.provider_job_id)) manifest.run_lineage.provider_ids = [...new Set([...(manifest.run_lineage.provider_ids || []), takeValue.provider_job_id])];
+  manifest.run_lineage.output_checksums = [...new Set([...(manifest.run_lineage.output_checksums || []), audioAssetValue.checksum_sha256])];
+  manifest.run_lineage.estimated_cost_usd = Number(manifest.run_lineage.estimated_cost_usd || 0) + Math.max(0, Number(takeValue.estimated_cost_usd || 0));
+  manifest.promo.status = manifest.voice.selected_take_id ? "asset_review" : "audio_review";
+  return manifest;
 }

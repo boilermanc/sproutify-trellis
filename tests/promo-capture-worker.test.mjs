@@ -4,6 +4,8 @@ import test from 'node:test';
 
 import { executePromoCaptureClaim } from '../workers/promo-capture-worker/executor.mjs';
 import { inspectPromoCaptureClaim } from '../workers/promo-capture-worker/preflight.mjs';
+import { visibleTextContainsPii } from '../workers/promo-capture-worker/playwright-adapter.mjs';
+import { createPromoCaptureRuntime } from '../workers/promo-capture-worker/runtime.mjs';
 import { fingerprintPromoInput } from '../workers/promo-render-worker/preflight.mjs';
 
 const id = suffix => `90000000-0000-4000-8000-${String(suffix).padStart(12, '0')}`;
@@ -97,4 +99,68 @@ test('executor fails closed and removes uploads when atomic completion rejects',
   } }), error => error.code === 'PROMO_CAPTURE_COMPLETION_REJECTED');
   assert.deepEqual(cleanups[0].paths, uploads.map(item => item.path));
   assert.equal(failures[0].retryable, false);
+});
+
+const query = source => {
+  let rows = [...source];
+  const builder = {
+    select: () => builder,
+    eq: (key, value) => { rows = rows.filter(row => row[key] === value); return builder; },
+    maybeSingle: async () => ({ data: rows[0] || null, error: null }),
+  };
+  return builder;
+};
+
+test('capture runtime stays credential-lazy until its explicit claim switch is enabled', async () => {
+  let clients = 0;
+  const runtime = createPromoCaptureRuntime({ environment: {}, clientFactory: () => { clients += 1; } });
+  assert.equal(runtime.config.claimsEnabled, false);
+  assert.deepEqual(await runtime.processOnce(), { claimed: false, disabled: true });
+  assert.equal(clients, 0);
+});
+
+test('enabled capture runtime claims only capture jobs and completes through the atomic RPC', async () => {
+  const context = fixture();
+  const rpcCalls = []; const uploads = [];
+  let claimed = false; let uuidIndex = 20;
+  const db = {
+    rpc: async (name, parameters) => {
+      rpcCalls.push({ name, parameters });
+      if (name === 'claim_promo_job') {
+        if (claimed) return { data: [], error: null };
+        claimed = true; return { data: [context.job], error: null };
+      }
+      return { data: true, error: null };
+    },
+    from: table => query(table === 'promo_projects' ? [context.project]
+      : table === 'promo_branch_sources' ? [context.branch_source] : [context.scenario]),
+    storage: { from: bucket => ({
+      upload: async (path, bytes, options) => { uploads.push({ bucket, path, bytes, options }); return { error: null }; },
+      remove: async () => ({ error: null }),
+    }) },
+  };
+  const runtime = createPromoCaptureRuntime({
+    environment: {
+      SUPABASE_URL: 'https://hub.example', SUPABASE_SERVICE_ROLE_KEY: 'server-only',
+      PROMO_CAPTURE_CLAIMS_ENABLED: 'true', PROMO_CAPTURE_WORKER_ID: context.worker_id,
+      PROMO_CAPTURE_FIXTURE_MAP_JSON: JSON.stringify({ 'rekkrd-fixture-v1': { record_ms: 1000 } }),
+      PROMO_CAPTURE_AUTH_MAP_JSON: JSON.stringify({ 'rekkrd-auth-v1': { storage_state: {} } }),
+    },
+    clientFactory: () => db, uuid: () => id(uuidIndex++), capture: async () => artifact(context),
+  });
+  const result = await runtime.processOnce();
+  assert.equal(result.completed, true);
+  assert.deepEqual(rpcCalls[0], { name: 'claim_promo_job', parameters: {
+    p_worker_id: context.worker_id, p_lease_seconds: 300, p_job_types: ['capture'],
+  } });
+  assert.equal(rpcCalls.some(call => call.name === 'complete_promo_capture_job'), true);
+  assert.equal(rpcCalls.some(call => call.name === 'complete_promo_job'), false);
+  assert.equal(uploads.length, 3);
+  assert.equal(uploads.every(item => item.options.upsert === false), true);
+});
+
+test('capture browser boundary detects obvious unmasked PII and secrets', () => {
+  assert.equal(visibleTextContainsPii('Contact jane@example.com'), true);
+  assert.equal(visibleTextContainsPii('Call (404) 555-0199'), true);
+  assert.equal(visibleTextContainsPii('A safe product preview without customer data'), false);
 });

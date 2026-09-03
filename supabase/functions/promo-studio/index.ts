@@ -9,12 +9,18 @@ import {
 } from "../_shared/promo-studio.ts";
 import { buildGitHubEvidenceMap } from "../_shared/github-evidence.ts";
 import { applyPromoCaptureAdoption, buildPromoCaptureJobInput } from "../_shared/promo-capture.ts";
-import { buildPromoVoiceAlignmentJobInput, buildPromoVoiceGenerationJobInput } from "../_shared/promo-voice.ts";
-import { buildPromoMusicGenerationJobInput } from "../_shared/promo-music.ts";
+import {
+  applyPromoVoiceAlignmentAdoption, applyPromoVoiceGenerationAdoption,
+  buildPromoVoiceAlignmentJobInput, buildPromoVoiceGenerationJobInput,
+} from "../_shared/promo-voice.ts";
+import { applyPromoMusicAdoption, buildPromoMusicGenerationJobInput } from "../_shared/promo-music.ts";
 import { buildPromoRenderJobInput } from "../_shared/promo-render.ts";
 import {
   buildPromoCreativeDirectorPrompt, materializePromoCreativePlan, parsePromoCreativePlan,
 } from "../_shared/promo-creative-plan.ts";
+import {
+  buildPromoBranchReadiness, validatePromoBranchSourceUpdate,
+} from "../_shared/promo-branch-readiness.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -107,6 +113,7 @@ async function persistPromoReviewProjection(db: any, projectId: string, revision
 async function persistPromoRevisionAssetBindings(db: any, input: {
   projectId: string; sourceRevisionId: string; targetRevisionId: string;
   manifest: Record<string, any>; adoptedAssetIds?: string[];
+  adoptedBindingReason?: "capture_adoption" | "voice_adoption" | "music_adoption" | "manual_adoption";
 }) {
   const assetIds = [...new Set((Array.isArray(input.manifest.assets) ? input.manifest.assets : [])
     .map((asset: any) => asset?.id))];
@@ -121,7 +128,7 @@ async function persistPromoRevisionAssetBindings(db: any, input: {
   const adopted = new Set(input.adoptedAssetIds || []);
   const { error } = await db.from("promo_revision_assets").insert(assetIds.map(assetId => ({
     project_id: input.projectId, revision_id: input.targetRevisionId, asset_id: assetId,
-    binding_reason: adopted.has(assetId) ? "capture_adoption" : "revision_carry_forward",
+    binding_reason: adopted.has(assetId) ? (input.adoptedBindingReason || "manual_adoption") : "revision_carry_forward",
   })));
   if (error) throw new Error(`Could not bind Promo Studio revision assets: ${error.message}`);
 }
@@ -129,6 +136,7 @@ async function persistPromoRevisionAssetBindings(db: any, input: {
 async function createManifestRevision(db: any, input: {
   project: any; current: any; candidate: Record<string, any>; userId: string; reason: string;
   diff?: unknown[]; adoptedAssetIds?: string[];
+  adoptedBindingReason?: "capture_adoption" | "voice_adoption" | "music_adoption" | "manual_adoption";
 }) {
   const revisionId = crypto.randomUUID();
   const revisionNumber = Number(input.current.revision_number) + 1;
@@ -151,7 +159,7 @@ async function createManifestRevision(db: any, input: {
     await persistPromoReviewProjection(db, input.project.id, revisionId, manifest);
     await persistPromoRevisionAssetBindings(db, {
       projectId: input.project.id, sourceRevisionId: input.current.id, targetRevisionId: revisionId,
-      manifest, adoptedAssetIds: input.adoptedAssetIds,
+      manifest, adoptedAssetIds: input.adoptedAssetIds, adoptedBindingReason: input.adoptedBindingReason,
     });
     const { data: activated, error: projectError } = await db.from("promo_projects")
       .update({
@@ -190,6 +198,54 @@ Deno.serve(async (req: Request) => {
       const { data, error } = await query;
       if (error) throw new Error(`Could not load Promo Studio projects: ${error.message}`);
       return json({ projects: data || [] });
+    }
+
+    if (action === "list_branch_readiness") {
+      const { data: activeBranches, error: branchError } = await db.from("branches")
+        .select("id,name,slug,is_active").eq("is_active", true).order("name");
+      if (branchError) throw new Error(`Could not load Promo Studio branches: ${branchError.message}`);
+      const allowedIds = ["owner", "admin"].includes(operator.role)
+        ? new Set((activeBranches || []).map((branch: any) => branch.id))
+        : new Set(await branchIdsFor(db, operator.id));
+      const visibleBranches = (activeBranches || []).filter((branch: any) => allowedIds.has(branch.id));
+      if (!visibleBranches.length) return json({ branches: [], can_configure: ["owner", "admin"].includes(operator.role) });
+      const visibleIds = visibleBranches.map((branch: any) => branch.id);
+      const visibleSlugs = visibleBranches.map((branch: any) => branch.slug);
+      const [{ data: sources, error: sourceError }, { data: identities, error: identityError },
+        { data: accounts, error: accountError }] = await Promise.all([
+        db.from("promo_branch_sources").select("*").in("branch_id", visibleIds),
+        db.from("brand_identities").select("id,branch_id,name,status,color_palette,typography,updated_at")
+          .in("branch_id", visibleSlugs).eq("status", "active"),
+        db.from("branch_social_accounts").select("id,branch_id,platform,status,is_primary,handle")
+          .in("branch_id", visibleIds).eq("platform", "instagram"),
+      ]);
+      if (sourceError || identityError || accountError) {
+        throw new Error(sourceError?.message || identityError?.message || accountError?.message || "Could not load branch readiness.");
+      }
+      return json({
+        branches: buildPromoBranchReadiness({
+          branches: visibleBranches, sources: sources || [], brandIdentities: identities || [], socialAccounts: accounts || [],
+        }),
+        can_configure: ["owner", "admin"].includes(operator.role),
+      });
+    }
+
+    if (action === "upsert_branch_source") {
+      if (!["owner", "admin"].includes(operator.role)) throw new Error("Owner or admin access is required to configure branch evidence.");
+      const input = validatePromoBranchSourceUpdate(body);
+      const { data: branch, error: branchError } = await db.from("branches").select("id,slug,is_active")
+        .eq("id", input.branchId).eq("is_active", true).maybeSingle();
+      if (branchError || !branch) throw new Error("The selected branch is unavailable.");
+      const { data: source, error } = await db.from("promo_branch_sources").upsert({
+        organization_id: ORGANIZATION_ID, branch_id: branch.id, repository_provider: "github",
+        repository_full_name: input.repositoryFullName, default_ref: input.defaultRef,
+        permitted_paths: input.permittedPaths, prohibited_paths: input.prohibitedPaths,
+        capture_base_url: input.captureBaseUrl, capture_fixture_key: input.captureFixtureKey,
+        capture_auth_profile_key: input.captureAuthProfileKey, is_active: true,
+        metadata: { configured_via: "promo_studio", configured_by: userId },
+      }, { onConflict: "branch_id" }).select("*").single();
+      if (error || !source) throw new Error(`Could not save branch evidence source: ${error?.message || "unknown error"}`);
+      return json({ source });
     }
 
     if (action === "create_project") {
@@ -262,6 +318,13 @@ Deno.serve(async (req: Request) => {
       ]);
       if (sourceError || !source) throw new Error("This branch has no verified product repository mapping.");
       if (currentError || !current) throw new Error("Could not load the active Promo Manifest.");
+      const branchSlug = current.manifest?.promo?.branch?.slug;
+      const { data: activeBrandIdentities, error: brandIdentityError } = await db.from("brand_identities")
+        .select("id,branch_id,name,status,voice,color_palette,typography,updated_at")
+        .eq("branch_id", branchSlug).eq("status", "active").limit(2);
+      if (brandIdentityError || activeBrandIdentities?.length !== 1) {
+        throw new Error("Creative planning requires one complete active Brand Identity for this branch.");
+      }
       const evidence = await buildGitHubEvidenceMap({
         repository: source.repository_full_name, ref: source.default_ref,
         permitted_paths: source.permitted_paths, prohibited_paths: source.prohibited_paths,
@@ -296,7 +359,7 @@ Deno.serve(async (req: Request) => {
       const assetPath = `${project.id}/${revisionId}/creative-plan-response.json`;
       const rawBytes = new TextEncoder().encode(JSON.stringify(plan));
       const rawChecksum = await sha256Hex(rawBytes);
-      const manifest = materializePromoCreativePlan(current.manifest, plan, evidence, source);
+      const manifest = materializePromoCreativePlan(current.manifest, plan, evidence, source, activeBrandIdentities[0]);
       Object.assign(manifest.promo, {
         id: project.id, organization_id: project.organization_id, owner_id: project.created_by,
         revision_id: revisionId, revision: revisionNumber, parent_revision_id: current.id, updated_at: now,
@@ -360,7 +423,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "get_project") {
-      const [revision, revisions, jobs, approvals, assets, captureRuns, events, source] = await Promise.all([
+      const [revision, revisions, jobs, approvals, assets, captureRuns, voiceTakes, musicTakes, events, source] = await Promise.all([
         project.current_revision_id ? db.from("promo_manifest_revisions").select("*").eq("id", project.current_revision_id).maybeSingle() : { data: null, error: null },
         db.from("promo_manifest_revisions").select("id,revision_number,parent_revision_id,reason,schema_version,manifest_fingerprint,immutable_at,created_at,created_by").eq("project_id", project.id).order("revision_number", { ascending: false }).limit(50),
         db.from("promo_jobs").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
@@ -368,11 +431,13 @@ Deno.serve(async (req: Request) => {
         db.from("promo_assets").select("*").eq("project_id", project.id).neq("status", "archived").order("created_at", { ascending: false }).limit(200),
         project.current_revision_id ? db.from("promo_capture_runs").select("*").eq("project_id", project.id)
           .eq("revision_id", project.current_revision_id).order("created_at", { ascending: false }).limit(50) : { data: [], error: null },
+        db.from("promo_voice_takes").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(50),
+        db.from("promo_music_takes").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(50),
         db.from("promo_events").select("*").eq("project_id", project.id).order("created_at", { ascending: false }).limit(100),
         db.from("promo_branch_sources").select("*").eq("branch_id", project.branch_id).eq("is_active", true).maybeSingle(),
       ]);
-      for (const result of [revision, revisions, jobs, approvals, assets, captureRuns, events, source]) if (result.error) throw new Error(`Could not load Promo Studio project: ${result.error.message}`);
-      return json({ project, source: source.data, revision: revision.data, revisions: revisions.data || [], jobs: jobs.data || [], approvals: approvals.data || [], assets: assets.data || [], capture_runs: captureRuns.data || [], events: events.data || [] });
+      for (const result of [revision, revisions, jobs, approvals, assets, captureRuns, voiceTakes, musicTakes, events, source]) if (result.error) throw new Error(`Could not load Promo Studio project: ${result.error.message}`);
+      return json({ project, source: source.data, revision: revision.data, revisions: revisions.data || [], jobs: jobs.data || [], approvals: approvals.data || [], assets: assets.data || [], capture_runs: captureRuns.data || [], voice_takes: voiceTakes.data || [], music_takes: musicTakes.data || [], events: events.data || [] });
     }
 
     if (action === "create_revision") {
@@ -423,7 +488,7 @@ Deno.serve(async (req: Request) => {
       const candidate = applyPromoCaptureAdoption(current.manifest, scenario, { ...run, job_id: events[0].job_id }, assets);
       const created = await createManifestRevision(db, {
         project, current, candidate, userId, reason: `Adopted verified capture ${scenario.scenario_key}`,
-        adoptedAssetIds: artifactIds,
+        adoptedAssetIds: artifactIds, adoptedBindingReason: "capture_adoption",
         diff: [{ op: "capture_adoption", capture_run_id: run.id, scenario_key: scenario.scenario_key,
           source_revision_id: current.id, artifact_asset_ids: artifactIds }],
       });
@@ -433,6 +498,77 @@ Deno.serve(async (req: Request) => {
           source_revision_id: current.id, artifact_asset_ids: artifactIds, fingerprint: created.fingerprint },
       });
       return json({ revision: created.revision, capture_run_id: run.id }, 201);
+    }
+
+    if (["adopt_voice_generation", "adopt_voice_alignment", "adopt_music"].includes(action)) {
+      if (!project.current_revision_id || !isPromoUuid(body.take_id)) throw new Error("A valid completed audio take is required.");
+      const { data: current, error: currentError } = await db.from("promo_manifest_revisions").select("*")
+        .eq("id", project.current_revision_id).single();
+      if (currentError || !current) throw new Error("Could not load the active Promo Manifest.");
+
+      const voiceAction = action.startsWith("adopt_voice");
+      const expectedStage = action === "adopt_voice_generation" ? "voice_generate"
+        : action === "adopt_voice_alignment" ? "voice_align" : "music_generate";
+      const takeQuery = voiceAction
+        ? db.from("promo_voice_takes").select("*").eq("id", body.take_id).eq("project_id", project.id).maybeSingle()
+        : db.from("promo_music_takes").select("*").eq("id", body.take_id).eq("project_id", project.id).maybeSingle();
+      const [{ data: take, error: takeError }, { data: events, error: eventsError }] = await Promise.all([
+        takeQuery,
+        db.from("promo_events").select("job_id,details").eq("project_id", project.id)
+          .eq("revision_id", current.id).eq("event_type", "job.succeeded").eq("stage", expectedStage)
+          .contains("details", { take_id: body.take_id }).limit(2),
+      ]);
+      if (takeError || !take) throw new Error("Completed audio take was not found for this project.");
+      if (eventsError || events?.length !== 1 || !isPromoUuid(events[0].job_id)) {
+        throw new Error("Audio completion audit lineage is missing or ambiguous.");
+      }
+
+      const assetId = action === "adopt_voice_alignment" ? take.alignment_asset_id : take.audio_asset_id;
+      if (!isPromoUuid(assetId)) throw new Error("Completed audio result has no verified output asset.");
+      const { data: asset, error: assetError } = await db.from("promo_assets").select("*")
+        .eq("id", assetId).eq("project_id", project.id).eq("revision_id", current.id)
+        .eq("status", "ready").maybeSingle();
+      if (assetError || !asset) throw new Error("Completed audio output is not ready on the active revision.");
+
+      const candidate = action === "adopt_voice_generation"
+        ? applyPromoVoiceGenerationAdoption(current.manifest, take, asset, events[0].job_id)
+        : action === "adopt_voice_alignment"
+        ? applyPromoVoiceAlignmentAdoption(current.manifest, take, asset, asset.provenance?.alignment, events[0].job_id)
+        : applyPromoMusicAdoption(current.manifest, take, asset, events[0].job_id);
+      const gate = action === "adopt_music" ? "music" : "voice";
+      const finalSelection = action !== "adopt_voice_generation";
+      const created = await createManifestRevision(db, {
+        project, current, candidate, userId,
+        reason: action === "adopt_voice_generation" ? `Adopted voice take ${take.take_number} for alignment`
+          : action === "adopt_voice_alignment" ? `Approved aligned voice take ${take.take_number}`
+          : `Approved music take ${take.take_number}`,
+        adoptedAssetIds: [asset.id], adoptedBindingReason: gate === "voice" ? "voice_adoption" : "music_adoption",
+        diff: [{ op: action, take_id: take.id, source_revision_id: current.id, artifact_asset_ids: [asset.id] }],
+      });
+      if (finalSelection) {
+        const { error: approvalError } = await db.from("promo_approvals").insert({
+          project_id: project.id, revision_id: created.revisionId, gate, subject_type: "take",
+          subject_id: take.id, decision: "approved", decided_by: userId,
+          reason: gate === "voice" ? "Approved aligned voice take" : "Approved music take",
+        });
+        const takeTable = gate === "voice" ? "promo_voice_takes" : "promo_music_takes";
+        const { error: selectionError } = await db.from(takeTable)
+          .update({ selected: true, updated_at: new Date().toISOString() }).eq("id", take.id);
+        if (approvalError || selectionError) {
+          await db.from("promo_projects").update({
+            current_revision_id: current.id, status: current.manifest.promo.status,
+            selected_preview_render_id: project.selected_preview_render_id, final_approved_at: project.final_approved_at,
+          }).eq("id", project.id).eq("current_revision_id", created.revisionId);
+          await db.from("promo_manifest_revisions").delete().eq("id", created.revisionId);
+          throw new Error(`Could not record ${gate} approval: ${approvalError?.message || selectionError?.message}`);
+        }
+      }
+      await audit(db, {
+        projectId: project.id, revisionId: created.revisionId, event: `${gate}.adopted`, stage: expectedStage,
+        actorId: userId, details: { take_id: take.id, source_revision_id: current.id,
+          artifact_asset_ids: [asset.id], selected: finalSelection, fingerprint: created.fingerprint },
+      });
+      return json({ revision: created.revision, take_id: take.id, selected: finalSelection }, 201);
     }
 
     if (action === "approve_claim" || action === "approve_script") {
@@ -644,6 +780,24 @@ Deno.serve(async (req: Request) => {
         actorId: userId, details: { decision, subject_type: "asset", subject_id: asset.id },
       });
       return json({ approval }, 201);
+    }
+
+    if (action === "schedule_final_publish") {
+      if (!project.current_revision_id || !isPromoUuid(body.asset_id)) throw new Error("A valid final render is required.");
+      const caption = sanitizePromoText(body.caption, 2200);
+      if (!caption) throw new Error("A publish caption is required.");
+      const scheduledFor = new Date(String(body.scheduled_for || ""));
+      if (!Number.isFinite(scheduledFor.getTime())) throw new Error("A valid publishing time is required.");
+      const idempotencyKey = `${project.current_revision_id}:instagram:${body.asset_id}:${scheduledFor.toISOString()}`;
+      const { data: scheduledPostId, error } = await db.rpc("approve_and_schedule_promo_post", {
+        p_project_id: project.id, p_revision_id: project.current_revision_id, p_asset_id: body.asset_id,
+        p_actor_id: userId, p_caption: caption, p_scheduled_for: scheduledFor.toISOString(),
+        p_idempotency_key: idempotencyKey,
+      });
+      if (error || !isPromoUuid(scheduledPostId)) {
+        throw new Error(error?.message || "Final render did not pass the approval and scheduling contract.");
+      }
+      return json({ scheduled_post_id: scheduledPostId }, 201);
     }
 
     if (action === "create_asset_upload") {

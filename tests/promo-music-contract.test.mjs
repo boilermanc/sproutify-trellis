@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { buildPromoMusicGenerationJobInput } from '../supabase/functions/_shared/promo-music.ts';
+import { applyPromoMusicAdoption, buildPromoMusicGenerationJobInput } from '../supabase/functions/_shared/promo-music.ts';
 import { createDraftPromoManifest } from '../supabase/functions/_shared/promo-studio.ts';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
@@ -76,10 +76,11 @@ test('music generation honors server-side take reservations and direction limits
   );
 });
 
-test('music jobs are server-resolved while existing music paths remain adapters only', async () => {
-  const [edge, worker, service, readme, migration, constants, legacy, sessionWorker] = await Promise.all([
+test('music jobs are server-resolved while the dedicated worker remains independently gated', async () => {
+  const [edge, worker, service, readme, runtime, migration, constants, legacy, sessionWorker] = await Promise.all([
     read('../supabase/functions/promo-studio/index.ts'), read('../supabase/functions/promo-worker/index.ts'),
     read('../services/promoStudioService.ts'), read('../workers/promo-music-worker/README.md'),
+    read('../workers/promo-music-worker/runtime.mjs'),
     read('../supabase/migrations/20260825203500_reserve_promo_music_take_numbers.sql'), read('../constants.ts'),
     read('../services/musicService.ts'), read('../supabase/functions/generate-session-track/index.ts'),
   ]);
@@ -92,5 +93,40 @@ test('music jobs are server-resolved while existing music paths remain adapters 
   assert.match(constants, /PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA/);
   assert.match(legacy, /fetch\(MUSIC_GEN_WEBHOOK/);
   assert.match(sessionWorker, /const BUCKET = "music-sessions"/);
-  assert.match(readme, /intentionally not executable yet/i);
+  assert.match(readme, /PROMO_MUSIC_CLAIMS_ENABLED/);
+  assert.match(runtime, /p_job_types: \['music_generate'\]/);
+  assert.match(runtime, /complete_promo_music_generation_job/);
+  assert.doesNotMatch(runtime, /complete_promo_job/);
+});
+
+test('completed music is selected only through explicit immutable adoption', () => {
+  const manifest = applyPromoMusicAdoption(fixture(), {
+    id: '50000000-0000-0000-0000-000000000001', take_number: 1, direction: 'balanced',
+    provider: 'google-lyria', model: 'lyria-3', provider_job_id: 'provider-music-1',
+    audio_asset_id: '60000000-0000-0000-0000-000000000001', duration_seconds: 10,
+    cue_markers: [{ name: 'lift', at_seconds: 4, confidence: 0.9 }], selected: false,
+    status: 'ready', estimated_cost_usd: 0.04,
+  }, {
+    id: '60000000-0000-0000-0000-000000000001', kind: 'music_master', role: 'music-take-1',
+    status: 'ready', storage_bucket: 'promo-assets', storage_path: 'project/music.wav', mime_type: 'audio/wav',
+    checksum_sha256: 'c'.repeat(64), duration_seconds: 10,
+    provenance: { job_id: '70000000-0000-0000-0000-000000000001' },
+  }, '70000000-0000-0000-0000-000000000001');
+  assert.equal(manifest.music.selected_take_id, '50000000-0000-0000-0000-000000000001');
+  assert.equal(manifest.music.takes[0].selected, true);
+  assert.equal(manifest.assets[0].provenance.approved, true);
+  assert.equal(manifest.run_lineage.estimated_cost_usd, 0.04);
+});
+
+test('music completion is atomic and service-role-only', async () => {
+  const [migration, edge, service] = await Promise.all([
+    read('../supabase/migrations/20260903160245_complete_promo_audio_jobs.sql'),
+    read('../supabase/functions/promo-studio/index.ts'), read('../services/promoStudioService.ts'),
+  ]);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.complete_promo_music_generation_job/);
+  assert.match(migration, /INSERT INTO public\.promo_music_takes/);
+  assert.match(migration, /UPDATE public\.promo_job_attempts[\s\S]*status = 'succeeded'/);
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.complete_promo_music_generation_job[\s\S]*TO service_role/);
+  assert.match(edge, /applyPromoMusicAdoption/);
+  assert.match(service, /adopt_music/);
 });

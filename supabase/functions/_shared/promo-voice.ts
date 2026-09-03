@@ -21,6 +21,33 @@ function configuredStrings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(configured);
 }
 
+function manifestAsset(row: Record<string, any>, approved: boolean) {
+  if (!configured(row.id) || row.status !== "ready" || !configured(row.kind) || !configured(row.role)
+    || !configured(row.storage_bucket) || !configured(row.storage_path) || !configured(row.mime_type)
+    || !/^[a-f0-9]{64}$/i.test(String(row.checksum_sha256 || ""))) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_ASSET_INVALID", "Completed voice assets are incomplete or not ready.");
+  }
+  return {
+    id: row.id, kind: row.kind, role: row.role, storage_bucket: row.storage_bucket,
+    storage_path: row.storage_path, mime_type: row.mime_type, checksum_sha256: row.checksum_sha256,
+    duration_seconds: row.duration_seconds == null ? null : Number(row.duration_seconds),
+    width: row.width == null ? null : Number(row.width), height: row.height == null ? null : Number(row.height),
+    provenance: {
+      source_kind: "provider", source_ref: `job:${row.provenance?.job_id || "unknown"}`,
+      generated: true, approved,
+    },
+  };
+}
+
+function appendLineage(manifest: Record<string, any>, jobId: string, providerJobId: unknown, checksum: unknown, cost: unknown) {
+  manifest.run_lineage.job_ids = [...new Set([...(manifest.run_lineage.job_ids || []), jobId])];
+  if (configured(providerJobId)) manifest.run_lineage.provider_ids = [...new Set([...(manifest.run_lineage.provider_ids || []), providerJobId])];
+  if (typeof checksum === "string" && /^[a-f0-9]{64}$/i.test(checksum)) {
+    manifest.run_lineage.output_checksums = [...new Set([...(manifest.run_lineage.output_checksums || []), checksum])];
+  }
+  manifest.run_lineage.estimated_cost_usd = Number(manifest.run_lineage.estimated_cost_usd || 0) + Math.max(0, Number(cost || 0));
+}
+
 function voiceManifest(value: unknown) {
   if (!record(value) || !record(value.promo) || !record(value.brand) || !record(value.script)
     || !record(value.voice) || !Array.isArray(value.script.phrases) || !Array.isArray(value.voice.takes)) {
@@ -125,4 +152,89 @@ export function buildPromoVoiceAlignmentJobInput(manifestValue: unknown, takeIdV
     minimum_alignment_confidence: manifest.voice.minimum_alignment_confidence,
     phrases: manifest.script.phrases.map((phrase: any) => ({ phrase_id: phrase.id, speech_text: phrase.speech_text })),
   };
+}
+
+export function applyPromoVoiceGenerationAdoption(
+  manifestValue: unknown,
+  takeValue: unknown,
+  audioAssetValue: unknown,
+  jobIdValue: unknown,
+) {
+  const manifest = structuredClone(voiceManifest(manifestValue));
+  if (!record(takeValue) || !record(audioAssetValue) || !configured(jobIdValue)
+    || !configured(takeValue.id) || !Number.isInteger(takeValue.take_number)
+    || !VOICE_DIRECTIONS.has(takeValue.direction) || !configured(takeValue.provider)
+    || !configured(takeValue.model) || !configured(takeValue.voice_id)
+    || takeValue.status !== "aligning" || takeValue.selected !== false
+    || takeValue.audio_asset_id !== audioAssetValue.id || takeValue.alignment_asset_id != null
+    || !Number.isFinite(Number(takeValue.duration_seconds)) || Number(takeValue.duration_seconds) <= 0) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_RESULT_INVALID", "Completed voice generation result is invalid.");
+  }
+  if (manifest.voice.takes.some((take: any) => take?.id === takeValue.id
+    || Number(take?.take_number) === Number(takeValue.take_number))) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_RESULT_DUPLICATE", "Voice take is already present in the active manifest.");
+  }
+  const asset = manifestAsset(audioAssetValue, false);
+  if (asset.kind !== "voice_master" || asset.mime_type !== "audio/wav") {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_ASSET_INVALID", "Voice generation requires a WAV voice master.");
+  }
+  manifest.assets.push(asset);
+  manifest.voice.takes.push({
+    id: takeValue.id, take_number: Number(takeValue.take_number), direction: takeValue.direction,
+    provider: takeValue.provider, model: takeValue.model, voice_id: takeValue.voice_id,
+    settings: record(takeValue.settings) ? takeValue.settings : {}, provider_job_id: takeValue.provider_job_id || null,
+    audio_asset_id: takeValue.audio_asset_id, alignment_asset_id: null,
+    duration_seconds: Number(takeValue.duration_seconds), selected: false, status: "aligning", words: [], phrases: [],
+  });
+  appendLineage(manifest, jobIdValue, takeValue.provider_job_id, audioAssetValue.checksum_sha256, takeValue.estimated_cost_usd);
+  manifest.promo.status = "audio_review";
+  return manifest;
+}
+
+export function applyPromoVoiceAlignmentAdoption(
+  manifestValue: unknown,
+  takeValue: unknown,
+  alignmentAssetValue: unknown,
+  alignmentValue: unknown,
+  jobIdValue: unknown,
+) {
+  const manifest = structuredClone(voiceManifest(manifestValue));
+  if (!record(takeValue) || !record(alignmentAssetValue) || !record(alignmentValue) || !configured(jobIdValue)
+    || takeValue.status !== "ready" || takeValue.alignment_asset_id !== alignmentAssetValue.id
+    || alignmentValue.take_id !== takeValue.id || alignmentValue.audio_asset_id !== takeValue.audio_asset_id
+    || !Array.isArray(alignmentValue.words) || !Array.isArray(alignmentValue.phrases) || !alignmentValue.phrases.length) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_ALIGNMENT_RESULT_INVALID", "Completed voice alignment result is invalid.");
+  }
+  const take = manifest.voice.takes.find((item: any) => item?.id === takeValue.id);
+  if (!record(take) || take.status !== "aligning" || take.audio_asset_id !== takeValue.audio_asset_id) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_TAKE_UNKNOWN", "Aligned voice take is not awaiting adoption in the active manifest.");
+  }
+  const phraseById = new Map<string, any>(manifest.script.phrases.map((phrase: any) => [phrase.id, phrase]));
+  if (alignmentValue.phrases.length !== phraseById.size || alignmentValue.phrases.some((phrase: any) =>
+    !record(phrase) || !phraseById.has(phrase.phrase_id) || !Number.isFinite(phrase.start_seconds)
+    || !Number.isFinite(phrase.end_seconds) || phrase.end_seconds <= phrase.start_seconds
+    || !Number.isFinite(phrase.confidence) || phrase.confidence < manifest.voice.minimum_alignment_confidence)) {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_ALIGNMENT_RESULT_INVALID", "Voice alignment must cover every approved phrase above the confidence threshold.");
+  }
+  const asset = manifestAsset(alignmentAssetValue, true);
+  if (asset.kind !== "voice_alignment" || asset.mime_type !== "application/json") {
+    throw new PromoVoiceReadinessError("PROMO_VOICE_ASSET_INVALID", "Voice alignment requires a verified JSON timing asset.");
+  }
+  manifest.assets.push(asset);
+  for (const item of manifest.voice.takes) item.selected = item.id === take.id;
+  Object.assign(take, {
+    alignment_asset_id: alignmentAssetValue.id, status: "ready", selected: true,
+    words: alignmentValue.words, phrases: alignmentValue.phrases,
+  });
+  manifest.voice.selected_take_id = take.id;
+  manifest.voice.timing_source = alignmentValue.words.length ? "provider_words" : "forced_alignment";
+  manifest.captions.timing_source = "voice_phrases";
+  manifest.captions.cues = alignmentValue.phrases.map((phrase: any, index: number) => ({
+    id: `caption-${index + 1}-${phrase.phrase_id}`, phrase_id: phrase.phrase_id,
+    start_seconds: phrase.start_seconds, end_seconds: phrase.end_seconds,
+    text: phraseById.get(phrase.phrase_id).display_text,
+  }));
+  appendLineage(manifest, jobIdValue, null, alignmentAssetValue.checksum_sha256, 0);
+  manifest.promo.status = manifest.music.selected_take_id ? "asset_review" : "audio_review";
+  return manifest;
 }

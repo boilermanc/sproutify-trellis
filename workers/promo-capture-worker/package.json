@@ -1,0 +1,12 @@
+{
+  "name": "trellis-promo-capture-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node run.mjs", "once": "node run.mjs --once" },
+  "dependencies": {
+    "@supabase/supabase-js": "2.90.1",
+    "playwright-core": "1.55.1"
+  },
+  "engines": { "node": ">=22.12.0" }
+}

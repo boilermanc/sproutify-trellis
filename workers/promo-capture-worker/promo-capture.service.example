@@ -1,0 +1,19 @@
+[Unit]
+Description=Trellis Promo Capture Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_GROUP__
+WorkingDirectory=__APP_DIR__/workers/promo-capture-worker
+EnvironmentFile=/etc/trellis/promo-capture.env
+ExecStart=__NODE_BIN__/node run.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

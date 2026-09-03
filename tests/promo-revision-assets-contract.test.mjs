@@ -37,7 +37,9 @@ test('child revisions bind only server-verified parent assets before activation'
   const bindingInsert = edge.indexOf('.from("promo_revision_assets").insert');
   const activation = edge.indexOf('.from("promo_projects").update', bindingInsert);
   assert.ok(bindingInsert > -1 && activation > bindingInsert);
-  assert.match(edge, /binding_reason: adopted\.has\(assetId\) \? "capture_adoption" : "revision_carry_forward"/);
+  assert.match(edge, /binding_reason: adopted\.has\(assetId\) \? \(input\.adoptedBindingReason \|\| "manual_adoption"\) : "revision_carry_forward"/);
+  assert.match(edge, /adoptedAssetIds: artifactIds, adoptedBindingReason: "capture_adoption"/);
+  assert.match(edge, /adoptedBindingReason: gate === "voice" \? "voice_adoption" : "music_adoption"/);
 });
 
 test('capture adoption reloads identity, evidence, artifacts, and audit lineage server-side', async () => {

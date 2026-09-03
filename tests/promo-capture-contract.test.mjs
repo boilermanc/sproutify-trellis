@@ -77,11 +77,11 @@ test('capture queueing fails closed on every unresolved production prerequisite'
   assert.throws(() => buildPromoCaptureJobInput(inventedRoute.manifest, inventedRoute.source, 'capture-plan-preview'), /verified repository evidence/i);
 });
 
-test('capture jobs are resolved server-side while the deployed worker remains no-op only', async () => {
-  const [edge, worker, service, readme] = await Promise.all([
+test('capture jobs are server-resolved while the dedicated worker remains independently gated', async () => {
+  const [edge, worker, service, readme, runtime] = await Promise.all([
     read('../supabase/functions/promo-studio/index.ts'), read('../supabase/functions/promo-worker/index.ts'),
     read('../services/promoStudioService.ts'),
-    read('../workers/promo-capture-worker/README.md'),
+    read('../workers/promo-capture-worker/README.md'), read('../workers/promo-capture-worker/runtime.mjs'),
   ]);
   assert.match(edge, /jobType === "capture"/);
   assert.match(edge, /buildPromoCaptureJobInput\(revision\.manifest, source, body\.scenario_id\)/);
@@ -92,5 +92,8 @@ test('capture jobs are resolved server-side while the deployed worker remains no
   assert.doesNotMatch(worker, /p_job_types: \["capture"\]/);
   assert.match(service, /job_type: 'capture', scenario_id: scenarioId/);
   assert.match(readme, /production claims remain disabled/i);
-  assert.match(readme, /provider-independent preflight and executor/i);
+  assert.match(readme, /provider-independent preflight\/executor/i);
+  assert.match(runtime, /p_job_types: \['capture'\]/);
+  assert.match(runtime, /complete_promo_capture_job/);
+  assert.doesNotMatch(runtime, /complete_promo_job/);
 });
