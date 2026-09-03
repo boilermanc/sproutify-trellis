@@ -9,6 +9,129 @@ import PROMO_RENDER_COMPLETION_SQL_SCHEMA from './supabase/migrations/2026082521
 import PROMO_CAPTURE_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260826180018_complete_promo_capture_job.sql?raw';
 import PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA from './supabase/migrations/20260826183711_add_promo_revision_asset_bindings.sql?raw';
 
+export interface BriefAxis {
+  name: string;
+  instruction: string;
+  variants: string[];
+}
+
+export interface BriefRecipe {
+  brandVoice: string;
+  situations: string[];
+  axes: BriefAxis[];
+  bannedWords: string[];
+  footerGuidance: string;
+}
+
+export const BRIEF_RECIPES: Record<string, BriefRecipe> = {
+  rejoice: {
+    brandVoice: "Warm and direct, never chirpy, never solemn. Permission over instruction — 'You don't have to feel ready' beats 'Start your journey today.' Names a specific feeling instead of a category. No guilt, no shame, no implied spiritual scoreboard, no promises of transformation.",
+    situations: [
+      "the Sunday night before a week you're dreading",
+      "deciding you're too far behind to ever start",
+      'the week after a holiday — the letdown and the back-to-normal dread',
+      "lying awake at 2am with a mind that won't stop",
+      'sitting in church and feeling nothing',
+      'the argument you keep replaying',
+      'wanting to pray and not knowing what to say',
+      'opening the app after weeks away',
+    ],
+    axes: [
+      { name: 'objection', instruction: 'Give each headline a different objection to starting.', variants: ['no time', "won't understand it", 'tried apps like this', 'not religious enough', "don't want to be preached at", 'wrong season of life'] },
+      { name: 'entry point', instruction: 'Give each headline a different relationship to scripture.', variants: ['never opened a Bible', 'raised in it and left', 'reads daily already', 'only prays in emergencies'] },
+      { name: 'emotional state', instruction: 'Give each headline a different precise emotional state.', variants: ['behind', 'numb', 'restless', 'grateful', 'angry', 'relieved'] },
+      { name: 'moment in the day', instruction: 'Anchor each headline in a different moment of the day.', variants: ['first alarm', 'the commute', 'the 3pm slump', 'after the kids are down', '2am'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a permission', 'a confession', 'a plain statement', 'an invitation'] },
+      { name: 'what the card refuses to do', instruction: 'Make each headline refuse a different familiar marketing move.', variants: ["doesn't promise", "doesn't instruct", "doesn't comfort — just names"] },
+    ],
+    bannedWords: ['journey', 'grace', 'peace', 'unlock', 'transform', 'dive in', 'your best life', 'let go and let God'],
+    footerGuidance: 'Each footer names a concrete first move, never repeats the headline.',
+  },
+  rekkrd: {
+    brandVoice: 'Low-lit and unhurried, like liner notes read aloud at closing time. Confident without hype. Speaks to people who listen on purpose. Understatement over exclamation.',
+    situations: [
+      'the last hour of the night when the room finally goes quiet',
+      'rain on the window while a record spins',
+      'driving home at 2am with the radio off',
+      "the first listen of an album you already know you'll wear out",
+      'the B-side nobody skips',
+      'closing the bar alone with the good bottle',
+      'the needle drop before anyone speaks',
+    ],
+    axes: [
+      { name: 'time of night', instruction: 'Set each headline at a different time of night.', variants: ['last call', 'the drive home', '2am kitchen', 'first grey light'] },
+      { name: 'listening ritual', instruction: 'Build each headline around a different listening ritual.', variants: ['needle drop', 'headphones in the dark', 'one speaker in the kitchen', 'the repeat button'] },
+      { name: "who's there", instruction: 'Change who shares or haunts the listening moment.', variants: ['alone', 'one other person', 'a full room gone quiet', 'the memory of someone'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a toast', 'a confession', 'a liner note', 'a question', 'a plain statement'] },
+      { name: 'what the room looks like', instruction: 'Anchor each headline in a different concrete room detail.', variants: ['neon through blinds', 'a half-finished drink', 'coats on chairs', "the amp's single red light"] },
+    ],
+    bannedWords: ['vibes', 'timeless', 'soundtrack to your life', 'banger', 'eclectic', 'curated', 'elevate'],
+    footerGuidance: 'Footers read like a track credit or an invitation to listen — never a sales line.',
+  },
+  // The live branches table uses `atlurbanfarms`; keep this key aligned with it.
+  atlurbanfarms: {
+    brandVoice: 'Neighborly and practical, proud without preaching. Talks about real food, real neighbors, and small wins. Sounds like the person at the market who actually grows the stuff.',
+    situations: [
+      "the first harvest off a tower you almost didn't buy",
+      'the neighbor who finally asks what that thing on your porch is',
+      'lettuce that never rode on a truck',
+      'teaching a kid where dinner actually comes from',
+      'the 15-minute dinner picked from the balcony',
+      "the week the grocery store greens went bad and yours didn't",
+    ],
+    axes: [
+      { name: 'grower type', instruction: 'Speak to a different kind of grower in each headline.', variants: ['total beginner', 'black-thumb convert', 'busy parent', 'retiree', 'teacher'] },
+      { name: 'objection', instruction: 'Answer a different practical objection in each headline.', variants: ['no space', 'no time', 'I kill everything', 'too expensive'] },
+      { name: 'moment', instruction: 'Put each headline at a different point in the growing cycle.', variants: ['planting day', 'first sprout', 'first harvest', 'sharing the surplus'] },
+      { name: 'crop', instruction: 'Make each headline specific to a different crop.', variants: ['lettuce', 'basil', 'strawberries', 'kale', 'peppers'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a dare', 'a plain fact', 'an overheard remark'] },
+    ],
+    bannedWords: ['farm to table', 'fresh picked', 'garden-fresh', 'locally sourced', 'sustainable'],
+    footerGuidance: 'Footers point at one small concrete action — see it, taste it, start one tower.',
+  },
+  // TODO: refine with Sheree — brand voice owner
+  'still-janes-daughter': {
+    brandVoice: 'Personal, reflective, unhurried. Speaks from lived experience rather than advice. Never performative.',
+    situations: ['the recipe card in her handwriting', "a Sunday that smells like someone else's kitchen", "keeping a tradition you didn't choose but won't drop", 'the ordinary object that carries the whole story'],
+    axes: [
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a memory', 'a question', 'a small confession', 'a plain statement'] },
+      { name: 'sense', instruction: 'Ground each headline in a different sense.', variants: ['smell', 'sound', 'touch', 'taste'] },
+      { name: 'time', instruction: 'Place each headline in a different kind of time.', variants: ['morning', 'holiday', 'ordinary Tuesday', 'anniversary'] },
+    ],
+    bannedWords: ['legacy', 'cherish', 'heartwarming', 'blessed'],
+    footerGuidance: 'Footers invite the reader into the story — read, remember, subscribe.',
+  },
+  'sproutify-farm': {
+    brandVoice: "Credible operator-to-operator. Numbers and outcomes over adjectives. Respects the reader's skepticism — every claim should survive a procurement meeting.",
+    situations: [
+      'the cafeteria that grows its own greens twenty feet from the serving line',
+      'the restaurant tired of the produce truck deciding the menu',
+      'the first commercial harvest that made the spreadsheet real',
+      'the empty corner of the building that could be producing',
+      "the board meeting where 'why not grow it ourselves' finally lands",
+    ],
+    axes: [
+      { name: 'buyer type', instruction: 'Address a different commercial buyer in each headline.', variants: ['school district', 'restaurant group', 'nonprofit', 'hotel', 'entrepreneur'] },
+      { name: 'objection', instruction: 'Address a different procurement objection in each headline.', variants: ['cost', 'labor', 'space', "we're not farmers"] },
+      { name: 'outcome', instruction: 'Center each headline on a different measurable or observable outcome.', variants: ['food cost line', 'freshness', 'story customers notice', 'waste reduction'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a stat framed plainly', 'a before/after', 'a challenge'] },
+    ],
+    bannedWords: ['revolutionary', 'game-changer', 'disrupt', 'cutting-edge', 'farm of the future'],
+    footerGuidance: 'Footers name the next business step — book a walkthrough, see the numbers, talk to a grower.',
+  },
+  default: {
+    brandVoice: 'Clear, specific, human. One idea per card.',
+    situations: ['the moment someone almost scrolls past but does not', 'the question a skeptical customer asks first', 'the small result that makes the value feel real'],
+    axes: [
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a plain statement', 'an invitation', 'a challenge'] },
+      { name: 'emotional state', instruction: 'Address a different precise emotional state in each headline.', variants: ['curious', 'skeptical', 'frustrated', 'hopeful'] },
+      { name: 'objection', instruction: 'Address a different reason someone might hesitate.', variants: ['not enough time', 'too complicated', 'not for me', 'not worth the cost'] },
+    ],
+    bannedWords: ['elevate', 'unlock', 'seamless', 'empower'],
+    footerGuidance: 'Footers name one concrete next step.',
+  },
+};
+
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
   name: 'Sproutify',

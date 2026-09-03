@@ -326,6 +326,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [jobs, setJobs] = useState<VideoAdJob[]>([]);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Baseline statuses loaded from Supabase before polling starts. The poller
+  // intentionally reports its first result for each job; without this map,
+  // every historical review-ready creative looks like a fresh transition and
+  // floods the page with duplicate notifications on mount.
+  const knownJobStatusesRef = useRef<Map<string, VideoAdStatus>>(new Map());
 
   // ── Tracking state — the job the Progress step is watching ──
   const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
@@ -570,6 +575,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     (async () => {
       try {
         const fetched = await getVideoAdJobs();
+        knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
         setJobs(fetched);
         setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
       } catch (err: any) {
@@ -587,16 +593,20 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Poller ──
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
+    const previousStatus = knownJobStatusesRef.current.get(updatedJob.id);
+    const statusChanged = previousStatus !== updatedJob.status;
+    knownJobStatusesRef.current.set(updatedJob.id, updatedJob.status);
+
     // Upsert, not map: n8n inserts the row asynchronously, so a job we just
     // submitted often isn't in the list yet when its first poll lands.
     setJobs(prev => prev.some(j => j.id === updatedJob.id)
       ? prev.map(j => j.id === updatedJob.id ? updatedJob : j)
       : [updatedJob, ...prev]);
-    if (updatedJob.status === 'completed') {
+    if (statusChanged && updatedJob.status === 'completed') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." completed!`, 'success');
-    } else if (updatedJob.status === 'awaiting_approval') {
+    } else if (statusChanged && updatedJob.status === 'awaiting_approval') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." is ready for review`, 'info');
-    } else if (updatedJob.status === 'failed') {
+    } else if (statusChanged && updatedJob.status === 'failed') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." failed: ${updatedJob.error_message || 'Unknown error'}`, 'error');
     }
     if (TERMINAL_STATUSES.includes(updatedJob.status)) {
@@ -611,6 +621,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     setIsRefreshing(true);
     try {
       const fetched = await getVideoAdJobs();
+      knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
       setJobs(fetched);
       setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
       addToast('Video library refreshed', 'info');

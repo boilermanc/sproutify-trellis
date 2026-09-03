@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ApiKeyConfig, BranchContext, BranchInfo } from '../types';
 import { generateCardConcepts, type ScripturePolicy, CARD_BRIEF_PRESETS, CardConceptWithRef } from '../services/creativeDirectorService';
+import { generateCardBrief } from '../services/aiService';
 import { getBrandCardStyle } from '../services/brandCardStyles';
 import { fetchPassage } from '../services/bibleService';
 import { renderCardConcept, renderCardPreviewDataUrl } from '../utils/cardRenderer';
@@ -265,6 +266,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   // so verse cards can't render and scripture must be forced off.
   const [hasBibleSource, setHasBibleSource] = useState<boolean | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSuggestingBrief, setIsSuggestingBrief] = useState(false);
   const [cards, setCards] = useState<ConceptCardState[]>([]);
   // Timestamp of the restored draft this batch came from, if any — drives
   // the "these are restored drafts, not fresh output" banner. Cleared on a
@@ -462,6 +464,43 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     if (preset.branchSlug) {
       const match = branchOptions.find((b) => b.slug === preset.branchSlug);
       if (match) setBranchId(match.id);
+    }
+  };
+
+  const handleSuggestBrief = async () => {
+    if (!selectedBranch) { addToast('Choose a brand first.', 'error'); return; }
+    if (!geminiKey) { addToast('Gemini API key not configured. Set it in Settings.', 'error'); return; }
+
+    const selectedDirection = creativeDirectionId === 'standard'
+      ? {
+          label: 'Standard Card Studio',
+          description: 'Keeps the full template range, including verified scripture cards.',
+        }
+      : creativeDirectionId === 'variety'
+        ? {
+            label: 'Variety pack',
+            description: 'Cycles through the shared brand directions.',
+          }
+        : getBrandCreativeDirection(selectedBranch.slug, creativeDirectionId);
+
+    setIsSuggestingBrief(true);
+    try {
+      const suggestion = await generateCardBrief({
+        apiKey: geminiKey,
+        brandSlug: selectedBranch.slug,
+        brandName: selectedBranch.name,
+        creativeDirection: selectedDirection
+          ? `${selectedDirection.label} — ${selectedDirection.description}`
+          : 'Standard Card Studio — Use the brand voice with the full card template range.',
+        conceptCount: count,
+        scriptureMode: selectedBranch.slug === 'rejoice' ? scripturePolicy : undefined,
+      });
+      setBrief(suggestion);
+      setActivePreset(null);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Could not suggest a brief.', 'error');
+    } finally {
+      setIsSuggestingBrief(false);
     }
   };
 
@@ -1029,6 +1068,15 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSuggestBrief()}
+            disabled={isSuggestingBrief || isGenerating || !selectedBranch}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border border-emerald-600 bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isSuggestingBrief ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {isSuggestingBrief ? 'Writing brief…' : 'Suggest brief'}
+          </button>
           {visiblePresets.map((preset) => (
             <button
               key={preset.label}

@@ -1,4 +1,6 @@
 import { Profile, ChatMessage, LlmProvider, Ticket, ApiKeyConfig, ComplianceResult } from "../types";
+import { GoogleGenAI } from '@google/genai';
+import { BRIEF_RECIPES, type BriefAxis, type BriefRecipe } from '../constants';
 
 // ============================================================================
 // Multi-Provider AI Service (uses API keys from Supabase settings)
@@ -140,6 +142,109 @@ export async function generateText(apiKeys: ApiKeyConfig, options: GenerateOptio
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+interface GenerateCardBriefParams {
+  apiKey: string;
+  brandSlug: string;
+  brandName: string;
+  creativeDirection: string;
+  conceptCount: number;
+  scriptureMode?: string;
+}
+
+const lastCardBriefSeed = new Map<string, string>();
+
+function pickRandom<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function selectBriefSeed(brandSlug: string, recipe: BriefRecipe): {
+  situation: string;
+  axis: BriefAxis;
+  bannedWords: string[];
+} {
+  let situation = pickRandom(recipe.situations);
+  let axis = pickRandom(recipe.axes);
+  const previousSeed = lastCardBriefSeed.get(brandSlug);
+
+  // Keep consecutive clicks visibly different even if Math.random happens to
+  // land on the same pair twice. The first choice is still random; this only
+  // advances a duplicate to the next available axis or situation.
+  if (`${situation}\u0000${axis.name}` === previousSeed) {
+    const axisIndex = recipe.axes.indexOf(axis);
+    if (recipe.axes.length > 1) {
+      axis = recipe.axes[(axisIndex + 1) % recipe.axes.length];
+    } else if (recipe.situations.length > 1) {
+      const situationIndex = recipe.situations.indexOf(situation);
+      situation = recipe.situations[(situationIndex + 1) % recipe.situations.length];
+    }
+  }
+  lastCardBriefSeed.set(brandSlug, `${situation}\u0000${axis.name}`);
+
+  const bannedStart = Math.floor(Math.random() * recipe.bannedWords.length);
+  const bannedCount = Math.min(2, recipe.bannedWords.length);
+  const bannedWords = Array.from(
+    { length: bannedCount },
+    (_, offset) => recipe.bannedWords[(bannedStart + offset) % recipe.bannedWords.length],
+  );
+
+  return { situation, axis, bannedWords };
+}
+
+export async function generateCardBrief(params: GenerateCardBriefParams): Promise<string> {
+  if (!params.apiKey) throw new Error('Gemini API key is not configured. Add it in Settings before suggesting a brief.');
+
+  const brandSlug = params.brandSlug.trim().toLowerCase();
+  const recipe = BRIEF_RECIPES[brandSlug] ?? BRIEF_RECIPES.default;
+  const conceptCount = Math.max(1, Math.min(6, Math.round(params.conceptCount) || 3));
+  const { situation, axis, bannedWords } = selectBriefSeed(brandSlug, recipe);
+  const scriptureAllowed = brandSlug === 'rejoice' && ['mix', 'require'].includes((params.scriptureMode || '').toLowerCase());
+
+  const systemInstruction = `You write short creative briefs for a social card generator. A brief has exactly four parts, separated by blank lines, in this shape:
+
+[Count] headlines for [the situation].
+
+Each one must be a different [axis name]: [variant], [variant], [variant]...
+
+[One refusal — the banned words/moves that are off-limits.]
+
+Footers: 6 words max. [Footer guidance.]
+
+Rules: The situation must stay specific — never generalize it into a category. List exactly ${conceptCount} variants for the axis (draw from the provided variants, invent adjacent ones if you need more — they must be genuinely distinct). Include the banned words in the refusal sentence and add one banned move of your own that fits the brand voice. Never mention fonts, layout, colors, photos, or design — the brief controls words only. Headlines should be implied to fit on one line (~45 characters). Output ONLY the brief text, no preamble, no markdown fences.`;
+
+  const userMessage = [
+    `Brand name: ${params.brandName}`,
+    `Brand voice: ${recipe.brandVoice}`,
+    `Selected situation: ${situation}`,
+    `Selected axis: ${axis.name}`,
+    `Axis instruction: ${axis.instruction}`,
+    `Axis variants to draw from or extend: ${axis.variants.join(', ')}`,
+    `Banned words: ${bannedWords.join(', ')}`,
+    `Footer guidance: ${recipe.footerGuidance}`,
+    `Creative direction: ${params.creativeDirection}`,
+    `Concept count: ${conceptCount}`,
+    scriptureAllowed
+      ? "The brief may name a passage or theme to draw from (e.g. 'something from Psalms about waiting') but must NEVER include verse wording — verse text is fetched server-side."
+      : '',
+  ].filter(Boolean).join('\n');
+
+  const ai = new GoogleGenAI({ apiKey: params.apiKey });
+  const response = await ai.models.generateContent({
+    model: 'gemini-flash-latest',
+    contents: sanitizePII(userMessage),
+    config: {
+      systemInstruction,
+      temperature: 0.95,
+    },
+  });
+  const text = (response.text || '')
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  if (!text) throw new Error('Gemini returned an empty brief. Try suggesting another one.');
+  return sanitizePII(text);
 }
 
 export async function generateTicketDraft(apiKeys: ApiKeyConfig, subject: string, description: string): Promise<GenerateResult> {
