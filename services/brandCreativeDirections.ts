@@ -18,10 +18,17 @@ export interface BrandCreativeDirection {
   };
 }
 
+// The editorial renderer owns the left side of the photograph. Image models
+// interpret "weighted right" loosely (especially for two-person scenes), so
+// describe the actual exclusion zone in concrete terms. Keeping this shared
+// prevents the brand presets and Card Studio's generic fallback from drifting.
+export const EDITORIAL_TEXT_SAFE_ZONE_RULE =
+  'Reserve the LEFT 55% of the frame as a strict typography-safe zone: calm background only, with no people, faces, heads, hair, hands, bodies, or important objects entering it. Keep every person and every face fully inside the RIGHT 45% of the frame, with clear separation from the center line.';
+
 const REKKRD_STYLE_NOTES = [
   'Premium editorial record-culture photography with cinematic contrast and subtle film grain.',
   'Use Rekkrd near-black, warm ivory, and restrained burnt-orange accents.',
-  'Keep the subject weighted to the RIGHT side and the LEFT half calm and uncluttered for typography.',
+  EDITORIAL_TEXT_SAFE_ZONE_RULE,
   'No embedded words, logos, watermarks, recognizable album artwork, or third-party branding.',
   'Authentic and tactile rather than glossy generic technology advertising.',
 ].join(' ');
@@ -29,7 +36,7 @@ const REKKRD_STYLE_NOTES = [
 const REJOICE_STYLE_NOTES = [
   'Warm, hopeful editorial lifestyle photography with natural light and gentle human emotion.',
   'Use a light, welcoming family of cream, soft violet, warm amber, and sage rather than dark crisis imagery.',
-  'Keep the subject weighted to the RIGHT side and the LEFT half calm and uncluttered for typography.',
+  EDITORIAL_TEXT_SAFE_ZONE_RULE,
   'Show everyday life with dignity and emotional range; Rejoice is for joy, curiosity, wisdom, growth, peace, and hard days.',
   // Rejoice is a phone app, so a phone belongs in these scenes — but an image
   // model asked for a phone screen invents a garbled fake interface with

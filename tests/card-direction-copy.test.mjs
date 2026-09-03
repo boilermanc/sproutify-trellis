@@ -156,6 +156,13 @@ test('every seeded direction still has a fallback overlay to degrade to', () => 
   }
 });
 
+test('every editorial direction reserves a face-free left text zone', () => {
+  for (const direction of directions.BRAND_CREATIVE_DIRECTIONS) {
+    assert.match(direction.styleNotes, /LEFT 55%/i, `${direction.id} does not reserve the renderer's text zone`);
+    assert.match(direction.styleNotes, /every person and every face fully inside the RIGHT 45%/i, `${direction.id} does not keep faces out of typography`);
+  }
+});
+
 test('secondary card typography stays readable after mobile feed downscaling', () => {
   for (const [role, scale] of Object.entries(renderer.CARD_TEXT_SCALE)) {
     assert.ok(scale >= 0.03, `${role} text is below the 3% mobile readability floor`);

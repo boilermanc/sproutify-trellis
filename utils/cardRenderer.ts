@@ -1069,7 +1069,10 @@ function drawEditorial(
   paintEditorialScrim(ctx, palette, W, H, scrimStrength);
 
   const marginX = W * 0.09;
-  const maxWidth = W * 0.6; // left text column; leaves the photo's right side visible
+  // Match the generator's strict left-55% typography-safe zone. The old 60%
+  // column reached past the center line and could overlap a correctly placed
+  // face at the edge of the right-side subject area.
+  const maxWidth = W * 0.5;
 
   // Footer band is sized first (independent of everything drawn above it) so
   // the headline's auto-shrink target below can reserve exactly the right

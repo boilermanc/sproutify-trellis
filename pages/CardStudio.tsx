@@ -15,6 +15,7 @@ import { generateCreativeBackground } from '../services/creativeBackgroundServic
 import {
   applyBrandCreativeDirection,
   buildCreativeDirectionBrief,
+  EDITORIAL_TEXT_SAFE_ZONE_RULE,
   getBrandCreativeDirection,
   getBrandCreativeDirectionForIndex,
   getBrandCreativeDirections,
@@ -736,7 +737,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         branchSlug: selectedBranch.slug,
         scene,
         platform: card.platform === 'instagram' ? 'instagram' : 'general',
-        styleNotes: direction?.styleNotes || 'Warm editorial still life, soft natural light, cozy and inviting. Compose with the subject weighted to the RIGHT side of the frame and keep the LEFT half calm, bright and uncluttered for a designed text column.',
+        styleNotes: direction?.styleNotes || `Warm editorial still life, soft natural light, cozy and inviting. ${EDITORIAL_TEXT_SAFE_ZONE_RULE}`,
       });
       applyBackgroundUrl(card.concept.id, backgroundUrl, 'generated');
       addToast('Background photo attached.', 'success');
