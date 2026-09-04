@@ -33,11 +33,17 @@ test('campaign engagement requires delivery to every selected campaign and an ex
 test('Segments UI selects newsletters and Campaign Builder re-evaluates the shared audience', () => {
   const segments = read('Segments.tsx');
   const builder = read('pages/CampaignBuilder.tsx');
+  const campaigns = read('pages/Campaigns.tsx');
+  const performance = read('components/EmailPerformancePanel.tsx');
 
   assert.match(segments, /Newsletter engagement/);
-  assert.match(segments, /Opened exactly/);
+  assert.match(segments, /Tracked opens exactly/);
+  assert.match(segments, /privacy tools and security scanners may load the tracking image without a confirmed read/);
   assert.match(segments, /Only people delivered every selected newsletter are eligible/);
   assert.match(segments, /saveSharedSegment/);
+  assert.match(campaigns, /Tracked Opens/);
+  assert.match(campaigns, /Tracked opens are estimates based on the email tracking image/);
+  assert.match(performance, /Tracked Open Rate/);
   assert.match(builder, /fetchSharedSegments/);
   assert.match(builder, /fetchCampaignEngagementByEmail/);
   assert.match(builder, /hub-campaign-engagement/);

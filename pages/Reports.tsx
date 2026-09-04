@@ -31,8 +31,8 @@ const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
 const REPORT_BLUEPRINTS: TrellisReport[] = [
   { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'] },
   { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'] },
-  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Open Rate', 'Click Rate', 'Bounce Rate', 'Audience Reach'], spokes: ['All Spokes'] },
-  { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
+  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Tracked Open Rate', 'Click Rate', 'Bounce Rate', 'Audience Reach'], spokes: ['All Spokes'] },
+  { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Tracked Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
   { id: 'rep_5', name: 'Product Adoption & Retention', type: 'system', metrics: ['DAU / WAU / MAU', 'Lifecycle Funnel', '7-Day Retention', '30-Day Retention', 'Feature Milestones'], spokes: ['PostHog-Connected Branches'] },
 ];
 

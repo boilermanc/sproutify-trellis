@@ -171,7 +171,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
         {[
           { label: 'Campaigns', value: campaigns.length, icon: Send, color: 'text-slate-700' },
           { label: 'Delivered', value: totals.delivered, icon: MailCheck, color: 'text-emerald-600' },
-          { label: 'Open Rate', value: `${pct(totals.opened, totals.delivered)}%`, icon: Eye, color: 'text-blue-600' },
+          { label: 'Tracked Open Rate', value: `${pct(totals.opened, totals.delivered)}%`, icon: Eye, color: 'text-blue-600' },
           { label: 'Click Rate', value: `${pct(totals.clicked, totals.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600' },
         ].map((k) => (
           <div key={k.label} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
@@ -240,7 +240,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
                       <div className="hidden md:flex items-center gap-5 shrink-0">
                         {[
                           { label: 'Sent', value: s.sent, color: 'text-slate-600' },
-                          { label: 'Open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
+                          { label: 'Tracked open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
                           { label: 'Click', value: `${pct(s.clicked, s.delivered)}%`, color: 'text-violet-600' },
                         ].map((m) => (
                           <div key={m.label} className="text-center w-14">
@@ -361,7 +361,7 @@ const CampaignDetailDrawer: React.FC<{
   const metrics = [
     { label: 'Sent', value: s.sent, icon: Send, color: 'text-slate-600', bg: 'bg-slate-100' },
     { label: 'Delivered', value: s.delivered, sub: `${pct(s.delivered, s.sent)}%`, icon: MailCheck, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { label: 'Opened', value: s.opened, sub: `${pct(s.opened, s.delivered)}%`, icon: Eye, color: 'text-blue-600', bg: 'bg-blue-100' },
+    { label: 'Tracked Opens', value: s.opened, sub: `${pct(s.opened, s.delivered)}%`, icon: Eye, color: 'text-blue-600', bg: 'bg-blue-100' },
     { label: 'Clicked', value: s.clicked, sub: `${pct(s.clicked, s.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600', bg: 'bg-violet-100', onClick: s.clicked > 0 ? () => setShowLinkClicks(true) : undefined },
     { label: 'Bounced', value: s.bounced, icon: MailX, color: 'text-red-600', bg: 'bg-red-100' },
     { label: 'Complained', value: s.complained, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-100' },
@@ -467,6 +467,9 @@ const CampaignDetailDrawer: React.FC<{
           {/* Metrics grid */}
           <div>
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Engagement</h3>
+            <p className="text-[11px] text-slate-500 mb-3">
+              Tracked opens are estimates based on the email tracking image. Privacy tools and security scanners may load it automatically without a confirmed read.
+            </p>
             {!hasEvents && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
                 No delivery events recorded for this campaign yet. Stats populate from accepted sends and Resend webhook events.
@@ -506,7 +509,7 @@ const CampaignDetailDrawer: React.FC<{
                 className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition"
               >
                 <Users className="w-4 h-4" />
-                See who opened, clicked & complained
+                See tracked opens, clicks & complaints
               </button>
             )}
             {canResend(c) && (
@@ -560,7 +563,7 @@ const CampaignDetailDrawer: React.FC<{
           )}
 
           <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1">
-            <Mail className="w-3 h-3" /> Engagement matched by exact campaign ID via Resend delivery events
+            <Mail className="w-3 h-3" /> Engagement matched by exact campaign ID via Resend events · tracked opens are estimates
           </p>
         </div>
       </div>
@@ -583,7 +586,7 @@ const CampaignDetailDrawer: React.FC<{
 };
 
 // ── Resend-to-non-openers modal ──────────────────────────────────────────────
-// Computes who was sent the original but never opened it, then launches a
+// Computes who was sent the original but has no tracked open, then launches a
 // follow-up campaign (same email, new subject) to exactly that audience.
 const ResendModal: React.FC<{
   campaign: Campaign;
@@ -656,7 +659,7 @@ const ResendModal: React.FC<{
                 )}
                 {recipients.length === 0 ? (
                   <p className="text-sm text-slate-500 text-center">
-                    Everyone who was sent this campaign has already opened it — or bounced/unsubscribed. Nothing to resend.
+                    Everyone who was sent this campaign has a tracked open — or bounced/unsubscribed. Nothing to resend.
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -669,8 +672,8 @@ const ResendModal: React.FC<{
                       placeholder="Subject line"
                     />
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Same email, fresh subject. A different subject keeps this reminder's opens
-                      separate from the original in your reports (and usually lifts opens).
+                      Same email, fresh subject. A different subject keeps this reminder's tracked opens
+                      separate from the original in your reports (and usually lifts engagement).
                       Unsubscribes and bounces are re-checked at send time.
                     </p>
                   </div>

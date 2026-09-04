@@ -876,7 +876,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                     <Activity className={`w-5 h-5 mt-0.5 ${newSegmentKind === 'campaign_engagement' ? 'text-blue-600' : 'text-gray-400'}`} />
                     <div>
                       <div className="text-sm font-semibold text-gray-900">Newsletter engagement</div>
-                      <div className="text-xs text-gray-500">Opened an exact number of selected newsletters.</div>
+                      <div className="text-xs text-gray-500">Recorded an exact number of tracked opens across selected newsletters.</div>
                     </div>
                   </button>
                 </div>
@@ -886,7 +886,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                 <div className="mb-6 space-y-4 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-900">Campaign-scoped opens</h3>
+                      <h3 className="text-sm font-semibold text-gray-900">Campaign-scoped tracked opens</h3>
                       <p className="text-xs text-gray-500 mt-0.5">Only people delivered every selected newsletter are eligible.</p>
                     </div>
                     <span className="text-sm font-semibold text-blue-600 whitespace-nowrap">Preview: {previewCount.toLocaleString()}</span>
@@ -935,7 +935,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                   <div className="grid grid-cols-[1fr_8rem] gap-3 items-end">
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">Audience rule</label>
-                      <div className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700">Opened exactly</div>
+                      <div className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700">Tracked opens exactly</div>
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">Newsletters</label>
@@ -950,9 +950,9 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                     </div>
                   </div>
                   {newCampaignIds.length > 0 && newCampaignOpenedCount > newCampaignIds.length && (
-                    <p className="text-xs font-semibold text-red-600">Open count cannot exceed the {newCampaignIds.length} selected newsletters.</p>
+                    <p className="text-xs font-semibold text-red-600">Tracked open count cannot exceed the {newCampaignIds.length} selected newsletters.</p>
                   )}
-                  <p className="text-xs text-blue-700">Campaign Builder will re-evaluate this live audience and enforce ATL consent, marketing pauses, and suppressions before sending.</p>
+                  <p className="text-xs text-blue-700">Tracked opens are estimates: privacy tools and security scanners may load the tracking image without a confirmed read. Campaign Builder re-evaluates the live audience and enforces ATL consent, marketing pauses, and suppressions before sending.</p>
                 </div>
               )}
 
@@ -1199,7 +1199,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                     <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
                       <span className="block text-xs font-semibold uppercase tracking-wide text-blue-500 mb-1">Qualification</span>
                       <span className="font-semibold text-blue-800">
-                        Opened exactly {selectedSegment.campaign_engagement?.opened_count || 0} of {selectedSegment.campaign_engagement?.campaign_ids.length || 0}
+                        Tracked opens exactly {selectedSegment.campaign_engagement?.opened_count || 0} of {selectedSegment.campaign_engagement?.campaign_ids.length || 0}
                       </span>
                     </div>
                     <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">

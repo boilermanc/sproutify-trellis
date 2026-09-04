@@ -171,7 +171,7 @@ export const EmailPerformancePanel: React.FC<EmailPerformancePanelProps> = ({ br
           {/* Aggregate rate strip */}
           <div className="grid grid-cols-3 gap-3 mb-5">
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 text-center">
-              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 flex items-center justify-center gap-1"><TrendingUp size={11} /> Open Rate</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 flex items-center justify-center gap-1"><TrendingUp size={11} /> Tracked Open Rate</p>
               <p className="text-2xl font-black text-emerald-600 mt-1">{pct(totals.opened, totals.delivered || totals.sent)}%</p>
             </div>
             <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-center">
@@ -210,7 +210,7 @@ export const EmailPerformancePanel: React.FC<EmailPerformancePanelProps> = ({ br
                   <th className="py-2 pr-3">Campaign (subject)</th>
                   <th className="py-2 px-2 text-right">Sent</th>
                   <th className="py-2 px-2 text-right">Delivered</th>
-                  <th className="py-2 px-2 text-right">Opened</th>
+                  <th className="py-2 px-2 text-right">Tracked opens</th>
                   <th className="py-2 px-2 text-right">Clicked</th>
                   <th className="py-2 px-2 text-right">Bounced</th>
                   <th className="py-2 pl-2 text-right">Last event</th>
@@ -295,7 +295,8 @@ export const EmailPerformancePanel: React.FC<EmailPerformancePanelProps> = ({ br
           )}
           <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">
             Campaigns are matched by their exact campaign ID. Sent counts provider-accepted sends; engagement counts unique recipients,
-            so webhook retries and repeated opens do not inflate the totals.
+            so webhook retries and repeated opens do not inflate the totals. Tracked opens remain estimates because privacy tools and
+            security scanners can load the tracking image without a confirmed read.
           </p>
         </>
       )}
