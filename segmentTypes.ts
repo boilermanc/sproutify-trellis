@@ -49,6 +49,17 @@ export interface LinkInterestDefinition {
   campaign_subjects?: string[];
 }
 
+// A campaign-scoped engagement cohort. Recipients qualify only when delivery
+// was recorded for every selected campaign, preventing never-contacted people
+// from being mislabeled as non-openers.
+export interface CampaignEngagementDefinition {
+  branch_slug: string;
+  campaign_ids: string[];
+  campaign_labels: string[];
+  opened_count: number;
+  delivery_requirement: 'all_selected';
+}
+
 // A saved segment
 export interface Segment {
   id: string;
@@ -62,10 +73,12 @@ export interface Segment {
   // 'email_list' is a static test list — membership is the explicit set of
   // addresses in `email_list`, which are emailed directly (bypassing branch
   // scope + consent) when used as a campaign audience.
-  kind?: 'rules' | 'email_list' | 'link_interest';
+  kind?: 'rules' | 'email_list' | 'link_interest' | 'campaign_engagement';
   email_list?: string[]; // lowercased addresses when kind === 'email_list'
   link_interest?: LinkInterestDefinition;
+  campaign_engagement?: CampaignEngagementDefinition;
   recommended_branches?: string[];
+  is_shared?: boolean;
   created_at: string;
   updated_at: string;
 }

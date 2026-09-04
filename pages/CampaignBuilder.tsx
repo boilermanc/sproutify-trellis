@@ -16,7 +16,9 @@ import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
 import {
   EngagementSummary, fetchEngagementByEmail, fetchLinkInterestByEmail, LinkInterestClickSummary,
+  CampaignEngagementSummary, fetchCampaignEngagementByEmail,
 } from '../services/emailReportingService';
+import { fetchSharedSegments } from '../services/audienceSegmentService';
 import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
 import { BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import CampaignBrandAssetLibrary from '../components/CampaignBrandAssetLibrary';
@@ -219,6 +221,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [suppressedEmails, setSuppressedEmails] = useState<Set<string>>(new Set());
   const [engagementByEmail, setEngagementByEmail] = useState<Map<string, EngagementSummary>>(new Map());
   const [linkInterestByEmail, setLinkInterestByEmail] = useState<Map<string, LinkInterestClickSummary[]>>(new Map());
+  const [campaignEngagementByEmail, setCampaignEngagementByEmail] = useState<Map<string, CampaignEngagementSummary>>(new Map());
   const [selectedTags] = useState<string[]>([]);
   const [triggerType, setTriggerType] = useState<'immediate' | 'scheduled' | 'staggered'>('immediate');
 
@@ -711,11 +714,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     });
   }, [authoritativeNewsletterAudience, profiles, selectedBranches]);
 
-  // Saved Segments — the same rule-based library managed on the Segments page
-  // (built-in presets + user-created custom segments from localStorage). These are
+  // Saved Segments — built-in presets, local QA lists, and team-shared Hub
+  // definitions managed on the Segments page. These are
   // evaluated with the shared segmentEngine over the ENRICHED profiles so that what
   // you see on the Segments page matches what you can target here.
-  const savedSegments = useMemo<Segment[]>(() => {
+  const [savedSegments, setSavedSegments] = useState<Segment[]>(() => {
     const presets: Segment[] = PRESET_SEGMENTS.map((preset, index) => ({
       ...preset,
       id: `preset-${index}`,
@@ -728,7 +731,32 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       if (raw) custom = JSON.parse(raw);
     } catch { /* ignore malformed cache */ }
     return [...presets, ...custom];
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSharedSegments().then((shared) => {
+      if (cancelled) return;
+      setSavedSegments((current) => {
+        const presetsAndLocal = current.filter(segment => segment.is_preset || !segment.is_shared);
+        return [...presetsAndLocal, ...shared];
+      });
+    }).catch((error) => console.error('[CampaignBuilder] Failed to load shared segments:', error));
+    return () => { cancelled = true; };
   }, []);
+
+  const campaignEngagementIds = useMemo(() => [...new Set(
+    savedSegments.flatMap(segment => segment.campaign_engagement?.campaign_ids || []),
+  )], [savedSegments]);
+  const campaignEngagementIdsKey = campaignEngagementIds.join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCampaignEngagementByEmail(campaignEngagementIds).then((engagement) => {
+      if (!cancelled) setCampaignEngagementByEmail(engagement);
+    });
+    return () => { cancelled = true; };
+  }, [campaignEngagementIdsKey]);
 
   // Freeze the selected audience definitions onto every draft/launch. Segment
   // membership stays live, but historical campaign attribution must still say
@@ -741,6 +769,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       name: segment.name,
       kind: segment.kind || 'rules',
       link_interest: segment.link_interest || null,
+      campaign_engagement: segment.campaign_engagement || null,
       recommended_branches: segment.recommended_branches || [],
     })), [selectedSavedSegments, savedSegments]);
 
@@ -755,7 +784,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       if (seg.kind === 'email_list') continue;
       const emails = new Set<string>();
       for (const ep of enriched) {
-        if (ep.email && evaluateSegment(ep, seg, engagementByEmail, linkInterestByEmail)) emails.add(ep.email.toLowerCase());
+        if (ep.email && evaluateSegment(ep, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(ep.email.toLowerCase());
       }
       // Newsletter-only clickers are intentionally absent from the federated
       // customer profile feed. Seed link-interest membership from the Hub event
@@ -767,13 +796,23 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
             _spoke_id: 'hub-link-interest',
             _spoke_name: 'Email engagement',
           };
-          if (evaluateSegment(clickOnlyIdentity, seg, engagementByEmail, linkInterestByEmail)) emails.add(email);
+          if (evaluateSegment(clickOnlyIdentity, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(email);
+        }
+      }
+      if (seg.kind === 'campaign_engagement') {
+        for (const email of campaignEngagementByEmail.keys()) {
+          const engagementOnlyIdentity: EnrichedProfile = {
+            email,
+            _spoke_id: 'hub-campaign-engagement',
+            _spoke_name: 'Email engagement',
+          };
+          if (evaluateSegment(engagementOnlyIdentity, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(email);
         }
       }
       map[seg.id] = emails;
     }
     return map;
-  }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail, linkInterestByEmail]);
+  }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail]);
 
   const eventSegmentIds = useMemo(() => new Set(
     savedSegments.filter(isEventAudienceSegment).map((segment) => segment.id),

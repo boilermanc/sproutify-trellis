@@ -17,11 +17,13 @@ import {
   SegmentField, LinkInterestMatchType,
 } from './segmentTypes';
 import {
-  filterProfilesBySegment,
+  evaluateSegment, filterProfilesBySegment,
 } from './segmentEngine';
 import {
   fetchEngagementByEmail, EngagementSummary, fetchLinkInterestByEmail, LinkInterestClickSummary,
+  fetchCampaignChoices, CampaignChoice, fetchCampaignEngagementByEmail, CampaignEngagementSummary,
 } from './services/emailReportingService';
+import { deleteSharedSegment, fetchSharedSegments, saveSharedSegment } from './services/audienceSegmentService';
 import { SegmentProfilesModal } from './SegmentProfilesModal';
 
 interface SegmentsProps {
@@ -121,8 +123,10 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
 
   // State
   const [customSegments, setCustomSegments] = useState<Segment[]>(() => {
-    const saved = localStorage.getItem('trellis_custom_segments');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('trellis_custom_segments');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
   const [selectedSegment, setSelectedSegment] = useState<Segment | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -135,13 +139,24 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
   const [newSegmentColor, setNewSegmentColor] = useState('blue');
   const [newSegmentRules, setNewSegmentRules] = useState<SegmentRule[]>([]);
   const [newSegmentJoin, setNewSegmentJoin] = useState<'AND' | 'OR'>('AND');
-  const [newSegmentKind, setNewSegmentKind] = useState<'rules' | 'email_list' | 'link_interest'>('rules');
+  const [newSegmentKind, setNewSegmentKind] = useState<'rules' | 'email_list' | 'link_interest' | 'campaign_engagement'>('rules');
   const [newSegmentEmailsRaw, setNewSegmentEmailsRaw] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('https://');
   const [newLinkMatchType, setNewLinkMatchType] = useState<LinkInterestMatchType>('domain');
   const [newLinkMinClicks, setNewLinkMinClicks] = useState(1);
   const [newLinkLookbackDays, setNewLinkLookbackDays] = useState<number | ''>('');
   const [newLinkCampaignSubjects, setNewLinkCampaignSubjects] = useState('');
+  const atlBranchSlug = useMemo(() => branchContext?.allBranches.find(
+    (branch) => /atl.*urban.*farm/i.test(`${branch.slug} ${branch.name}`),
+  )?.slug || 'atlurbanfarms', [branchContext]);
+  const [newCampaignBranch, setNewCampaignBranch] = useState(atlBranchSlug);
+  const [newCampaignIds, setNewCampaignIds] = useState<string[]>([]);
+  const [newCampaignOpenedCount, setNewCampaignOpenedCount] = useState(2);
+  const [campaignChoices, setCampaignChoices] = useState<CampaignChoice[]>([]);
+  const [campaignChoicesLoading, setCampaignChoicesLoading] = useState(false);
+  const [campaignEngagementByEmail, setCampaignEngagementByEmail] = useState<Map<string, CampaignEngagementSummary>>(new Map());
+  const [segmentSaveError, setSegmentSaveError] = useState<string | null>(null);
+  const [isSavingSegment, setIsSavingSegment] = useState(false);
 
   // Parsed, validated test-list emails for the builder (also drives the save guard).
   const parsedEmails = useMemo(() => parseEmailList(newSegmentEmailsRaw), [newSegmentEmailsRaw]);
@@ -163,15 +178,29 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     [presetSegments, customSegments]
   );
 
-  // Save custom segments to localStorage
+  // Test lists and legacy personal segments stay browser-local. Shared audience
+  // definitions are persisted in the Hub and deliberately excluded here.
   useEffect(() => {
-    localStorage.setItem('trellis_custom_segments', JSON.stringify(customSegments));
+    localStorage.setItem('trellis_custom_segments', JSON.stringify(customSegments.filter(segment => !segment.is_shared)));
   }, [customSegments]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSharedSegments().then((shared) => {
+      if (cancelled) return;
+      setCustomSegments((current) => {
+        const sharedIds = new Set(shared.map(segment => segment.id));
+        return [...shared, ...current.filter(segment => !sharedIds.has(segment.id))];
+      });
+    }).catch((error) => console.error('[Segments] Failed to load shared segments:', error));
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const reloadSavedSegments = () => {
       try {
-        setCustomSegments(JSON.parse(localStorage.getItem('trellis_custom_segments') || '[]'));
+        const local: Segment[] = JSON.parse(localStorage.getItem('trellis_custom_segments') || '[]');
+        setCustomSegments((current) => [...current.filter(segment => segment.is_shared), ...local]);
       } catch {
         // Keep the current in-memory segments if browser storage is malformed.
       }
@@ -179,6 +208,32 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     window.addEventListener('trellis:segments-updated', reloadSavedSegments);
     return () => window.removeEventListener('trellis:segments-updated', reloadSavedSegments);
   }, []);
+
+  useEffect(() => {
+    if (newSegmentKind !== 'campaign_engagement' || !newCampaignBranch) return;
+    let cancelled = false;
+    setCampaignChoicesLoading(true);
+    fetchCampaignChoices(newCampaignBranch).then((choices) => {
+      if (!cancelled) setCampaignChoices(choices);
+    }).finally(() => {
+      if (!cancelled) setCampaignChoicesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [newSegmentKind, newCampaignBranch]);
+
+  const campaignIdsToLoad = useMemo(() => [...new Set([
+    ...customSegments.flatMap(segment => segment.campaign_engagement?.campaign_ids || []),
+    ...(newSegmentKind === 'campaign_engagement' ? newCampaignIds : []),
+  ])], [customSegments, newSegmentKind, newCampaignIds]);
+  const campaignIdsToLoadKey = campaignIdsToLoad.join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCampaignEngagementByEmail(campaignIdsToLoad).then((engagement) => {
+      if (!cancelled) setCampaignEngagementByEmail(engagement);
+    });
+    return () => { cancelled = true; };
+  }, [campaignIdsToLoadKey]);
 
   // Email engagement (opens/clicks per address) so the "Email Engagement"
   // rule category can actually evaluate. Loaded once; rules resolve to false
@@ -202,12 +257,18 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
   // keeping the federated rule intact: no profile row is written to the Hub.
   const profilesForSegment = useCallback((segment: Segment): EnrichedProfile[] => {
     const matched = dedupeProfilesByEmail(
-      filterProfilesBySegment(profiles, segment, engagementByEmail, linkInterestByEmail),
+      filterProfilesBySegment(profiles, segment, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail),
     );
-    if (segment.kind !== 'link_interest' || (branchContext && !branchContext.isAllSelected)) return matched;
+    if (!['link_interest', 'campaign_engagement'].includes(segment.kind || 'rules')) return matched;
+    if (segment.kind === 'link_interest' && branchContext && !branchContext.isAllSelected) return matched;
+    if (segment.kind === 'campaign_engagement' && branchContext && !branchContext.isAllSelected
+      && !branchContext.activeBranchSlugs.includes(segment.campaign_engagement?.branch_slug || '')) return matched;
 
     const byEmail = new Map(matched.map((profile) => [profile.email.toLowerCase(), profile] as const));
-    for (const email of linkInterestByEmail.keys()) {
+    const candidateEmails = segment.kind === 'campaign_engagement'
+      ? campaignEngagementByEmail.keys()
+      : linkInterestByEmail.keys();
+    for (const email of candidateEmails) {
       if (byEmail.has(email)) continue;
       const synthetic: EnrichedProfile = {
         email,
@@ -216,14 +277,14 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
         subscribed: false,
         _spoke_id: 'hub-link-interest',
         _spoke_name: 'Email engagement',
-        metadata: { link_interest_only: true },
+        metadata: { engagement_only: true },
       };
-      if (filterProfilesBySegment([synthetic], segment, engagementByEmail, linkInterestByEmail).length > 0) {
+      if (filterProfilesBySegment([synthetic], segment, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail).length > 0) {
         byEmail.set(email, synthetic);
       }
     }
     return [...byEmail.values()];
-  }, [profiles, engagementByEmail, linkInterestByEmail, branchContext]);
+  }, [profiles, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail, branchContext]);
 
   const matchingProfiles = useMemo(
     () => selectedSegment ? profilesForSegment(selectedSegment) : [],
@@ -258,11 +319,13 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
   };
 
   // Whether the current builder form is valid enough to save.
-  const canSave = newSegmentName.trim().length > 0 && (
+  const canSave = !isSavingSegment && newSegmentName.trim().length > 0 && (
     newSegmentKind === 'email_list'
       ? parsedEmails.length > 0
       : newSegmentKind === 'link_interest'
         ? isValidHttpUrl(newLinkUrl) && newLinkMinClicks >= 1
+        : newSegmentKind === 'campaign_engagement'
+          ? newCampaignIds.length > 0 && newCampaignOpenedCount >= 0 && newCampaignOpenedCount <= newCampaignIds.length
         : newSegmentRules.length > 0
   );
 
@@ -273,7 +336,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     setNewSegmentName(segment.name);
     setNewSegmentDescription(segment.description || '');
     setNewSegmentColor(segment.color || 'blue');
-    setNewSegmentKind(segment.kind === 'email_list' ? 'email_list' : segment.kind === 'link_interest' ? 'link_interest' : 'rules');
+    setNewSegmentKind(segment.kind === 'email_list' ? 'email_list' : segment.kind === 'link_interest' ? 'link_interest' : segment.kind === 'campaign_engagement' ? 'campaign_engagement' : 'rules');
     setNewSegmentEmailsRaw((segment.email_list || []).join('\n'));
     setNewSegmentRules(firstGroup ? firstGroup.rules.map(r => ({ ...r })) : []);
     setNewSegmentJoin(firstGroup?.join || 'AND');
@@ -282,6 +345,10 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     setNewLinkMinClicks(segment.link_interest?.min_clicks || 1);
     setNewLinkLookbackDays(segment.link_interest?.lookback_days || '');
     setNewLinkCampaignSubjects((segment.link_interest?.campaign_subjects || []).join('\n'));
+    setNewCampaignBranch(segment.campaign_engagement?.branch_slug || atlBranchSlug);
+    setNewCampaignIds(segment.campaign_engagement?.campaign_ids || []);
+    setNewCampaignOpenedCount(segment.campaign_engagement?.opened_count ?? 2);
+    setSegmentSaveError(null);
     setIsCreating(true);
   };
 
@@ -311,10 +378,35 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
         },
       };
     }
+    if (newSegmentKind === 'campaign_engagement') {
+      const choiceById = new Map<string, CampaignChoice>(campaignChoices.map(choice => [choice.id, choice]));
+      const existingLabelById = new Map(
+        (editingSegment?.campaign_engagement?.campaign_ids || []).map((id, index) => [
+          id,
+          editingSegment?.campaign_engagement?.campaign_labels[index] || id,
+        ]),
+      );
+      return {
+        kind: 'campaign_engagement' as const,
+        email_list: undefined,
+        link_interest: undefined,
+        icon: 'activity',
+        rule_groups: [],
+        recommended_branches: [newCampaignBranch],
+        campaign_engagement: {
+          branch_slug: newCampaignBranch,
+          campaign_ids: newCampaignIds,
+          campaign_labels: newCampaignIds.map(id => choiceById.get(id)?.subject || existingLabelById.get(id) || id),
+          opened_count: newCampaignOpenedCount,
+          delivery_requirement: 'all_selected' as const,
+        },
+      };
+    }
     return {
       kind: 'rules' as const,
       email_list: undefined,
       link_interest: undefined,
+      campaign_engagement: undefined,
       icon: 'layers',
       rule_groups: [{
         id: editingSegment?.rule_groups[0]?.id || crypto.randomUUID(),
@@ -325,45 +417,60 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
   };
 
   // Save — updates in place when editing, otherwise creates a new segment
-  const saveSegment = () => {
+  const saveSegment = async () => {
     if (!canSave) return;
     const fields = buildSegmentFields();
-
-    if (editingSegment) {
-      const updated: Segment = {
+    setSegmentSaveError(null);
+    setIsSavingSegment(true);
+    try {
+      const candidate: Segment = editingSegment ? {
         ...editingSegment,
         name: newSegmentName.trim(),
         description: newSegmentDescription.trim(),
         color: newSegmentColor,
         ...fields,
         updated_at: new Date().toISOString(),
+      } : {
+        id: crypto.randomUUID(),
+        name: newSegmentName.trim(),
+        description: newSegmentDescription.trim(),
+        color: newSegmentColor,
+        is_preset: false,
+        ...fields,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
-      setCustomSegments(segments => segments.map(s => s.id === updated.id ? updated : s));
-      setSelectedSegment(prev => prev?.id === updated.id ? updated : prev);
+
+      let saved: Segment;
+      if (candidate.kind === 'email_list') {
+        if (editingSegment?.is_shared) await deleteSharedSegment(editingSegment.id);
+        saved = { ...candidate, is_shared: false };
+      } else {
+        saved = await saveSharedSegment(candidate);
+      }
+      setCustomSegments(segments => editingSegment
+        ? segments.map(segment => segment.id === saved.id ? saved : segment)
+        : [saved, ...segments]);
+      setSelectedSegment(prev => prev?.id === saved.id ? saved : prev);
+      window.dispatchEvent(new Event('trellis:segments-updated'));
       resetForm();
-      return;
+    } catch (error) {
+      console.error('[Segments] Failed to save segment:', error);
+      setSegmentSaveError(error instanceof Error ? error.message : 'Could not save this shared segment');
+    } finally {
+      setIsSavingSegment(false);
     }
-
-    const newSegment: Segment = {
-      id: crypto.randomUUID(),
-      name: newSegmentName.trim(),
-      description: newSegmentDescription.trim(),
-      color: newSegmentColor,
-      is_preset: false,
-      ...fields,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    setCustomSegments([...customSegments, newSegment]);
-    resetForm();
   };
 
   // Delete custom segment
-  const deleteSegment = (segmentId: string) => {
-    setCustomSegments(segments => segments.filter(s => s.id !== segmentId));
-    if (selectedSegment?.id === segmentId) {
-      setSelectedSegment(null);
+  const deleteSegment = async (segmentId: string) => {
+    const segment = customSegments.find(item => item.id === segmentId);
+    try {
+      if (segment?.is_shared) await deleteSharedSegment(segmentId);
+      setCustomSegments(segments => segments.filter(item => item.id !== segmentId));
+      if (selectedSegment?.id === segmentId) setSelectedSegment(null);
+    } catch (error) {
+      console.error('[Segments] Failed to delete segment:', error);
     }
   };
 
@@ -383,6 +490,10 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     setNewLinkMinClicks(1);
     setNewLinkLookbackDays('');
     setNewLinkCampaignSubjects('');
+    setNewCampaignBranch(atlBranchSlug);
+    setNewCampaignIds([]);
+    setNewCampaignOpenedCount(2);
+    setSegmentSaveError(null);
   };
 
   // Get field by ID
@@ -395,6 +506,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
     if (newSegmentKind === 'email_list') return parsedEmails.length;
     if (newSegmentKind === 'rules' && newSegmentRules.length === 0) return 0;
     if (newSegmentKind === 'link_interest' && !isValidHttpUrl(newLinkUrl)) return 0;
+    if (newSegmentKind === 'campaign_engagement' && newCampaignIds.length === 0) return 0;
     const previewSegment: Segment = {
       id: 'preview',
       name: 'Preview',
@@ -407,11 +519,25 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
         lookback_days: newLinkLookbackDays === '' ? null : Math.max(1, newLinkLookbackDays),
         campaign_subjects: parseLineList(newLinkCampaignSubjects),
       } : undefined,
+      campaign_engagement: newSegmentKind === 'campaign_engagement' ? {
+        branch_slug: newCampaignBranch,
+        campaign_ids: newCampaignIds,
+        campaign_labels: newCampaignIds.map(id => campaignChoices.find(choice => choice.id === id)?.subject || id),
+        opened_count: newCampaignOpenedCount,
+        delivery_requirement: 'all_selected',
+      } : undefined,
       created_at: '',
       updated_at: '',
     };
-    return dedupeProfilesByEmail(filterProfilesBySegment(profiles, previewSegment, engagementByEmail, linkInterestByEmail)).length;
-  }, [newSegmentKind, parsedEmails.length, newSegmentRules, newSegmentJoin, newLinkUrl, newLinkMatchType, newLinkMinClicks, newLinkLookbackDays, newLinkCampaignSubjects, profiles, engagementByEmail, linkInterestByEmail]);
+    const direct = dedupeProfilesByEmail(filterProfilesBySegment(profiles, previewSegment, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail));
+    if (newSegmentKind !== 'campaign_engagement') return direct.length;
+    const emails = new Set(direct.map(profile => profile.email.toLowerCase()));
+    for (const email of campaignEngagementByEmail.keys()) {
+      const synthetic = { email, _spoke_id: 'hub-campaign-engagement', _spoke_name: 'Email engagement' } as EnrichedProfile;
+      if (evaluateSegment(synthetic, previewSegment, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(email);
+    }
+    return emails.size;
+  }, [newSegmentKind, parsedEmails.length, newSegmentRules, newSegmentJoin, newLinkUrl, newLinkMatchType, newLinkMinClicks, newLinkLookbackDays, newLinkCampaignSubjects, newCampaignBranch, newCampaignIds, newCampaignOpenedCount, campaignChoices, profiles, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail]);
 
   // Render rule editor row
   const renderRuleEditor = (rule: SegmentRule, index: number) => {
@@ -609,6 +735,9 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                         {segment.kind === 'email_list' && (
                           <span className="text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">Test</span>
                         )}
+                        {segment.is_shared && (
+                          <span className="text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Shared</span>
+                        )}
                       </div>
                       <div className="text-sm text-gray-500">
                         {segment.kind === 'email_list'
@@ -705,7 +834,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
               {/* Segment kind: rule-based vs static test list */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Segment Type</label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setNewSegmentKind('rules')}
@@ -739,8 +868,93 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                       <div className="text-xs text-gray-500">People who clicked a tracked destination.</div>
                     </div>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewSegmentKind('campaign_engagement')}
+                    className={`flex items-start gap-3 p-3 rounded-lg border-2 text-left transition-all ${newSegmentKind === 'campaign_engagement' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                  >
+                    <Activity className={`w-5 h-5 mt-0.5 ${newSegmentKind === 'campaign_engagement' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Newsletter engagement</div>
+                      <div className="text-xs text-gray-500">Opened an exact number of selected newsletters.</div>
+                    </div>
+                  </button>
                 </div>
               </div>
+
+              {newSegmentKind === 'campaign_engagement' && (
+                <div className="mb-6 space-y-4 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Campaign-scoped opens</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Only people delivered every selected newsletter are eligible.</p>
+                    </div>
+                    <span className="text-sm font-semibold text-blue-600 whitespace-nowrap">Preview: {previewCount.toLocaleString()}</span>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Branch</label>
+                    <select
+                      value={newCampaignBranch}
+                      onChange={(event) => { setNewCampaignBranch(event.target.value); setNewCampaignIds([]); }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {(branchContext?.allBranches || []).filter(branch => branch.is_active).map(branch => (
+                        <option key={branch.id} value={branch.slug}>{branch.name}</option>
+                      ))}
+                      {!branchContext?.allBranches.some(branch => branch.slug === newCampaignBranch) && (
+                        <option value={newCampaignBranch}>ATL Urban Farms</option>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-semibold text-gray-600">Newsletters</label>
+                      <span className="text-xs font-semibold text-blue-600">{newCampaignIds.length} selected</span>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto rounded-lg border border-blue-100 bg-white divide-y divide-blue-50">
+                      {campaignChoicesLoading ? (
+                        <div className="flex items-center justify-center gap-2 p-6 text-xs text-gray-500"><Clock className="w-4 h-4 animate-pulse" /> Loading newsletters…</div>
+                      ) : campaignChoices.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-gray-500">No launched, tracked newsletters found for this branch.</div>
+                      ) : campaignChoices.map(choice => (
+                        <label key={choice.id} className="flex items-start gap-3 p-3 cursor-pointer hover:bg-blue-50/50">
+                          <input
+                            type="checkbox"
+                            checked={newCampaignIds.includes(choice.id)}
+                            onChange={() => setNewCampaignIds(ids => ids.includes(choice.id) ? ids.filter(id => id !== choice.id) : [...ids, choice.id])}
+                            className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-gray-800 truncate">{choice.subject}</span>
+                            <span className="block text-xs text-gray-400">{choice.name} · {new Date(choice.launched_at).toLocaleDateString()}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[1fr_8rem] gap-3 items-end">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Audience rule</label>
+                      <div className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700">Opened exactly</div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Newsletters</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={newCampaignIds.length}
+                        value={newCampaignOpenedCount}
+                        onChange={(event) => setNewCampaignOpenedCount(Math.max(0, Number(event.target.value) || 0))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                  {newCampaignIds.length > 0 && newCampaignOpenedCount > newCampaignIds.length && (
+                    <p className="text-xs font-semibold text-red-600">Open count cannot exceed the {newCampaignIds.length} selected newsletters.</p>
+                  )}
+                  <p className="text-xs text-blue-700">Campaign Builder will re-evaluate this live audience and enforce ATL consent, marketing pauses, and suppressions before sending.</p>
+                </div>
+              )}
 
               {newSegmentKind === 'link_interest' && (
                 <div className="mb-6 space-y-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4">
@@ -883,6 +1097,9 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
               )}
 
               {/* Actions */}
+              {segmentSaveError && (
+                <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Could not save segment: {segmentSaveError}</div>
+              )}
               <div className="flex justify-end gap-3">
                 <button
                   onClick={resetForm}
@@ -896,7 +1113,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="w-4 h-4" />
-                  {editingSegment ? 'Save Changes' : 'Save Segment'}
+                  {isSavingSegment ? 'Saving…' : editingSegment ? 'Save Changes' : 'Save Segment'}
                 </button>
               </div>
             </div>
@@ -974,6 +1191,27 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
                   {(selectedSegment.link_interest?.campaign_subjects?.length || 0) > 0 && (
                     <p className="text-xs text-gray-500 mt-3">Campaigns: {selectedSegment.link_interest!.campaign_subjects!.join(', ')}</p>
                   )}
+                </div>
+              ) : selectedSegment.kind === 'campaign_engagement' ? (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Newsletter Engagement Rule</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-lg bg-blue-50 border border-blue-100 p-3">
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-blue-500 mb-1">Qualification</span>
+                      <span className="font-semibold text-blue-800">
+                        Opened exactly {selectedSegment.campaign_engagement?.opened_count || 0} of {selectedSegment.campaign_engagement?.campaign_ids.length || 0}
+                      </span>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Eligibility</span>
+                      <span className="font-semibold text-gray-800">Delivered every selected newsletter</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-1">
+                    {(selectedSegment.campaign_engagement?.campaign_labels || []).map((label, index) => (
+                      <p key={`${label}-${index}`} className="text-xs text-gray-500">{index + 1}. {label}</p>
+                    ))}
+                  </div>
                 </div>
               ) : (
               /* Rules Display */

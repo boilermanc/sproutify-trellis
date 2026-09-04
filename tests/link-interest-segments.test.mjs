@@ -45,7 +45,7 @@ test('Segments and Campaign Builder share link-intent membership and retain cons
   assert.match(segments, /Historical and future Resend clicks/);
   assert.match(segments, /hub-link-interest/);
   assert.match(builder, /fetchLinkInterestByEmail/);
-  assert.match(builder, /evaluateSegment\(ep, seg, engagementByEmail, linkInterestByEmail\)/);
+  assert.match(builder, /evaluateSegment\(ep, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail\)/);
   assert.match(builder, /Newsletter-only clickers/);
   assert.match(builder, /for \(const email of linkInterestByEmail\.keys\(\)\)/);
   assert.match(builder, /authoritativeNewsletterAudience \? authoritativeNewsletterProfiles : scopedProfiles/);

@@ -7,6 +7,7 @@ import {
   SegmentOperator
 } from './segmentTypes';
 import { EngagementSummary, LinkInterestClickSummary } from './services/emailReportingService';
+import { CampaignEngagementSummary } from './services/emailReportingService';
 
 // Sentinel for last_opened_days_ago / last_clicked_days_ago when a profile has never
 // opened/clicked (see SEGMENT_FIELDS 'engagement' category in segmentTypes.ts).
@@ -294,6 +295,7 @@ export const evaluateSegment = (
   segment: Segment,
   engagementByEmail?: Map<string, EngagementSummary>,
   linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
+  campaignEngagementByEmail?: Map<string, CampaignEngagementSummary>,
 ): boolean => {
   // Static test list: membership is the explicit set of addresses.
   if (segment.kind === 'email_list') {
@@ -303,6 +305,18 @@ export const evaluateSegment = (
 
   if (segment.kind === 'link_interest') {
     return matchesLinkInterest(profile.email || '', segment, linkInterestByEmail);
+  }
+
+  if (segment.kind === 'campaign_engagement') {
+    const definition = segment.campaign_engagement;
+    if (!definition || definition.campaign_ids.length === 0 || !campaignEngagementByEmail) return false;
+    const summary = campaignEngagementByEmail.get((profile.email || '').toLowerCase());
+    if (!summary) return false;
+    const selected = new Set(definition.campaign_ids);
+    const delivered = summary.delivered_campaign_ids.filter((id) => selected.has(id)).length;
+    if (definition.delivery_requirement === 'all_selected' && delivered !== selected.size) return false;
+    const opened = summary.opened_campaign_ids.filter((id) => selected.has(id)).length;
+    return opened === definition.opened_count;
   }
 
   if (segment.rule_groups.length === 0) return true;
@@ -317,8 +331,9 @@ export const filterProfilesBySegment = (
   segment: Segment,
   engagementByEmail?: Map<string, EngagementSummary>,
   linkInterestByEmail?: Map<string, LinkInterestClickSummary[]>,
+  campaignEngagementByEmail?: Map<string, CampaignEngagementSummary>,
 ): EnrichedProfile[] => {
-  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail, linkInterestByEmail));
+  return profiles.filter(profile => evaluateSegment(profile, segment, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail));
 };
 
 // Get count of profiles matching a segment

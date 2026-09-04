@@ -8,7 +8,7 @@
     "build": "vite build",
     "test:leads": "node --test tests/lead-parser.test.mjs tests/lead-timeline.test.mjs tests/lead-activity.test.mjs tests/lead-email.test.mjs tests/lead-sequence.test.mjs tests/lead-quote.test.mjs tests/lead-followups.test.mjs tests/lead-board.test.mjs tests/lead-metrics.test.mjs tests/lead-csv.test.mjs tests/lead-bulk.test.mjs tests/lead-unsubscribe-lost.test.mjs",
     "test:posthog": "node --test tests/posthog-contract.test.mjs",
-    "test:campaigns": "node --test tests/campaign-draft-contract.test.mjs tests/hub-native-branches.test.mjs tests/link-interest-segments.test.mjs",
+    "test:campaigns": "node --test tests/campaign-draft-contract.test.mjs tests/hub-native-branches.test.mjs tests/link-interest-segments.test.mjs tests/campaign-engagement-segments.test.mjs",
     "test:reddit-ads": "node --test tests/reddit-ads-contract.test.mjs",
     "test:studio": "node --test tests/studio-album-planning.test.mjs tests/studio-album-contract.test.mjs",
     "test:media-generation": "node --test tests/media-generation-contract.test.mjs",

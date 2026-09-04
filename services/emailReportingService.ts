@@ -132,6 +132,94 @@ export interface RecentCampaignEngagementResult {
   error: string | null;
 }
 
+export interface CampaignEngagementSummary {
+  email: string;
+  delivered_campaign_ids: string[];
+  opened_campaign_ids: string[];
+}
+
+export interface CampaignChoice {
+  id: string;
+  name: string;
+  subject: string;
+  launched_at: string;
+  branches: string[];
+}
+
+const normalizeBranch = (value: string): string => value
+  .toLowerCase()
+  .replace(/[^a-z0-9]/g, '')
+  .replace(/com$/, '');
+
+export async function fetchCampaignChoices(branchQuery: string): Promise<CampaignChoice[]> {
+  try {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('id,name,subject,branches,launched_at')
+      .not('launched_at', 'is', null)
+      .not('subject', 'is', null)
+      .order('launched_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    const branch = normalizeBranch(branchQuery);
+    return (data || []).filter((row: any) => Array.isArray(row.branches) && row.branches.some(
+      (candidate: unknown) => normalizeBranch(String(candidate)) === branch,
+    )).map((row: any) => ({
+      id: row.id,
+      name: row.name || row.subject,
+      subject: row.subject,
+      launched_at: row.launched_at,
+      branches: row.branches,
+    }));
+  } catch (e) {
+    console.error('fetchCampaignChoices failed:', e);
+    return [];
+  }
+}
+
+// Loads only recipient status for the selected campaign IDs. Repeated provider
+// events are already collapsed by campaign_recipient_status_by_id.
+export async function fetchCampaignEngagementByEmail(
+  campaignIds: string[],
+): Promise<Map<string, CampaignEngagementSummary>> {
+  const result = new Map<string, CampaignEngagementSummary>();
+  const ids = [...new Set(campaignIds.filter(Boolean))];
+  if (ids.length === 0) return result;
+  try {
+    const rows = await fetchAllPages<{
+      campaign_id: string;
+      email: string;
+      delivered: boolean;
+      opened: boolean;
+    }>(
+      'campaign_recipient_status_by_id',
+      'campaign_id,email,delivered,opened',
+      (query) => query.in('campaign_id', ids),
+      'email',
+    );
+    for (const row of rows) {
+      const email = (row.email || '').trim().toLowerCase();
+      if (!email) continue;
+      const summary = result.get(email) || {
+        email,
+        delivered_campaign_ids: [],
+        opened_campaign_ids: [],
+      };
+      if (row.delivered && !summary.delivered_campaign_ids.includes(row.campaign_id)) {
+        summary.delivered_campaign_ids.push(row.campaign_id);
+      }
+      if (row.opened && !summary.opened_campaign_ids.includes(row.campaign_id)) {
+        summary.opened_campaign_ids.push(row.campaign_id);
+      }
+      result.set(email, summary);
+    }
+    return result;
+  } catch (e) {
+    console.error('fetchCampaignEngagementByEmail failed:', e);
+    return result;
+  }
+}
+
 // Sage uses this for factual questions such as "how many people read the last
 // two ATL emails?". Campaign selection is branch-aware; metrics are keyed by
 // campaign_id so two campaigns with the same subject cannot contaminate each
