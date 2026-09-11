@@ -11,6 +11,9 @@ export const PAGE_INFO: Partial<Record<ViewState, string>> = {
   leads:
     "Tracks prospects who haven't converted into paying customers yet — inquiries and sign-ups that live only in Trellis, not federated from a spoke. Use it to run a pipeline: log where a lead came from, move them through stages, and follow their timeline before they graduate into a Profile.",
 
+  prospecting:
+    "A founder-only acquisition workspace for SpectIQ inspection-company prospects. It keeps territory research, evidence, verification, follow-ups, and sales progress isolated from Farm Leads and tenant profiles; your trusted Trellis administrator login and explicit founder approvals protect sensitive actions.",
+
   segments:
     "A rule-based audience builder over the federated profile data (order value, LTV, location, engagement, and more), with ready-made presets plus your own saved segments. Use it to define an audience once, then send it straight to Campaign Builder instead of rebuilding the same filter every time you launch.",
 

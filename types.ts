@@ -609,7 +609,7 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'promo-studio' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'prospecting' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'promo-studio' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
 
 export interface StudioAlbum {
   id: string;
@@ -2490,4 +2490,254 @@ export interface CreateMediaGenerationJob {
   parameters?: Record<string, unknown>;
   inputs?: MediaGenerationJobInput[];
   idempotency_key?: string;
+}
+
+// ---------------------------------------------------------------------------
+// SpectIQ founder prospecting (isolated from tenant profiles and Farm leads)
+// ---------------------------------------------------------------------------
+
+export type ProspectingWebsiteState =
+  | 'official_website_confirmed'
+  | 'official_website_not_identified'
+  | 'website_unreachable_at_scan_time'
+  | 'social_or_directory_only_observed'
+  | 'needs_human_verification';
+
+export type ProspectingSalesStage =
+  | 'new'
+  | 'audited'
+  | 'review_pending'
+  | 'pitch_ready'
+  | 'contacted'
+  | 'engaged'
+  | 'demo_booked'
+  | 'won'
+  | 'nurture'
+  | 'not_a_fit';
+
+export type ProspectingVerificationState =
+  | 'unreviewed'
+  | 'evidence_reviewed'
+  | 'identity_verified'
+  | 'contact_verified'
+  | 'outreach_approved';
+
+export type ProspectingTerritoryStatus = 'draft' | 'active' | 'archived';
+export type ProspectingContactVerificationStatus =
+  | 'unknown'
+  | 'unverified'
+  | 'verified'
+  | 'invalid'
+  | 'bounced'
+  | 'complained'
+  | 'unsubscribed';
+export type ProspectingTaskStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+export type ProspectingEvidenceDecision = 'pending' | 'approved' | 'corrected' | 'rejected';
+export type ProspectingClaimType =
+  | 'company_identity'
+  | 'official_website'
+  | 'contact_identity'
+  | 'contact_email'
+  | 'services'
+  | 'service_area'
+  | 'opportunity'
+  | 'outreach_angle'
+  | 'other';
+export type ProspectingEvidenceSourceType =
+  | 'official_website'
+  | 'government_registry'
+  | 'professional_directory'
+  | 'social_profile'
+  | 'search_result'
+  | 'founder_observation'
+  | 'document'
+  | 'other';
+export type ProspectingActivityType =
+  | 'territory_created'
+  | 'territory_updated'
+  | 'territory_archived'
+  | 'prospect_created'
+  | 'prospect_updated'
+  | 'prospect_archived'
+  | 'contact_added'
+  | 'contact_updated'
+  | 'stage_changed'
+  | 'verification_changed'
+  | 'claim_added'
+  | 'claim_updated'
+  | 'claim_reviewed'
+  | 'note_added'
+  | 'note_updated'
+  | 'task_created'
+  | 'task_completed'
+  | 'task_cancelled'
+  | 'exported';
+
+export interface ProspectingTerritory {
+  id: string;
+  name: string;
+  kind: 'city' | 'county' | 'state' | 'multi_market';
+  city: string | null;
+  county: string | null;
+  state_code: string | null;
+  country_code: string;
+  status: ProspectingTerritoryStatus;
+  target_count: number;
+  metadata: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ProspectingProspect {
+  id: string;
+  territory_id: string;
+  company_name: string;
+  normalized_company_name: string;
+  official_domain: string | null;
+  website_url: string | null;
+  website_state: ProspectingWebsiteState;
+  phone: string | null;
+  summary: string | null;
+  address_line_1: string | null;
+  city: string | null;
+  state_code: string | null;
+  postal_code: string | null;
+  sales_state: ProspectingSalesStage;
+  verification_state: ProspectingVerificationState;
+  opportunity_category: string | null;
+  source: string;
+  metadata: Record<string, unknown>;
+  identity_verified_at: string | null;
+  evidence_reviewed_at: string | null;
+  outreach_approved_at: string | null;
+  pitch_ready_approved_by: string | null;
+  pitch_ready_approved_at: string | null;
+  next_follow_up_at: string | null;
+  last_contacted_at: string | null;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ProspectingContact {
+  id: string;
+  prospect_id: string;
+  full_name: string | null;
+  title: string | null;
+  email: string | null;
+  email_normalized: string | null;
+  phone: string | null;
+  phone_normalized: string | null;
+  is_primary: boolean;
+  email_status: ProspectingContactVerificationStatus;
+  email_verified_at: string | null;
+  suppressed_at: string | null;
+  suppression_reason: string | null;
+  source_url: string | null;
+  metadata: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingClaim {
+  id: string;
+  prospect_id: string;
+  research_run_id: string | null;
+  claim_type: ProspectingClaimType;
+  normalized_value: string;
+  display_value: string;
+  source_url: string;
+  source_type: ProspectingEvidenceSourceType;
+  source_excerpt: string | null;
+  artifact_ref: string | null;
+  retrieved_at: string;
+  confidence: number;
+  prompt_version: string | null;
+  rubric_version: string | null;
+  verification_decision: ProspectingEvidenceDecision;
+  founder_correction: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProspectingEvidence = ProspectingClaim;
+
+export interface ProspectingNote {
+  id: string;
+  prospect_id: string;
+  body: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingTask {
+  id: string;
+  prospect_id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: ProspectingTaskStatus;
+  completed_at: string | null;
+  assigned_to: string;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingActivity {
+  id: number;
+  prospect_id: string | null;
+  territory_id: string | null;
+  activity_type: ProspectingActivityType | string;
+  actor_id: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ProspectingProspectDetail extends ProspectingProspect {
+  territory: ProspectingTerritory | null;
+  contacts: ProspectingContact[];
+  claims: ProspectingClaim[];
+  notes: ProspectingNote[];
+  tasks: ProspectingTask[];
+  activity: ProspectingActivity[];
+}
+
+export interface ProspectingStats {
+  total: number;
+  due_follow_up: number;
+  pitch_ready: number;
+  contacted: number;
+  engaged: number;
+  demo_booked: number;
+  won: number;
+  needs_verification: number;
+  by_stage: Partial<Record<ProspectingSalesStage, number>>;
+  by_verification: Partial<Record<ProspectingVerificationState, number>>;
+}
+
+export interface ProspectingListFilters {
+  territoryId?: string;
+  search?: string;
+  stage?: ProspectingSalesStage;
+  verificationState?: ProspectingVerificationState;
+  limit?: number;
+}
+
+export interface ProspectingExportOptions {
+  prospectIds?: string[];
+  territoryId?: string;
+  redacted?: boolean;
 }

@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Profiles from './pages/Profiles';
 import Leads from './pages/Leads';
+import Prospecting from './pages/Prospecting';
 import EmailPreviewer from './pages/EmailPreviewer';
 import DevTools from './pages/DevTools';
 import Automations from './pages/Automations';
@@ -488,6 +489,7 @@ const AppContent: React.FC = () => {
       case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'leads': return <Leads branchContext={branchContext} addToast={addToast} />;
+      case 'prospecting': return <Prospecting addToast={addToast} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setCampaignDraftId(null); setActiveView('campaign-builder'); }} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onBranchesChange={refreshBranches} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;

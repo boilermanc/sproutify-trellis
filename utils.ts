@@ -6,6 +6,8 @@ export const BRANCH_DISPLAY_NAMES: Record<string, string> = {
   'school.sproutify.app': 'Sproutify School',
   'micro.sproutify.app': 'Sproutify Micro',
   'letsrejoice.app': 'Rejoice',
+  'spectiq': 'SpectIQ',
+  'spectiq.app': 'SpectIQ',
 };
 
 export const formatBranchName = (branch: string): string => {

@@ -1,0 +1,406 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle, ArrowRight, BadgeCheck, Building2, CalendarClock, Check,
+  ChevronRight, ClipboardCheck, Download, ExternalLink, FileSearch, Filter,
+  Globe2, Inbox, ListChecks, Loader2, Mail, Map, MapPin, MessageSquarePlus,
+  Phone, Plus, Pencil, RefreshCw, Save, Search, ShieldCheck, Sparkles, Target,
+  Trash2, Users, X,
+} from 'lucide-react';
+import type {
+  ProspectingEvidenceDecision, ProspectingProspect, ProspectingSalesStage,
+  ProspectingStats, ProspectingTaskStatus, ProspectingTerritory,
+  ProspectingVerificationState,
+} from '../types';
+import {
+  addProspectNote, cancelProspectTask,
+  completeProspectTask, createOrUpdateProspect, createProspect, createProspectClaim,
+  createProspectContact, createProspectTask, createTerritory, exportProspectsCsv,
+  getProspectDetail, getProspectingAccessStatus, getProspectingStats,
+  listProspects, listTerritories, reviewProspectClaim, updateProspect,
+  updateProspectClaim, updateProspectContact, updateProspectStage,
+  updateProspectVerification, updateTerritory,
+} from '../services/prospectingService';
+
+type Tab = 'pipeline' | 'review' | 'playbook' | 'territories';
+type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
+
+interface ProspectingProps { addToast: ToastFn; }
+
+const STAGES = ['new', 'audited', 'review_pending', 'pitch_ready', 'contacted', 'engaged', 'demo_booked', 'won', 'nurture', 'not_a_fit'] as const;
+const STAGE_META: Record<string, { label: string; style: string }> = {
+  new: { label: 'New', style: 'bg-slate-100 text-slate-700' },
+  audited: { label: 'Audited', style: 'bg-sky-100 text-sky-700' },
+  review_pending: { label: 'Review pending', style: 'bg-amber-100 text-amber-700' },
+  pitch_ready: { label: 'Pitch ready', style: 'bg-indigo-100 text-indigo-700' },
+  contacted: { label: 'Contacted', style: 'bg-blue-100 text-blue-700' },
+  engaged: { label: 'Engaged', style: 'bg-violet-100 text-violet-700' },
+  demo_booked: { label: 'Demo booked', style: 'bg-cyan-100 text-cyan-700' },
+  won: { label: 'Won', style: 'bg-emerald-100 text-emerald-700' },
+  nurture: { label: 'Nurture', style: 'bg-teal-100 text-teal-700' },
+  not_a_fit: { label: 'Not a fit', style: 'bg-rose-100 text-rose-700' },
+};
+
+const label = (value?: string | null) => value ? value.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Not set';
+const asRecord = (value: unknown): Record<string, any> => (value && typeof value === 'object' ? value as Record<string, any> : {});
+const itemsOf = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : (Array.isArray(asRecord(value).data) ? asRecord(value).data as T[] : []);
+const dateText = (value?: string | null) => value ? new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not scheduled';
+const blankProspect = { company_name: '', territory_id: '', website_url: '', official_domain: '', phone: '', summary: '', address_line_1: '', city: '', state_code: '', postal_code: '' };
+const blankTerritory = { name: '', kind: 'city', city: '', county: '', state_code: '', target_count: '25', status: 'draft' };
+const blankContact = { full_name: '', title: '', email: '', phone: '', source_url: '', is_primary: false, email_status: 'unknown' };
+const blankClaim = { claim_type: 'company_identity', display_value: '', normalized_value: '', source_url: '', source_type: 'founder_observation', source_excerpt: '', confidence: '0.80' };
+
+function Field({ label: text, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">{text}</span>{children}</label>;
+}
+
+const inputClass = 'w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-400';
+
+function Badge({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${className}`}>{children}</span>;
+}
+
+const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
+  const [tab, setTab] = useState<Tab>('pipeline');
+  const [prospects, setProspects] = useState<ProspectingProspect[]>([]);
+  const [territories, setTerritories] = useState<ProspectingTerritory[]>([]);
+  const [stats, setStats] = useState<ProspectingStats | null>(null);
+  const [territoryId, setTerritoryId] = useState('all');
+  const [search, setSearch] = useState('');
+  const [stage, setStage] = useState('all');
+  const [verification, setVerification] = useState('all');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [focused, setFocused] = useState<ProspectingProspect | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDue, setTaskDue] = useState('');
+  const [nextAction, setNextAction] = useState('');
+  const [access, setAccess] = useState<Record<string, any> | null>(null);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [prospectFormOpen, setProspectFormOpen] = useState(false);
+  const [prospectForm, setProspectForm] = useState<Record<string, any>>(blankProspect);
+  const [territoryFormOpen, setTerritoryFormOpen] = useState(false);
+  const [territoryForm, setTerritoryForm] = useState<Record<string, any>>(blankTerritory);
+  const [contactForm, setContactForm] = useState<Record<string, any> | null>(null);
+  const [claimForm, setClaimForm] = useState<Record<string, any> | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; detail: string; run: () => Promise<void> } | null>(null);
+
+  const checkAccess = useCallback(async () => {
+    setAccessLoading(true);
+    try {
+      const result = await getProspectingAccessStatus();
+      setAccess(asRecord(asRecord(result).data || result));
+    } catch (cause) {
+      setAccess({ authorized: false, role_ok: false, error: cause instanceof Error ? cause.message : 'Access could not be verified.' });
+    } finally { setAccessLoading(false); }
+  }, []);
+
+  useEffect(() => { void checkAccess(); }, [checkAccess]);
+  const load = useCallback(async (quiet = false) => {
+    if (!access?.authorized) return;
+    if (!quiet) setLoading(true);
+    setError(null);
+    try {
+      const [prospectResult, territoryResult, statsResult] = await Promise.all([
+        listProspects({ territoryId: territoryId === 'all' ? undefined : territoryId }),
+        listTerritories(),
+        getProspectingStats(territoryId === 'all' ? undefined : territoryId),
+      ]);
+      setProspects(itemsOf<ProspectingProspect>(prospectResult));
+      setTerritories(itemsOf<ProspectingTerritory>(territoryResult));
+      setStats((asRecord(statsResult).data || statsResult || null) as ProspectingStats | null);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Could not load prospecting data.';
+      setError(message);
+      if (quiet) addToast(message, 'error');
+    } finally { setLoading(false); }
+  }, [territoryId, addToast, access?.authorized]);
+
+  useEffect(() => { if (access?.authorized) void load(); }, [load, access?.authorized]);
+
+  const filtered = useMemo(() => prospects.filter(item => {
+    const p = asRecord(item);
+    const haystack = [p.company_name, p.city, p.state_code, p.website_url, p.official_domain].filter(Boolean).join(' ').toLowerCase();
+    return (!search || haystack.includes(search.toLowerCase()))
+      && (stage === 'all' || p.sales_state === stage)
+      && (verification === 'all' || p.verification_state === verification);
+  }), [prospects, search, stage, verification]);
+
+  const reviewQueue = useMemo(() => filtered.filter(item => {
+    const p = asRecord(item);
+    return p.verification_state !== 'outreach_approved' || p.sales_state === 'review_pending' || p.website_state === 'needs_human_verification';
+  }), [filtered]);
+  const visible = tab === 'review' ? reviewQueue : filtered;
+
+  const stat = (key: string, fallback = 0) => Number(asRecord(stats)[key] ?? fallback);
+  const fallbackStats = {
+    total: prospects.length,
+    review: prospects.filter(p => asRecord(p).verification_state !== 'outreach_approved').length,
+    ready: prospects.filter(p => asRecord(p).sales_state === 'pitch_ready').length,
+    engaged: prospects.filter(p => ['engaged', 'demo_booked', 'won'].includes(asRecord(p).sales_state)).length,
+  };
+
+  const toggleSelected = (id: string) => setSelected(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+
+  const handleStage = async (item: ProspectingProspect, nextStage: string) => {
+    const id = String(asRecord(item).id);
+    setSaving(true);
+    try {
+      await updateProspectStage(id, nextStage as ProspectingSalesStage);
+      setProspects(prev => prev.map(p => asRecord(p).id === id ? ({ ...asRecord(p), sales_state: nextStage } as ProspectingProspect) : p));
+      setFocused(prev => prev && asRecord(prev).id === id ? ({ ...asRecord(prev), sales_state: nextStage } as ProspectingProspect) : prev);
+      addToast(`Moved to ${label(nextStage)}.`, 'success');
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not update stage.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const saveNote = async () => {
+    if (!focused || !note.trim()) return;
+    setSaving(true);
+    try { await addProspectNote(String(asRecord(focused).id), note.trim()); setNote(''); addToast('Note added.', 'success'); await load(true); }
+    catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not add note.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const saveTask = async () => {
+    if (!focused || !taskTitle.trim()) return;
+    setSaving(true);
+    try {
+      await createProspectTask({ prospect_id: asRecord(focused).id, title: taskTitle.trim(), due_at: taskDue || null });
+      setTaskTitle(''); setTaskDue(''); addToast('Follow-up task created.', 'success'); await load(true);
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not create task.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const saveNextAction = async () => {
+    if (!focused) return;
+    setSaving(true);
+    try {
+      const updated = await createOrUpdateProspect({ id: asRecord(focused).id, next_follow_up_at: nextAction || null });
+      const next = (asRecord(updated).data || updated || { ...asRecord(focused), next_follow_up_at: nextAction }) as ProspectingProspect;
+      setFocused(next); addToast('Next action saved.', 'success'); await load(true);
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not save next action.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const exportSelected = async () => {
+    if (!selected.size) { addToast('Select at least one prospect to export.', 'info'); return; }
+    try {
+      const result = await exportProspectsCsv({ prospectIds: [...selected], redacted: false });
+      if (typeof result === 'string') {
+        const blob = new Blob([result], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+        anchor.href = url; anchor.download = `spectiq-prospects-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url);
+      } else if (asRecord(result).url) window.open(asRecord(result).url, '_blank', 'noopener,noreferrer');
+      addToast(`Exported ${selected.size} prospect${selected.size === 1 ? '' : 's'} safely.`, 'success');
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Export failed.', 'error'); }
+  };
+
+  const openDetail = async (item: ProspectingProspect) => {
+    setFocused(item); setNextAction(asRecord(item).next_follow_up_at?.slice(0, 16) || '');
+    try {
+      const detail = await getProspectDetail(String(asRecord(item).id));
+      if (detail) { setFocused(detail); setNextAction(asRecord(detail).next_follow_up_at?.slice(0, 16) || ''); }
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not load prospect detail.', 'error'); }
+  };
+
+  const refreshFocused = async (prospectId: string) => {
+    const detail = await getProspectDetail(prospectId);
+    if (detail) setFocused(detail);
+    await load(true);
+  };
+
+  const saveProspect = async () => {
+    if (!String(prospectForm.company_name || '').trim()) { addToast('Company name is required.', 'error'); return; }
+    setSaving(true);
+    try {
+      const values = { ...prospectForm, territory_id: prospectForm.territory_id || null };
+      for (const key of ['website_url','official_domain','phone','summary','address_line_1','city','state_code','postal_code']) if (!values[key]) values[key] = null;
+      const saved = prospectForm.id
+        ? await updateProspect(String(prospectForm.id), values as any)
+        : await createProspect(values as any);
+      setProspectFormOpen(false); setProspectForm(blankProspect); addToast(prospectForm.id ? 'Prospect updated.' : 'Prospect created.', 'success');
+      await load(true); if (prospectForm.id) await openDetail(saved);
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not save prospect.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const editProspect = () => {
+    if (!focused) return;
+    const p = asRecord(focused);
+    setProspectForm({ id: p.id, company_name: p.company_name || '', territory_id: p.territory_id || '', website_url: p.website_url || '', official_domain: p.official_domain || '', phone: p.phone || '', summary: p.summary || '', address_line_1: p.address_line_1 || '', city: p.city || '', state_code: p.state_code || '', postal_code: p.postal_code || '' });
+    setProspectFormOpen(true);
+  };
+
+  const saveTerritory = async () => {
+    if (!String(territoryForm.name || '').trim() || !String(territoryForm.state_code || '').trim()) { addToast('Territory name and state are required.', 'error'); return; }
+    setSaving(true);
+    try {
+      const values = { ...territoryForm, target_count: Number(territoryForm.target_count) || 0, city: territoryForm.city || null, county: territoryForm.county || null } as any;
+      if (territoryForm.id) await updateTerritory(String(territoryForm.id), values);
+      else await createTerritory(values);
+      setTerritoryFormOpen(false); setTerritoryForm(blankTerritory); addToast(territoryForm.id ? 'Territory updated.' : 'Territory created.', 'success'); await load(true);
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not save territory.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const saveContact = async () => {
+    if (!focused || !contactForm) return;
+    if (!String(contactForm.full_name || '').trim() && !String(contactForm.email || '').trim() && !String(contactForm.phone || '').trim()) { addToast('Add a name, email, or phone.', 'error'); return; }
+    setSaving(true);
+    try {
+      if (contactForm.id) await updateProspectContact(String(contactForm.id), contactForm as any);
+      else await createProspectContact({ ...contactForm, prospect_id: asRecord(focused).id } as any);
+      setContactForm(null); addToast(contactForm.id ? 'Contact updated.' : 'Contact added.', 'success'); await refreshFocused(String(asRecord(focused).id));
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not save contact.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const saveClaim = async () => {
+    if (!focused || !claimForm) return;
+    if (!String(claimForm.claim_type || '').trim() || !String(claimForm.display_value || '').trim() || !String(claimForm.source_url || '').trim()) { addToast('Claim type, value, and source URL are required.', 'error'); return; }
+    setSaving(true);
+    try {
+      const values = { ...claimForm, normalized_value: claimForm.normalized_value || claimForm.display_value, confidence: Number(claimForm.confidence) } as any;
+      if (claimForm.id) await updateProspectClaim(String(claimForm.id), values);
+      else await createProspectClaim({ ...values, prospect_id: asRecord(focused).id });
+      setClaimForm(null); addToast(claimForm.id ? 'Evidence updated.' : 'Evidence added for founder review.', 'success'); await refreshFocused(String(asRecord(focused).id));
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not add evidence.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const setVerificationState = async (value: ProspectingVerificationState) => {
+    if (!focused) return;
+    setSaving(true);
+    try { await updateProspectVerification(String(asRecord(focused).id), value); addToast(`Verification set to ${label(value)}.`, 'success'); await refreshFocused(String(asRecord(focused).id)); }
+    catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not update verification.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const updateTaskState = async (taskId: string, status: ProspectingTaskStatus) => {
+    if (!focused) return;
+    setSaving(true);
+    try { if (status === 'completed') await completeProspectTask(taskId); else await cancelProspectTask(taskId); addToast(status === 'completed' ? 'Task completed.' : 'Task cancelled.', 'success'); await refreshFocused(String(asRecord(focused).id)); }
+    catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not update task.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const reviewClaim = async (claimId: string, decision: Exclude<ProspectingEvidenceDecision, 'pending'>, correction?: string) => {
+    if (!focused) return;
+    setSaving(true);
+    try { await reviewProspectClaim(claimId, { decision, founder_correction: correction || null }); addToast(`Evidence ${decision}.`, 'success'); await refreshFocused(String(asRecord(focused).id)); }
+    catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not review evidence.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const kpis = [
+    { label: 'Prospects', value: stat('total', fallbackStats.total), icon: Building2, tone: 'bg-blue-600' },
+    { label: 'Needs review', value: stat('needs_verification', fallbackStats.review), icon: ClipboardCheck, tone: 'bg-amber-500' },
+    { label: 'Pitch ready', value: stat('pitch_ready', fallbackStats.ready), icon: Target, tone: 'bg-indigo-600' },
+    { label: 'Active conversations', value: stat('engaged', fallbackStats.engaged), icon: Users, tone: 'bg-emerald-600' },
+  ];
+
+  if (accessLoading) return <div className="flex min-h-[65vh] items-center justify-center rounded-[2.5rem] border border-slate-200 bg-white"><Loader2 className="animate-spin text-blue-600"/><span className="ml-3 text-sm font-bold text-slate-500">Verifying founder access…</span></div>;
+
+  if (!access?.authorized) {
+    return <div className="flex min-h-[65vh] items-center justify-center rounded-[2.5rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6">
+      <div className="w-full max-w-xl rounded-[2rem] border border-white/10 bg-white/10 p-8 text-center text-white shadow-2xl backdrop-blur sm:p-10">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-blue-500/20 text-blue-200 ring-1 ring-blue-400/30"><ShieldCheck size={30}/></div>
+        <Badge className="mt-5 bg-white/10 text-slate-200">Founder control plane</Badge>
+        <h1 className="mt-4 text-2xl font-black uppercase tracking-tight">Prospecting unavailable</h1>
+        <p className="mt-3 text-sm font-medium leading-relaxed text-slate-300">This workspace is restricted to the active SpectIQ platform administrator. No prospect data was loaded.</p>
+        {access?.error && <p className="mt-4 rounded-xl bg-rose-400/10 p-3 text-xs font-semibold text-rose-200">{String(access.error)}</p>}
+        <button onClick={() => void checkAccess()} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-xs font-black uppercase tracking-widest text-slate-900"><RefreshCw size={15}/>Check access again</button>
+      </div>
+    </div>;
+  }
+
+  return <div className="min-h-full bg-slate-50/60 pb-16">
+    <div className="rounded-[2.5rem] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-7 text-white shadow-xl sm:p-10">
+      <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+        <div><Badge className="mb-4 bg-blue-500/20 text-blue-200 ring-1 ring-blue-400/30"><ShieldCheck size={12}/> Founder workspace</Badge>
+          <h1 className="text-3xl font-black uppercase tracking-tight sm:text-4xl">SpectIQ Prospecting</h1>
+          <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed text-slate-300">Find, verify, and thoughtfully progress inspection companies. Research output is evidence—not permission to contact.</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <select value={territoryId} onChange={e => setTerritoryId(e.target.value)} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-white outline-none">
+            <option value="all" className="text-slate-900">All territories</option>
+            {territories.map(t => <option key={String(asRecord(t).id)} value={String(asRecord(t).id)} className="text-slate-900">{asRecord(t).name}</option>)}
+          </select>
+          <button onClick={() => void load()} className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-900"><RefreshCw size={15}/>Refresh</button>
+          <button onClick={() => { setProspectForm(blankProspect); setProspectFormOpen(true); }} className="flex items-center gap-2 rounded-2xl bg-blue-500 px-4 py-3 text-xs font-black uppercase tracking-widest text-white"><Plus size={15}/>New prospect</button>
+        </div>
+      </div>
+    </div>
+
+    <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">{kpis.map(({ label: text, value, icon: Icon, tone }) => <div key={text} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-2xl text-white ${tone}`}><Icon size={19}/></div><p className="text-3xl font-black tracking-tight text-slate-900">{value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{text}</p></div>)}</div>
+
+    <div className="mt-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">{([
+      ['pipeline', 'Pipeline', Inbox], ['review', 'Review Queue', FileSearch], ['playbook', 'Playbook', ListChecks], ['territories', 'Territories', Map],
+    ] as const).map(([id, text, Icon]) => <button key={id} onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest ${tab === id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><Icon size={15}/>{text}{id === 'review' && reviewQueue.length > 0 && <span className="rounded-full bg-white/20 px-1.5">{reviewQueue.length}</span>}</button>)}</div>
+
+    {(tab === 'pipeline' || tab === 'review') && <>
+      <div className="mt-5 flex flex-col gap-3 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+        <div className="relative min-w-0 flex-1"><Search size={17} className="absolute left-4 top-3.5 text-slate-400"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search company, city, domain, or contact" className="w-full rounded-2xl border border-slate-200 py-3 pl-11 pr-4 text-sm font-semibold outline-none focus:border-blue-400"/></div>
+        <div className="flex items-center gap-2"><Filter size={15} className="text-slate-400"/><select value={stage} onChange={e => setStage(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-3 text-xs font-bold text-slate-700"><option value="all">All stages</option>{STAGES.map(s => <option key={s} value={s}>{label(s)}</option>)}</select></div>
+        <select value={verification} onChange={e => setVerification(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-3 text-xs font-bold text-slate-700"><option value="all">All verification</option>{['unreviewed','evidence_reviewed','identity_verified','contact_verified','outreach_approved'].map(s => <option key={s} value={s}>{label(s)}</option>)}</select>
+        <button onClick={exportSelected} disabled={!selected.size} className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-35"><Download size={15}/>Export {selected.size || ''}</button>
+      </div>
+
+      {loading ? <div className="mt-5 flex min-h-72 items-center justify-center rounded-[2rem] border border-slate-200 bg-white"><Loader2 className="animate-spin text-blue-600"/><span className="ml-3 text-sm font-bold text-slate-500">Loading founder pipeline…</span></div>
+      : error ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-[2rem] border border-rose-200 bg-rose-50 p-8 text-center"><AlertCircle className="mb-3 text-rose-500" size={28}/><p className="font-black text-rose-900">Prospecting data could not load</p><p className="mt-2 text-sm text-rose-700">{error}</p><button onClick={() => void load()} className="mt-5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white">Try again</button></div>
+      : visible.length === 0 ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center"><Inbox className="mb-3 text-slate-300" size={34}/><p className="font-black uppercase tracking-tight text-slate-700">{tab === 'review' ? 'Review queue is clear' : 'No prospects yet'}</p><p className="mt-2 max-w-md text-sm text-slate-400">{tab === 'review' ? 'Prospects needing founder evidence review will appear here.' : 'Create the first company record manually. Research imports remain disabled.'}</p>{tab === 'pipeline' && <button onClick={() => { setProspectForm(blankProspect); setProspectFormOpen(true); }} className="mt-5 flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white"><Plus size={15}/>Create first prospect</button>}</div>
+      : <div className="mt-5 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm"><div className="hidden grid-cols-[42px_1.5fr_1fr_1fr_1fr_42px] gap-4 border-b border-slate-100 bg-slate-50 px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-400 lg:grid"><span/><span>Company</span><span>Evidence</span><span>Stage</span><span>Next action</span><span/></div>
+        <div className="divide-y divide-slate-100">{visible.map(item => { const p = asRecord(item); const id = String(p.id); const meta = STAGE_META[p.sales_state] || STAGE_META.new; const evidenceCount = Number(p.evidence_count ?? p.claim_count ?? asRecord(p.metadata).evidence_count ?? 0); return <div key={id} className="grid gap-4 px-5 py-5 transition hover:bg-blue-50/30 lg:grid-cols-[42px_1.5fr_1fr_1fr_1fr_42px] lg:items-center lg:px-6">
+          <label className="flex items-center"><input type="checkbox" checked={selected.has(id)} onChange={() => toggleSelected(id)} className="h-4 w-4 rounded border-slate-300 accent-blue-600"/><span className="ml-3 text-[9px] font-black uppercase text-slate-400 lg:hidden">Select</span></label>
+          <button onClick={() => void openDetail(item)} className="min-w-0 text-left"><p className="truncate text-sm font-black uppercase tracking-tight text-slate-900">{p.company_name || 'Unnamed company'}</p><p className="mt-1 flex items-center gap-1 truncate text-xs font-semibold text-slate-400"><MapPin size={11}/>{[p.city, p.state_code].filter(Boolean).join(', ') || 'Location unverified'}</p></button>
+          <div className="flex flex-wrap gap-1.5">{evidenceCount > 0 ? <Badge className="bg-blue-50 text-blue-700"><BadgeCheck size={11}/>{evidenceCount} sources</Badge> : <Badge className="bg-amber-50 text-amber-700"><AlertCircle size={11}/>Evidence needed</Badge>}<Badge className={p.verification_state === 'outreach_approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}><ShieldCheck size={11}/>{label(p.verification_state)}</Badge></div>
+          <select value={p.sales_state || 'new'} disabled={saving} onChange={e => void handleStage(item, e.target.value)} className={`w-fit rounded-xl border-0 px-3 py-2 text-[10px] font-black uppercase tracking-wider ${meta.style}`}>{STAGES.map(s => <option key={s} value={s}>{label(s)}</option>)}</select>
+          <div><p className="text-xs font-bold text-slate-700">{p.next_follow_up_at ? 'Founder follow-up' : 'No action recorded'}</p><p className="mt-1 text-[10px] font-semibold text-slate-400">{dateText(p.next_follow_up_at)}</p></div>
+          <button onClick={() => void openDetail(item)} className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-blue-100 hover:text-blue-700" aria-label="Open prospect details"><ChevronRight size={18}/></button>
+        </div>; })}</div></div>}
+      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><ShieldCheck size={17} className="mt-0.5 shrink-0"/><span>Research runs and outbound email are deferred. No prospect can be researched or contacted from this Phase 1 workspace.</span></div>
+    </>}
+
+    {tab === 'playbook' && <div className="mt-5 grid gap-5 lg:grid-cols-3">{[
+      ['Missed-inquiry friction', 'Listen for slow callbacks, repeated intake questions, and buyers waiting while staff rebuild context.', 'Lead with one visible path from inquiry to an explainable estimate.'],
+      ['Disconnected handoffs', 'Look for separate tools or manual steps across estimates, agreements, payment, and scheduling.', 'Describe operational continuity. Never promise unsupported conversion or revenue gains.'],
+      ['Control and trust', 'Inspection owners are right to question black-box automation and inflexible rules.', 'Show evidence, audit trails, human approval, and an explicit way out.'],
+    ].map(([title, observe, guidance], index) => <div key={title} className="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm"><span className="text-4xl font-black text-blue-100">0{index + 1}</span><h3 className="mt-3 text-lg font-black uppercase tracking-tight text-slate-900">{title}</h3><p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-400">What to observe</p><p className="mt-2 text-sm leading-relaxed text-slate-600">{observe}</p><p className="mt-4 text-xs font-black uppercase tracking-widest text-slate-400">Founder guidance</p><p className="mt-2 text-sm leading-relaxed text-slate-600">{guidance}</p></div>)}</div>}
+
+    {tab === 'territories' && <div className="mt-5"><div className="mb-4 flex justify-end"><button onClick={() => { setTerritoryForm(blankTerritory); setTerritoryFormOpen(true); }} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white"><Plus size={15}/>New territory</button></div><div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">{territories.length ? territories.map(item => { const t = asRecord(item); return <div key={String(t.id)} className="rounded-[2rem] border border-slate-200 bg-white p-7 text-left shadow-sm"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-white"><MapPin size={20}/></span><Badge className={t.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}>{t.status}</Badge></div><h3 className="mt-5 text-lg font-black uppercase tracking-tight text-slate-900">{t.name}</h3><p className="mt-1 text-sm font-semibold text-slate-400">{[t.city || t.county, t.state_code].filter(Boolean).join(', ') || label(t.kind)}</p><div className="mt-5 flex items-center justify-between gap-2 border-t border-slate-100 pt-4"><button onClick={() => { setTerritoryId(String(t.id)); setTab('pipeline'); }} className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-blue-600">View prospects <ArrowRight size={15}/></button><div className="flex gap-1"><button aria-label={`Edit ${t.name}`} onClick={() => { setTerritoryForm({ ...blankTerritory, ...t, target_count: String(t.target_count ?? 0) }); setTerritoryFormOpen(true); }} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><Pencil size={15}/></button><button aria-label={`Archive ${t.name}`} onClick={() => setConfirmAction({ title: 'Archive territory?', detail: `${t.name} will leave active territory views. Its prospect records are preserved.`, run: async () => { const mod = await import('../services/prospectingService'); await mod.archiveTerritory(String(t.id)); setConfirmAction(null); addToast('Territory archived.', 'success'); await load(true); } })} className="rounded-xl p-2 text-rose-500 hover:bg-rose-50"><Trash2 size={15}/></button></div></div></div>; }) : <div className="col-span-full rounded-[2rem] border border-dashed border-slate-300 bg-white p-12 text-center"><Map className="mx-auto text-slate-300" size={36}/><p className="mt-4 font-black uppercase text-slate-700">No territories configured</p><p className="mt-2 text-sm text-slate-400">Create a territory to organize manual prospect records.</p><button onClick={() => { setTerritoryForm(blankTerritory); setTerritoryFormOpen(true); }} className="mx-auto mt-5 flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white"><Plus size={15}/>Create first territory</button></div>}</div></div>}
+
+    {focused && (() => { const p = asRecord(focused); const evidence = itemsOf<any>(p.claims); const notes = itemsOf<any>(p.notes); const tasks = itemsOf<any>(p.tasks); const primaryContact = itemsOf<any>(p.contacts).find(contact => contact.is_primary) || itemsOf<any>(p.contacts)[0]; return <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={e => { if (e.target === e.currentTarget) setFocused(null); }}><div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-t-[2.5rem] bg-white shadow-2xl sm:rounded-[2.5rem]">
+      <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white/95 px-6 py-6 backdrop-blur sm:px-8"><div><div className="mb-2 flex flex-wrap gap-2"><Badge className={(STAGE_META[p.sales_state] || STAGE_META.new).style}>{label(p.sales_state || 'new')}</Badge><Badge className={p.verification_state === 'outreach_approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}><ShieldCheck size={11}/>{label(p.verification_state || 'unreviewed')}</Badge></div><h2 className="text-2xl font-black uppercase tracking-tight text-slate-900">{p.company_name}</h2><p className="mt-1 text-sm font-semibold text-slate-400">{[p.city, p.state_code].filter(Boolean).join(', ') || 'Location unverified'}</p></div><div className="flex gap-1"><button onClick={editProspect} aria-label="Edit prospect" className="rounded-xl bg-slate-100 p-2 text-slate-500"><Pencil size={18}/></button><button onClick={() => setConfirmAction({ title: 'Archive prospect?', detail: `${p.company_name} will leave the active pipeline. Its audit history is preserved.`, run: async () => { const mod = await import('../services/prospectingService'); await mod.archiveProspect(String(p.id)); setConfirmAction(null); setFocused(null); addToast('Prospect archived.', 'success'); await load(true); } })} aria-label="Archive prospect" className="rounded-xl bg-rose-50 p-2 text-rose-600"><Trash2 size={18}/></button><button onClick={() => setFocused(null)} className="rounded-xl bg-slate-100 p-2 text-slate-500"><X size={18}/></button></div></div>
+      <div className="grid gap-7 p-6 sm:p-8 lg:grid-cols-5"><div className="space-y-6 lg:col-span-3">
+        <section><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Company record</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{[[Globe2, p.website_url || label(p.website_state), p.website_url],[Mail, primaryContact?.email || 'Email not verified', null],[Phone, primaryContact?.phone || p.phone || 'Phone not verified',null],[MapPin,[p.address_line_1,p.city,p.state_code].filter(Boolean).join(', ') || 'Address not verified',null]].map(([Icon, text, href], i) => <div key={i} className="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-4"><Icon size={16} className="shrink-0 text-blue-600"/><span className="truncate text-xs font-bold text-slate-700">{String(text || '')}</span>{href && <a href={String(href).startsWith('http') ? String(href) : `https://${href}`} target="_blank" rel="noreferrer" className="ml-auto text-slate-400"><ExternalLink size={13}/></a>}</div>)}</div></section>
+        <section><div className="flex items-center justify-between"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Contacts</h3><button onClick={() => setContactForm(blankContact)} className="flex items-center gap-1 text-xs font-black text-blue-600"><Plus size={14}/>Add contact</button></div><div className="mt-3 space-y-2">{itemsOf<any>(p.contacts).length ? itemsOf<any>(p.contacts).map(contact => <div key={contact.id} className="flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{contact.full_name || contact.email || contact.phone}</p><p className="truncate text-xs text-slate-500">{[contact.title, contact.email, contact.phone].filter(Boolean).join(' · ')}</p></div>{contact.is_primary && <Badge className="bg-blue-50 text-blue-700">Primary</Badge>}<button onClick={() => setContactForm({ ...blankContact, ...contact })} aria-label="Edit contact" className="rounded-lg p-2 text-slate-500"><Pencil size={14}/></button></div>) : <p className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">No contacts recorded.</p>}</div></section>
+        <section><div className="flex items-center justify-between"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Evidence and claims</h3><button onClick={() => setClaimForm(blankClaim)} className="flex items-center gap-1 text-xs font-black text-blue-600"><Plus size={14}/>Add evidence</button></div><div className="mt-3 space-y-3">{evidence.length ? evidence.map((claim, index) => <div key={claim.id || index} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><p className="text-sm font-black text-slate-800">{label(claim.claim_type || claim.field_name)}</p><Badge className={claim.verification_decision === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>{label(claim.verification_decision || 'pending')}</Badge></div><p className="mt-2 text-sm leading-relaxed text-slate-600">{claim.display_value || claim.normalized_value || claim.excerpt || 'Evidence retained for founder review.'}</p>{claim.founder_correction && <p className="mt-2 rounded-xl bg-blue-50 p-3 text-xs font-semibold text-blue-900">Founder correction: {claim.founder_correction}</p>}<div className="mt-3 flex flex-wrap items-center gap-2">{claim.source_url && <a href={claim.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-black text-blue-600">Open source <ExternalLink size={12}/></a>}<button onClick={() => setClaimForm({ ...blankClaim, ...claim, confidence: String(claim.confidence ?? .8) })} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-black uppercase text-slate-700">Edit evidence</button><button onClick={() => void reviewClaim(String(claim.id), 'approved')} className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-emerald-700">Approve</button><button onClick={() => { const correction = window.prompt('Enter the corrected value'); if (correction?.trim()) void reviewClaim(String(claim.id), 'corrected', correction.trim()); }} className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-blue-700">Correct</button><button onClick={() => void reviewClaim(String(claim.id), 'rejected')} className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-rose-700">Reject</button></div></div>) : <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50 p-5 text-sm font-semibold text-amber-800">No evidence is attached. This record cannot be treated as verified.</div>}</div></section>
+        {(notes.length > 0 || tasks.length > 0) && <section className="grid gap-4 sm:grid-cols-2"><div><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Recent notes</h3><div className="mt-3 space-y-2">{notes.slice(0, 3).map((entry, index) => <div key={entry.id || index} className="rounded-2xl bg-slate-50 p-4"><p className="text-sm leading-relaxed text-slate-700">{entry.body}</p><p className="mt-2 text-[9px] font-black uppercase tracking-widest text-slate-400">{dateText(entry.created_at)}</p></div>)}</div></div><div><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Tasks</h3><div className="mt-3 space-y-2">{tasks.slice(0, 5).map((entry, index) => <div key={entry.id || index} className="rounded-2xl bg-slate-50 p-4"><p className={`text-sm font-bold ${entry.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{entry.title}</p><p className="mt-2 text-[9px] font-black uppercase tracking-widest text-slate-400">{label(entry.status)} · Due {dateText(entry.due_at)}</p>{!['completed','cancelled'].includes(entry.status) && <div className="mt-3 flex gap-2"><button onClick={() => void updateTaskState(String(entry.id), 'completed')} className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-emerald-700">Complete</button><button onClick={() => void updateTaskState(String(entry.id), 'cancelled')} className="rounded-lg bg-slate-200 px-2.5 py-1.5 text-[10px] font-black uppercase text-slate-600">Cancel</button></div>}</div>)}</div></div></section>}
+      </div><div className="space-y-5 lg:col-span-2">
+        <section className="rounded-[2rem] bg-slate-950 p-5 text-white"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Sales stage</h3><select value={p.sales_state || 'new'} disabled={saving} onChange={e => void handleStage(focused, e.target.value)} className="mt-3 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-3 text-sm font-bold">{STAGES.map(s => <option className="text-slate-900" key={s} value={s}>{label(s)}</option>)}</select><div className="mt-4 flex items-start gap-2 rounded-xl bg-white/5 p-3 text-[11px] leading-relaxed text-slate-300"><ShieldCheck size={14} className="mt-0.5 shrink-0"/>Stage changes never grant outreach approval.</div></section>
+        <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Verification state</h3><select value={p.verification_state || 'unreviewed'} disabled={saving} onChange={e => void setVerificationState(e.target.value as ProspectingVerificationState)} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold">{['unreviewed','evidence_reviewed','identity_verified','contact_verified','outreach_approved'].map(value => <option key={value} value={value}>{label(value)}</option>)}</select><p className="mt-3 text-[11px] leading-relaxed text-slate-500">Founder review is explicit. Changing sales stage does not approve outreach.</p></section>
+        <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Next action</h3><input type="datetime-local" value={nextAction} onChange={e => setNextAction(e.target.value)} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><button onClick={saveNextAction} disabled={saving} className="mt-3 w-full rounded-xl bg-blue-600 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">Save next action</button></section>
+        <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400"><MessageSquarePlus size={14}/>Add note</h3><textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Record what you learned…" className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 p-3 text-sm"/><button onClick={saveNote} disabled={saving || !note.trim()} className="mt-2 w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-35">Add note</button></section>
+        <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400"><CalendarClock size={14}/>Follow-up task</h3><input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="Task title" className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><button onClick={saveTask} disabled={saving || !taskTitle.trim()} className="mt-2 w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-35">Create task</button></section>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><Sparkles size={16} className="mb-2"/><strong>Deferred:</strong> research starts and email sending arrive behind dedicated approval gates in later phases.</div>
+      </div></div>
+    </div></div>; })()}
+
+    {prospectFormOpen && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl sm:p-8"><div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Manual record</p><h2 className="mt-1 text-xl font-black uppercase text-slate-900">{prospectForm.id ? 'Edit prospect' : 'Create prospect'}</h2></div><button onClick={() => setProspectFormOpen(false)} className="rounded-xl bg-slate-100 p-2 text-slate-500"><X size={18}/></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Company name *"><input autoFocus value={prospectForm.company_name} onChange={e => setProspectForm(v => ({ ...v, company_name: e.target.value }))} className={inputClass}/></Field><Field label="Territory"><select value={prospectForm.territory_id} onChange={e => setProspectForm(v => ({ ...v, territory_id: e.target.value }))} className={inputClass}><option value="">No territory</option>{territories.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field><Field label="Website"><input type="url" placeholder="https://…" value={prospectForm.website_url} onChange={e => setProspectForm(v => ({ ...v, website_url: e.target.value }))} className={inputClass}/></Field><Field label="Official domain"><input placeholder="company.com" value={prospectForm.official_domain} onChange={e => setProspectForm(v => ({ ...v, official_domain: e.target.value }))} className={inputClass}/></Field><Field label="Phone"><input value={prospectForm.phone} onChange={e => setProspectForm(v => ({ ...v, phone: e.target.value }))} className={inputClass}/></Field><Field label="Street address"><input value={prospectForm.address_line_1} onChange={e => setProspectForm(v => ({ ...v, address_line_1: e.target.value }))} className={inputClass}/></Field><Field label="City"><input value={prospectForm.city} onChange={e => setProspectForm(v => ({ ...v, city: e.target.value }))} className={inputClass}/></Field><div className="grid grid-cols-2 gap-3"><Field label="State"><input maxLength={2} value={prospectForm.state_code} onChange={e => setProspectForm(v => ({ ...v, state_code: e.target.value.toUpperCase() }))} className={inputClass}/></Field><Field label="Postal code"><input value={prospectForm.postal_code} onChange={e => setProspectForm(v => ({ ...v, postal_code: e.target.value }))} className={inputClass}/></Field></div><div className="sm:col-span-2"><Field label="Founder summary"><textarea value={prospectForm.summary} onChange={e => setProspectForm(v => ({ ...v, summary: e.target.value }))} className={`${inputClass} min-h-24`}/></Field></div></div><div className="mt-6 flex justify-end gap-2"><button onClick={() => setProspectFormOpen(false)} className="rounded-xl px-4 py-3 text-xs font-black uppercase text-slate-500">Cancel</button><button onClick={() => void saveProspect()} disabled={saving} className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{saving ? <Loader2 size={15} className="animate-spin"/> : <Save size={15}/>}Save prospect</button></div></div></div>}
+
+    {territoryFormOpen && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-xl rounded-[2rem] bg-white p-6 shadow-2xl sm:p-8"><div className="flex items-center justify-between"><h2 className="text-xl font-black uppercase text-slate-900">{territoryForm.id ? 'Edit territory' : 'Create territory'}</h2><button onClick={() => setTerritoryFormOpen(false)} className="rounded-xl bg-slate-100 p-2"><X size={18}/></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Territory name *"><input autoFocus value={territoryForm.name} onChange={e => setTerritoryForm(v => ({ ...v, name: e.target.value }))} className={inputClass}/></Field><Field label="Type"><select value={territoryForm.kind} onChange={e => setTerritoryForm(v => ({ ...v, kind: e.target.value }))} className={inputClass}>{['city','county','state','multi_market'].map(v => <option key={v} value={v}>{label(v)}</option>)}</select></Field><Field label="City"><input value={territoryForm.city} onChange={e => setTerritoryForm(v => ({ ...v, city: e.target.value }))} className={inputClass}/></Field><Field label="County"><input value={territoryForm.county} onChange={e => setTerritoryForm(v => ({ ...v, county: e.target.value }))} className={inputClass}/></Field><Field label="State *"><input maxLength={2} value={territoryForm.state_code} onChange={e => setTerritoryForm(v => ({ ...v, state_code: e.target.value.toUpperCase() }))} className={inputClass}/></Field><Field label="Target count"><input type="number" min="0" value={territoryForm.target_count} onChange={e => setTerritoryForm(v => ({ ...v, target_count: e.target.value }))} className={inputClass}/></Field><Field label="Status"><select value={territoryForm.status} onChange={e => setTerritoryForm(v => ({ ...v, status: e.target.value }))} className={inputClass}><option value="draft">Draft</option><option value="active">Active</option></select></Field></div><div className="mt-6 flex justify-end gap-2"><button onClick={() => setTerritoryFormOpen(false)} className="rounded-xl px-4 py-3 text-xs font-black uppercase text-slate-500">Cancel</button><button onClick={() => void saveTerritory()} disabled={saving} className="rounded-xl bg-blue-600 px-5 py-3 text-xs font-black uppercase text-white disabled:opacity-50">Save territory</button></div></div></div>}
+
+    {contactForm && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-xl rounded-[2rem] bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black uppercase text-slate-900">{contactForm.id ? 'Edit contact' : 'Add contact'}</h2><button onClick={() => setContactForm(null)} className="rounded-xl bg-slate-100 p-2"><X size={18}/></button></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><Field label="Full name"><input value={contactForm.full_name} onChange={e => setContactForm(v => ({ ...v!, full_name: e.target.value }))} className={inputClass}/></Field><Field label="Title"><input value={contactForm.title} onChange={e => setContactForm(v => ({ ...v!, title: e.target.value }))} className={inputClass}/></Field><Field label="Email"><input type="email" value={contactForm.email} onChange={e => setContactForm(v => ({ ...v!, email: e.target.value }))} className={inputClass}/></Field><Field label="Phone"><input value={contactForm.phone} onChange={e => setContactForm(v => ({ ...v!, phone: e.target.value }))} className={inputClass}/></Field><Field label="Source URL"><input type="url" value={contactForm.source_url} onChange={e => setContactForm(v => ({ ...v!, source_url: e.target.value }))} className={inputClass}/></Field><Field label="Email verification"><select value={contactForm.email_status} onChange={e => setContactForm(v => ({ ...v!, email_status: e.target.value }))} className={inputClass}>{['unknown','unverified','verified','invalid','bounced','complained','unsubscribed'].map(v => <option key={v} value={v}>{label(v)}</option>)}</select></Field><label className="flex items-center gap-2 text-sm font-bold text-slate-700"><input type="checkbox" checked={contactForm.is_primary} onChange={e => setContactForm(v => ({ ...v!, is_primary: e.target.checked }))}/>Primary contact</label></div><button onClick={() => void saveContact()} disabled={saving} className="mt-6 w-full rounded-xl bg-blue-600 py-3 text-xs font-black uppercase text-white disabled:opacity-50">Save contact</button></div></div>}
+
+    {claimForm && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4"><div className="w-full max-w-xl rounded-[2rem] bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black uppercase text-slate-900">{claimForm.id ? 'Edit evidence' : 'Add evidence'}</h2><button onClick={() => setClaimForm(null)} className="rounded-xl bg-slate-100 p-2"><X size={18}/></button></div><p className="mt-2 text-sm text-slate-500">Record only what the source supports. Founder review remains explicit.</p><div className="mt-5 space-y-4"><Field label="Claim type *"><select value={claimForm.claim_type} onChange={e => setClaimForm(v => ({ ...v!, claim_type: e.target.value }))} className={inputClass}>{['company_identity','official_website','contact_identity','contact_email','services','service_area','opportunity','outreach_angle','other'].map(value => <option key={value} value={value}>{label(value)}</option>)}</select></Field><Field label="Observed value *"><textarea value={claimForm.display_value} onChange={e => setClaimForm(v => ({ ...v!, display_value: e.target.value }))} className={`${inputClass} min-h-20`}/></Field><Field label="Source URL *"><input type="url" value={claimForm.source_url} onChange={e => setClaimForm(v => ({ ...v!, source_url: e.target.value }))} className={inputClass}/></Field><Field label="Source excerpt"><textarea value={claimForm.source_excerpt} onChange={e => setClaimForm(v => ({ ...v!, source_excerpt: e.target.value }))} className={`${inputClass} min-h-20`}/></Field><Field label="Confidence (0–1)"><input type="number" min="0" max="1" step="0.05" value={claimForm.confidence} onChange={e => setClaimForm(v => ({ ...v!, confidence: e.target.value }))} className={inputClass}/></Field></div><button onClick={() => void saveClaim()} disabled={saving} className="mt-6 w-full rounded-xl bg-blue-600 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{claimForm.id ? 'Save evidence' : 'Add evidence'}</button></div></div>}
+
+    {confirmAction && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/70 p-4"><div className="w-full max-w-md rounded-[2rem] bg-white p-7 text-center shadow-2xl"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600"><Trash2 size={21}/></div><h2 className="mt-4 text-xl font-black uppercase text-slate-900">{confirmAction.title}</h2><p className="mt-2 text-sm leading-relaxed text-slate-500">{confirmAction.detail}</p><div className="mt-6 grid grid-cols-2 gap-3"><button onClick={() => setConfirmAction(null)} className="rounded-xl border border-slate-200 py-3 text-xs font-black uppercase text-slate-600">Keep record</button><button onClick={() => { setSaving(true); void confirmAction.run().catch(cause => { addToast(cause instanceof Error ? cause.message : 'Archive failed.', 'error'); }).finally(() => setSaving(false)); }} disabled={saving} className="rounded-xl bg-rose-600 py-3 text-xs font-black uppercase text-white disabled:opacity-50">Confirm archive</button></div></div></div>}
+  </div>;
+};
+
+export default Prospecting;

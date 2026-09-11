@@ -10,6 +10,8 @@ import PROMO_CAPTURE_COMPLETION_SQL_SCHEMA from './supabase/migrations/202608261
 import PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA from './supabase/migrations/20260826183711_add_promo_revision_asset_bindings.sql?raw';
 import PROMO_AUDIO_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260903160245_complete_promo_audio_jobs.sql?raw';
 import PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA from './supabase/migrations/20260903161325_link_promo_to_scheduled_publishing.sql?raw';
+import SPECTIQ_PROSPECTING_SQL_SCHEMA from './supabase/migrations/20260911202452_add_spectiq_prospecting_foundation.sql?raw';
+import SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA from './supabase/migrations/20260911222525_complete_spectiq_prospecting_crud.sql?raw';
 
 export interface BriefAxis {
   name: string;
@@ -121,6 +123,26 @@ export const BRIEF_RECIPES: Record<string, BriefRecipe> = {
     bannedWords: ['revolutionary', 'game-changer', 'disrupt', 'cutting-edge', 'farm of the future'],
     footerGuidance: 'Footers name the next business step — book a walkthrough, see the numbers, talk to a grower.',
   },
+  spectiq: {
+    brandVoice: "Professional founder-to-operator language for skeptical home inspection company owners. Direct, operational, and evidence-led. Explain the path, the rule, and the next action. Separate verified capabilities from planned work, preserve human judgment, and make every claim auditable.",
+    situations: [
+      'the buyer asking for a price while still on the phone',
+      'the office team rebuilding the same estimate across disconnected tools',
+      'the signed agreement that still has no payment or booking attached',
+      'the inspection request whose next action is invisible to the team',
+      'the owner explaining why a company pricing rule changed the estimate',
+      'the booking that needs a human exception instead of a hidden automation decision',
+    ],
+    axes: [
+      { name: 'operator', instruction: 'Address a different inspection-company operator in each headline.', variants: ['owner-operator', 'office manager', 'multi-inspector team', 'solo inspector'] },
+      { name: 'workflow bottleneck', instruction: 'Anchor each headline in a different inquiry-to-booking bottleneck.', variants: ['estimate', 'agreement', 'payment', 'calendar', 'next action'] },
+      { name: 'objection', instruction: 'Respect and answer a different skeptical-buyer objection.', variants: ['our process is unique', 'automation hides mistakes', 'switching tools creates risk', 'the team will not adopt it'] },
+      { name: 'evidence', instruction: 'Use a different concrete form of proof without inventing a result.', variants: ['visible rule', 'audit trail', 'status history', 'human approval', 'explicit exception'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a plain operational fact', 'a skeptical question', 'a before-and-after path', 'a concrete invitation'] },
+    ],
+    bannedWords: ['revolutionary', 'game-changer', 'disrupt', 'seamless', 'effortless', 'guaranteed', 'double conversions', 'supercharge', 'magic', 'AI-powered'],
+    footerGuidance: 'Footers offer one concrete, low-pressure next step. Never hard-sell or imply an unsupported outcome.',
+  },
   default: {
     brandVoice: 'Clear, specific, human. One idea per card.',
     situations: ['the moment someone almost scrolls past but does not', 'the question a skeptical customer asks first', 'the small result that makes the value feel real'],
@@ -228,6 +250,26 @@ export const MOCK_BRAND_IDENTITIES: BrandIdentity[] = [
     status: 'active',
     created_at: '2024-01-15T10:00:00Z',
     updated_at: '2024-01-15T10:00:00Z'
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000010',
+    branch_id: 'spectiq',
+    name: 'SpectIQ',
+    tagline: 'Win the inspection while the buyer is still on the phone.',
+    mission: 'Help home inspection companies move inquiries through explainable estimates, agreements, payments, and booking while preserving company rules and human judgment.',
+    values: ['Transparency', 'Accountability', 'Control', 'Speed', 'Human judgment'],
+    target_audience: 'Owners, operators, and office teams at home inspection companies',
+    voice: 'Direct, evidence-led, operational, and respectful of skeptical buyers.',
+    website_url: 'https://spectiq.app',
+    color_palette: { primary: '#E56A2C', secondary: '#1B1F27', accent: '#FAF8F5', neutral: '#FAF8F5' },
+    typography: { heading: 'Public Sans', body: 'Public Sans' },
+    image_prompt: 'Professional home inspection workflow imagery with the official one-orange-room floor-plan mark; no gradients or lens imagery.',
+    marketing_hooks: ['Win the inspection while the buyer is still on the phone.', 'One clear path from inquiry to inspection.', 'Automation with an audit trail and a way out.'],
+    site_preview_description: 'Home inspection business software connecting inquiry, estimate, agreement, payment, and booking.',
+    extracted_images: ['/brands/spectiq-logo-lockup.svg', '/brands/spectiq-logo-mark.svg'],
+    status: 'active',
+    created_at: '2026-09-11T00:00:00Z',
+    updated_at: '2026-09-11T00:00:00Z'
   }
 ];
 
@@ -2935,6 +2977,12 @@ ${PROMO_CAPTURE_COMPLETION_SQL_SCHEMA}
 ${PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA}
 ${PROMO_AUDIO_COMPLETION_SQL_SCHEMA}
 ${PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA}
+
+-- SPECTIQ FOUNDER PROSPECTING (PHASE 1)
+-- Kept as an exact raw import from the executable migration so the Schema
+-- Engine and deployment artifact cannot silently drift apart.
+${SPECTIQ_PROSPECTING_SQL_SCHEMA}
+${SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

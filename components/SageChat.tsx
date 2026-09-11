@@ -54,6 +54,7 @@ const requestedEmailBranch = (text: string): { query: string; label: string } | 
   if (normalized.includes('school')) return { query: 'school.sproutify.app', label: 'Sproutify School' };
   if (normalized.includes('letsrejoice')) return { query: 'letsrejoice.app', label: "Let's Rejoice" };
   if (normalized.includes('farmsproutify')) return { query: 'farm.sproutify.app', label: 'Sproutify Farm' };
+  if (normalized.includes('spectiq')) return { query: 'spectiq', label: 'SpectIQ' };
   return null;
 };
 
