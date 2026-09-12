@@ -178,11 +178,11 @@ const QueueCard: React.FC<{
   if (outcome?.status === 'success') {
     return (
       <div
-        className={`flex items-center gap-4 rounded-sm border border-[#A7F3D0] px-[18px] py-4 queue-complete-flash ${dismissing ? 'queue-dismissing' : ''}`}
+        className={`relative flex flex-col items-stretch gap-3 rounded-sm border border-[#A7F3D0] px-4 py-4 queue-complete-flash sm:flex-row sm:items-center sm:gap-4 sm:px-[18px] ${dismissing ? 'queue-dismissing' : ''}`}
       >
-        <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full bg-[#10B981]" />
-        <CheckCircle2 size={22} className="queue-check-pop flex-shrink-0 text-[#059669]" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="absolute inset-y-4 left-4 w-1 rounded-full bg-[#10B981] sm:static sm:h-full sm:flex-shrink-0 sm:self-stretch" />
+        <CheckCircle2 size={22} className="queue-check-pop hidden flex-shrink-0 text-[#059669] sm:block" />
+        <div className="ml-4 flex min-w-0 flex-1 flex-col gap-1 sm:ml-0">
           <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
           <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#065F46]">{item.title}</p>
           <p className="text-[12px] font-semibold text-[#059669]">{outcome.message}</p>
@@ -190,7 +190,7 @@ const QueueCard: React.FC<{
         <button
           type="button"
           onClick={handleDismiss}
-          className="flex-shrink-0 rounded-sm border border-[#A7F3D0] bg-white px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#059669] transition-colors duration-150 hover:bg-[#ECFDF5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:ring-offset-2"
+          className="ml-4 w-auto flex-shrink-0 rounded-sm border border-[#A7F3D0] bg-white px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#059669] transition-colors duration-150 hover:bg-[#ECFDF5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:ring-offset-2 sm:ml-0 sm:w-auto"
         >
           Dismiss
         </button>
@@ -201,16 +201,16 @@ const QueueCard: React.FC<{
   if (outcome?.status === 'error') {
     return (
       <div
-        className={`flex items-center gap-4 rounded-sm border border-[#FECACA] bg-[#FEF2F2] px-[18px] py-4 ${dismissing ? 'queue-dismissing' : ''}`}
+        className={`relative flex flex-col items-stretch gap-3 rounded-sm border border-[#FECACA] bg-[#FEF2F2] px-4 py-4 sm:flex-row sm:items-center sm:gap-4 sm:px-[18px] ${dismissing ? 'queue-dismissing' : ''}`}
       >
-        <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full bg-[#DC2626]" />
-        <AlertCircle size={22} className="flex-shrink-0 text-[#DC2626]" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="absolute inset-y-4 left-4 w-1 rounded-full bg-[#DC2626] sm:static sm:h-full sm:flex-shrink-0 sm:self-stretch" />
+        <AlertCircle size={22} className="hidden flex-shrink-0 text-[#DC2626] sm:block" />
+        <div className="ml-4 flex min-w-0 flex-1 flex-col gap-1 sm:ml-0">
           <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
           <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#991B1B]">{item.title}</p>
           <p className="text-[12px] leading-[1.45] text-[#B91C1C]">{outcome.message}</p>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-2">
+        <div className="ml-4 grid w-auto flex-shrink-0 grid-cols-2 gap-2 sm:ml-0 sm:flex sm:w-auto sm:items-center">
           <button
             type="button"
             onClick={() => onPrimary(item)}
@@ -232,15 +232,15 @@ const QueueCard: React.FC<{
   }
 
   return (
-    <div className="flex items-center gap-4 rounded-sm border border-[#E5E9EE] bg-white px-[18px] py-4 transition-colors duration-150 hover:bg-[#F9FAFB]">
-      <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full" style={{ backgroundColor: color }} />
-      <div className="flex w-[74px] flex-shrink-0 flex-col gap-1">
+    <div className="relative flex flex-col items-stretch gap-3 rounded-sm border border-[#E5E9EE] bg-white px-4 py-4 transition-colors duration-150 hover:bg-[#F9FAFB] sm:flex-row sm:items-center sm:gap-4 sm:px-[18px]">
+      <span className="absolute inset-y-4 left-4 w-1 rounded-full sm:static sm:h-full sm:flex-shrink-0 sm:self-stretch" style={{ backgroundColor: color }} />
+      <div className="ml-4 flex flex-shrink-0 items-center gap-2 sm:ml-0 sm:w-[74px] sm:flex-col sm:items-start sm:gap-1">
         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color }}>
           {item.severity}
         </span>
         {age && <span className="font-mono text-[10px] font-semibold text-[#94A3B8]">{age}</span>}
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="ml-4 flex min-w-0 flex-1 flex-col gap-1 sm:ml-0">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 flex-shrink-0 rounded-[2px]" style={{ backgroundColor: item.branchColor }} />
           <span className="truncate text-[11px] font-bold text-[#64748B]">{item.branchName}</span>
@@ -248,7 +248,7 @@ const QueueCard: React.FC<{
         <p className="text-[14px] font-bold leading-tight tracking-[-0.01em] text-[#0F172A]">{item.title}</p>
         <p className="text-[12px] leading-[1.45] text-[#64748B]">{item.detail}</p>
       </div>
-      <div className="flex flex-shrink-0 items-center gap-2">
+      <div className="ml-4 grid w-auto flex-shrink-0 grid-cols-2 gap-2 sm:ml-0 sm:flex sm:w-auto sm:items-center">
         <button
           type="button"
           onClick={() => onPrimary(item)}
@@ -378,7 +378,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_340px] xl:items-start">
       {/* Left column */}
       <div className="flex flex-col gap-5">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-[12px] font-black  tracking-[0.16em] text-[#334155]">Needs you today</h2>
           <span className="text-[11px] font-semibold text-[#94A3B8]">Ranked by cost of ignoring</span>
         </div>
@@ -423,7 +423,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
                 Post Performance →
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-[14px]">
+            <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
               <PerformerCard post={whatWorked.top} tone="top" />
               <PerformerCard post={whatWorked.bottom} tone="bottom" />
             </div>
@@ -433,7 +433,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
 
       {/* Right column */}
       <div className="flex flex-col gap-[14px]">
-        <div className="rounded-sm border border-[#E5E9EE] bg-white p-[18px]">
+        <div className="hidden rounded-sm border border-[#E5E9EE] bg-white p-[18px] sm:block">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-[13px] font-extrabold text-[#0B4A6B]">This week</h3>
             <span className="text-[11px] font-bold text-[#94A3B8]">vs prior week</span>

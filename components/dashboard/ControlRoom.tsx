@@ -114,7 +114,7 @@ function timeAgoShort(iso: string): string {
 // ── Branch strip ──────────────────────────────────────────────────
 
 const BranchStripSkeleton: React.FC = () => (
-  <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
     {Array.from({ length: 5 }).map((_, i) => (
       <div key={i} className="bg-white border border-[#E5E7EB] rounded-sm p-[14px] flex flex-col gap-[9px]">
         <div className="flex items-center gap-2">
@@ -151,11 +151,11 @@ const BranchTile: React.FC<{ branch: BranchCardData; onSelectBranch: (slug: stri
       type="button"
       onClick={() => onSelectBranch(branch.slug)}
       title={branch.healthLabel}
-      className={`text-left w-full bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] transition-colors duration-150 rounded-sm p-[14px] flex flex-col gap-[9px] ${FOCUS_RING}`}
+      className={`flex min-h-[124px] w-full flex-col gap-[9px] rounded-sm border border-[#E5E7EB] bg-white p-3 text-left transition-colors duration-150 hover:border-[#CBD5E1] sm:min-h-0 sm:p-[14px] ${FOCUS_RING}`}
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className="w-2 h-2 rounded-[2px] flex-shrink-0" style={{ background: branch.color }} />
-        <span className="text-[12px] font-bold text-[#111827] truncate min-w-0">{branch.name}</span>
+        <span className="line-clamp-2 min-w-0 text-[12px] font-bold leading-[1.3] text-[#111827] sm:truncate">{branch.name}</span>
         <span
           className="w-[7px] h-[7px] rounded-full flex-shrink-0 ml-auto"
           style={{ background: HEALTH_DOT[branch.health] }}
@@ -164,7 +164,7 @@ const BranchTile: React.FC<{ branch: BranchCardData; onSelectBranch: (slug: stri
       <div className="font-mono text-[22px] font-semibold text-[#111827] tracking-[-0.03em]">
         {formatCurrency(branch.revenue)}
       </div>
-      <div className="flex items-baseline gap-1 text-[11px]">
+      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-[11px]">
         <span className="text-[#6B7280]">{branch.profiles.toLocaleString()} profiles</span>
         {profilesDeltaText && (
           <span className={`font-semibold ${profilesDeltaPositive ? 'text-[#059669]' : 'text-[#DC2626]'}`}>
@@ -187,7 +187,7 @@ const BranchStrip: React.FC<{
   if (branchCards.length === 0) return <BranchEmptyState onConnectSpoke={onConnectSpoke} />;
   const sorted = [...branchCards].sort((a, b) => b.revenue - a.revenue);
   return (
-    <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
       {sorted.map((branch) => (
         <BranchTile key={branch.slug} branch={branch} onSelectBranch={onSelectBranch} />
       ))}
@@ -242,7 +242,7 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
 }) => {
   const chip = STATE_CHIP[item.state];
   return (
-    <div className="grid grid-cols-[52px_15px_1fr_auto] items-stretch">
+    <div className="grid grid-cols-[42px_12px_minmax(0,1fr)] items-stretch sm:grid-cols-[52px_15px_minmax(0,1fr)_auto]">
       <div className="flex items-center justify-end pr-1">
         <span className="font-mono text-[11px] text-[#9CA3AF]">{formatTime(item.at)}</span>
       </div>
@@ -254,30 +254,49 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
           style={{ background: chip.dot }}
         />
       </div>
-      <div className="flex items-center gap-3 py-[9px] min-w-0 pr-3">
-        <span className="w-[7px] h-[7px] rounded-[2px] flex-shrink-0" style={{ background: item.branchColor }} />
-        <span className="text-[11px] font-semibold text-[#6B7280] w-[100px] flex-shrink-0 truncate">
-          {item.branchName}
-        </span>
-        {item.sourceTag && (
-          <span
-            className={`font-mono text-[9px] font-bold tracking-[0.06em] uppercase px-1.5 py-[2px] rounded-sm flex-shrink-0 ${
-              item.sourceTag === 'trellis'
-                ? 'bg-[#ECFDF5] text-[#047857]'
-                : 'bg-[#F1F5F9] text-[#64748B]'
-            }`}
-            title={
-              item.sourceTag === 'trellis'
-                ? 'Dispatched by Trellis'
-                : 'Transactional email from a spoke (shares the Resend account)'
-            }
-          >
-            {item.sourceTag === 'trellis' ? 'Trellis' : 'Resend'}
+      <div className="min-w-0 py-3 pr-1 sm:flex sm:items-center sm:gap-3 sm:py-[9px] sm:pr-3">
+        <div className="mb-1 flex min-w-0 items-center gap-1.5 sm:mb-0 sm:contents">
+          <span className="h-[7px] w-[7px] flex-shrink-0 rounded-[2px]" style={{ background: item.branchColor }} />
+          <span className="min-w-0 truncate text-[11px] font-semibold text-[#6B7280] sm:w-[100px] sm:flex-shrink-0">
+            {item.branchName}
           </span>
-        )}
-        <span className="text-[13px] text-[#1F2937] flex-1 min-w-0 truncate">{item.text}</span>
+          {item.sourceTag && (
+            <span
+              className={`flex-shrink-0 rounded-sm px-1.5 py-[2px] font-mono text-[9px] font-bold uppercase tracking-[0.06em] ${
+                item.sourceTag === 'trellis'
+                  ? 'bg-[#ECFDF5] text-[#047857]'
+                  : 'bg-[#F1F5F9] text-[#64748B]'
+              }`}
+              title={
+                item.sourceTag === 'trellis'
+                  ? 'Dispatched by Trellis'
+                  : 'Transactional email from a spoke (shares the Resend account)'
+              }
+            >
+              {item.sourceTag === 'trellis' ? 'Trellis' : 'Resend'}
+            </span>
+          )}
+        </div>
+        <p className="line-clamp-2 min-w-0 text-[12px] leading-[1.45] text-[#1F2937] sm:flex-1 sm:truncate sm:text-[13px]">{item.text}</p>
+        <div className="mt-1.5 flex items-center gap-2 sm:hidden">
+          <span
+            className="rounded-sm px-2 py-[3px] font-mono text-[9px] font-semibold uppercase tracking-[0.06em]"
+            style={{ background: chip.bg, color: chip.text }}
+          >
+            {chip.label}
+          </span>
+          {item.actionLabel && (
+            <button
+              type="button"
+              onClick={() => item.actionView && onViewChange?.(item.actionView)}
+              className={`text-[11px] font-bold text-[#1E698F] ${FOCUS_RING}`}
+            >
+              {item.actionLabel}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="hidden items-center gap-2 sm:flex">
         <span
           className="font-mono text-[10px] font-semibold tracking-[0.06em] uppercase px-2 py-[3px] rounded-sm whitespace-nowrap"
           style={{ background: chip.bg, color: chip.text }}
@@ -352,12 +371,12 @@ const TodayTimeline: React.FC<{
   };
 
   return (
-    <div className="flex-1 bg-white border border-[#E5E7EB] rounded-sm p-[22px] flex flex-col gap-4 min-w-0">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
+    <div className="flex min-w-0 flex-1 flex-col gap-4 rounded-sm border border-[#E5E7EB] bg-white p-3.5 sm:p-[22px]">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
           <h3 className="text-[15px] font-bold text-[#111827]">Today across the ecosystem</h3>
           {timeline.length > 0 && (
-            <span className="font-mono text-[11px] text-[#9CA3AF]">
+            <span className="font-mono text-[10px] text-[#9CA3AF] sm:text-[11px]">
               {eventsCount}
               {filtersActive ? ` / ${timeline.length}` : ''} EVENTS · {scheduledCount} SCHEDULED · {failedCount} FAILED
             </span>
@@ -729,8 +748,8 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
   onDismissOutcome,
 }) => {
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1fr_330px] gap-5 items-start">
-      <div className="flex flex-col gap-[18px] min-w-0">
+    <div className="grid grid-cols-1 items-start gap-3 sm:gap-5 xl:grid-cols-[1fr_330px]">
+      <div className="order-2 flex min-w-0 flex-col gap-3 sm:gap-[18px] xl:order-1">
         <BranchStrip
           branchCards={branchCards}
           isLoading={isLoading}
@@ -739,8 +758,10 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
         />
         <TodayTimeline timeline={timeline} isLoading={isLoading} onViewChange={onViewChange} />
       </div>
-      <div className="flex flex-col gap-[14px]">
-        <SystemHealth systems={systems} isLoading={isLoading} />
+      <div className="order-1 flex flex-col gap-3 sm:gap-[14px] xl:order-2">
+        <div className="hidden sm:block">
+          <SystemHealth systems={systems} isLoading={isLoading} />
+        </div>
         <QueuePanel
           queue={queue}
           isLoading={isLoading}

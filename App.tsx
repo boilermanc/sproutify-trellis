@@ -30,7 +30,7 @@ import HelpCenter from './pages/HelpCenter';
 import { Article } from './src/data/helpContent';
 import Settings from './pages/Settings';
 import Reports from './pages/Reports';
-import TeamMembers from './pages/TeamMembers';
+import TeamPanel from './pages/TeamPanel';
 import UserProfile from './pages/UserProfile';
 import BranchCommandCenter from './pages/BranchCommandCenter';
 import PlatformSetupWizard from './pages/PlatformSetupWizard';
@@ -553,7 +553,9 @@ const AppContent: React.FC = () => {
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} branchContext={branchContext} />;
       case 'dev-tools': return <DevTools profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
-      case 'team': return <TeamMembers addToast={addToast} />;
+      // Operators live in trellis_users, not the federated profiles table.
+      // The Team route must never treat audience records with a legacy role as staff.
+      case 'team': return <TeamPanel />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'platform-wizard': return (
         <PlatformSetupWizard

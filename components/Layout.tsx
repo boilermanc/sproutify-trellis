@@ -155,7 +155,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
       {/* Mobile backdrop */}
       {isMobileNavOpen && (
         <div
-          className="fixed inset-0 z-30 bg-slate-950/60 lg:hidden"
+          className="fixed inset-0 z-[60] bg-slate-950/60 lg:hidden"
           onClick={() => setIsMobileNavOpen(false)}
           aria-hidden="true"
         />
@@ -163,7 +163,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
       {/* Sidebar — static on desktop, slide-in drawer on mobile */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[232px] shrink-0 transform flex-col bg-yale-blue transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[70] flex w-[232px] shrink-0 transform flex-col bg-yale-blue transition-transform duration-200 ease-out lg:static lg:z-40 lg:translate-x-0 ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -294,8 +294,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
       </aside>
 
       {/* Main Content */}
-      <main className="relative flex-1 overflow-y-auto bg-trellis-canvas">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-trellis-line bg-white/95 px-4 backdrop-blur lg:px-8">
+      <main className="relative min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-trellis-canvas">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-2 border-b border-trellis-line bg-white/95 px-3 backdrop-blur sm:h-16 sm:gap-3 sm:px-4 lg:px-8">
           <div className="flex items-center space-x-2 min-w-0">
             <button
               onClick={() => setIsMobileNavOpen(true)}
@@ -304,7 +304,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
             >
               <Menu size={22} />
             </button>
-            <h2 className="truncate text-lg font-bold tracking-tight text-trellis-ink lg:text-xl">
+            <h2 className="truncate text-base font-bold tracking-tight text-trellis-ink sm:text-lg lg:text-xl">
               {pageTitle}
             </h2>
             {PAGE_INFO[activeView] && (
@@ -316,7 +316,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
              <div className="relative" ref={branchPickerRef}>
                <button
                  onClick={() => setIsBranchPickerOpen(!isBranchPickerOpen)}
-                 className="flex min-h-11 items-center gap-2 border border-trellis-line bg-white px-3 text-sm font-semibold text-trellis-ink transition-colors hover:border-slate-400 lg:px-4"
+                 className="flex min-h-11 items-center gap-1.5 border border-trellis-line bg-white px-2.5 text-xs font-semibold text-trellis-ink transition-colors hover:border-slate-400 sm:gap-2 sm:px-3 sm:text-sm lg:px-4"
                >
                  <GitBranch size={16} className="text-emerald-600 shrink-0" />
                  <span className="hidden sm:inline">
@@ -406,7 +406,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
              <button
                onClick={() => onViewChange('support-hub')}
-               className={`group relative min-h-11 min-w-11 border transition-colors ${activeView === 'support-hub' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-transparent text-slate-500 hover:border-trellis-line hover:bg-trellis-subtle hover:text-indigo-700'}`}
+               className={`group relative hidden min-h-11 min-w-11 border transition-colors sm:block ${activeView === 'support-hub' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-transparent text-slate-500 hover:border-trellis-line hover:bg-trellis-subtle hover:text-indigo-700'}`}
                title="Support Hub"
              >
                 <GraduationCap size={22} />
@@ -417,7 +417,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
              <button
                onClick={() => onViewChange('help-center')}
-               className={`group relative min-h-11 min-w-11 border transition-colors ${activeView === 'help-center' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:border-trellis-line hover:bg-trellis-subtle hover:text-emerald-700'}`}
+               className={`group relative hidden min-h-11 min-w-11 border transition-colors sm:block ${activeView === 'help-center' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:border-trellis-line hover:bg-trellis-subtle hover:text-emerald-700'}`}
                title="Academy / Help Center"
              >
                 <HelpCircle size={20} />
@@ -430,7 +430,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
           </div>
         </header>
 
-        <div className="p-4 lg:p-8">
+        <div className="p-3 sm:p-4 lg:p-8">
           {children}
         </div>
 

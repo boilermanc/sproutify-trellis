@@ -257,7 +257,7 @@ const ContextAwareHelp: React.FC<ContextHelpProps> = ({ activeView, onOpenArticl
   };
 
   return (
-    <div className="fixed bottom-32 right-8 z-[80] flex flex-col items-end pointer-events-none">
+    <div className="fixed bottom-32 right-8 z-[80] hidden flex-col items-end pointer-events-none sm:flex">
 
       {/* Popover */}
       {isOpen && (

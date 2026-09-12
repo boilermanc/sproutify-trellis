@@ -652,23 +652,23 @@ const Settings: React.FC<SettingsProps> = ({
               {/* Meta / Instagram Card */}
               <div className="border border-slate-200 overflow-hidden">
                 {/* Card Header */}
-                <div className="p-6 flex items-center justify-between bg-slate-50 border-b border-slate-200">
-                  <div className="flex items-center space-x-4">
+                <div className="p-4 sm:p-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50 border-b border-slate-200">
+                  <div className="flex min-w-0 items-center space-x-3 sm:space-x-4">
                     <div className="w-11 h-11 border border-slate-800 bg-slate-900 flex items-center justify-center">
                       <Instagram size={22} className="text-white" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">Meta / Instagram</h4>
                       <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Instagram Graph API &middot; Pages API</p>
                     </div>
                   </div>
                   {metaIsConnected ? (
-                    <div className="flex items-center space-x-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full">
+                    <div className="flex shrink-0 items-center space-x-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full">
                       <CheckCheck size={14} />
                       <span className="text-[10px] font-black uppercase tracking-widest">Connected</span>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-2 bg-amber-100 text-amber-700 px-4 py-2 rounded-full">
+                    <div className="flex shrink-0 items-center space-x-2 bg-amber-100 text-amber-700 px-4 py-2 rounded-full">
                       <AlertCircle size={14} />
                       <span className="text-[10px] font-black uppercase tracking-widest">Not Connected</span>
                     </div>
@@ -676,7 +676,7 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
 
                 {/* Wizard Body */}
-                <div className="p-8 space-y-8">
+                <div className="p-4 sm:p-8 space-y-8">
 
                   {/* Step Progress */}
                   <div className="flex items-center space-x-2">

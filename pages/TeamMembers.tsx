@@ -92,8 +92,8 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
   return (
     <div className="space-y-6">
       {/* Header — always visible so Invite is reachable even with no members */}
-      <div className="bg-white p-8 rounded-sm border border-slate-200 ">
-        <div className="flex items-center justify-between">
+      <div className="bg-white p-5 sm:p-8 rounded-sm border border-slate-200 ">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center space-x-4">
             <div className="w-12 h-12 bg-emerald-100 rounded-sm flex items-center justify-center">
               <Users className="w-6 h-6 text-emerald-600" />
@@ -107,7 +107,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
           </div>
           <button
             onClick={openInvite}
-            className="inline-flex items-center space-x-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm font-black text-xs uppercase tracking-widest transition"
+            className="inline-flex min-h-11 w-full items-center justify-center space-x-2 px-5 py-3 sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm font-black text-xs uppercase tracking-widest transition"
           >
             <UserPlus size={16} />
             <span>Invite User</span>
@@ -137,7 +137,33 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-[3rem] border border-slate-200  overflow-hidden">
+        <>
+        <div className="space-y-3 md:hidden">
+          {members.map((member) => {
+            const roleConfig = member.role ? ROLE_CONFIG[member.role] : null;
+            const RoleIcon = roleConfig?.icon || Users;
+            const pending = member.metadata?.invite_status === 'pending';
+            const initial = member.first_name?.charAt(0) || member.email?.charAt(0).toUpperCase() || '?';
+            return (
+              <article key={member.id} className="border border-slate-200 bg-white p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-sm font-black ${roleConfig?.bg || 'bg-slate-100'} ${roleConfig?.color || 'text-slate-500'}`}>
+                    {member.avatar_url ? <img src={member.avatar_url} alt={member.first_name || member.email} className="h-full w-full rounded-sm object-cover" /> : initial}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-black text-slate-800">{member.first_name || 'Unnamed'} {member.last_name || ''}</p>
+                    <p className="mt-0.5 break-all font-mono text-xs text-slate-500">{member.email}</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {roleConfig && <span className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider ${roleConfig.bg} ${roleConfig.color}`}><RoleIcon size={13} />{roleConfig.label}</span>}
+                  <span className={`inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider ${pending ? 'bg-sky-100 text-sky-700' : member.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}><Circle size={7} className="fill-current" />{pending ? 'Invited' : member.status || 'Unknown'}</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        <div className="hidden overflow-x-auto rounded-[3rem] border border-slate-200 md:block">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100">
@@ -162,7 +188,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                             {member.avatar_url ? (
                               <img src={member.avatar_url} alt={member.first_name} className="w-full h-full object-cover rounded-sm" />
                             ) : (
-                              member.first_name.charAt(0)
+                              member.first_name?.charAt(0) || member.email?.charAt(0).toUpperCase() || '?'
                             )}
                           </div>
                           {/* Active indicator dot */}
@@ -223,6 +249,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Invite Modal */}

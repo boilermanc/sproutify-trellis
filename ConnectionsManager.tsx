@@ -1798,7 +1798,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         {connections.map((connection) => (
           <div
             key={connection.id}
-            className={`p-5 rounded-none border-2 transition-all ${
+            className={`p-4 sm:p-5 rounded-none border-2 transition-all ${
               connection.status === 'error'
                 ? 'bg-rose-50/50 border-rose-100'
                 : connection.status === 'disconnected'
@@ -1806,8 +1806,8 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 : 'bg-white border-slate-100 hover:border-emerald-200 shadow-none'
             }`}
           >
-            <div className="flex items-start justify-between">
-              <div className="flex items-start space-x-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-start space-x-3 sm:space-x-4">
                 <div
                   className={`w-10 h-10 rounded-none flex items-center justify-center ${
                     connection.status === 'active'
@@ -1819,13 +1819,13 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 >
                   <Database size={20} />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center space-x-2">
                     {getStatusIndicator(connection.status)}
                     <h4 className="text-sm font-black text-slate-800">{connection.name}</h4>
                   </div>
                   {/* Table badges */}
-                  <div className="flex items-center space-x-1.5 mt-1.5">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {(connection.tables || []).filter(t => t.enabled).map((table) => (
                       <span
                         key={table.id}
@@ -1856,14 +1856,14 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 font-mono mt-1">{connection.supabase_url}</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-slate-500 sm:text-xs">{connection.supabase_url}</p>
                   {connection.key_preview && (
                     <p className="flex items-center gap-1 text-[10px] text-slate-400 font-mono mt-0.5" title="Stored key (encrypted) — masked for security">
                       <Lock size={10} className="text-emerald-500" />
                       {connection.key_preview}
                     </p>
                   )}
-                  <div className="flex items-center space-x-4 mt-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                     <span className="text-[9px] text-slate-400 font-bold">
                       Last tested: {formatTimestamp(connection.last_tested_at)}
                     </span>
@@ -1878,7 +1878,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   </div>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex shrink-0 items-center space-x-2">
                 <button
                   onClick={() => handleTestExisting(connection)}
                   disabled={testingConnectionId === connection.id}

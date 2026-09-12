@@ -336,13 +336,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const goToBranches = useCallback(() => onViewChange?.('branches' as ViewState), [onViewChange]);
 
   return (
-    <div className="-m-4 lg:-m-8 min-h-full bg-[#F6F7F9]">
+    <div className="-m-3 min-h-full overflow-x-hidden bg-[#F6F7F9] sm:-m-4 lg:-m-8">
       {/* The page title and branch picker already live in Layout's header, so
           the window toggle and status pill ride with the tab bar rather than
           splicing into that shared header. */}
-      <div className="bg-white border-b border-[#E5E7EB] px-5 lg:px-8">
-        <div className="flex items-center justify-between gap-4 overflow-x-auto">
-          <nav className="flex gap-7" role="tablist" aria-label="Dashboard views">
+      <div className="border-b border-[#E5E7EB] bg-white px-3 sm:px-5 lg:px-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <nav className="grid w-full grid-cols-3 gap-1 sm:flex sm:w-auto sm:gap-7" role="tablist" aria-label="Dashboard views">
             {TABS.map(t => {
               const active = tab === t.id;
               const count = badgeFor(t.id);
@@ -353,13 +353,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                   role="tab"
                   aria-selected={active}
                   onClick={() => selectTab(t.id)}
-                  className={`flex items-center gap-2 py-3.5 px-0.5 text-[13px] font-bold whitespace-nowrap border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
+                  className={`flex min-w-0 items-center justify-center gap-1 py-3 px-0.5 text-[12px] font-bold whitespace-nowrap border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 sm:justify-start sm:gap-2 sm:py-3.5 sm:text-[13px] ${
                     active
                       ? 'text-[#0B4A6B] border-[#0B4A6B]'
                       : 'text-[#6B7280] border-transparent hover:text-[#374151] hover:border-[#E5E7EB]'
                   }`}
                 >
-                  {t.label}
+                  <span className="sm:hidden">{t.id === 'control' ? 'Overview' : t.id === 'standup' ? 'Actions' : 'Branches'}</span>
+                  <span className="hidden sm:inline">{t.label}</span>
                   <span
                     className={`rounded-full px-[7px] py-0.5 text-[10px] font-extrabold ${
                       alert ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#F1F5F9] text-[#64748B]'
@@ -372,7 +373,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             })}
           </nav>
 
-          <div className="flex items-center gap-2.5 py-2 shrink-0">
+          <div className="flex w-full items-center justify-between gap-2 border-t border-[#F1F5F9] py-2 sm:w-auto sm:justify-start sm:border-t-0 sm:gap-2.5 sm:shrink-0">
             <div className="flex items-center gap-1.5">
               {(['7d', '30d'] as TimeWindow[]).map(w => (
                 <button
@@ -399,9 +400,12 @@ const Dashboard: React.FC<DashboardProps> = ({
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${degradedCount ? 'bg-[#EF4444]' : 'bg-[#10B981]'}`} />
-              {degradedCount
-                ? `${degradedCount} system${degradedCount === 1 ? '' : 's'} degraded`
-                : 'All systems healthy'}
+              <span className="sm:hidden">{degradedCount ? `${degradedCount} issues` : 'Healthy'}</span>
+              <span className="hidden sm:inline">
+                {degradedCount
+                  ? `${degradedCount} system${degradedCount === 1 ? '' : 's'} degraded`
+                  : 'All systems healthy'}
+              </span>
             </button>
 
             <button
@@ -430,7 +434,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      <div className="px-5 lg:px-7 py-5">
+      <div className="px-3 py-3 sm:px-5 sm:py-5 lg:px-7">
         {tab === 'control' && (
           <ControlRoom
             branchCards={branchCards}

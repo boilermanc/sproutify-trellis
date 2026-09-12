@@ -210,7 +210,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
     return (
       <button 
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-8 right-8 w-16 h-16 rounded-full flex items-center justify-center text-white shadow-2xl hover:scale-110 transition-transform z-50 group border-4 border-white overflow-hidden p-0"
+        className="fixed bottom-8 right-8 z-50 hidden h-16 w-16 items-center justify-center overflow-hidden rounded-full border-4 border-white p-0 text-white shadow-2xl transition-transform hover:scale-110 sm:flex"
         style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)' }}
       >
         <Sparkles size={28} className="group-hover:rotate-12 transition-transform relative z-10 text-white" />

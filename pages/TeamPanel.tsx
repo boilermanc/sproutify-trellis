@@ -248,7 +248,28 @@ const TeamPanel: React.FC = () => {
           <span className="text-xs font-bold uppercase tracking-widest">No team members yet</span>
         </div>
       ) : (
-        <div className="border-2 border-slate-100 rounded-sm overflow-hidden">
+        <>
+        <div className="space-y-3 md:hidden">
+          {users.map(user => (
+            <article key={user.id} className="border border-slate-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-800">{user.full_name || user.email}</p>
+                  <p className="mt-0.5 break-all font-mono text-xs text-slate-500">{user.email}</p>
+                </div>
+                <span className={`shrink-0 rounded-sm px-2 py-1 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[user.status]}`}>{user.status}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wider">
+                <span className="rounded-sm bg-slate-100 px-2 py-1 text-slate-600">{user.role}</span>
+                {user.branches.length > 0
+                  ? user.branches.map(branch => <span key={branch.branch_id} className="rounded-sm bg-emerald-50 px-2 py-1 text-emerald-700">{branch.branch_name} · {branch.branch_role}</span>)
+                  : <span className="rounded-sm bg-slate-100 px-2 py-1 text-slate-400">No branch access</span>}
+              </div>
+            </article>
+          ))}
+          {canManage && <p className="px-1 text-xs leading-5 text-slate-500">Role, status, and branch changes are available on desktop.</p>}
+        </div>
+        <div className="hidden overflow-x-auto rounded-sm border-2 border-slate-100 md:block">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -420,6 +441,7 @@ const TeamPanel: React.FC = () => {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

@@ -311,11 +311,11 @@ const BranchBoard: React.FC<BranchBoardProps> = ({
           <span className="flex-shrink-0 text-[14px] font-bold text-[#7C2D12]">
             {queue.length} items need a person today
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] text-[#9A3412]">{alertSummary}</span>
+          <span className="hidden min-w-0 flex-1 text-[13px] text-[#9A3412] sm:block sm:truncate">{alertSummary}</span>
           <button
             type="button"
             onClick={onWorkTheList}
-            className="flex-shrink-0 rounded-sm bg-[#EA580C] px-[14px] py-2 text-[12px] font-bold text-white transition-colors duration-150 hover:bg-[#C2410C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+            className="w-full flex-shrink-0 rounded-sm bg-[#EA580C] px-[14px] py-2 text-[12px] font-bold text-white transition-colors duration-150 hover:bg-[#C2410C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 sm:w-auto"
           >
             Work the list
           </button>
