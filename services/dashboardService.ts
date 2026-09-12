@@ -10,7 +10,7 @@ import { MetaInsights } from './metaInsightsService';
 import { fetchLatestInsights, engagementRate } from './socialInsightsService';
 import { formatBranchName, timeAgo, SOCIAL_PLATFORM_META } from '../utils';
 import {
-  TimeWindow, WindowMetric, WindowTotals, SystemStatus, SystemRow, WebhookHealth,
+  TimeWindow, WindowMetric, WindowTotals, WebhookHealth,
   TimelineState, TimelineItem, SEVERITY_RANK, QueueItem, BranchHealth, BranchCardData,
   PerformerPost, WhatWorked,
 } from '../components/dashboard/types';
@@ -21,10 +21,10 @@ import {
 // honesty" section of that handoff. Missing/uncomputable data returns null or
 // [], NEVER a fabricated 0 — the UI renders those as "—" or an empty state.
 //
-// Derivation functions (computeWindowTotals, buildSystemRows, buildTimeline,
+// Derivation functions (computeWindowTotals, buildTimeline,
 // buildQueue, buildBranchCards) are pure and synchronous so the page can
 // useMemo them over props/state it already has, rather than re-fetching.
-// Only fetchWebhookHealth, getWhatWorked and the snooze CRUD functions talk
+// Only getWhatWorked and the snooze CRUD functions talk
 // to the network.
 // ────────────────────────────────────────────────────────────────────
 
@@ -181,99 +181,7 @@ export function computeWindowTotals(
   return { revenue, postsPublished, newProfiles, openRate, bounced, hasEmailData };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 2. fetchWebhookHealth
-// ═══════════════════════════════════════════════════════════════
-
-// Calls the webhook-health Edge Function (server-side cached ~5 min). Never
-// probes n8n directly from the browser — n8n doesn't send CORS headers for
-// these paths, so a browser fetch would be blocked before it ever left.
-export async function fetchWebhookHealth(force = false): Promise<WebhookHealth[]> {
-  try {
-    const { data, error } = await supabase.functions.invoke('webhook-health', { body: { force } });
-    if (error) throw error;
-    return (data?.results ?? []) as WebhookHealth[];
-  } catch (e) {
-    console.error('fetchWebhookHealth failed:', e);
-    return [];
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 3. buildSystemRows
-// ═══════════════════════════════════════════════════════════════
-
-export function buildSystemRows(
-  webhooks: WebhookHealth[],
-  spokeConnections: SpokeConnection[],
-  emailEvents: EmailEventRow[],
-): SystemRow[] {
-  const rows: SystemRow[] = [];
-
-  // Webhooks that are down (404 — not imported/active) or erroring (network
-  // failure/timeout reaching n8n at all).
-  for (const w of webhooks) {
-    if (w.status !== 'down' && w.status !== 'error') continue;
-    rows.push({
-      key: `webhook:${w.path}`,
-      name: w.path,
-      status: w.status,
-      code: w.status === 'down' ? '404' : 'ERROR',
-      detail: w.detail,
-    });
-  }
-
-  // Spoke connections: erroring outright, or active but stale (>48h since
-  // last successful test).
-  const STALE_MS = 48 * 3600 * 1000;
-  for (const c of spokeConnections) {
-    if (c.status === 'error') {
-      rows.push({
-        key: `spoke:${c.id}`,
-        name: c.name,
-        status: 'error',
-        code: 'ERROR',
-        detail: c.last_error || 'Spoke connection is erroring.',
-      });
-      continue;
-    }
-    if (c.status !== 'active') continue;
-    const lastTested = tsOf(c.last_tested_at);
-    if (lastTested !== null && Date.now() - lastTested <= STALE_MS) continue;
-    rows.push({
-      key: `spoke:${c.id}`,
-      name: c.name,
-      status: 'stale',
-      code: 'STALE',
-      detail: lastTested === null ? 'Never synced.' : `Last synced ${timeAgo(c.last_tested_at!)}.`,
-    });
-  }
-
-  // Resend dispatch health — one row, always present, summarizing the last 7
-  // days regardless of the active time-window toggle (system health is
-  // reported on its own fixed cadence, not the revenue window).
-  const sevenDaysAgo = Date.now() - 7 * MS_DAY;
-  const recent = emailEvents.filter(e => {
-    const t = tsOf(e.occurred_at);
-    return t !== null && t >= sevenDaysAgo;
-  });
-  const sent = recent.filter(e => e.event_type === 'sent').length;
-  const bouncedCount = recent.filter(e => e.event_type === 'bounced').length;
-  const complained = recent.filter(e => e.event_type === 'complained').length;
-  const bounceRate = sent > 0 ? bouncedCount / sent : 0;
-  const resendStatus: SystemStatus = complained > 0 ? 'error' : bounceRate > 0.05 ? 'stale' : 'ok';
-  rows.push({
-    key: 'resend:dispatch',
-    name: 'Resend dispatch',
-    status: resendStatus,
-    code: resendStatus === 'ok' ? 'OK' : resendStatus.toUpperCase(),
-    detail: `${sent} sent · ${bouncedCount} bounced · ${complained} complained (last 7 days)`,
-  });
-
-  const rank: Record<SystemStatus, number> = { down: 0, error: 1, stale: 2, ok: 3 };
-  rows.sort((a, b) => rank[a.status] - rank[b.status]);
-  return rows;
-}
+// System health is provided by the shared system-health Edge Function.
 
 // ═══════════════════════════════════════════════════════════════
 // 4. buildTimeline
@@ -396,7 +304,7 @@ export function buildTimeline(
       id: `sync:${conn.id}:${ts}`,
       at: conn.last_tested_at as string,
       ...meta,
-      text: conn.status === 'error' ? `${conn.name} sync failed` : `${conn.name} spoke synced`,
+      text: conn.status === 'error' ? `${conn.name} connection test failed` : `${conn.name} connection tested`,
       state: conn.status === 'error' ? 'error' : 'synced',
       actionLabel: conn.status === 'error' ? 'Fix' : undefined,
       actionView: conn.status === 'error' ? 'branches' : undefined,
@@ -667,13 +575,13 @@ export function buildQueue(
     items.push({
       key: `spoke-stale:${conn.id}`,
       severity: 'stale',
-      title: `${branch?.name || conn.name} spoke last synced ${lastTested !== null ? timeAgo(conn.last_tested_at as string) : 'never'}`,
-      detail: 'Federated profile and order data for this branch may be out of date.',
+      title: `${branch?.name || conn.name} connection last tested ${lastTested !== null ? timeAgo(conn.last_tested_at as string) : 'never'}`,
+      detail: 'A fresh connection check is needed. This timestamp does not measure profile or order freshness.',
       branchName: branch?.name || conn.name,
       branchColor: branch?.primary_color || '#64748B',
       branchSlug: branch?.slug ?? null,
       occurredAt: conn.last_tested_at ?? null,
-      actionLabel: 'Sync',
+      actionLabel: 'Re-test',
       inlineAction: 'sync',
       connectionId: conn.id,
     });

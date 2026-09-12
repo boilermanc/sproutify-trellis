@@ -29,7 +29,7 @@ export interface WindowTotals {
 }
 
 // ── System health ─────────────────────────────────────────────────
-export type SystemStatus = 'ok' | 'down' | 'error' | 'stale';
+export type SystemStatus = 'ok' | 'down' | 'error' | 'stale' | 'warning' | 'unknown' | 'optional';
 
 export interface SystemRow {
   key: string;
@@ -37,6 +37,17 @@ export interface SystemRow {
   status: SystemStatus;
   code: string;          // 'OK' | '404' | 'STALE' | 'ERROR'
   detail: string;
+  checked_at?: string;
+}
+
+export interface SystemHealthReport {
+  version: number;
+  checked_at: string;
+  complete: boolean;
+  systems: SystemRow[];
+  webhooks: WebhookHealth[];
+  spokes: Array<{ id: string; name: string; status: 'ok' | 'error' | 'unknown'; detail: string; checked_at: string }>;
+  email: { sent: number; bounced: number; complained: number; since: string; until: string } | null;
 }
 
 export interface WebhookHealth {
@@ -46,6 +57,7 @@ export interface WebhookHealth {
   http_code: number | null;
   detail: string;
   checked_at: string;
+  critical?: boolean;
 }
 
 // ── Today timeline ────────────────────────────────────────────────

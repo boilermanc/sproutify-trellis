@@ -13,11 +13,11 @@ import { getVideoAdJobs } from '../services/videoAdService';
 import { fetchBrandInsights, MetaInsights } from '../services/metaInsightsService';
 import { EmailEventRow } from '../services/emailReportingService';
 import {
-  computeWindowTotals, fetchWebhookHealth, buildSystemRows, buildTimeline,
+  computeWindowTotals, buildTimeline,
   buildQueue, buildBranchCards, getWhatWorked, fetchSnoozes, snoozeItem,
 } from '../services/dashboardService';
 import {
-  DashboardTab, TimeWindow, WebhookHealth, WhatWorked, QueueItem, QueueOutcome,
+  DashboardTab, TimeWindow, WhatWorked, QueueItem, QueueOutcome, SystemHealthReport, SystemRow,
 } from '../components/dashboard/types';
 import ControlRoom from '../components/dashboard/ControlRoom';
 import MorningStandup from '../components/dashboard/MorningStandup';
@@ -25,6 +25,7 @@ import BranchBoard from '../components/dashboard/BranchBoard';
 import EmailPulse from '../components/dashboard/EmailPulse';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { fetchOpenLeadCountsByBranch } from '../leadService';
+import { fetchDashboardEmailEvents } from '../supabase/functions/_shared/system-health.mjs';
 
 // The three tabs replace the old overview page wholesale. Sage is deliberately
 // absent here (no briefing, no "strategic action" banner) — the floating chat in
@@ -87,7 +88,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [dbScheduled, setDbScheduled] = useState<ScheduledPost[]>([]);
   const [videoAdJobs, setVideoAdJobs] = useState<VideoAdJob[]>([]);
   const [metaInsights, setMetaInsights] = useState<Record<string, MetaInsights>>({});
-  const [webhooks, setWebhooks] = useState<WebhookHealth[]>([]);
+  const [health, setHealth] = useState<SystemHealthReport | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const webhooks = useMemo(() => health?.webhooks ?? [], [health]);
   const [whatWorked, setWhatWorked] = useState<WhatWorked | null>(null);
   const [snoozed, setSnoozed] = useState<Record<string, string>>({});
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
@@ -128,16 +131,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       ),
       settle(getPublishedPosts(), 'published posts', [] as PublishedPost[]),
       settle(
-        (async () => {
-          const { data, error } = await supabase
-            .from('email_events')
-            .select('id,email,event_type,campaign_subject,campaign_id,resend_email_id,occurred_at,metadata')
-            .gte('occurred_at', since)
-            .order('occurred_at', { ascending: false })
-            .range(0, 9999);
-          if (error) throw error;
-          return (data || []) as EmailEventRow[];
-        })(),
+        fetchDashboardEmailEvents(supabase, since, new Date().toISOString()),
 'email events', [] as EmailEventRow[],
       ),
       settle(fetchScheduledPosts(), 'scheduled posts', [] as ScheduledPost[]),
@@ -178,28 +172,31 @@ const Dashboard: React.FC<DashboardProps> = ({
     return () => { cancelled = true; };
   }, [loadAll]);
 
-  // Webhook health is probed SERVER-SIDE against n8n (webhook-health edge fn
-  // POSTs an empty body to every webhook). Keep it OUT of loadAll: loadAll's
-  // deps (spokeConnections, branches, timeWindow) stream in on mount and each
-  // change re-ran the whole loader, so several overlapping runs would all miss
-  // the 5-min health cache at once and stampede n8n with redundant probes.
-  // Here it runs exactly once on mount, and again only on an explicit refresh,
-  // with an in-flight guard so rapid refreshes coalesce into one probe.
+  // One shared report powers the dashboard and GitHub's daily repair queue.
+  // It uses safe reads, exact email counts, and fresh spoke access checks.
   const healthInFlight = useRef<Promise<void> | null>(null);
   const loadWebhookHealth = useCallback((force = false): Promise<void> => {
     if (healthInFlight.current) return healthInFlight.current;
+    setHealthLoading(true);
     const p = (async () => {
       try {
-        setWebhooks(await fetchWebhookHealth(force));
+        const { data, error } = await supabase.functions.invoke('system-health', { body: {} });
+        if (error || data?.version !== 1 || !Array.isArray(data?.systems)) throw new Error('Health report unavailable');
+        setHealth(data as SystemHealthReport);
       } catch (err) {
-        console.error('[dashboard] webhook health failed:', err);
+        setHealth(null);
+        console.error('[dashboard] system health failed:', err);
       }
-    })().finally(() => { healthInFlight.current = null; });
+    })().finally(() => { healthInFlight.current = null; setHealthLoading(false); });
     healthInFlight.current = p;
     return p;
   }, []);
 
-  useEffect(() => { loadWebhookHealth(false); }, [loadWebhookHealth]);
+  useEffect(() => {
+    loadWebhookHealth(false);
+    const timer = setInterval(() => loadWebhookHealth(false), 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [loadWebhookHealth]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -261,8 +258,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (persist) await upsertSpokeConnection(SPROUTIFY_ORG_ID, persist);
       if (result.success) {
         // Re-tested clean → pull fresh federated data, then mark the card done.
-        await Promise.all([loadAll(), branchStats.refresh?.()]);
-        setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'success', message: 'Synced just now', at: nowIso } }));
+        await Promise.all([loadAll(), branchStats.refresh?.(), loadWebhookHealth(true)]);
+        setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'success', message: 'Connection re-tested just now', at: nowIso } }));
       } else {
         setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'error', message: result.error || 'Sync failed — check the connection.', at: nowIso } }));
       }
@@ -272,7 +269,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     } finally {
       setSyncingConnIds(prev => prev.filter(id => id !== connectionId));
     }
-  }, [spokeConnections, onSpokeConnectionsChange, loadAll, branchStats, handleRefresh, dismissOutcome]);
+  }, [spokeConnections, onSpokeConnectionsChange, loadAll, branchStats, handleRefresh, dismissOutcome, loadWebhookHealth]);
 
   const selectBranch = useCallback((slug: string) => {
     branchContext?.setActiveBranchSlugs([slug]);
@@ -293,10 +290,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     [orders, branchStats.enrichedProfiles, publishedPosts, emailEvents, timeWindow],
   );
 
-  const systems = useMemo(
-    () => buildSystemRows(webhooks, spokeConnections, emailEvents),
-    [webhooks, spokeConnections, emailEvents],
-  );
+  const systems = useMemo<SystemRow[]>(() => health?.systems ?? [{
+    key: 'monitor:unavailable', name: 'System health check', status: 'unknown',
+    code: healthLoading ? 'CHECKING' : 'UNAVAILABLE',
+    detail: healthLoading ? 'Checking live sources…' : 'Health data could not be verified. Refresh to retry; see the daily GitHub health workflow for diagnostics.',
+  }], [health, healthLoading]);
+
+  // Connection checks are live observations; never persist them as a data sync.
+  const checkedConnections = useMemo(() => spokeConnections.map(conn => {
+    const check = health?.spokes.find(s => s.id === conn.id);
+    if (!check || check.status === 'unknown') return conn;
+    return { ...conn, status: check.status === 'ok' ? 'active' as const : 'error' as const,
+      last_tested_at: check.checked_at, last_error: check.status === 'ok' ? undefined : check.detail };
+  }), [health, spokeConnections]);
 
   const timeline = useMemo(
     // Email events and creative jobs are the densest live signals in the app;
@@ -311,23 +317,23 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const queue = useMemo(() => {
     const now = Date.now();
-    return buildQueue(spokeConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats)
+    return buildQueue(checkedConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats)
       .filter(item => {
         const until = snoozed[item.key];
         return !until || new Date(until).getTime() <= now;
       });
-  }, [spokeConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats, snoozed]);
+  }, [checkedConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats, snoozed]);
 
   const branchCards = useMemo(
-    () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow)
+    () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, checkedConnections, timeWindow)
       .map(card => ({
         ...card,
         openLeads: openLeadCounts[scopedBranches.find(branch => branch.slug === card.slug)?.id || ''] || 0,
       })),
-    [scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow, openLeadCounts],
+    [scopedBranches, branchStats, orders, metaInsights, publishedPosts, checkedConnections, timeWindow, openLeadCounts],
   );
 
-  const degradedCount = useMemo(() => systems.filter(s => s.status !== 'ok').length, [systems]);
+  const degradedCount = useMemo(() => systems.filter(s => s.status !== 'ok' && s.status !== 'optional').length, [systems]);
 
   const badgeFor = (id: DashboardTab) =>
     id === 'control' ? timeline.length : id === 'standup' ? queue.length : branchCards.length;
@@ -392,7 +398,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
             <button
               onClick={() => selectTab('control')}
-              title={degradedCount ? 'Jump to system health' : 'All monitored systems responding'}
+              title={degradedCount ? 'Jump to system health' : 'Required health checks passed'}
               className={`flex items-center gap-2 px-3 py-[7px] rounded-sm text-[12px] font-bold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
                 degradedCount
                   ? 'bg-[#FEF2F2] border-[#FECACA] text-[#B91C1C]'
@@ -400,11 +406,11 @@ const Dashboard: React.FC<DashboardProps> = ({
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${degradedCount ? 'bg-[#EF4444]' : 'bg-[#10B981]'}`} />
-              <span className="sm:hidden">{degradedCount ? `${degradedCount} issues` : 'Healthy'}</span>
+              <span className="sm:hidden">{healthLoading ? 'Checking…' : degradedCount ? `${degradedCount} issues` : 'Healthy'}</span>
               <span className="hidden sm:inline">
-                {degradedCount
-                  ? `${degradedCount} system${degradedCount === 1 ? '' : 's'} degraded`
-                  : 'All systems healthy'}
+                {healthLoading ? 'Checking health…' : degradedCount
+                  ? `${degradedCount} health item${degradedCount === 1 ? '' : 's'} need attention`
+                  : 'Required checks passed'}
               </span>
             </button>
 
@@ -437,6 +443,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="px-3 py-3 sm:px-5 sm:py-5 lg:px-7">
         {tab === 'control' && (
           <ControlRoom
+            healthLoading={healthLoading}
             branchCards={branchCards}
             timeline={timeline}
             systems={systems}

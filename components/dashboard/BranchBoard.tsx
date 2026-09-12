@@ -41,6 +41,9 @@ const TONE_COLOR: Record<'blocking' | 'warning' | 'positive', string> = {
 };
 
 const STATUS_COLOR: Record<SystemStatus, string> = {
+  warning: '#F59E0B',
+  unknown: '#64748B',
+  optional: '#94A3B8',
   ok: '#10B981',
   stale: '#F59E0B',
   down: '#EF4444',

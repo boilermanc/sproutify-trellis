@@ -25,6 +25,7 @@ interface ControlRoomProps {
   totals: WindowTotals;
   window: TimeWindow;
   isLoading: boolean;
+  healthLoading?: boolean;
   onViewChange?: (view: ViewState) => void;
   onSelectBranch: (slug: string) => void;
   onSeeAllQueue: () => void; // switches to the Morning Standup tab
@@ -50,6 +51,9 @@ const SYSTEM_DOT: Record<SystemStatus, string> = {
   stale: '#F59E0B',
   down: '#EF4444',
   error: '#EF4444',
+  warning: '#F59E0B',
+  unknown: '#64748B',
+  optional: '#94A3B8',
 };
 
 const STATE_CHIP: Record<TimelineState, { dot: string; bg: string; text: string; label: string }> = {
@@ -484,11 +488,17 @@ const SystemHealthSkeleton: React.FC = () => (
 const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ systems, isLoading }) => {
   if (isLoading) return <SystemHealthSkeleton />;
 
-  const healthy = systems.every((s) => s.status === 'ok');
-  const downCount = systems.filter((s) => s.status === 'down' || s.status === 'error').length;
+  const healthy = systems.length > 0 && systems.every((s) => s.status === 'ok' || s.status === 'optional');
+  const downCount = systems.filter((s) => s.status === 'down').length;
+  const errorCount = systems.filter((s) => s.status === 'error').length;
+  const reviewCount = systems.filter((s) => s.status === 'warning').length;
+  const unknownCount = systems.filter((s) => s.status === 'unknown').length;
   const staleCount = systems.filter((s) => s.status === 'stale').length;
   const summaryParts: string[] = [];
   if (downCount) summaryParts.push(`${downCount} DOWN`);
+  if (errorCount) summaryParts.push(`${errorCount} ERROR`);
+  if (reviewCount) summaryParts.push(`${reviewCount} REVIEW`);
+  if (unknownCount) summaryParts.push(`${unknownCount} UNKNOWN`);
   if (staleCount) summaryParts.push(`${staleCount} STALE`);
 
   const cardBg = healthy ? 'bg-[#F0FDF4]' : 'bg-[#FEF2F2]';
@@ -505,13 +515,14 @@ const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ 
             <ShieldAlert size={16} className="text-[#DC2626] flex-shrink-0" />
           )}
           <span className={`text-[13px] font-bold truncate ${healthy ? 'text-[#065F46]' : 'text-[#991B1B]'}`}>
-            {healthy ? 'All systems healthy' : 'System health'}
+            {healthy ? 'Required checks passed' : 'System health'}
           </span>
         </div>
         {!healthy && summaryParts.length > 0 && (
-          <span className="font-mono text-[10px] text-[#B91C1C] flex-shrink-0">{summaryParts.join(' · ')}</span>
+          <span className="font-mono text-[10px] text-[#B91C1C] text-right">{summaryParts.join(' · ')}</span>
         )}
       </div>
+      <p className="text-[11px] text-[#64748B]">Ecosystem-wide checks. Email quality covers the last 7 days.</p>
       <div className="flex flex-col">
         {systems.map((s, i) => (
           <div
@@ -529,6 +540,7 @@ const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ 
               </span>
             </div>
             <div className="text-[11px] text-[#6B7280] leading-[1.45] pl-[14px]">{s.detail}</div>
+            {s.checked_at && <div className="text-[10px] text-[#64748B] pl-[14px]">Checked {new Date(s.checked_at).toLocaleString()}</div>}
           </div>
         ))}
       </div>
@@ -738,6 +750,7 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
   totals,
   window: timeWindow,
   isLoading,
+  healthLoading,
   onViewChange,
   onSelectBranch,
   onSeeAllQueue,
@@ -760,7 +773,7 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
       </div>
       <div className="order-1 flex flex-col gap-3 sm:gap-[14px] xl:order-2">
         <div className="hidden sm:block">
-          <SystemHealth systems={systems} isLoading={isLoading} />
+          <SystemHealth systems={systems} isLoading={healthLoading ?? isLoading} />
         </div>
         <QueuePanel
           queue={queue}
