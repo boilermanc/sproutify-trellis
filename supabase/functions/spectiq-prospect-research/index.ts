@@ -156,8 +156,11 @@ Deno.serve(async (req: Request) => {
       const { data: run } = await db.from("spectiq_prospect_research_runs").select("*").eq("id", body.runId).eq("created_by", founder.userId).maybeSingle();
       if (!run) return json({ ok: false, error: "Research run not found." }, 404);
       const updated = await pollRun(db, run, key);
-      const { data: candidates } = await db.from("spectiq_prospect_research_candidates").select("*").eq("research_run_id", run.id).order("company_name");
-      return json({ ok: true, run: updated, candidates: candidates || [] });
+      const [{ data: candidates }, { data: marketFactors }] = await Promise.all([
+        db.from("spectiq_prospect_research_candidates").select("*").eq("research_run_id", run.id).order("company_name"),
+        db.from("spectiq_territory_market_factors").select("*").eq("research_run_id", run.id).order("created_at"),
+      ]);
+      return json({ ok: true, run: updated, candidates: candidates || [], marketFactors: marketFactors || [] });
     }
 
     if (body.op === "retry") {

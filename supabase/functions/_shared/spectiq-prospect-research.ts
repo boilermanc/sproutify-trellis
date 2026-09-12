@@ -1,6 +1,6 @@
 export const MANUS_BASE = "https://api.manus.ai";
-export const PROMPT_VERSION = "spectiq-geography-v1";
-export const SCHEMA_VERSION = "spectiq-candidates-v1";
+export const PROMPT_VERSION = "spectiq-geography-v2";
+export const SCHEMA_VERSION = "spectiq-candidates-v2";
 export const TERMINAL_STATUSES = new Set(["completed", "partial", "failed", "cancelled"]);
 const IN_PROGRESS = new Set(["created", "queued", "pending", "running", "working", "in_progress", "processing", "started"]);
 
@@ -29,6 +29,17 @@ export const CANDIDATE_SCHEMA = {
           state_code: { type: ["string", "null"] },
           postal_code: { type: ["string", "null"] },
           summary: { type: ["string", "null"] },
+          fit_score: { type: ["integer", "null"] },
+          fit_category: { type: "string", enum: ["strong", "possible", "weak", "insufficient_evidence"] },
+          phone_only_quote: { type: ["boolean", "null"] },
+          manual_quote_process: { type: ["boolean", "null"] },
+          current_stack: {
+            type: "array",
+            items: { type: "string" },
+          },
+          friction_point: { type: ["string", "null"] },
+          opportunity_hypothesis: { type: ["string", "null"] },
+          draft_pitch: { type: ["string", "null"] },
           sources: {
             type: "array",
             items: {
@@ -62,13 +73,32 @@ export const CANDIDATE_SCHEMA = {
         },
         required: [
           "company_name", "website_state", "website_url", "official_domain", "phone", "address_line_1",
-          "city", "state_code", "postal_code", "summary", "sources", "claims",
+          "city", "state_code", "postal_code", "summary", "fit_score", "fit_category", "phone_only_quote",
+          "manual_quote_process", "current_stack", "friction_point",
+          "opportunity_hypothesis", "draft_pitch", "sources", "claims",
         ],
         additionalProperties: false,
       },
     },
+    market_factors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          summary: { type: "string" },
+          category: { type: "string", enum: ["competition", "digital_maturity", "market_demand", "workflow", "regulatory", "other"] },
+          source_url: { type: "string" },
+          source_type: { type: "string", enum: ["official_website", "government_registry", "professional_directory", "search_result", "document", "other"] },
+          source_excerpt: { type: ["string", "null"] },
+          confidence: { type: "number" },
+        },
+        required: ["title", "summary", "category", "source_url", "source_type", "source_excerpt", "confidence"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["candidates"],
+  required: ["candidates", "market_factors"],
   additionalProperties: false,
 } as const;
 
@@ -112,6 +142,12 @@ export function buildPublicResearchPrompt(location: { kind: LocationKind; value:
     "For website_state, 'official_website_not_identified' means the research did not identify one; it does not prove that a website does not exist. Never claim a business, service, or website does not exist without affirmative evidence.",
     "Provide an attributable evidence claim for every material fact. Each claim needs its source URL, source type, source excerpt, and confidence.",
     "Do not assert unsupported performance improvements, conversion rates, revenue impact, or business-loss claims. Opportunity observations must be framed as hypotheses for founder review.",
+    "Return fit_score as a 0-100 strategic-fit assessment, not a sales probability. Score only from cited evidence about operating complexity, visible intake friction, workflow fragmentation, and likely value from an auditable inquiry-to-booking path.",
+    "Classify fit_category as strong, possible, weak, or insufficient_evidence. Return phone_only_quote and manual_quote_process as true only with cited public evidence, false only with contrary cited evidence, and null when unknown.",
+    "Return current_stack as evidence-backed tools or manual processes observed publicly. Return an empty array when none are identified.",
+    "Return one concise friction_point and one opportunity_hypothesis only when supported by cited evidence. Label uncertainty in the wording and use null when unsupported.",
+    "Return draft_pitch as a founder-review draft grounded only in cited evidence. It must not claim contact permission, guaranteed outcomes, performance gains, conversion rates, revenue impact, or business loss. Use null when evidence is insufficient.",
+    "Return sourced market_factors for the requested territory. Each needs a concise title, summary, category, public source URL/type/excerpt, and confidence. Use an empty array rather than guessing.",
     "Return businesses that actually provide residential home inspection services in the requested area. Exclude real-estate agents, repair contractors, inspectors who are clearly inactive, and duplicates.",
     "For each claim, include source URLs. Never invent a company, URL, phone number, address, service area, or fact. Use null when unknown.",
     "Website and source URLs must use public http or https URLs. Never return localhost, credentials in URLs, IP literals, private/link-local networks, cloud metadata endpoints, or non-web schemes.",
@@ -227,7 +263,10 @@ export function getStructuredOutput(payload: any): any | null {
 }
 
 export function validateStructuredOutputEnvelope(value: any): boolean {
-  return Boolean(value && typeof value === "object" && value.success === true && value.value && Array.isArray(value.value.candidates));
+  return Boolean(
+    value && typeof value === "object" && value.success === true && value.value
+    && Array.isArray(value.value.candidates) && Array.isArray(value.value.market_factors)
+  );
 }
 
 function normalizeName(value: string): string {
@@ -287,6 +326,18 @@ export async function persistStructuredResult(db: ServiceDb, run: any, structure
     const websiteState = allowedWebsiteStates.has(raw.website_state) ? raw.website_state : "needs_human_verification";
     const stateCode = cleanText(raw.state_code, 2)?.toUpperCase() || null;
     const postalCode = cleanText(raw.postal_code, 10);
+    const rawFitScore = Number(raw.fit_score);
+    const fitScore = Number.isInteger(rawFitScore) && rawFitScore >= 0 && rawFitScore <= 100 ? rawFitScore : null;
+    const allowedFitCategories = new Set(["strong", "possible", "weak", "insufficient_evidence"]);
+    const fitCategory = allowedFitCategories.has(raw.fit_category) ? raw.fit_category : "insufficient_evidence";
+    const phoneOnlyQuote = typeof raw.phone_only_quote === "boolean" ? raw.phone_only_quote : null;
+    const manualQuoteProcess = typeof raw.manual_quote_process === "boolean" ? raw.manual_quote_process : null;
+    const currentStack = Array.isArray(raw.current_stack)
+      ? raw.current_stack.map((item: unknown) => cleanText(item, 160)).filter((item: string | null): item is string => Boolean(item)).slice(0, 20)
+      : [];
+    const frictionPoint = cleanText(raw.friction_point, 1000);
+    const opportunityHypothesis = cleanText(raw.opportunity_hypothesis, 1500);
+    const draftPitch = cleanText(raw.draft_pitch, 2000);
     if (stateCode && !/^[A-Z]{2}$/.test(stateCode)) continue;
     if (postalCode && !/^\d{5}(?:-\d{4})?$/.test(postalCode)) continue;
     const identityKey = officialDomain ? `domain:${officialDomain}` : `name:${normalizedName}|${stateCode || ""}|${postalCode || ""}`;
@@ -297,7 +348,14 @@ export async function persistStructuredResult(db: ServiceDb, run: any, structure
       phone: cleanText(raw.phone, 80), address_line_1: cleanText(raw.address_line_1, 300),
       city: cleanText(raw.city, 160), state_code: stateCode, postal_code: postalCode,
       summary: cleanText(raw.summary, 4000), sources,
-      raw_candidate: { ...raw, sources, claims },
+      raw_candidate: {
+        ...raw, sources, claims, fit_score: fitScore, fit_category: fitCategory,
+        website_presence_class: websiteState, phone_only_quote: phoneOnlyQuote,
+        manual_quote_process: manualQuoteProcess, current_stack: currentStack,
+        friction_point: frictionPoint, opportunity_hypothesis: opportunityHypothesis,
+        draft_pitch: draftPitch, fit_score_rubric_version: "spectiq-fit-v1",
+        assessment_requires_founder_review: true,
+      },
     });
   }
 
@@ -305,6 +363,27 @@ export async function persistStructuredResult(db: ServiceDb, run: any, structure
   if (rows.length) {
     const { error } = await db.from("spectiq_prospect_research_candidates").upsert(rows, { onConflict: "research_run_id,identity_key", ignoreDuplicates: true });
     if (error) throw new Error(`Could not store research candidates: ${error.message}`);
+  }
+  const allowedFactorCategories = new Set(["competition", "digital_maturity", "market_demand", "workflow", "regulatory", "other"]);
+  const allowedFactorSourceTypes = new Set(["official_website", "government_registry", "professional_directory", "search_result", "document", "other"]);
+  const factors: Array<Record<string, unknown>> = [];
+  for (const rawFactor of Array.isArray(structured.value.market_factors) ? structured.value.market_factors.slice(0, 20) : []) {
+    if (!rawFactor || typeof rawFactor !== "object" || !allowedFactorCategories.has(rawFactor.category) || !allowedFactorSourceTypes.has(rawFactor.source_type)) continue;
+    const title = cleanText(rawFactor.title, 240);
+    const summary = cleanText(rawFactor.summary, 2000);
+    const sourceUrl = await validatePublicHttpUrl(rawFactor.source_url);
+    const confidence = Number(rawFactor.confidence);
+    if (!title || !summary || !sourceUrl || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) continue;
+    factors.push({
+      research_run_id: run.id, territory_id: run.territory_id || null, title, summary,
+      category: rawFactor.category, source_url: sourceUrl, source_type: rawFactor.source_type,
+      source_excerpt: cleanText(rawFactor.source_excerpt, 4000), confidence,
+    });
+  }
+  if (factors.length) {
+    const { error: factorError } = await db.from("spectiq_territory_market_factors")
+      .upsert(factors, { onConflict: "research_run_id,title,source_url", ignoreDuplicates: true });
+    if (factorError) throw new Error(`Could not store territory market factors: ${factorError.message}`);
   }
   const { count: storedCount } = await db.from("spectiq_prospect_research_candidates")
     .select("id", { count: "exact", head: true }).eq("research_run_id", run.id);

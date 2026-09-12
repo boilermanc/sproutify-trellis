@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle, ArrowRight, BadgeCheck, Building2, CalendarClock, Check,
-  ChevronRight, ClipboardCheck, Download, ExternalLink, FileSearch, Filter,
+  ClipboardCheck, Download, ExternalLink, FileSearch, Filter,
   Globe2, Inbox, ListChecks, Loader2, Mail, Map, MapPin, MessageSquarePlus,
   Phone, Plus, Pencil, RefreshCw, Save, Search, ShieldCheck, Sparkles, Target,
   Trash2, Users, X,
 } from 'lucide-react';
 import type {
-  ProspectingEvidenceDecision, ProspectingProspect, ProspectingSalesStage,
+  ProspectingEvidenceDecision, ProspectingProspect, ProspectingProspectDetail, ProspectingSalesStage,
   ProspectingStats, ProspectingTaskStatus, ProspectingTerritory,
   ProspectingVerificationState,
 } from '../types';
@@ -21,11 +21,13 @@ import {
   updateProspectVerification, updateTerritory,
 } from '../services/prospectingService';
 import {
-  getProspectingResearchRun, importProspectingResearchCandidate,
+  getProspectResearchSnapshot, getResearchCandidateSnapshot, getProspectingResearchRun, importProspectingResearchCandidate,
   listProspectingResearchRuns, pollProspectingResearchRun,
   retryProspectingResearchRun, reviewProspectingResearchCandidate,
   startProspectingResearch,
 } from '../services/prospectingResearchService';
+import type { ProspectingResearchCandidate, ProspectingTerritoryMarketFactor } from '../services/prospectingResearchService';
+import ProspectDossier from '../components/prospecting/ProspectDossier';
 
 type Tab = 'research' | 'pipeline' | 'review' | 'playbook' | 'territories';
 type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -54,6 +56,12 @@ const label = (value?: string | null) => value ? value.replaceAll('_', ' ').repl
 const asRecord = (value: unknown): Record<string, any> => (value && typeof value === 'object' ? value as Record<string, any> : {});
 const itemsOf = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : (Array.isArray(asRecord(value).data) ? asRecord(value).data as T[] : []);
 const dateText = (value?: string | null) => value ? new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not scheduled';
+const safeWebsiteHref = (website?: unknown, domain?: unknown) => {
+  const candidate = String(website || (domain ? `https://${domain}` : '')).trim();
+  if (!candidate) return null;
+  try { const parsed = new URL(candidate); return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : null; }
+  catch { return null; }
+};
 const blankProspect = { company_name: '', territory_id: '', website_url: '', official_domain: '', phone: '', summary: '', address_line_1: '', city: '', state_code: '', postal_code: '' };
 const blankTerritory = { name: '', kind: 'city', city: '', county: '', state_code: '', target_count: '25', status: 'draft' };
 const blankContact = { full_name: '', title: '', email: '', phone: '', source_url: '', is_primary: false, email_status: 'unknown' };
@@ -101,6 +109,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
   const [researchRuns, setResearchRuns] = useState<ResearchRun[]>([]);
   const [activeResearchRun, setActiveResearchRun] = useState<ResearchRun | null>(null);
   const [researchCandidates, setResearchCandidates] = useState<ResearchCandidate[]>([]);
+  const [marketFactors, setMarketFactors] = useState<ProspectingTerritoryMarketFactor[]>([]);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [candidateCorrections, setCandidateCorrections] = useState<Record<string, { field: string; value: string }>>({});
@@ -144,11 +153,13 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
     const record = asRecord(detail);
     const run = asRecord(record.run || record.data?.run || (record.id ? record : null));
     const candidates = itemsOf<ResearchCandidate>(record.candidates || record.data?.candidates);
+    const factors = itemsOf<ProspectingTerritoryMarketFactor>(record.marketFactors || record.market_factors || record.data?.marketFactors);
     if (Object.keys(run).length) {
       setActiveResearchRun(run);
       setResearchRuns(previous => [run, ...previous.filter(item => String(item.id) !== String(run.id))]);
     }
     setResearchCandidates(candidates);
+    setMarketFactors(factors);
   }, []);
 
   const loadResearch = useCallback(async (selectRunId?: string) => {
@@ -159,7 +170,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
       setResearchRuns(runs || []);
       const runId = selectRunId || String(activeResearchRun?.id || runs?.[0]?.id || '');
       if (runId) adoptResearchDetail(await getProspectingResearchRun(runId));
-      else { setActiveResearchRun(null); setResearchCandidates([]); }
+      else { setActiveResearchRun(null); setResearchCandidates([]); setMarketFactors([]); }
     } catch (cause) { setResearchError(cause instanceof Error ? cause.message : 'Could not load research runs.'); }
     finally { setResearchLoading(false); }
   }, [access?.authorized, activeResearchRun?.id, adoptResearchDetail]);
@@ -190,7 +201,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
     setResearchLoading(true); setResearchError(null);
     try {
       const run = await startProspectingResearch({ locationKind: researchForm.mode, locationValue, targetCount });
-      setActiveResearchRun(run); setResearchCandidates([]); setResearchRuns(previous => [run, ...previous.filter(item => String(item.id) !== String(run.id))]);
+      setActiveResearchRun(run); setResearchCandidates([]); setMarketFactors([]); setResearchRuns(previous => [run, ...previous.filter(item => String(item.id) !== String(run.id))]);
       addToast(`Research started for ${locationValue}.`, 'success');
       adoptResearchDetail(await getProspectingResearchRun(String(run.id)));
     } catch (cause) { const message = cause instanceof Error ? cause.message : 'Could not start research.'; setResearchError(message); addToast(message, 'error'); }
@@ -199,7 +210,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
 
   const retryResearch = async (runId: string) => {
     setResearchLoading(true); setResearchError(null);
-    try { const run = await retryProspectingResearchRun(runId); setActiveResearchRun(run); setResearchCandidates([]); addToast('Research retry queued.', 'success'); adoptResearchDetail(await getProspectingResearchRun(String(run.id))); }
+    try { const run = await retryProspectingResearchRun(runId); setActiveResearchRun(run); setResearchCandidates([]); setMarketFactors([]); addToast('Research retry queued.', 'success'); adoptResearchDetail(await getProspectingResearchRun(String(run.id))); }
     catch (cause) { const message = cause instanceof Error ? cause.message : 'Could not retry research.'; setResearchError(message); addToast(message, 'error'); }
     finally { setResearchLoading(false); }
   };
@@ -247,6 +258,30 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
     return p.verification_state !== 'outreach_approved' || p.sales_state === 'review_pending' || p.website_state === 'needs_human_verification';
   }), [filtered]);
   const visible = tab === 'review' ? reviewQueue : filtered;
+
+  const pipelineMetrics = useMemo(() => {
+    const scores: number[] = [];
+    let noOfficialUrl = 0; let phoneOnly = 0; let manualQuote = 0;
+    filtered.forEach(item => {
+      const prospect = item as ProspectingProspect; const snapshot = getProspectResearchSnapshot(prospect);
+      if (snapshot?.fitScore !== null && snapshot?.fitScore !== undefined) scores.push(snapshot.fitScore);
+      const hasOfficialUrl = Boolean(prospect.website_url || prospect.official_domain);
+      if (snapshot?.websitePresenceClass === 'official_website_not_identified' || (!snapshot && !hasOfficialUrl)) noOfficialUrl += 1;
+      if (snapshot?.phoneOnlyQuote === true) phoneOnly += 1;
+      if (snapshot?.manualQuoteProcess === true) manualQuote += 1;
+    });
+    return {
+      total: filtered.length,
+      highFit: scores.filter(score => score >= 80).length,
+      noOfficialUrl,
+      phoneOnly,
+      manualQuote,
+      averageFit: scores.length ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : null,
+    };
+  }, [filtered]);
+  const activeTerritoryName = territoryId === 'all'
+    ? 'Territory'
+    : String(asRecord(territories.find(item => String(asRecord(item).id) === territoryId)).name || 'Territory');
 
   const stat = (key: string, fallback = 0) => Number(asRecord(stats)[key] ?? fallback);
   const fallbackStats = {
@@ -483,9 +518,11 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
           {['queued','running','waiting'].includes(status) && <div className="mt-5"><div className="mb-2 flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400"><span>{status === 'queued' ? 'Waiting for research worker' : status === 'waiting' ? 'Waiting for research results' : 'Research in progress'}</span><span>{target ? `${percent}%` : 'Working'}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600 transition-colors" style={{ width: `${Math.max(percent, status === 'running' ? 8 : 3)}%` }}/></div></div>}
           {(status === 'failed' || status === 'partial') && <div className={`mt-5 rounded-sm border p-4 text-sm ${status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}><div className="flex items-start gap-2"><AlertCircle size={17} className="mt-0.5 shrink-0"/><div><p className="font-black">{status === 'partial' ? 'Partial results available' : 'Search did not finish'}</p><p className="mt-1 text-xs leading-relaxed">{run.error_message || run.error || (status === 'partial' ? 'Review the candidates below or retry to continue gathering results.' : 'Retry this area when you are ready.')}</p></div></div></div>}
           {researchError && <div className="mt-5 flex items-start gap-2 rounded-sm border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><AlertCircle size={17} className="mt-0.5 shrink-0"/><span>{researchError}</span></div>}
-          <div className="mt-5 space-y-4">{researchCandidates.length ? researchCandidates.map((candidate, index) => { const id = String(candidate.id || index); const sources = itemsOf<any>(candidate.sources || candidate.evidence || candidate.source_urls || asRecord(candidate.raw_payload).sources); const statusText = String(candidate.status || candidate.review_status || 'pending'); return <article key={id} className="rounded-sm border border-slate-200 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h3 className="text-lg font-black   text-slate-900">{candidate.company_name || candidate.name || 'Unnamed inspection company'}</h3><p className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-400"><MapPin size={12}/>{candidate.location || [candidate.city, candidate.state_code].filter(Boolean).join(', ') || 'Location needs review'}</p></div><Badge className={statusText === 'rejected' ? 'bg-rose-50 text-rose-700' : ['approved','corrected','imported','merged'].includes(statusText) ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>{label(statusText)}</Badge></div>
-            {(candidate.website_url || candidate.website) && <a href={candidate.website_url || candidate.website} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-blue-600">{candidate.website_url || candidate.website}<ExternalLink size={12}/></a>}
+          {marketFactors.length > 0 && <section className="mt-5 rounded-sm border border-indigo-100 bg-indigo-50/50 p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Market intel</p><h3 className="mt-1 text-lg font-black text-slate-900">Territory-level factors</h3><p className="mt-1 text-xs leading-relaxed text-slate-500">Source-backed context for this search. Each factor remains advisory until founder review.</p></div><Badge className="shrink-0 bg-amber-50 text-amber-800"><ShieldCheck size={11}/>Review required</Badge></div><div className="mt-4 grid gap-3 md:grid-cols-2">{marketFactors.map(factor => { const href = safeWebsiteHref(factor.source_url); return <article key={factor.id} className="rounded-sm border border-indigo-100 bg-white p-4"><div className="flex flex-wrap items-center gap-2"><Badge className="bg-indigo-50 text-indigo-700">{label(factor.category)}</Badge><Badge className={factor.verification_decision === 'approved' || factor.verification_decision === 'corrected' ? 'bg-emerald-50 text-emerald-700' : factor.verification_decision === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}>{label(factor.verification_decision)}</Badge></div><h4 className="mt-3 text-sm font-black text-slate-900">{factor.title}</h4><p className="mt-2 text-xs leading-relaxed text-slate-600">{factor.founder_correction || factor.summary}</p>{href && <a href={href} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-600">Review source <ExternalLink size={10}/></a>}</article>; })}</div></section>}
+          <div className="mt-5 space-y-4">{researchCandidates.length ? researchCandidates.map((candidate, index) => { const id = String(candidate.id || index); const candidateSnapshot = getResearchCandidateSnapshot(candidate as ProspectingResearchCandidate); const candidateHref = safeWebsiteHref(candidate.website_url || candidate.website); const sources = itemsOf<any>(candidate.sources || candidate.evidence || candidate.source_urls || asRecord(candidate.raw_payload).sources); const statusText = String(candidate.status || candidate.review_status || 'pending'); return <article key={id} className="rounded-sm border border-slate-200 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h3 className="text-lg font-black   text-slate-900">{candidate.company_name || candidate.name || 'Unnamed inspection company'}</h3><p className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-400"><MapPin size={12}/>{candidate.location || [candidate.city, candidate.state_code].filter(Boolean).join(', ') || 'Location needs review'}</p></div><div className="flex flex-wrap gap-2">{candidateSnapshot.fitScore !== null && <Badge className="bg-emerald-600 text-white"><Sparkles size={11}/>{label(candidateSnapshot.fitCategory)} fit · {candidateSnapshot.fitScore}</Badge>}<Badge className={statusText === 'rejected' ? 'bg-rose-50 text-rose-700' : ['approved','corrected','imported','merged'].includes(statusText) ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>{label(statusText)}</Badge></div></div>
+            {candidateHref && <a href={candidateHref} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-blue-600">{candidate.website_url || candidate.website}<ExternalLink size={12}/></a>}
             {(candidate.summary || candidate.description) && <p className="mt-3 text-sm leading-relaxed text-slate-600">{candidate.summary || candidate.description}</p>}
+            {(candidateSnapshot.currentStack.length > 0 || candidateSnapshot.opportunityHypothesis || candidateSnapshot.frictionPoint) && <div className="mt-4 grid gap-3 lg:grid-cols-3"><div className="rounded-sm bg-slate-50 p-3"><p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Current stack</p><p className="mt-1 text-xs font-semibold leading-relaxed text-slate-700">{candidateSnapshot.currentStack.join(' · ') || 'Not identified'}</p></div><div className="rounded-sm bg-blue-50 p-3"><p className="text-[9px] font-black uppercase tracking-widest text-blue-600">Opportunity hypothesis</p><p className="mt-1 text-xs leading-relaxed text-blue-900">{candidateSnapshot.opportunityHypothesis || 'Needs founder assessment.'}</p></div><div className="rounded-sm bg-amber-50 p-3"><p className="text-[9px] font-black uppercase tracking-widest text-amber-700">Friction point</p><p className="mt-1 text-xs leading-relaxed text-amber-900">{candidateSnapshot.frictionPoint || 'Not identified.'}</p></div></div>}
             <div className="mt-4"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sources and evidence</p><div className="mt-2 space-y-2">{sources.length ? sources.map((source, sourceIndex) => { const entry = typeof source === 'string' ? { url: source } : asRecord(source); return <div key={`${id}-${sourceIndex}`} className="rounded-sm bg-slate-50 p-3"><p className="text-xs font-semibold leading-relaxed text-slate-600">{entry.excerpt || entry.claim || entry.title || 'Source retained for review.'}</p>{entry.url && <a href={entry.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[10px] font-black uppercase text-blue-600">Open source <ExternalLink size={10}/></a>}</div>; }) : <p className="rounded-sm bg-amber-50 p-3 text-xs font-semibold text-amber-800">No source evidence was returned. Do not import without verification.</p>}</div></div>
             {!['imported','merged','rejected'].includes(statusText) && <><div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,0.65fr)_minmax(0,1.35fr)]"><select value={candidateCorrections[id]?.field || 'company_name'} onChange={e => setCandidateCorrections(previous => ({ ...previous, [id]: { field: e.target.value, value: previous[id]?.value || '' } }))} aria-label="Correction field" className="rounded-sm border border-slate-200 px-3 py-3 text-xs font-bold text-slate-700">{['company_name','website_url','phone','address_line_1','city','state_code','postal_code','summary'].map(field => <option key={field} value={field}>{label(field)}</option>)}</select><input value={candidateCorrections[id]?.value || ''} onChange={e => setCandidateCorrections(previous => ({ ...previous, [id]: { field: previous[id]?.field || 'company_name', value: e.target.value } }))} placeholder="Corrected value…" className="rounded-sm border border-slate-200 px-3 py-3 text-sm outline-none focus:border-blue-400"/></div><div className="mt-3 flex flex-wrap gap-2"><button onClick={() => void reviewCandidate(candidate, 'approved')} disabled={saving} className="rounded-sm bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">Approve evidence</button><button onClick={() => void reviewCandidate(candidate, 'corrected')} disabled={saving} className="rounded-sm bg-blue-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700">Correct</button><button onClick={() => void reviewCandidate(candidate, 'rejected')} disabled={saving} className="rounded-sm bg-rose-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-700">Reject</button>{['approved','corrected'].includes(statusText) && <><button onClick={() => void importCandidate(candidate, 'create')} disabled={saving} className="rounded-sm bg-slate-900 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white">Import as new</button><select value={candidateMergeTargets[id] || ''} onChange={e => setCandidateMergeTargets(previous => ({ ...previous, [id]: e.target.value }))} aria-label="Existing prospect to merge" className="max-w-56 rounded-sm border border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-700"><option value="">Choose prospect to merge</option>{prospects.map(item => <option key={String(asRecord(item).id)} value={String(asRecord(item).id)}>{asRecord(item).company_name}</option>)}</select><button onClick={() => void importCandidate(candidate, 'merge')} disabled={saving || !candidateMergeTargets[id]} className="rounded-sm border border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">Merge</button></>}</div></>}
           </article>; }) : !['queued','running','waiting'].includes(status) && <div className="rounded-sm border border-dashed border-slate-300 p-10 text-center"><Inbox className="mx-auto text-slate-300" size={30}/><p className="mt-3 font-black uppercase text-slate-700">No candidates returned</p><p className="mt-2 text-sm text-slate-400">Try a nearby city, county, ZIP code, or a broader state search.</p></div>}</div>
@@ -494,6 +531,25 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
     </div>}
 
     {(tab === 'pipeline' || tab === 'review') && <>
+      {tab === 'pipeline' && <>
+        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-sm border border-slate-200 bg-white p-2">
+          <button className="rounded-sm bg-slate-950 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white">Territory prospect matrix</button>
+          <button onClick={() => setTab('review')} className="rounded-sm px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 hover:text-slate-800">Live website auditor</button>
+          <button onClick={() => setTab('playbook')} className="rounded-sm px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 hover:text-slate-800">SpectIQ pitch playbook</button>
+          <button onClick={() => setTab('research')} className="rounded-sm px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 hover:text-slate-800">{activeTerritoryName} market intel</button>
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-amber-800"><ShieldCheck size={12}/>{reviewQueue.length} awaiting human review</span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {[
+            { label: 'Total monitored', value: pipelineMetrics.total, icon: Building2, tone: 'text-blue-700 bg-blue-50' },
+            { label: 'High-fit signals', value: pipelineMetrics.highFit, icon: Target, tone: 'text-emerald-700 bg-emerald-50' },
+            { label: 'Official URL not identified', value: pipelineMetrics.noOfficialUrl, icon: Globe2, tone: 'text-rose-700 bg-rose-50' },
+            { label: 'Phone-only signals', value: pipelineMetrics.phoneOnly, icon: Phone, tone: 'text-indigo-700 bg-indigo-50' },
+            { label: 'Manual quote signals', value: pipelineMetrics.manualQuote, icon: ClipboardCheck, tone: 'text-amber-700 bg-amber-50' },
+            { label: 'Average advisory fit', value: pipelineMetrics.averageFit === null ? 'Pending' : pipelineMetrics.averageFit, icon: Sparkles, tone: 'text-violet-700 bg-violet-50' },
+          ].map(metric => <div key={metric.label} className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm"><div className={`flex h-8 w-8 items-center justify-center rounded-sm ${metric.tone}`}><metric.icon size={15}/></div><p className="mt-3 text-xl font-black text-slate-950">{metric.value}</p><p className="mt-1 text-[9px] font-black uppercase leading-snug tracking-widest text-slate-400">{metric.label}</p></div>)}
+        </div>
+      </>}
       <div className="mt-5 flex flex-col gap-3 rounded-sm border border-slate-200 bg-white p-4  lg:flex-row lg:items-center">
         <div className="relative min-w-0 flex-1"><Search size={17} className="absolute left-4 top-3.5 text-slate-400"/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search company, city, domain, or contact" className="w-full rounded-sm border border-slate-200 py-3 pl-11 pr-4 text-sm font-semibold outline-none focus:border-blue-400"/></div>
         <div className="flex items-center gap-2"><Filter size={15} className="text-slate-400"/><select value={stage} onChange={e => setStage(e.target.value)} className="rounded-sm border border-slate-200 px-3 py-3 text-xs font-bold text-slate-700"><option value="all">All stages</option>{STAGES.map(s => <option key={s} value={s}>{label(s)}</option>)}</select></div>
@@ -504,15 +560,46 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
       {loading ? <div className="mt-5 flex min-h-72 items-center justify-center rounded-sm border border-slate-200 bg-white"><Loader2 className="animate-spin text-blue-600"/><span className="ml-3 text-sm font-bold text-slate-500">Loading founder pipeline…</span></div>
       : error ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-sm border border-rose-200 bg-rose-50 p-8 text-center"><AlertCircle className="mb-3 text-rose-500" size={28}/><p className="font-black text-rose-900">Prospecting data could not load</p><p className="mt-2 text-sm text-rose-700">{error}</p><button onClick={() => void load()} className="mt-5 rounded-sm bg-rose-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white">Try again</button></div>
       : visible.length === 0 ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-sm border border-dashed border-slate-300 bg-white p-8 text-center"><Inbox className="mb-3 text-slate-300" size={34}/><p className="font-black uppercase tracking-tight text-slate-700">{tab === 'review' ? 'Review queue is clear' : 'No prospects yet'}</p><p className="mt-2 max-w-md text-sm text-slate-400">{tab === 'review' ? 'Prospects needing founder evidence review will appear here.' : 'Start a geographic search or create the first company record manually.'}</p>{tab === 'pipeline' && <div className="mt-5 flex flex-wrap justify-center gap-2"><button onClick={() => setTab('research')} className="flex items-center gap-2 rounded-sm bg-blue-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white"><Search size={15}/>Start research</button><button onClick={() => { setProspectForm(blankProspect); setProspectFormOpen(true); }} className="flex items-center gap-2 rounded-sm border border-slate-300 px-5 py-3 text-xs font-black uppercase tracking-widest text-slate-700"><Plus size={15}/>Create manually</button></div>}</div>
-      : <div className="mt-5 overflow-hidden rounded-sm border border-slate-200 bg-white "><div className="hidden grid-cols-[42px_1.5fr_1fr_1fr_1fr_42px] gap-4 border-b border-slate-100 bg-slate-50 px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-400 lg:grid"><span/><span>Company</span><span>Evidence</span><span>Stage</span><span>Next action</span><span/></div>
-        <div className="divide-y divide-slate-100">{visible.map(item => { const p = asRecord(item); const id = String(p.id); const meta = STAGE_META[p.sales_state] || STAGE_META.new; const evidenceCount = Number(p.evidence_count ?? p.claim_count ?? asRecord(p.metadata).evidence_count ?? 0); return <div key={id} className="grid gap-4 px-5 py-5 transition hover:bg-blue-50/30 lg:grid-cols-[42px_1.5fr_1fr_1fr_1fr_42px] lg:items-center lg:px-6">
-          <label className="flex items-center"><input type="checkbox" checked={selected.has(id)} onChange={() => toggleSelected(id)} className="h-4 w-4 rounded border-slate-300 accent-blue-600"/><span className="ml-3 text-[9px] font-black uppercase text-slate-400 lg:hidden">Select</span></label>
-          <button onClick={() => void openDetail(item)} className="min-w-0 text-left"><p className="truncate text-sm font-black uppercase tracking-tight text-slate-900">{p.company_name || 'Unnamed company'}</p><p className="mt-1 flex items-center gap-1 truncate text-xs font-semibold text-slate-400"><MapPin size={11}/>{[p.city, p.state_code].filter(Boolean).join(', ') || 'Location unverified'}</p></button>
-          <div className="flex flex-wrap gap-1.5">{evidenceCount > 0 ? <Badge className="bg-blue-50 text-blue-700"><BadgeCheck size={11}/>{evidenceCount} sources</Badge> : <Badge className="bg-amber-50 text-amber-700"><AlertCircle size={11}/>Evidence needed</Badge>}<Badge className={p.verification_state === 'outreach_approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}><ShieldCheck size={11}/>{label(p.verification_state)}</Badge></div>
-          <select value={p.sales_state || 'new'} disabled={saving} onChange={e => void handleStage(item, e.target.value)} className={`w-fit rounded-sm border-0 px-3 py-2 text-[10px] font-black uppercase tracking-wider ${meta.style}`}>{STAGES.map(s => <option key={s} value={s}>{label(s)}</option>)}</select>
-          <div><p className="text-xs font-bold text-slate-700">{p.next_follow_up_at ? 'Founder follow-up' : 'No action recorded'}</p><p className="mt-1 text-[10px] font-semibold text-slate-400">{dateText(p.next_follow_up_at)}</p></div>
-          <button onClick={() => void openDetail(item)} className="flex h-9 w-9 items-center justify-center rounded-sm text-slate-400 hover:bg-blue-100 hover:text-blue-700" aria-label="Open prospect details"><ChevronRight size={18}/></button>
-        </div>; })}</div></div>}
+      : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map(item => {
+        const p = asRecord(item); const id = String(p.id); const snapshot = getProspectResearchSnapshot(item); const meta = STAGE_META[p.sales_state] || STAGE_META.new;
+        const evidenceCount = Number(p.evidence_count ?? p.claim_count ?? asRecord(p.metadata).evidence_count ?? 0);
+        const fitScore = snapshot?.fitScore ?? null;
+        const websiteIdentified = Boolean(p.website_url || p.official_domain);
+        const websiteHref = safeWebsiteHref(p.website_url, p.official_domain);
+        const currentStack = snapshot?.currentStack.length ? snapshot.currentStack.join(' · ') : (websiteIdentified ? 'Official website identified' : 'Public web presence not identified');
+        const opportunity = snapshot?.opportunityHypothesis || p.opportunity_category || p.summary || 'Review the evidence to form a SpectIQ opportunity hypothesis.';
+        const friction = snapshot?.frictionPoint || 'Not yet identified — founder review required.';
+        const territory = territories.find(candidate => String(asRecord(candidate).id) === String(p.territory_id));
+        return <article key={id} className="flex min-h-[31rem] flex-col overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md">
+          <div className="flex flex-1 flex-col p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <label className="mt-1 flex shrink-0 items-center" title="Select for export"><input type="checkbox" checked={selected.has(id)} onChange={() => toggleSelected(id)} className="h-4 w-4 rounded border-slate-300 accent-blue-600"/><span className="sr-only">Select {p.company_name || 'company'}</span></label>
+              <div className="min-w-0 flex-1"><button onClick={() => void openDetail(item)} className="text-left"><h3 className="text-base font-black leading-snug text-slate-950">{p.company_name || 'Unnamed company'}</h3></button><p className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-400"><MapPin size={12}/>{[p.city, p.state_code].filter(Boolean).join(', ') || asRecord(territory).name || 'Location needs verification'}</p></div>
+              {fitScore !== null ? <Badge className="shrink-0 bg-emerald-600 text-white"><Sparkles size={11}/>Advisory fit · {fitScore}</Badge> : <Badge className="shrink-0 bg-slate-100 text-slate-600">Fit pending</Badge>}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {!websiteIdentified && <Badge className="bg-rose-50 text-rose-700"><AlertCircle size={11}/>Official URL not identified</Badge>}
+              <Badge className={p.verification_state === 'outreach_approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}><ShieldCheck size={11}/>{label(p.verification_state || 'unreviewed')}</Badge>
+              {evidenceCount > 0 && <Badge className="bg-blue-50 text-blue-700"><BadgeCheck size={11}/>{evidenceCount} sources</Badge>}
+            </div>
+
+            <dl className="mt-5 space-y-2 rounded-sm bg-slate-50 p-4 text-xs">
+              <div className="flex gap-3"><dt className="w-24 shrink-0 font-semibold text-slate-500">Current stack:</dt><dd className="min-w-0 text-right font-bold text-slate-800 sm:ml-auto">{String(currentStack)}</dd></div>
+              <div className="flex gap-3"><dt className="w-24 shrink-0 font-semibold text-slate-500">Phone:</dt><dd className="min-w-0 text-right font-bold text-slate-800 sm:ml-auto">{p.phone || 'Not identified'}</dd></div>
+              <div className="flex gap-3"><dt className="w-24 shrink-0 font-semibold text-slate-500">Website:</dt><dd className="min-w-0 break-all text-right font-bold sm:ml-auto">{websiteHref ? <a href={websiteHref} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{p.official_domain || p.website_url}</a> : websiteIdentified ? <span className="italic text-amber-700">Needs URL review</span> : <span className="italic text-rose-600">Not identified</span>}</dd></div>
+            </dl>
+
+            <div className="mt-5"><p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-blue-700"><Sparkles size={13}/>SpectIQ opportunity hypothesis</p><p className="mt-2 line-clamp-3 text-sm leading-relaxed text-slate-600">{String(opportunity)}</p></div>
+            <div className="mt-4 rounded-sm border border-amber-200 bg-amber-50 p-3"><p className="text-[10px] font-black uppercase tracking-wider text-amber-800">Key friction point</p><p className="mt-1 line-clamp-2 text-xs leading-relaxed text-amber-900">{String(friction)}</p></div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-5 py-4 sm:px-6">
+            <button onClick={() => void openDetail(item)} className="flex items-center gap-1.5 text-xs font-black text-blue-700">View dossier <ArrowRight size={14}/></button>
+            <select aria-label={`Sales stage for ${p.company_name || 'company'}`} value={p.sales_state || 'new'} disabled={saving} onChange={e => void handleStage(item, e.target.value)} className={`max-w-36 rounded-sm border-0 px-3 py-2 text-[10px] font-black uppercase tracking-wider ${meta.style}`}>{STAGES.map(s => <option key={s} value={s}>{label(s)}</option>)}</select>
+          </div>
+        </article>;
+      })}</div>}
       <div className="mt-4 flex items-start gap-3 rounded-sm border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><ShieldCheck size={17} className="mt-0.5 shrink-0"/><span>Research candidates enter this pipeline only after explicit founder review and import. Outbound email remains disabled.</span></div>
     </>}
 
@@ -526,6 +613,15 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
 
     {focused && (() => { const p = asRecord(focused); const evidence = itemsOf<any>(p.claims); const notes = itemsOf<any>(p.notes); const tasks = itemsOf<any>(p.tasks); const primaryContact = itemsOf<any>(p.contacts).find(contact => contact.is_primary) || itemsOf<any>(p.contacts)[0]; return <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={e => { if (e.target === e.currentTarget) setFocused(null); }}><div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-t-[2.5rem] bg-white  sm:rounded-sm">
       <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white/95 px-6 py-6 backdrop-blur sm:px-8"><div><div className="mb-2 flex flex-wrap gap-2"><Badge className={(STAGE_META[p.sales_state] || STAGE_META.new).style}>{label(p.sales_state || 'new')}</Badge><Badge className={p.verification_state === 'outreach_approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}><ShieldCheck size={11}/>{label(p.verification_state || 'unreviewed')}</Badge></div><h2 className="text-2xl font-black   text-slate-900">{p.company_name}</h2><p className="mt-1 text-sm font-semibold text-slate-400">{[p.city, p.state_code].filter(Boolean).join(', ') || 'Location unverified'}</p></div><div className="flex gap-1"><button onClick={editProspect} aria-label="Edit prospect" className="rounded-sm bg-slate-100 p-2 text-slate-500"><Pencil size={18}/></button><button onClick={() => setConfirmAction({ title: 'Archive prospect?', detail: `${p.company_name} will leave the active pipeline. Its audit history is preserved.`, run: async () => { const mod = await import('../services/prospectingService'); await mod.archiveProspect(String(p.id)); setConfirmAction(null); setFocused(null); addToast('Prospect archived.', 'success'); await load(true); } })} aria-label="Archive prospect" className="rounded-sm bg-rose-50 p-2 text-rose-600"><Trash2 size={18}/></button><button onClick={() => setFocused(null)} className="rounded-sm bg-slate-100 p-2 text-slate-500"><X size={18}/></button></div></div>
+      <div className="border-b border-slate-100 bg-slate-50/60 p-6 sm:p-8">
+        <ProspectDossier
+          record={focused as ProspectingProspectDetail}
+          kind="prospect"
+          busy={saving}
+          onReviewClaim={(claimId, decision, correction) => { void reviewClaim(claimId, decision, correction); }}
+          onRequestPitchReady={() => { void handleStage(focused, 'pitch_ready'); }}
+        />
+      </div>
       <div className="grid gap-7 p-6 sm:p-8 lg:grid-cols-5"><div className="space-y-6 lg:col-span-3">
         <section><h3 className="text-xs font-black   text-slate-400">Company record</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{[[Globe2, p.website_url || label(p.website_state), p.website_url],[Mail, primaryContact?.email || 'Email not verified', null],[Phone, primaryContact?.phone || p.phone || 'Phone not verified',null],[MapPin,[p.address_line_1,p.city,p.state_code].filter(Boolean).join(', ') || 'Address not verified',null]].map(([Icon, text, href], i) => <div key={i} className="flex min-w-0 items-center gap-3 rounded-sm bg-slate-50 p-4"><Icon size={16} className="shrink-0 text-blue-600"/><span className="truncate text-xs font-bold text-slate-700">{String(text || '')}</span>{href && <a href={String(href).startsWith('http') ? String(href) : `https://${href}`} target="_blank" rel="noreferrer" className="ml-auto text-slate-400"><ExternalLink size={13}/></a>}</div>)}</div></section>
         <section><div className="flex items-center justify-between"><h3 className="text-xs font-black   text-slate-400">Contacts</h3><button onClick={() => setContactForm(blankContact)} className="flex items-center gap-1 text-xs font-black text-blue-600"><Plus size={14}/>Add contact</button></div><div className="mt-3 space-y-2">{itemsOf<any>(p.contacts).length ? itemsOf<any>(p.contacts).map(contact => <div key={contact.id} className="flex items-center gap-3 rounded-sm bg-slate-50 p-4"><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-slate-800">{contact.full_name || contact.email || contact.phone}</p><p className="truncate text-xs text-slate-500">{[contact.title, contact.email, contact.phone].filter(Boolean).join(' · ')}</p></div>{contact.is_primary && <Badge className="bg-blue-50 text-blue-700">Primary</Badge>}<button onClick={() => setContactForm({ ...blankContact, ...contact })} aria-label="Edit contact" className="rounded-sm p-2 text-slate-500"><Pencil size={14}/></button></div>) : <p className="rounded-sm border border-dashed border-slate-200 p-4 text-sm text-slate-500">No contacts recorded.</p>}</div></section>

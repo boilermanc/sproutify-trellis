@@ -34,6 +34,8 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
+  className?: string;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 export const Button = ({ variant = 'primary', className, type = 'button', ...props }: ButtonProps) => (
@@ -77,6 +79,8 @@ export const Tabs = ({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 
 export interface TabProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean;
+  className?: string;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 export const Tab = ({ active = false, className, type = 'button', ...props }: TabProps) => (
@@ -92,6 +96,8 @@ export const Tab = ({ active = false, className, type = 'button', ...props }: Ta
 export interface ModalShellProps extends React.HTMLAttributes<HTMLDivElement> {
   labelledBy?: string;
   panelClassName?: string;
+  className?: string;
+  children?: React.ReactNode;
 }
 
 export const ModalShell = ({ labelledBy, className, panelClassName, children, ...props }: ModalShellProps) => (
@@ -104,6 +110,7 @@ export const ModalShell = ({ labelledBy, className, panelClassName, children, ..
 
 export interface DrawerProps extends React.HTMLAttributes<HTMLElement> {
   side?: 'left' | 'right';
+  className?: string;
 }
 
 export const Drawer = ({ side = 'right', className, ...props }: DrawerProps) => (
@@ -116,4 +123,3 @@ export const Drawer = ({ side = 'right', className, ...props }: DrawerProps) => 
     {...props}
   />
 );
-

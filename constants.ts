@@ -13,6 +13,7 @@ import PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA from './supabase/migrations/2026090
 import SPECTIQ_PROSPECTING_SQL_SCHEMA from './supabase/migrations/20260911202452_add_spectiq_prospecting_foundation.sql?raw';
 import SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA from './supabase/migrations/20260911222525_complete_spectiq_prospecting_crud.sql?raw';
 import SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA from './supabase/migrations/20260911233823_add_spectiq_prospect_research.sql?raw';
+import SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA from './supabase/migrations/20260912005803_add_spectiq_research_snapshot_contract.sql?raw';
 
 export interface BriefAxis {
   name: string;
@@ -2985,6 +2986,7 @@ ${PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA}
 ${SPECTIQ_PROSPECTING_SQL_SCHEMA}
 ${SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA}
 ${SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA}
+${SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

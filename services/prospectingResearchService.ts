@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { ProspectingProspect } from '../types';
+import type { ProspectingClaim, ProspectingProspect } from '../types';
 
 export type ResearchLocationKind = 'city' | 'county' | 'state' | 'zip';
 export type ResearchRunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'partial' | 'failed' | 'cancelled';
@@ -57,6 +57,7 @@ export interface ProspectingResearchCandidate {
   postal_code: string | null;
   summary: string | null;
   sources: ProspectingResearchSource[];
+  raw_candidate: Record<string, unknown>;
   review_status: ResearchCandidateStatus;
   founder_corrections: Record<string, unknown>;
   reviewed_by: string | null;
@@ -66,9 +67,148 @@ export interface ProspectingResearchCandidate {
   updated_at: string;
 }
 
+export interface ProspectingResearchSnapshot {
+  fitScore: number | null;
+  fitCategory: 'strong' | 'possible' | 'weak' | 'insufficient_evidence';
+  fitScoreRubricVersion: 'spectiq-fit-v1';
+  websitePresenceClass: string | null;
+  phoneOnlyQuote: boolean | null;
+  manualQuoteProcess: boolean | null;
+  currentStack: string[];
+  frictionPoint: string | null;
+  opportunityHypothesis: string | null;
+  draftPitch: string | null;
+  evidenceStatus: 'candidate_reviewed' | 'claims_pending' | 'claims_reviewed';
+  requiresFounderReview: true;
+}
+
+export interface ProspectingTerritoryMarketFactor {
+  id: string;
+  research_run_id: string;
+  territory_id: string | null;
+  title: string;
+  summary: string;
+  category: 'competition' | 'digital_maturity' | 'market_demand' | 'workflow' | 'regulatory' | 'other';
+  source_url: string;
+  source_type: string;
+  source_excerpt: string | null;
+  confidence: number;
+  verification_decision: 'pending' | 'approved' | 'corrected' | 'rejected';
+  founder_correction: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingResearchKpis {
+  scored: number;
+  strongFit: number;
+  possibleFit: number;
+  weakFit: number;
+  insufficientEvidence: number;
+  noOfficialWebsiteIdentified: number;
+  phoneOnlyQuoteObserved: number;
+  manualQuoteProcessObserved: number;
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function optionalScore(value: unknown): number | null {
+  const score = Number(value);
+  return Number.isInteger(score) && score >= 0 && score <= 100 ? score : null;
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function fitCategory(value: unknown): ProspectingResearchSnapshot['fitCategory'] {
+  return ['strong', 'possible', 'weak', 'insufficient_evidence'].includes(String(value))
+    ? value as ProspectingResearchSnapshot['fitCategory']
+    : 'insufficient_evidence';
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map(item => item.trim()).slice(0, 20)
+    : [];
+}
+
+/** Advisory research fields. These never imply outreach approval or factual verification. */
+export function getResearchCandidateSnapshot(candidate: ProspectingResearchCandidate): ProspectingResearchSnapshot {
+  const raw = candidate.raw_candidate || {};
+  return {
+    fitScore: optionalScore(raw.fit_score),
+    fitCategory: fitCategory(raw.fit_category),
+    fitScoreRubricVersion: 'spectiq-fit-v1',
+    websitePresenceClass: optionalText(raw.website_presence_class) || candidate.website_state || null,
+    phoneOnlyQuote: optionalBoolean(raw.phone_only_quote),
+    manualQuoteProcess: optionalBoolean(raw.manual_quote_process),
+    currentStack: stringList(raw.current_stack),
+    frictionPoint: optionalText(raw.friction_point),
+    opportunityHypothesis: optionalText(raw.opportunity_hypothesis),
+    draftPitch: optionalText(raw.draft_pitch),
+    evidenceStatus: 'candidate_reviewed',
+    requiresFounderReview: true,
+  };
+}
+
+/**
+ * Reads the durable imported snapshot, then falls back to reviewed claims where
+ * possible. Draft copy stays explicitly advisory and is never an email action.
+ */
+export function getProspectResearchSnapshot(
+  prospect: ProspectingProspect,
+  claims: ProspectingClaim[] = [],
+): ProspectingResearchSnapshot | null {
+  const metadata = prospect.metadata && typeof prospect.metadata === 'object' ? prospect.metadata : {};
+  const stored = metadata.research_snapshot && typeof metadata.research_snapshot === 'object'
+    ? metadata.research_snapshot as Record<string, unknown>
+    : null;
+  const usableClaims = claims.filter(claim => ['approved', 'corrected'].includes(claim.verification_decision));
+  const claimValue = (type: ProspectingClaim['claim_type']) => optionalText(usableClaims.find(claim => claim.claim_type === type)?.founder_correction)
+    || optionalText(usableClaims.find(claim => claim.claim_type === type)?.display_value);
+  if (!stored && usableClaims.length === 0) return null;
+  const hasPendingClaims = claims.some(claim => claim.verification_decision === 'pending');
+  return {
+    fitScore: optionalScore(stored?.fit_score),
+    fitCategory: fitCategory(stored?.fit_category),
+    fitScoreRubricVersion: 'spectiq-fit-v1',
+    websitePresenceClass: optionalText(stored?.website_presence_class) || prospect.website_state || null,
+    phoneOnlyQuote: optionalBoolean(stored?.phone_only_quote),
+    manualQuoteProcess: optionalBoolean(stored?.manual_quote_process),
+    currentStack: stringList(stored?.current_stack).length
+      ? stringList(stored?.current_stack)
+      : usableClaims.filter(claim => claim.claim_type === 'services').map(claim => claim.founder_correction || claim.display_value).filter(Boolean).slice(0, 20),
+    frictionPoint: optionalText(stored?.friction_point),
+    opportunityHypothesis: optionalText(stored?.opportunity_hypothesis) || claimValue('opportunity'),
+    draftPitch: optionalText(stored?.draft_pitch) || claimValue('outreach_angle'),
+    evidenceStatus: hasPendingClaims ? 'claims_pending' : 'claims_reviewed',
+    requiresFounderReview: true,
+  };
+}
+
+export function getProspectingResearchKpis(candidates: ProspectingResearchCandidate[]): ProspectingResearchKpis {
+  const snapshots = candidates.map(getResearchCandidateSnapshot);
+  return {
+    scored: snapshots.filter(item => item.fitScore !== null).length,
+    strongFit: snapshots.filter(item => item.fitCategory === 'strong').length,
+    possibleFit: snapshots.filter(item => item.fitCategory === 'possible').length,
+    weakFit: snapshots.filter(item => item.fitCategory === 'weak').length,
+    insufficientEvidence: snapshots.filter(item => item.fitCategory === 'insufficient_evidence').length,
+    noOfficialWebsiteIdentified: snapshots.filter(item => item.websitePresenceClass === 'official_website_not_identified').length,
+    phoneOnlyQuoteObserved: snapshots.filter(item => item.phoneOnlyQuote === true).length,
+    manualQuoteProcessObserved: snapshots.filter(item => item.manualQuoteProcess === true).length,
+  };
+}
+
 export interface ProspectingResearchDetail {
   run: ProspectingResearchRun;
   candidates: ProspectingResearchCandidate[];
+  marketFactors: ProspectingTerritoryMarketFactor[];
 }
 
 export interface ReviewResearchCandidateInput {
@@ -126,21 +266,51 @@ export async function listProspectingResearchRuns(limit = 30): Promise<Prospecti
 
 export async function getProspectingResearchRun(runId: string): Promise<ProspectingResearchDetail | null> {
   const id = requireUuid(runId, 'Research run');
-  const [runResult, candidateResult] = await Promise.all([
+  const [runResult, candidateResult, factorResult] = await Promise.all([
     supabase.from('spectiq_prospect_research_runs').select('*').eq('id', id).maybeSingle(),
     supabase.from('spectiq_prospect_research_candidates').select('*').eq('research_run_id', id).order('company_name'),
+    supabase.from('spectiq_territory_market_factors').select('*').eq('research_run_id', id).order('created_at'),
   ]);
   if (runResult.error) throw new Error(`Could not load research run: ${runResult.error.message}`);
   if (candidateResult.error) throw new Error(`Could not load research candidates: ${candidateResult.error.message}`);
+  if (factorResult.error) throw new Error(`Could not load territory market factors: ${factorResult.error.message}`);
   if (!runResult.data) return null;
-  return { run: runResult.data as ProspectingResearchRun, candidates: (candidateResult.data || []) as ProspectingResearchCandidate[] };
+  return {
+    run: runResult.data as ProspectingResearchRun,
+    candidates: (candidateResult.data || []) as ProspectingResearchCandidate[],
+    marketFactors: (factorResult.data || []) as ProspectingTerritoryMarketFactor[],
+  };
 }
 
 export async function pollProspectingResearchRun(runId: string): Promise<ProspectingResearchDetail> {
   const { data, error } = await supabase.functions.invoke('spectiq-prospect-research', { body: { op: 'poll', runId: requireUuid(runId, 'Research run') } });
   if (error) throw new Error(`Could not refresh research: ${error.message}`);
-  const payload = parseFunctionResponse<{ run: ProspectingResearchRun; candidates: ProspectingResearchCandidate[] }>(data, 'Could not refresh research.');
-  return { run: payload.run, candidates: payload.candidates || [] };
+  const payload = parseFunctionResponse<{ run: ProspectingResearchRun; candidates: ProspectingResearchCandidate[]; marketFactors?: ProspectingTerritoryMarketFactor[] }>(data, 'Could not refresh research.');
+  return { run: payload.run, candidates: payload.candidates || [], marketFactors: payload.marketFactors || [] };
+}
+
+export async function reviewProspectingTerritoryMarketFactor(
+  factorId: string,
+  input: { decision: 'approved' | 'corrected' | 'rejected'; correction?: string },
+): Promise<ProspectingTerritoryMarketFactor> {
+  if (input.decision === 'corrected' && !input.correction?.trim()) throw new Error('Add a market-factor correction.');
+  const { data, error } = await supabase.rpc('review_spectiq_territory_market_factor', {
+    p_factor_id: requireUuid(factorId, 'Market factor'),
+    p_decision: input.decision,
+    p_correction: input.correction?.trim() || null,
+  });
+  if (error) throw new Error(`Could not review market factor: ${error.message}`);
+  return (Array.isArray(data) ? data[0] : data) as ProspectingTerritoryMarketFactor;
+}
+
+export async function listProspectingTerritoryMarketFactors(
+  territoryId?: string,
+): Promise<ProspectingTerritoryMarketFactor[]> {
+  let query = supabase.from('spectiq_territory_market_factors').select('*').order('created_at', { ascending: false });
+  if (territoryId) query = query.eq('territory_id', requireUuid(territoryId, 'Territory'));
+  const { data, error } = await query.limit(100);
+  if (error) throw new Error(`Could not load territory market factors: ${error.message}`);
+  return (data || []) as ProspectingTerritoryMarketFactor[];
 }
 
 export async function retryProspectingResearchRun(runId: string): Promise<ProspectingResearchRun> {
