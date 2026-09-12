@@ -139,6 +139,7 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem('trellis_spoke_connections');
     return saved ? JSON.parse(saved) : [];
   });
+  const [spokeConnectionsReady, setSpokeConnectionsReady] = useState(false);
 
   // localStorage is now an instant cache; Supabase is the source of truth.
   const [branchSocialAccounts, setBranchSocialAccounts] = useState<BranchSocialAccountsMap>(() => {
@@ -182,7 +183,9 @@ const AppContent: React.FC = () => {
   });
 
   // Shared branch stats hook — single source of truth for all federated data
-  const branchStats = useBranchStats(spokeConnections);
+  // The local cache is display-only until the authenticated Hub read replaces
+  // it. Otherwise stale connection IDs can reach spoke-query during auth boot.
+  const branchStats = useBranchStats(spokeConnectionsReady ? spokeConnections : []);
 
   // Branch records from Supabase — needed to resolve connectionId → branch slug
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -369,15 +372,27 @@ const AppContent: React.FC = () => {
 
   // Fetch spoke connections from Supabase on mount (localStorage is instant cache)
   useEffect(() => {
+    if (!user?.id) {
+      setSpokeConnectionsReady(false);
+      return;
+    }
+
+    let cancelled = false;
     const loadConnections = async () => {
       await migrateLocalStorageToSupabase(SPROUTIFY_ORG_ID);
       const connections = await fetchSpokeConnections(SPROUTIFY_ORG_ID);
-      if (connections.length > 0 || spokeConnections.length === 0) {
+      if (!cancelled) {
         setSpokeConnections(connections);
+        setSpokeConnectionsReady(true);
       }
     };
-    loadConnections();
-  }, []);
+    loadConnections().catch(error => {
+      console.error('[spokeConnections] Failed to hydrate authenticated connections:', error);
+      if (!cancelled) setSpokeConnectionsReady(true);
+    });
+
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   // Poll for social signals (30s interval).
   // fetchSocialSignals internally gates on table existence — if social_signals
