@@ -20,9 +20,19 @@ import {
   updateProspectClaim, updateProspectContact, updateProspectStage,
   updateProspectVerification, updateTerritory,
 } from '../services/prospectingService';
+import {
+  getProspectingResearchRun, importProspectingResearchCandidate,
+  listProspectingResearchRuns, pollProspectingResearchRun,
+  retryProspectingResearchRun, reviewProspectingResearchCandidate,
+  startProspectingResearch,
+} from '../services/prospectingResearchService';
 
-type Tab = 'pipeline' | 'review' | 'playbook' | 'territories';
+type Tab = 'research' | 'pipeline' | 'review' | 'playbook' | 'territories';
 type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
+
+type ResearchMode = 'county' | 'zip' | 'state' | 'city';
+type ResearchRun = Record<string, any>;
+type ResearchCandidate = Record<string, any>;
 
 interface ProspectingProps { addToast: ToastFn; }
 
@@ -48,6 +58,7 @@ const blankProspect = { company_name: '', territory_id: '', website_url: '', off
 const blankTerritory = { name: '', kind: 'city', city: '', county: '', state_code: '', target_count: '25', status: 'draft' };
 const blankContact = { full_name: '', title: '', email: '', phone: '', source_url: '', is_primary: false, email_status: 'unknown' };
 const blankClaim = { claim_type: 'company_identity', display_value: '', normalized_value: '', source_url: '', source_type: 'founder_observation', source_excerpt: '', confidence: '0.80' };
+const blankResearch = { mode: 'county' as ResearchMode, query: '', state_code: '', target_count: '25' };
 
 function Field({ label: text, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">{text}</span>{children}</label>;
@@ -60,7 +71,7 @@ function Badge({ children, className = '' }: { children: React.ReactNode; classN
 }
 
 const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
-  const [tab, setTab] = useState<Tab>('pipeline');
+  const [tab, setTab] = useState<Tab>('research');
   const [prospects, setProspects] = useState<ProspectingProspect[]>([]);
   const [territories, setTerritories] = useState<ProspectingTerritory[]>([]);
   const [stats, setStats] = useState<ProspectingStats | null>(null);
@@ -86,6 +97,14 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
   const [contactForm, setContactForm] = useState<Record<string, any> | null>(null);
   const [claimForm, setClaimForm] = useState<Record<string, any> | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ title: string; detail: string; run: () => Promise<void> } | null>(null);
+  const [researchForm, setResearchForm] = useState(blankResearch);
+  const [researchRuns, setResearchRuns] = useState<ResearchRun[]>([]);
+  const [activeResearchRun, setActiveResearchRun] = useState<ResearchRun | null>(null);
+  const [researchCandidates, setResearchCandidates] = useState<ResearchCandidate[]>([]);
+  const [researchLoading, setResearchLoading] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [candidateCorrections, setCandidateCorrections] = useState<Record<string, { field: string; value: string }>>({});
+  const [candidateMergeTargets, setCandidateMergeTargets] = useState<Record<string, string>>({});
 
   const checkAccess = useCallback(async () => {
     setAccessLoading(true);
@@ -119,6 +138,101 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
   }, [territoryId, addToast, access?.authorized]);
 
   useEffect(() => { if (access?.authorized) void load(); }, [load, access?.authorized]);
+
+  const adoptResearchDetail = useCallback((detail: any) => {
+    if (!detail) return;
+    const record = asRecord(detail);
+    const run = asRecord(record.run || record.data?.run || (record.id ? record : null));
+    const candidates = itemsOf<ResearchCandidate>(record.candidates || record.data?.candidates);
+    if (Object.keys(run).length) {
+      setActiveResearchRun(run);
+      setResearchRuns(previous => [run, ...previous.filter(item => String(item.id) !== String(run.id))]);
+    }
+    setResearchCandidates(candidates);
+  }, []);
+
+  const loadResearch = useCallback(async (selectRunId?: string) => {
+    if (!access?.authorized) return;
+    setResearchLoading(true); setResearchError(null);
+    try {
+      const runs = await listProspectingResearchRuns(20);
+      setResearchRuns(runs || []);
+      const runId = selectRunId || String(activeResearchRun?.id || runs?.[0]?.id || '');
+      if (runId) adoptResearchDetail(await getProspectingResearchRun(runId));
+      else { setActiveResearchRun(null); setResearchCandidates([]); }
+    } catch (cause) { setResearchError(cause instanceof Error ? cause.message : 'Could not load research runs.'); }
+    finally { setResearchLoading(false); }
+  }, [access?.authorized, activeResearchRun?.id, adoptResearchDetail]);
+
+  useEffect(() => { if (access?.authorized && tab === 'research') void loadResearch(); }, [access?.authorized, tab]);
+
+  useEffect(() => {
+    const status = String(activeResearchRun?.status || '');
+    if (!activeResearchRun?.id || !['queued', 'running', 'waiting'].includes(status)) return;
+    const timer = window.setInterval(() => {
+      void pollProspectingResearchRun(String(activeResearchRun.id))
+        .then(adoptResearchDetail)
+        .catch(cause => setResearchError(cause instanceof Error ? cause.message : 'Research status could not refresh.'));
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [activeResearchRun?.id, activeResearchRun?.status, adoptResearchDetail]);
+
+  const startResearch = async () => {
+    const query = researchForm.query.trim();
+    const stateCode = researchForm.state_code.trim().toUpperCase();
+    const targetCount = Number(researchForm.target_count);
+    if (!query) { addToast(`Enter a ${researchForm.mode === 'zip' ? 'ZIP code' : researchForm.mode}.`, 'error'); return; }
+    if (['city', 'county'].includes(researchForm.mode) && !/^[A-Z]{2}$/.test(stateCode)) { addToast('Add the two-letter state for this search area.', 'error'); return; }
+    if (researchForm.mode === 'state' && !/^(?:[A-Za-z]{2}|[A-Za-z][A-Za-z .'-]{1,29})$/.test(query)) { addToast('Enter a state name or two-letter code.', 'error'); return; }
+    if (researchForm.mode === 'zip' && !/^\d{5}(?:-\d{4})?$/.test(query)) { addToast('Enter a valid 5-digit ZIP code.', 'error'); return; }
+    if (!Number.isInteger(targetCount) || targetCount < 1 || targetCount > 100) { addToast('Target count must be between 1 and 100.', 'error'); return; }
+    const locationValue = ['city', 'county'].includes(researchForm.mode) ? `${query}, ${stateCode}` : query;
+    setResearchLoading(true); setResearchError(null);
+    try {
+      const run = await startProspectingResearch({ locationKind: researchForm.mode, locationValue, targetCount });
+      setActiveResearchRun(run); setResearchCandidates([]); setResearchRuns(previous => [run, ...previous.filter(item => String(item.id) !== String(run.id))]);
+      addToast(`Research started for ${locationValue}.`, 'success');
+      adoptResearchDetail(await getProspectingResearchRun(String(run.id)));
+    } catch (cause) { const message = cause instanceof Error ? cause.message : 'Could not start research.'; setResearchError(message); addToast(message, 'error'); }
+    finally { setResearchLoading(false); }
+  };
+
+  const retryResearch = async (runId: string) => {
+    setResearchLoading(true); setResearchError(null);
+    try { const run = await retryProspectingResearchRun(runId); setActiveResearchRun(run); setResearchCandidates([]); addToast('Research retry queued.', 'success'); adoptResearchDetail(await getProspectingResearchRun(String(run.id))); }
+    catch (cause) { const message = cause instanceof Error ? cause.message : 'Could not retry research.'; setResearchError(message); addToast(message, 'error'); }
+    finally { setResearchLoading(false); }
+  };
+
+  const reviewCandidate = async (candidate: ResearchCandidate, decision: 'approved' | 'corrected' | 'rejected') => {
+    const id = String(candidate.id);
+    const correction = candidateCorrections[id];
+    if (decision === 'corrected' && !correction?.value.trim()) { addToast('Choose a field and enter its corrected value.', 'error'); return; }
+    setSaving(true);
+    try {
+      await reviewProspectingResearchCandidate(id, { decision, corrections: correction?.value.trim() ? { [correction.field]: correction.value.trim() } : undefined });
+      addToast(decision === 'approved' ? 'Candidate approved for import.' : decision === 'rejected' ? 'Candidate rejected.' : 'Correction saved for review.', 'success');
+      adoptResearchDetail(await getProspectingResearchRun(String(activeResearchRun?.id)));
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not review candidate.', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const importCandidate = async (candidate: ResearchCandidate, mode: 'create' | 'merge') => {
+    const territory = territoryId !== 'all' ? territoryId : String(candidate.territory_id || '');
+    if (!territory) { addToast('Choose a territory from the page header before importing.', 'error'); return; }
+    let prospectId: string | undefined;
+    if (mode === 'merge') {
+      prospectId = candidateMergeTargets[String(candidate.id)] || undefined;
+      if (!prospectId) { addToast('Choose an existing prospect to merge into.', 'error'); return; }
+    }
+    setSaving(true);
+    try {
+      await importProspectingResearchCandidate(String(candidate.id), { territoryId: territory, mode, prospectId });
+      addToast(mode === 'merge' ? 'Candidate merged into the existing prospect.' : 'Candidate imported into the pipeline.', 'success');
+      adoptResearchDetail(await getProspectingResearchRun(String(activeResearchRun?.id))); await load(true);
+    } catch (cause) { addToast(cause instanceof Error ? cause.message : 'Could not import candidate.', 'error'); }
+    finally { setSaving(false); }
+  };
 
   const filtered = useMemo(() => prospects.filter(item => {
     const p = asRecord(item);
@@ -340,8 +454,44 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
     <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-4">{kpis.map(({ label: text, value, icon: Icon, tone }) => <div key={text} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-2xl text-white ${tone}`}><Icon size={19}/></div><p className="text-3xl font-black tracking-tight text-slate-900">{value}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{text}</p></div>)}</div>
 
     <div className="mt-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">{([
-      ['pipeline', 'Pipeline', Inbox], ['review', 'Review Queue', FileSearch], ['playbook', 'Playbook', ListChecks], ['territories', 'Territories', Map],
+      ['research', 'Research', Search], ['pipeline', 'Pipeline', Inbox], ['review', 'Review Queue', FileSearch], ['playbook', 'Playbook', ListChecks], ['territories', 'Territories', Map],
     ] as const).map(([id, text, Icon]) => <button key={id} onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest ${tab === id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><Icon size={15}/>{text}{id === 'review' && reviewQueue.length > 0 && <span className="rounded-full bg-white/20 px-1.5">{reviewQueue.length}</span>}</button>)}</div>
+
+    {tab === 'research' && <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]">
+      <div className="space-y-5">
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+          <div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white"><Search size={20}/></div><div><p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Geographic discovery</p><h2 className="mt-1 text-xl font-black uppercase tracking-tight text-slate-900">Find inspection companies</h2><p className="mt-2 text-sm leading-relaxed text-slate-500">Search one county, ZIP code, state, or city. Results remain candidates until you review and import them.</p></div></div>
+          <div className="mt-6 space-y-4">
+            <Field label="Search area type"><div className="grid grid-cols-2 gap-2">{(['county','zip','state','city'] as ResearchMode[]).map(mode => <button key={mode} type="button" onClick={() => setResearchForm(value => ({ ...value, mode, query: '', state_code: '' }))} className={`rounded-xl border px-3 py-3 text-xs font-black uppercase tracking-widest ${researchForm.mode === mode ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>{mode === 'zip' ? 'ZIP code' : mode}</button>)}</div></Field>
+            <Field label={researchForm.mode === 'zip' ? 'ZIP code' : researchForm.mode === 'state' ? 'State' : `${label(researchForm.mode)} name`}><input maxLength={researchForm.mode === 'state' ? 30 : undefined} value={researchForm.query} onChange={e => setResearchForm(value => ({ ...value, query: researchForm.mode === 'zip' ? e.target.value.replace(/[^\d-]/g, '') : researchForm.mode === 'state' ? e.target.value.replace(/[^A-Za-z .'-]/g, '') : e.target.value }))} placeholder={researchForm.mode === 'county' ? 'Forsyth County' : researchForm.mode === 'city' ? 'Cumming' : researchForm.mode === 'zip' ? '30040' : 'Georgia or GA'} className={inputClass}/></Field>
+            {['city','county'].includes(researchForm.mode) && <Field label="State context *"><input maxLength={2} value={researchForm.state_code} onChange={e => setResearchForm(value => ({ ...value, state_code: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') }))} placeholder="GA" className={inputClass}/></Field>}
+            <Field label="Companies to find"><input type="number" min="1" max="100" value={researchForm.target_count} onChange={e => setResearchForm(value => ({ ...value, target_count: e.target.value }))} className={inputClass}/><span className="mt-1.5 block text-[11px] font-semibold text-slate-400">Between 1 and 100 candidates per run.</span></Field>
+            <Field label="Import destination"><select value={territoryId} onChange={e => setTerritoryId(e.target.value)} className={inputClass}><option value="all">Choose after research</option>{territories.map(item => <option key={String(asRecord(item).id)} value={String(asRecord(item).id)}>{asRecord(item).name}</option>)}</select><span className="mt-1.5 block text-[11px] font-semibold text-slate-400">Searching does not import anything. Choose an active territory before importing a reviewed candidate.</span></Field>
+            <button onClick={() => void startResearch()} disabled={researchLoading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">{researchLoading ? <Loader2 size={16} className="animate-spin"/> : <Search size={16}/>}Start search</button>
+          </div>
+          <div className="mt-5 flex items-start gap-2 rounded-2xl bg-amber-50 p-4 text-xs font-semibold leading-relaxed text-amber-900"><ShieldCheck size={16} className="mt-0.5 shrink-0"/>Research collects source-backed candidates. It never approves outreach or sends email.</div>
+        </section>
+
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Recent searches</h3><button onClick={() => void loadResearch()} disabled={researchLoading} aria-label="Refresh research runs" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"><RefreshCw size={15} className={researchLoading ? 'animate-spin' : ''}/></button></div>
+          <div className="mt-3 space-y-2">{researchRuns.length ? researchRuns.map(run => <button key={String(run.id)} onClick={() => void loadResearch(String(run.id))} className={`w-full rounded-2xl border p-4 text-left ${String(activeResearchRun?.id) === String(run.id) ? 'border-blue-300 bg-blue-50' : 'border-slate-100 hover:bg-slate-50'}`}><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-black text-slate-800">{run.location_value || run.locationValue || 'Search area'}</span><Badge className={['completed','partial'].includes(String(run.status)) ? 'bg-emerald-50 text-emerald-700' : String(run.status) === 'failed' ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'}>{String(run.status) === 'running' && <Loader2 size={10} className="animate-spin"/>}{label(run.status)}</Badge></div><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{label(run.location_kind || run.locationKind)} · Target {run.target_count ?? run.targetCount ?? '—'}</p></button>) : <p className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-400">No searches have been started.</p>}</div>
+        </section>
+      </div>
+
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+        {!activeResearchRun ? <div className="flex min-h-[26rem] flex-col items-center justify-center text-center"><FileSearch size={38} className="text-slate-300"/><h2 className="mt-4 text-lg font-black uppercase text-slate-700">Ready to search</h2><p className="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">Choose a geographic area and target count. Candidate evidence will appear here for founder review.</p></div> : (() => { const run = activeResearchRun; const status = String(run.status || 'queued'); const processed = Number(run.processed_count ?? run.completed_count ?? researchCandidates.length ?? 0); const target = Number(run.target_count ?? run.targetCount ?? 0); const percent = target ? Math.min(100, Math.round((processed / target) * 100)) : (status === 'completed' ? 100 : 0); return <>
+          <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><Badge className={status === 'failed' ? 'bg-rose-50 text-rose-700' : status === 'partial' ? 'bg-amber-50 text-amber-700' : status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}>{['queued','running'].includes(status) && <Loader2 size={10} className="animate-spin"/>}{label(status)}</Badge><Badge className="bg-slate-100 text-slate-600">{label(run.location_kind || run.locationKind)}</Badge></div><h2 className="mt-3 text-xl font-black uppercase tracking-tight text-slate-900">{run.location_value || run.locationValue}</h2><p className="mt-1 text-sm font-semibold text-slate-400">{researchCandidates.length} candidate{researchCandidates.length === 1 ? '' : 's'} found · target {target || '—'}</p></div>{['failed','partial'].includes(status) && <button onClick={() => void retryResearch(String(run.id))} disabled={researchLoading} className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"><RefreshCw size={14}/>Retry search</button>}</div>
+          {['queued','running','waiting'].includes(status) && <div className="mt-5"><div className="mb-2 flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400"><span>{status === 'queued' ? 'Waiting for research worker' : status === 'waiting' ? 'Waiting for research results' : 'Research in progress'}</span><span>{target ? `${percent}%` : 'Working'}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${Math.max(percent, status === 'running' ? 8 : 3)}%` }}/></div></div>}
+          {(status === 'failed' || status === 'partial') && <div className={`mt-5 rounded-2xl border p-4 text-sm ${status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}><div className="flex items-start gap-2"><AlertCircle size={17} className="mt-0.5 shrink-0"/><div><p className="font-black">{status === 'partial' ? 'Partial results available' : 'Search did not finish'}</p><p className="mt-1 text-xs leading-relaxed">{run.error_message || run.error || (status === 'partial' ? 'Review the candidates below or retry to continue gathering results.' : 'Retry this area when you are ready.')}</p></div></div></div>}
+          {researchError && <div className="mt-5 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><AlertCircle size={17} className="mt-0.5 shrink-0"/><span>{researchError}</span></div>}
+          <div className="mt-5 space-y-4">{researchCandidates.length ? researchCandidates.map((candidate, index) => { const id = String(candidate.id || index); const sources = itemsOf<any>(candidate.sources || candidate.evidence || candidate.source_urls || asRecord(candidate.raw_payload).sources); const statusText = String(candidate.status || candidate.review_status || 'pending'); return <article key={id} className="rounded-[1.5rem] border border-slate-200 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h3 className="text-lg font-black uppercase tracking-tight text-slate-900">{candidate.company_name || candidate.name || 'Unnamed inspection company'}</h3><p className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-400"><MapPin size={12}/>{candidate.location || [candidate.city, candidate.state_code].filter(Boolean).join(', ') || 'Location needs review'}</p></div><Badge className={statusText === 'rejected' ? 'bg-rose-50 text-rose-700' : ['approved','corrected','imported','merged'].includes(statusText) ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}>{label(statusText)}</Badge></div>
+            {(candidate.website_url || candidate.website) && <a href={candidate.website_url || candidate.website} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-blue-600">{candidate.website_url || candidate.website}<ExternalLink size={12}/></a>}
+            {(candidate.summary || candidate.description) && <p className="mt-3 text-sm leading-relaxed text-slate-600">{candidate.summary || candidate.description}</p>}
+            <div className="mt-4"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sources and evidence</p><div className="mt-2 space-y-2">{sources.length ? sources.map((source, sourceIndex) => { const entry = typeof source === 'string' ? { url: source } : asRecord(source); return <div key={`${id}-${sourceIndex}`} className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-semibold leading-relaxed text-slate-600">{entry.excerpt || entry.claim || entry.title || 'Source retained for review.'}</p>{entry.url && <a href={entry.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[10px] font-black uppercase text-blue-600">Open source <ExternalLink size={10}/></a>}</div>; }) : <p className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">No source evidence was returned. Do not import without verification.</p>}</div></div>
+            {!['imported','merged','rejected'].includes(statusText) && <><div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,0.65fr)_minmax(0,1.35fr)]"><select value={candidateCorrections[id]?.field || 'company_name'} onChange={e => setCandidateCorrections(previous => ({ ...previous, [id]: { field: e.target.value, value: previous[id]?.value || '' } }))} aria-label="Correction field" className="rounded-xl border border-slate-200 px-3 py-3 text-xs font-bold text-slate-700">{['company_name','website_url','phone','address_line_1','city','state_code','postal_code','summary'].map(field => <option key={field} value={field}>{label(field)}</option>)}</select><input value={candidateCorrections[id]?.value || ''} onChange={e => setCandidateCorrections(previous => ({ ...previous, [id]: { field: previous[id]?.field || 'company_name', value: e.target.value } }))} placeholder="Corrected value…" className="rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-blue-400"/></div><div className="mt-3 flex flex-wrap gap-2"><button onClick={() => void reviewCandidate(candidate, 'approved')} disabled={saving} className="rounded-xl bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">Approve evidence</button><button onClick={() => void reviewCandidate(candidate, 'corrected')} disabled={saving} className="rounded-xl bg-blue-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700">Correct</button><button onClick={() => void reviewCandidate(candidate, 'rejected')} disabled={saving} className="rounded-xl bg-rose-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-700">Reject</button>{['approved','corrected'].includes(statusText) && <><button onClick={() => void importCandidate(candidate, 'create')} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white">Import as new</button><select value={candidateMergeTargets[id] || ''} onChange={e => setCandidateMergeTargets(previous => ({ ...previous, [id]: e.target.value }))} aria-label="Existing prospect to merge" className="max-w-56 rounded-xl border border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-700"><option value="">Choose prospect to merge</option>{prospects.map(item => <option key={String(asRecord(item).id)} value={String(asRecord(item).id)}>{asRecord(item).company_name}</option>)}</select><button onClick={() => void importCandidate(candidate, 'merge')} disabled={saving || !candidateMergeTargets[id]} className="rounded-xl border border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-40">Merge</button></>}</div></>}
+          </article>; }) : !['queued','running','waiting'].includes(status) && <div className="rounded-[1.5rem] border border-dashed border-slate-300 p-10 text-center"><Inbox className="mx-auto text-slate-300" size={30}/><p className="mt-3 font-black uppercase text-slate-700">No candidates returned</p><p className="mt-2 text-sm text-slate-400">Try a nearby city, county, ZIP code, or a broader state search.</p></div>}</div>
+        </>; })()}
+      </section>
+    </div>}
 
     {(tab === 'pipeline' || tab === 'review') && <>
       <div className="mt-5 flex flex-col gap-3 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
@@ -353,7 +503,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
 
       {loading ? <div className="mt-5 flex min-h-72 items-center justify-center rounded-[2rem] border border-slate-200 bg-white"><Loader2 className="animate-spin text-blue-600"/><span className="ml-3 text-sm font-bold text-slate-500">Loading founder pipeline…</span></div>
       : error ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-[2rem] border border-rose-200 bg-rose-50 p-8 text-center"><AlertCircle className="mb-3 text-rose-500" size={28}/><p className="font-black text-rose-900">Prospecting data could not load</p><p className="mt-2 text-sm text-rose-700">{error}</p><button onClick={() => void load()} className="mt-5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white">Try again</button></div>
-      : visible.length === 0 ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center"><Inbox className="mb-3 text-slate-300" size={34}/><p className="font-black uppercase tracking-tight text-slate-700">{tab === 'review' ? 'Review queue is clear' : 'No prospects yet'}</p><p className="mt-2 max-w-md text-sm text-slate-400">{tab === 'review' ? 'Prospects needing founder evidence review will appear here.' : 'Create the first company record manually. Research imports remain disabled.'}</p>{tab === 'pipeline' && <button onClick={() => { setProspectForm(blankProspect); setProspectFormOpen(true); }} className="mt-5 flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white"><Plus size={15}/>Create first prospect</button>}</div>
+      : visible.length === 0 ? <div className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center"><Inbox className="mb-3 text-slate-300" size={34}/><p className="font-black uppercase tracking-tight text-slate-700">{tab === 'review' ? 'Review queue is clear' : 'No prospects yet'}</p><p className="mt-2 max-w-md text-sm text-slate-400">{tab === 'review' ? 'Prospects needing founder evidence review will appear here.' : 'Start a geographic search or create the first company record manually.'}</p>{tab === 'pipeline' && <div className="mt-5 flex flex-wrap justify-center gap-2"><button onClick={() => setTab('research')} className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white"><Search size={15}/>Start research</button><button onClick={() => { setProspectForm(blankProspect); setProspectFormOpen(true); }} className="flex items-center gap-2 rounded-xl border border-slate-300 px-5 py-3 text-xs font-black uppercase tracking-widest text-slate-700"><Plus size={15}/>Create manually</button></div>}</div>
       : <div className="mt-5 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm"><div className="hidden grid-cols-[42px_1.5fr_1fr_1fr_1fr_42px] gap-4 border-b border-slate-100 bg-slate-50 px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-400 lg:grid"><span/><span>Company</span><span>Evidence</span><span>Stage</span><span>Next action</span><span/></div>
         <div className="divide-y divide-slate-100">{visible.map(item => { const p = asRecord(item); const id = String(p.id); const meta = STAGE_META[p.sales_state] || STAGE_META.new; const evidenceCount = Number(p.evidence_count ?? p.claim_count ?? asRecord(p.metadata).evidence_count ?? 0); return <div key={id} className="grid gap-4 px-5 py-5 transition hover:bg-blue-50/30 lg:grid-cols-[42px_1.5fr_1fr_1fr_1fr_42px] lg:items-center lg:px-6">
           <label className="flex items-center"><input type="checkbox" checked={selected.has(id)} onChange={() => toggleSelected(id)} className="h-4 w-4 rounded border-slate-300 accent-blue-600"/><span className="ml-3 text-[9px] font-black uppercase text-slate-400 lg:hidden">Select</span></label>
@@ -363,7 +513,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
           <div><p className="text-xs font-bold text-slate-700">{p.next_follow_up_at ? 'Founder follow-up' : 'No action recorded'}</p><p className="mt-1 text-[10px] font-semibold text-slate-400">{dateText(p.next_follow_up_at)}</p></div>
           <button onClick={() => void openDetail(item)} className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-blue-100 hover:text-blue-700" aria-label="Open prospect details"><ChevronRight size={18}/></button>
         </div>; })}</div></div>}
-      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><ShieldCheck size={17} className="mt-0.5 shrink-0"/><span>Research runs and outbound email are deferred. No prospect can be researched or contacted from this Phase 1 workspace.</span></div>
+      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><ShieldCheck size={17} className="mt-0.5 shrink-0"/><span>Research candidates enter this pipeline only after explicit founder review and import. Outbound email remains disabled.</span></div>
     </>}
 
     {tab === 'playbook' && <div className="mt-5 grid gap-5 lg:grid-cols-3">{[
@@ -387,7 +537,7 @@ const Prospecting: React.FC<ProspectingProps> = ({ addToast }) => {
         <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Next action</h3><input type="datetime-local" value={nextAction} onChange={e => setNextAction(e.target.value)} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><button onClick={saveNextAction} disabled={saving} className="mt-3 w-full rounded-xl bg-blue-600 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">Save next action</button></section>
         <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400"><MessageSquarePlus size={14}/>Add note</h3><textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Record what you learned…" className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 p-3 text-sm"/><button onClick={saveNote} disabled={saving || !note.trim()} className="mt-2 w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-35">Add note</button></section>
         <section className="rounded-[2rem] border border-slate-200 p-5"><h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400"><CalendarClock size={14}/>Follow-up task</h3><input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="Task title" className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"/><button onClick={saveTask} disabled={saving || !taskTitle.trim()} className="mt-2 w-full rounded-xl bg-slate-900 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-35">Create task</button></section>
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><Sparkles size={16} className="mb-2"/><strong>Deferred:</strong> research starts and email sending arrive behind dedicated approval gates in later phases.</div>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-relaxed text-blue-900"><Sparkles size={16} className="mb-2"/>Research evidence is preserved separately from founder approval. Email sending remains disabled.</div>
       </div></div>
     </div></div>; })()}
 

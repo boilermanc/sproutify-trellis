@@ -107,9 +107,10 @@ test('archive, audit, RLS, and least-grant boundaries remain enforced by the dat
   assert.match(migration, /archived_at TIMESTAMPTZ/i);
 });
 
-test('Phase 1 exposes no research, outbound-send, or conversion action', () => {
-  assert.match(page, /Research runs and outbound email are deferred/i);
-  assert.match(page, /No prospect can be researched or contacted/i);
-  assert.doesNotMatch(page, /start(?:Manus|Research|DeepDive)|send(?:Prospect|Resend|Email)|convertProspect|retryOnboarding/i);
-  assert.doesNotMatch(service, /manusService|MANUS_API_KEY|Resend|send_resend_email|email_drafts|convertProspect|organization_created/i);
+test('Phase 2 research does not expose outbound-send or conversion actions', () => {
+  assert.match(page, /Research candidates enter this pipeline only after explicit founder review and import/i);
+  assert.match(page, /Outbound email remains disabled/i);
+  assert.doesNotMatch(page, />\s*(?:Send email|Contact prospect|Convert prospect|Create organization)\s*</i);
+  assert.doesNotMatch(page, /send(?:Prospect|Resend|Email)|convertProspect|retryOnboarding/i);
+  assert.doesNotMatch(service, /Resend|send_resend_email|email_drafts|convertProspect|organization_created/i);
 });

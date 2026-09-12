@@ -14,12 +14,13 @@ test('wires SpectIQ Prospecting into Trellis without reusing Farm Leads', () => 
   assert.doesNotMatch(page, /from ['"]\.\/Leads|lead_pipelines|lead_email_sequences/);
 });
 
-test('fails closed behind the trusted founder role and keeps deferred actions unavailable', () => {
+test('fails closed behind the trusted founder role and keeps outbound actions unavailable', () => {
   assert.match(page, /getProspectingAccessStatus/);
   assert.match(page, /Prospecting unavailable/i);
   assert.doesNotMatch(page, /MFA|authenticator|six-digit/i);
-  assert.match(page, /Research runs and outbound email are deferred/i);
-  assert.doesNotMatch(page, /startDeepDive|sendResend|sendProspectEmail/);
+  assert.match(page, /Outbound email remains disabled/i);
+  assert.match(page, /explicit founder review and import/i);
+  assert.doesNotMatch(page, /sendResend|sendProspectEmail|convertProspect|retryOnboarding/);
 });
 
 test('exposes the Phase 1 founder workflow surfaces', () => {
