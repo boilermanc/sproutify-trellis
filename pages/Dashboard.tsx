@@ -124,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           if (res.errors?.length) console.error('[dashboard] some spokes failed:', res.errors);
           return res.orders || [];
         }),
-        'orders', [] as NormalizedOrder[],
+'orders', [] as NormalizedOrder[],
       ),
       settle(getPublishedPosts(), 'published posts', [] as PublishedPost[]),
       settle(
@@ -138,7 +138,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           if (error) throw error;
           return (data || []) as EmailEventRow[];
         })(),
-        'email events', [] as EmailEventRow[],
+'email events', [] as EmailEventRow[],
       ),
       settle(fetchScheduledPosts(), 'scheduled posts', [] as ScheduledPost[]),
       settle(getVideoAdJobs(undefined, 100), 'creative jobs', [] as VideoAdJob[]),
@@ -378,7 +378,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <button
                   key={w}
                   onClick={() => selectWindow(w)}
-                  className={`px-3 py-[7px] rounded-[7px] text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
+                  className={`px-3 py-[7px] rounded-sm text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
                     timeWindow === w
                       ? 'bg-[#111827] text-white'
                       : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#374151]'
@@ -392,7 +392,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             <button
               onClick={() => selectTab('control')}
               title={degradedCount ? 'Jump to system health' : 'All monitored systems responding'}
-              className={`flex items-center gap-2 px-3 py-[7px] rounded-lg text-[12px] font-bold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
+              className={`flex items-center gap-2 px-3 py-[7px] rounded-sm text-[12px] font-bold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
                 degradedCount
                   ? 'bg-[#FEF2F2] border-[#FECACA] text-[#B91C1C]'
                   : 'bg-[#ECFDF5] border-[#A7F3D0] text-[#047857]'
@@ -408,7 +408,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onClick={handleRefresh}
               disabled={isRefreshing}
               aria-label="Refresh dashboard"
-              className="p-2 rounded-lg border border-[#E5E7EB] text-[#6B7280] hover:text-[#374151] hover:border-[#CBD5E1] transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+              className="p-2 rounded-sm border border-[#E5E7EB] text-[#6B7280] hover:text-[#374151] hover:border-[#CBD5E1] transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
             >
               {isRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             </button>

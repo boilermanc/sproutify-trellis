@@ -17,7 +17,7 @@ interface EmailPulseProps {
 
 const SKELETON = 'bg-[#E5E7EB]/60 animate-pulse rounded';
 const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2';
-const CARD = 'bg-white border border-[#E5E7EB] rounded-[12px] p-[18px] flex flex-col gap-[14px]';
+const CARD = 'bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-[14px]';
 
 // ── Derived data shape ────────────────────────────────────────────
 
@@ -289,7 +289,7 @@ const EmailPulse: React.FC<EmailPulseProps> = ({ events, window: timeWindow, isL
       </div>
 
       {derived.bounceWarning && bounceRatio !== null && (
-        <div className="flex items-center gap-2 bg-[#FFFBEB] border border-[#FDE68A] rounded-[8px] px-3 py-[7px]">
+        <div className="flex items-center gap-2 bg-[#FFFBEB] border border-[#FDE68A] rounded-sm px-3 py-[7px]">
           <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: '#B45309' }} />
           <span className="text-[11px] font-semibold" style={{ color: '#B45309' }}>
             Bounce rate {bounceRatio.toFixed(1)}% — above the 5% deliverability threshold

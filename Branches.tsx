@@ -182,7 +182,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
           </h1>
           <p className="text-slate-500 mt-1 text-sm">Manage and reconnect your spoke databases</p>
         </div>
-        <div className="px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+        <div className="px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-none">
           <span className="text-sm font-bold text-emerald-700">
             {activeCount} of {spokeConnections.length} Active
           </span>
@@ -191,7 +191,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
 
       {/* Empty State */}
       {spokeConnections.length === 0 && (
-        <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-none p-12 text-center border border-slate-200 shadow-none">
           <Database className="w-16 h-16 text-slate-300 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-800 mb-2">No connections yet</h3>
           <p className="text-slate-500 mb-6">Set up your first data connection in Settings to get started.</p>
@@ -215,7 +215,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
             <div key={connection.id} className="flex flex-col">
               {/* Card */}
               <div
-                className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${
+                className={`bg-white rounded-none border shadow-none overflow-hidden transition-all ${
                   isActive
                     ? 'border-l-4 border-l-emerald-500 border-slate-200'
                     : isError
@@ -228,7 +228,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                 <div className="p-5">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      <div className={`w-10 h-10 rounded-none flex items-center justify-center ${
                         isActive ? 'bg-emerald-100' : isError ? 'bg-rose-50' : isDisconnected ? 'bg-amber-50' : 'bg-slate-100'
                       }`}>
                         <Database className={`w-5 h-5 ${isActive ? 'text-emerald-600' : isError ? 'text-rose-500' : isDisconnected ? 'text-amber-500' : 'text-slate-400'}`} />
@@ -314,7 +314,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                         <button
                           onClick={() => handleRetest(connection)}
                           disabled={testing}
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                          className="flex-1 px-3 py-2 rounded-none bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                         >
                           {testing ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -325,7 +325,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                         </button>
                         <button
                           onClick={() => handleDisconnect(connection.name)}
-                          className="flex-1 px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                          className="flex-1 px-3 py-2 rounded-none bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold transition-colors flex items-center justify-center gap-2"
                         >
                           <Unplug className="w-4 h-4" />
                           Disconnect
@@ -374,7 +374,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
 
                       {/* Reconnect Error */}
                       {reconnectError && (
-                        <div className="p-3 rounded-xl flex items-center gap-2 bg-red-50 text-red-700 border border-red-200">
+                        <div className="p-3 rounded-none flex items-center gap-2 bg-red-50 text-red-700 border border-red-200">
                           <AlertCircle className="w-4 h-4 flex-shrink-0" />
                           <span className="text-sm font-medium">{reconnectError}</span>
                         </div>
@@ -385,7 +385,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                         <button
                           onClick={() => handleReconnect(connection)}
                           disabled={testing}
-                          className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                          className="flex-1 px-4 py-2.5 rounded-none bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                           {testing ? (
                             <>
@@ -401,7 +401,7 @@ export default function Branches({ spokeConnections, onSpokeConnectionsChange }:
                         </button>
                         <button
                           onClick={() => handleForgetConnection(connection.name)}
-                          className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                          className="px-3 py-2.5 rounded-none bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold transition-colors flex items-center justify-center gap-2"
                           title="Forget saved credentials and connect fresh"
                         >
                           <Settings2 className="w-4 h-4" />

@@ -59,26 +59,26 @@ const LeadEmailAssetGallery: React.FC<LeadEmailAssetGalleryProps> = ({ branchSlu
   };
 
   return (
-    <div className="rounded-2xl border border-cyan-400/15 bg-[#0A0E27] p-4">
+    <div className="rounded-sm border border-emerald-400/15 bg-[#0A0E27] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-cyan-200"><ImageIcon size={14} />Email image gallery</p>
+          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-200"><ImageIcon size={14} />Email image gallery</p>
           <p className="mt-1 text-[10px] text-slate-500">Click an image to insert it at the HTML cursor.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => void load()} disabled={loading} title="Refresh gallery" className="rounded-lg border border-white/10 p-2 text-slate-400 hover:text-cyan-200 disabled:opacity-40"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
-          <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="flex items-center gap-2 rounded-lg bg-cyan-400/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-cyan-200 hover:bg-cyan-400/15 disabled:opacity-40">{uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}Upload</button>
+          <button type="button" onClick={() => void load()} disabled={loading} title="Refresh gallery" className="rounded-sm border border-white/10 p-2 text-slate-400 hover:text-emerald-200 disabled:opacity-40"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="flex items-center gap-2 rounded-sm bg-emerald-400/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-emerald-200 hover:bg-emerald-400/15 disabled:opacity-40">{uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}Upload</button>
           <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={event => void upload(event.target.files?.[0])} />
         </div>
       </div>
-      {error && <p className="mb-3 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] text-rose-200">{error}</p>}
+      {error && <p className="mb-3 rounded-sm border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-[10px] text-rose-200">{error}</p>}
       {loading ? (
         <div className="flex h-24 items-center justify-center text-slate-500"><Loader2 size={18} className="animate-spin" /></div>
       ) : assets.length === 0 ? (
-        <button type="button" onClick={() => inputRef.current?.click()} className="h-24 w-full rounded-xl border border-dashed border-white/10 text-xs font-bold text-slate-500 hover:border-cyan-400/30 hover:text-cyan-200">Upload the first reusable email image</button>
+        <button type="button" onClick={() => inputRef.current?.click()} className="h-24 w-full rounded-sm border border-dashed border-white/10 text-xs font-bold text-slate-500 hover:border-emerald-400/30 hover:text-emerald-200">Upload the first reusable email image</button>
       ) : (
         <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
-          {assets.map(asset => <button key={asset.path} type="button" onClick={() => onInsert(asset)} title={`Insert ${asset.name}`} className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] text-left hover:border-cyan-400/40"><img src={asset.url} alt={asset.name} className="h-24 w-full bg-slate-900 object-contain p-2" /><span className="block truncate px-2 py-1.5 text-[9px] font-bold text-slate-400 group-hover:text-cyan-200">{asset.name}</span></button>)}
+          {assets.map(asset => <button key={asset.path} type="button" onClick={() => onInsert(asset)} title={`Insert ${asset.name}`} className="group overflow-hidden rounded-sm border border-white/10 bg-white/[0.03] text-left hover:border-emerald-400/40"><img src={asset.url} alt={asset.name} className="h-24 w-full bg-slate-900 object-contain p-2" /><span className="block truncate px-2 py-1.5 text-[9px] font-bold text-slate-400 group-hover:text-emerald-200">{asset.name}</span></button>)}
         </div>
       )}
     </div>

@@ -98,12 +98,12 @@ const EventRegistrationPanel: React.FC<Props> = ({ spokeConnections, branchConte
   };
 
   if (!atlVisible) {
-    return <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Select ATL Urban Farms or All Branches to view event registrations.</div>;
+    return <div className="border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Select ATL Urban Farms or All Branches to view event registrations.</div>;
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6">
+      <div className="border border-slate-200 bg-white p-6">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-black text-slate-800"><CalendarDays className="text-teal-600" size={20} /> ATL Event Registrations</h2>
@@ -141,8 +141,8 @@ const EventRegistrationPanel: React.FC<Props> = ({ spokeConnections, branchConte
       </div>
 
       {events.length > 0 && (
-        <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 p-5"><h3 className="text-sm font-black uppercase tracking-tight text-slate-800">Events</h3></div>
+        <div className="overflow-hidden border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 p-5"><h3 className="text-sm font-bold text-slate-900">Events</h3></div>
           <div className="divide-y divide-slate-100">
             {events.map((event) => (
               <button key={event.id} type="button" onClick={() => setSelectedEventId(event.id)} className="grid w-full gap-2 p-5 text-left hover:bg-slate-50 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -158,7 +158,7 @@ const EventRegistrationPanel: React.FC<Props> = ({ spokeConnections, branchConte
 
       {selectedEvent && (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${selectedEvent.title} registrations`}>
-          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden border border-slate-200 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 p-5"><div><h3 className="font-black text-slate-800">{selectedEvent.title}</h3><p className="text-xs text-slate-500">{selectedEvent.registrations.length} registration records</p></div><div className="flex gap-2"><button type="button" onClick={() => downloadRows(selectedEvent.registrations, selectedEvent.id)} className="rounded-xl border border-slate-200 p-2 text-slate-500" aria-label="Download event registrations"><Download size={16} /></button><button type="button" onClick={() => setSelectedEventId(null)} className="rounded-xl bg-slate-100 p-2 text-slate-500" aria-label="Close event registrations"><X size={17} /></button></div></div>
             <div className="overflow-y-auto divide-y divide-slate-100 p-5">{selectedEvent.registrations.map((row) => <div key={row.id} className="grid gap-1 py-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="font-bold text-slate-800">{row.name || row.email}</p>{row.name && <p className="text-xs text-slate-500">{row.email}</p>}</div><div className="text-xs font-bold text-slate-500 sm:text-right"><p className="capitalize">{row.status.replace(/_/g, ' ')}</p><p>{new Date(row.created_at).toLocaleDateString()}</p></div></div>)}</div>
           </div>

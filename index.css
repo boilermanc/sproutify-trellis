@@ -2,6 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --trellis-brand: #0b4a6b;
+  --trellis-accent: #059669;
+  --trellis-ink: #0f172a;
+  --trellis-muted: #475569;
+  --trellis-canvas: #f8fafc;
+  --trellis-subtle: #f1f5f9;
+  --trellis-surface: #ffffff;
+  --trellis-line: #e2e8f0;
+  --trellis-danger: #e11d48;
+  --trellis-font-sans: 'Public Sans', system-ui, sans-serif;
+  --trellis-font-mono: 'Roboto Mono', ui-monospace, monospace;
+  --trellis-shadow-float: 0 8px 24px -6px rgb(15 23 42 / 0.16), 0 2px 6px -2px rgb(15 23 42 / 0.1);
+}
+
+@layer base {
+  html { background: var(--trellis-canvas); }
+  body {
+    background: var(--trellis-canvas);
+    color: var(--trellis-ink);
+    font-family: var(--trellis-font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
+  button, input, select, textarea { font: inherit; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  :focus-visible {
+    outline: 2px solid var(--trellis-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .tr-page { @apply min-h-full bg-trellis-canvas text-trellis-ink; }
+  .tr-page-header { @apply flex flex-col gap-4 border-b border-trellis-line pb-6 sm:flex-row sm:items-end sm:justify-between; }
+  .tr-page-title { @apply text-3xl font-bold tracking-tight text-trellis-ink; }
+  .tr-section-title { @apply text-xl font-bold tracking-tight text-trellis-ink; }
+  .tr-label { @apply font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-trellis-muted; }
+  .tr-meta { @apply font-mono text-xs text-trellis-muted; }
+  .tr-card { @apply border border-trellis-line bg-white; }
+  .tr-card-header { @apply flex items-center justify-between gap-4 border-b border-trellis-line px-5 py-4; }
+  .tr-card-body { @apply p-5; }
+  .tr-btn { @apply inline-flex min-h-11 items-center justify-center gap-2 border px-5 py-3 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60; }
+  .tr-btn-primary { @apply tr-btn border-trellis-brand bg-trellis-brand text-white hover:bg-blue-slate-2; }
+  .tr-btn-secondary { @apply tr-btn border-trellis-ink bg-white text-trellis-ink hover:bg-trellis-subtle; }
+  .tr-btn-ghost { @apply tr-btn border-trellis-line bg-transparent text-trellis-muted hover:border-slate-400 hover:text-trellis-ink; }
+  .tr-input { @apply min-h-11 w-full border border-trellis-line bg-white px-3 py-2.5 text-sm text-trellis-ink outline-none transition-colors placeholder:text-slate-400 focus:border-trellis-accent; }
+  .tr-tabs { @apply flex overflow-x-auto border-b border-trellis-line bg-white; }
+  .tr-tab { @apply inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-4 text-sm font-semibold text-trellis-muted transition-colors hover:text-trellis-ink; }
+  .tr-tab-active { @apply border-trellis-accent text-trellis-ink; }
+  .tr-status { @apply inline-flex items-center gap-1.5 border border-current px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.08em]; }
+  .tr-modal-backdrop { @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4; }
+  .tr-modal { @apply max-h-[90vh] w-full overflow-y-auto border border-trellis-line bg-white shadow-2xl; }
+  .tr-empty { @apply border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-trellis-muted; }
+}
+
 @keyframes mediaTextFade {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -18,6 +75,17 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+::selection { background: rgb(5 150 105 / 0.18); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* Additional custom styles can be added here as needed */
@@ -134,8 +202,8 @@
 .form-input {
   width: 100%;
   border: 1px solid #e2e8f0;
-  border-radius: 0.75rem;
-  background: #f8fafc;
+  border-radius: 0;
+  background: #fff;
   padding: 0.75rem 1rem;
   color: #1e293b;
   font-size: 0.875rem;
@@ -144,7 +212,7 @@
   transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
 }
 .form-input:focus {
-  border-color: #fb923c;
+  border-color: var(--trellis-accent);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.12);
+  box-shadow: 0 0 0 3px rgb(5 150 105 / 0.12);
 }

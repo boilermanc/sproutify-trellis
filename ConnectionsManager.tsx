@@ -756,7 +756,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       {/* Header */}
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-none bg-emerald-50 flex items-center justify-center">
             <Database size={20} className="text-emerald-600" />
           </div>
           <div>
@@ -771,7 +771,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         {wizardStep === 'idle' && (
           <button
             onClick={() => setWizardStep('connect')}
-            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition"
           >
             <Plus size={16} />
             <span>Add Connection</span>
@@ -781,7 +781,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
       {/* Wizard */}
       {wizardStep !== 'idle' && (
-        <div className="bg-white rounded-2xl border-2 border-emerald-200 shadow-sm p-6">
+        <div className="bg-white rounded-none border-2 border-emerald-200 shadow-none p-6">
           {renderProgressIndicator()}
 
           {/* Step: Connect */}
@@ -789,7 +789,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-emerald-600 mb-2">
                 <Plug size={18} />
-                <span className="text-sm font-black uppercase">Step 1: Connect to Database</span>
+                <span className="text-sm font-bold">Step 1: Connect to Database</span>
               </div>
 
               {/* Display Name */}
@@ -799,7 +799,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </label>
                 <input
                   type="text"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
                   placeholder="e.g., ATL Urban Farms"
                   value={newConnection.name}
                   onChange={(e) => setNewConnection((prev) => ({ ...prev, name: e.target.value }))}
@@ -813,7 +813,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </label>
                 <input
                   type="text"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
                   placeholder="https://xxxxx.supabase.co"
                   value={newConnection.supabase_url}
                   onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_url: e.target.value }))}
@@ -828,7 +828,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 </label>
                 <input
                   type={visibleKeys['new_key'] ? 'text' : 'password'}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none focus:border-emerald-500 transition"
                   placeholder="sb_secret_…  (or a service_role eyJ… key)"
                   value={newConnection.supabase_key}
                   onChange={(e) => setNewConnection((prev) => ({ ...prev, supabase_key: e.target.value }))}
@@ -839,7 +839,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 >
                   {visibleKeys['new_key'] ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
-                <div className="mt-2 flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="mt-2 flex items-start gap-2 p-2.5 rounded-none bg-slate-50 border border-slate-200">
                   <Lock size={13} className="text-emerald-600 flex-shrink-0 mt-0.5" />
                   <p className="text-[11px] text-slate-500 leading-relaxed">
                     Use the <span className="font-bold text-slate-700">service_role</span> secret key
@@ -855,7 +855,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               {/* Test Result */}
               {testResult && (
                 <div
-                  className={`flex items-center space-x-2 p-3 rounded-xl ${
+                  className={`flex items-center space-x-2 p-3 rounded-none ${
                     testResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
                   }`}
                 >
@@ -869,7 +869,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={handleTestConnection}
                   disabled={isTesting || isDiscovering || !newConnection.supabase_url || !newConnection.supabase_key || !newConnection.name}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isTesting || isDiscovering ? (
                     <RefreshCw size={14} className="animate-spin" />
@@ -893,7 +893,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-emerald-600 mb-2">
                 <Database size={18} />
-                <span className="text-sm font-black uppercase">Step 2: Tables Discovered</span>
+                <span className="text-sm font-bold">Step 2: Tables Discovered</span>
               </div>
 
               <p className="text-sm text-slate-600">
@@ -901,7 +901,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               </p>
 
               {detectedCustomerTable && (
-                <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-none">
                   <CheckCircle2 size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-black text-emerald-800">Customer profiles found</p>
@@ -918,7 +918,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   return (
                     <div
                       key={table}
-                      className={`p-3 rounded-xl border-2 flex items-center space-x-2 ${
+                      className={`p-3 rounded-none border-2 flex items-center space-x-2 ${
                         isCustomerTable
                           ? 'bg-emerald-50 border-emerald-200'
                           : 'bg-slate-50 border-slate-200'
@@ -948,7 +948,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
@@ -961,7 +961,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     setWizardStep('customers');
                   }}
                   disabled={discoveredTables.length === 0}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>{detectedCustomerTable ? `Continue with ${detectedCustomerTable}` : 'Choose customer table'}</span>
                   <ChevronRight size={14} />
@@ -975,7 +975,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-emerald-600 mb-2">
                 <Users size={18} />
-                <span className="text-sm font-black uppercase">Step 3: Configure Customers Table</span>
+                <span className="text-sm font-bold">Step 3: Configure Customers Table</span>
               </div>
 
               {/* Table Selection */}
@@ -984,7 +984,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   Select Customer Table
                 </label>
                 <select
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500 transition"
                   value={customerTableConfig.table_name}
                   onChange={(e) => handleSelectCustomerTable(e.target.value)}
                 >
@@ -999,7 +999,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
               {/* No columns could be read */}
               {customerTableConfig.table_name && customerTableConfig.columns.length === 0 && (
-                <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-200 rounded-none">
                   <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-bold text-amber-700">Couldn't read this table's columns</p>
@@ -1034,7 +1034,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
               {/* Validation Warning */}
               {customerTableConfig.table_name && !customerTableConfig.field_mapping.email && (
-                <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                <div className="flex items-start space-x-2 p-3 bg-amber-50 border border-amber-100 rounded-none">
                   <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
                   <p className="text-sm font-bold text-amber-700">Email field mapping is required</p>
                 </div>
@@ -1044,7 +1044,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
@@ -1052,7 +1052,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={navigateNext}
                   disabled={!canProceedFromCustomers}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>Continue</span>
                   <ChevronRight size={14} />
@@ -1066,13 +1066,13 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-emerald-600 mb-2">
                 <Layers size={18} />
-                <span className="text-sm font-black uppercase">Step 4: What other data does this spoke have?</span>
+                <span className="text-sm font-bold">Step 4: What other data does this spoke have?</span>
               </div>
 
               <p className="text-sm text-slate-600 mb-2">
                 Select any additional data types available in this database:
               </p>
-              <div className="mb-4 flex items-start gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="mb-4 flex items-start gap-2 p-2.5 rounded-none bg-slate-50 border border-slate-200">
                 <Info size={13} className="text-slate-400 flex-shrink-0 mt-0.5" />
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   Trellis scanned this spoke for <span className="font-mono">orders</span> and revenue events,{' '}
@@ -1087,7 +1087,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={() => setSelectedDataTypes((prev) => ({ ...prev, orders: !prev.orders }))}
                   disabled={!discoveredTables.some(isOrderTable)}
-                  className={`p-4 rounded-xl border-2 text-left transition ${
+                  className={`p-4 rounded-none border-2 text-left transition ${
                     selectedDataTypes.orders
                       ? 'bg-blue-50 border-blue-300'
                       : discoveredTables.some(isOrderTable)
@@ -1097,7 +1097,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      <div className={`w-10 h-10 rounded-none flex items-center justify-center ${
                         selectedDataTypes.orders ? 'bg-blue-100' : 'bg-slate-100'
                       }`}>
                         <Package size={20} className={selectedDataTypes.orders ? 'text-blue-600' : 'text-slate-400'} />
@@ -1131,7 +1131,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={() => setSelectedDataTypes((prev) => ({ ...prev, orderItems: !prev.orderItems }))}
                   disabled={!discoveredTables.some(t => t.toLowerCase().includes('item'))}
-                  className={`p-4 rounded-xl border-2 text-left transition ${
+                  className={`p-4 rounded-none border-2 text-left transition ${
                     selectedDataTypes.orderItems
                       ? 'bg-purple-50 border-purple-300'
                       : discoveredTables.some(t => t.toLowerCase().includes('item'))
@@ -1141,7 +1141,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      <div className={`w-10 h-10 rounded-none flex items-center justify-center ${
                         selectedDataTypes.orderItems ? 'bg-purple-100' : 'bg-slate-100'
                       }`}>
                         <Layers size={20} className={selectedDataTypes.orderItems ? 'text-purple-600' : 'text-slate-400'} />
@@ -1175,7 +1175,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={() => setSelectedDataTypes((prev) => ({ ...prev, subscriptions: !prev.subscriptions }))}
                   disabled={!discoveredTables.some(t => t.toLowerCase().includes('subscription'))}
-                  className={`p-4 rounded-xl border-2 text-left transition ${
+                  className={`p-4 rounded-none border-2 text-left transition ${
                     selectedDataTypes.subscriptions
                       ? 'bg-amber-50 border-amber-300'
                       : discoveredTables.some(t => t.toLowerCase().includes('subscription'))
@@ -1185,7 +1185,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      <div className={`w-10 h-10 rounded-none flex items-center justify-center ${
                         selectedDataTypes.subscriptions ? 'bg-amber-100' : 'bg-slate-100'
                       }`}>
                         <CreditCard size={20} className={selectedDataTypes.subscriptions ? 'text-amber-600' : 'text-slate-400'} />
@@ -1220,14 +1220,14 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
                 </button>
                 <button
                   onClick={navigateNext}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition"
                 >
                   <span>Continue</span>
                   <ChevronRight size={14} />
@@ -1241,7 +1241,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-blue-600 mb-2">
                 <Package size={18} />
-                <span className="text-sm font-black uppercase">Step 5: Configure Order Tables</span>
+                <span className="text-sm font-bold">Step 5: Configure Order Tables</span>
               </div>
 
               <p className="text-sm text-slate-600">
@@ -1256,7 +1256,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     const config = orderTableConfigs.find(c => c.table_name === tableName);
 
                     return (
-                      <div key={tableName} className={`border rounded-xl p-4 transition-colors ${isSelected ? 'border-blue-300 bg-blue-50/50' : 'bg-white border-slate-200'}`}>
+                      <div key={tableName} className={`border rounded-none p-4 transition-colors ${isSelected ? 'border-blue-300 bg-blue-50/50' : 'bg-white border-slate-200'}`}>
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
@@ -1333,7 +1333,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
@@ -1341,7 +1341,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={navigateNext}
                   disabled={orderTableConfigs.length === 0 || !orderTableConfigs.every(c => c.field_mapping.id)}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>Continue</span>
                   <ChevronRight size={14} />
@@ -1355,7 +1355,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-purple-600 mb-2">
                 <Layers size={18} />
-                <span className="text-sm font-black uppercase">Step {selectedDataTypes.orders ? '6' : '5'}: Configure Order Items Tables</span>
+                <span className="text-sm font-bold">Step {selectedDataTypes.orders ? '6' : '5'}: Configure Order Items Tables</span>
               </div>
 
               <p className="text-sm text-slate-600">
@@ -1370,7 +1370,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     const config = orderItemTableConfigs.find(c => c.table_name === tableName);
 
                     return (
-                      <div key={tableName} className={`border rounded-xl p-4 transition-colors ${isSelected ? 'border-purple-300 bg-purple-50/50' : 'bg-white border-slate-200'}`}>
+                      <div key={tableName} className={`border rounded-none p-4 transition-colors ${isSelected ? 'border-purple-300 bg-purple-50/50' : 'bg-white border-slate-200'}`}>
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input
                             type="checkbox"
@@ -1447,7 +1447,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
@@ -1455,7 +1455,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={navigateNext}
                   disabled={orderItemTableConfigs.length === 0 || !orderItemTableConfigs.every(c => c.field_mapping.id && c.field_mapping.order_id)}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>Continue</span>
                   <ChevronRight size={14} />
@@ -1469,7 +1469,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-amber-600 mb-2">
                 <CreditCard size={18} />
-                <span className="text-sm font-black uppercase">Step 6: Configure Subscriptions Table</span>
+                <span className="text-sm font-bold">Step 6: Configure Subscriptions Table</span>
               </div>
 
               {/* Table Selection */}
@@ -1478,7 +1478,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   Select Subscriptions Table
                 </label>
                 <select
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-amber-500 transition"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-amber-500 transition"
                   value={subscriptionTableConfig.table_name}
                   onChange={(e) => handleSelectSubscriptionTable(e.target.value)}
                 >
@@ -1516,7 +1516,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
@@ -1524,7 +1524,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={navigateNext}
                   disabled={!subscriptionTableConfig.table_name || !subscriptionTableConfig.field_mapping.id}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>Continue</span>
                   <ChevronRight size={14} />
@@ -1538,7 +1538,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-emerald-600 mb-2">
                 <GitBranch size={18} />
-                <span className="text-sm font-black uppercase">Link to Branch</span>
+                <span className="text-sm font-bold">Link to Branch</span>
               </div>
 
               <p className="text-sm text-slate-600">
@@ -1559,7 +1559,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                           setBranchMode('existing');
                           setSelectedBranchId(branch.id);
                         }}
-                        className={`w-full p-4 rounded-xl border-2 text-left transition ${
+                        className={`w-full p-4 rounded-none border-2 text-left transition ${
                           selectedBranchId === branch.id
                             ? 'bg-blue-50 border-blue-300'
                             : 'bg-white border-slate-200 hover:border-blue-200'
@@ -1568,7 +1568,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <div
-                              className="w-10 h-10 rounded-xl flex items-center justify-center"
+                              className="w-10 h-10 rounded-none flex items-center justify-center"
                               style={{ backgroundColor: branch.primary_color ? `${branch.primary_color}20` : '#f1f5f9' }}
                             >
                               {branch.logo_url ? (
@@ -1606,7 +1606,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     ))
                   ) : (
                     <div className="text-center py-8 space-y-3">
-                      <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto">
+                      <div className="w-12 h-12 rounded-none bg-slate-100 flex items-center justify-center mx-auto">
                         <GitBranch size={24} className="text-slate-400" />
                       </div>
                       <div>
@@ -1624,7 +1624,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
@@ -1632,7 +1632,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                 <button
                   onClick={navigateNext}
                   disabled={!selectedBranchId}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50"
                 >
                   <span>Continue</span>
                   <ChevronRight size={14} />
@@ -1646,11 +1646,11 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             <div className="space-y-5">
               <div className="flex items-center space-x-2 text-emerald-600 mb-2">
                 <CheckCircle2 size={18} />
-                <span className="text-sm font-black uppercase">Review & Save</span>
+                <span className="text-sm font-bold">Review & Save</span>
               </div>
 
               {/* Summary Card */}
-              <div className="bg-slate-50 rounded-xl p-4 space-y-4">
+              <div className="bg-slate-50 rounded-none p-4 space-y-4">
                 <div>
                   <p className="text-[9px] font-black text-slate-400 uppercase">Connection Name</p>
                   <p className="text-sm font-bold text-slate-800">{newConnection.name}</p>
@@ -1735,14 +1735,14 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <div className="flex items-center space-x-3 pt-2">
                 <button
                   onClick={navigateBack}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-none font-bold text-xs hover:bg-slate-200 transition"
                 >
                   <ChevronLeft size={14} />
                   <span>Back</span>
                 </button>
                 <button
                   onClick={handleSaveConnection}
-                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+                  className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-none font-bold text-xs hover:bg-emerald-700 transition"
                 >
                   <CheckCircle2 size={14} />
                   <span>Save Connection</span>
@@ -1761,7 +1761,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
       {/* Success Summary Banner */}
       {successSummary && (
-        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 relative">
+        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-none p-4 relative">
           <button
             onClick={() => setSuccessSummary(null)}
             className="absolute top-3 right-3 text-emerald-400 hover:text-emerald-600"
@@ -1798,18 +1798,18 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         {connections.map((connection) => (
           <div
             key={connection.id}
-            className={`p-5 rounded-2xl border-2 transition-all ${
+            className={`p-5 rounded-none border-2 transition-all ${
               connection.status === 'error'
                 ? 'bg-rose-50/50 border-rose-100'
                 : connection.status === 'disconnected'
                 ? 'bg-slate-50 border-slate-100 opacity-60'
-                : 'bg-white border-slate-100 hover:border-emerald-200 shadow-sm'
+                : 'bg-white border-slate-100 hover:border-emerald-200 shadow-none'
             }`}
           >
             <div className="flex items-start justify-between">
               <div className="flex items-start space-x-4">
                 <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  className={`w-10 h-10 rounded-none flex items-center justify-center ${
                     connection.status === 'active'
                       ? 'bg-emerald-50 text-emerald-600'
                       : connection.status === 'error'
@@ -1921,7 +1921,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         ))}
 
         {connections.length === 0 && wizardStep === 'idle' && (
-          <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-2xl border border-slate-200">
+          <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-none border border-slate-200">
             <Database size={48} className="mx-auto mb-4 opacity-50" />
             <p className="text-sm font-bold">No connections yet</p>
             <p className="text-xs mt-1">Add your first data connection to get started</p>

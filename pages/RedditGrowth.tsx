@@ -690,7 +690,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Reddit Ads</h1>
+              <h1 className="text-2xl font-bold text-slate-900">Reddit Ads</h1>
               <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-widest">Draft Workspace</span>
             </div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Plan, review, and export paid Reddit campaigns</p>

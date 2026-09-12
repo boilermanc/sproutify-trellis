@@ -123,7 +123,7 @@ const SocialPerformancePanel: React.FC<SocialPerformancePanelProps> = ({ branche
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8">
+      <div className="bg-white border border-slate-200 p-6 sm:p-8">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div className="flex items-center space-x-4">
             <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 via-purple-500 to-rose-500 rounded-2xl flex items-center justify-center shadow-lg">
@@ -225,11 +225,11 @@ const SocialPerformancePanel: React.FC<SocialPerformancePanelProps> = ({ branche
       {/* Follower growth chart */}
       <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8">
         <div className="flex items-center space-x-4 mb-6">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <TrendingUp size={22} className="text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Follower Growth</h2>
+            <h2 className="text-lg font-bold text-slate-900">Follower growth</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Daily snapshots &middot; last 30 days</p>
           </div>
         </div>

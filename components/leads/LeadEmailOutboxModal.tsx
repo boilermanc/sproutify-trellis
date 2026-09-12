@@ -33,7 +33,7 @@ const statusClass = (status: string, active: boolean): string => {
   if (ISSUE_STATUSES.includes(status)) return 'border-rose-200 bg-rose-50 text-rose-600';
   if (status === 'replied') return 'border-violet-200 bg-violet-50 text-violet-600';
   if (status === 'clicked') return 'border-indigo-200 bg-indigo-50 text-indigo-600';
-  if (status === 'opened') return 'border-cyan-200 bg-cyan-50 text-cyan-600';
+  if (status === 'opened') return 'border-emerald-200 bg-emerald-50 text-emerald-600';
   return 'border-emerald-200 bg-emerald-50 text-emerald-600';
 };
 
@@ -126,29 +126,29 @@ const LeadEmailOutboxModal: React.FC<Props> = ({ leads, scopeLabel, onClose }) =
           <label className="relative block lg:w-96">
             <span className="sr-only">Search sent lead emails</span>
             <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search recipient, lead, or subject…" className="w-full rounded-xl border border-white/10 bg-[#0A0E27] py-2.5 pl-10 pr-3 text-xs text-white outline-none placeholder:text-slate-600 focus:border-cyan-400/50" />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search recipient, lead, or subject…" className="w-full rounded-sm border border-white/10 bg-[#0A0E27] py-2.5 pl-10 pr-3 text-xs text-white outline-none placeholder:text-slate-600 focus:border-emerald-400/50" />
           </label>
-          <button type="button" onClick={() => void load(true)} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/5 disabled:opacity-40">
+          <button type="button" onClick={() => void load(true)} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-sm border border-white/10 px-4 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/5 disabled:opacity-40">
             {refreshing ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />} Refresh
           </button>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {FILTERS.map(option => (
-            <button key={option.value} type="button" onClick={() => setFilter(option.value)} className={`rounded-full px-3 py-2 text-[9px] font-black uppercase tracking-wider ${filter === option.value ? 'bg-cyan-400 text-[#07101D]' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
+            <button key={option.value} type="button" onClick={() => setFilter(option.value)} className={`rounded-full px-3 py-2 text-[9px] font-black uppercase tracking-wider ${filter === option.value ? 'bg-emerald-400 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
               {option.label} <span className="ml-1 opacity-70">{counts[option.value]}</span>
             </button>
           ))}
         </div>
 
-        {error && <div className="flex items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-4 py-3 text-xs text-rose-300"><AlertTriangle size={15} />{error}</div>}
+        {error && <div className="flex items-center gap-2 rounded-sm border border-rose-400/20 bg-rose-400/[0.06] px-4 py-3 text-xs text-rose-300"><AlertTriangle size={15} />{error}</div>}
 
         {loading ? (
-          <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-400"><Loader2 className="animate-spin text-cyan-300" size={20} />Loading sent emails…</div>
+          <div className="flex items-center justify-center gap-3 py-20 text-sm text-slate-400"><Loader2 className="animate-spin text-emerald-300" size={20} />Loading sent emails…</div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/10 py-16 text-center"><MailCheck className="mx-auto mb-3 text-slate-600" size={30} /><p className="text-sm font-black text-white">No matching lead emails</p><p className="mt-1 text-xs text-slate-500">Sent sequence and manual lead emails will appear here.</p></div>
+          <div className="rounded-sm border border-dashed border-white/10 py-16 text-center"><MailCheck className="mx-auto mb-3 text-slate-600" size={30} /><p className="text-sm font-black text-white">No matching lead emails</p><p className="mt-1 text-xs text-slate-500">Sent sequence and manual lead emails will appear here.</p></div>
         ) : (
-          <div className="max-h-[58vh] overflow-auto rounded-2xl border border-white/10 bg-[#0A0E27]">
+          <div className="max-h-[58vh] overflow-auto rounded-sm border border-white/10 bg-[#0A0E27]">
             <table className="w-full min-w-[980px] text-left">
               <thead className="sticky top-0 z-10 bg-[#0A0E27] text-[9px] font-black uppercase tracking-widest text-slate-500"><tr><th className="px-4 py-3">Lead / Recipient</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Sent</th><th className="px-4 py-3">Tracking</th></tr></thead>
               <tbody className="divide-y divide-white/[0.06]">

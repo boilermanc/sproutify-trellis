@@ -54,7 +54,7 @@ const PageInfoTooltip: React.FC<PageInfoTooltipProps> = ({ title, description, v
         onClick={() => (isMounted ? close() : setIsMounted(true))}
         aria-label={`About ${title}`}
         aria-expanded={isMounted}
-        className={`p-1 rounded-full transition-colors shrink-0 ${
+        className={`min-h-11 min-w-11 p-2 transition-colors shrink-0 ${
           isDark
             ? 'text-white/40 hover:text-emerald-300 hover:bg-white/10'
             : 'text-slate-300 hover:text-emerald-600 hover:bg-emerald-50'
@@ -65,12 +65,12 @@ const PageInfoTooltip: React.FC<PageInfoTooltipProps> = ({ title, description, v
 
       {isMounted && (
         <div
-          className={`absolute z-50 top-full left-0 mt-2 w-80 max-w-[min(20rem,85vw)] bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 ${
+          className={`absolute z-50 top-full left-0 mt-2 w-80 max-w-[min(20rem,85vw)] bg-white shadow-xl border border-slate-200 p-4 ${
             isClosing ? 'page-info-pop-out' : 'page-info-pop-in'
           }`}
         >
           <div className="flex items-start justify-between mb-2 gap-2">
-            <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-800">{title}</h4>
+            <h4 className="font-mono text-[11px] font-bold tracking-wide text-slate-800">{title}</h4>
             <button
               onClick={close}
               className="text-slate-300 hover:text-slate-600 -mt-1 -mr-1 shrink-0 transition-colors"

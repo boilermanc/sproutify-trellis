@@ -47,7 +47,7 @@ export function countUnsubscribedLeads(leads: Lead[], unsubscribedEmails: Set<st
 const LeadMetrics: React.FC<LeadMetricsProps> = ({ filteredLeads, allPipelineLeads, stages, unsubscribedCount }) => {
   const metrics = calculateLeadMetrics(filteredLeads, allPipelineLeads, stages);
   const cards = [
-    { label: 'Open leads', value: metrics.openCount.toLocaleString(), icon: Target, color: 'text-cyan-300' },
+    { label: 'Open leads', value: metrics.openCount.toLocaleString(), icon: Target, color: 'text-emerald-300' },
     { label: 'Open value', value: new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(metrics.openValue), icon: CircleDollarSign, color: 'text-emerald-300' },
     { label: 'Win rate · all-time', value: metrics.winRate == null ? '—' : `${metrics.winRate.toFixed(1)}%`, icon: Trophy, color: 'text-amber-300' },
     { label: 'Added · 30 days', value: metrics.addedLast30Days.toLocaleString(), icon: Clock3, color: 'text-indigo-300' },
@@ -55,11 +55,11 @@ const LeadMetrics: React.FC<LeadMetricsProps> = ({ filteredLeads, allPipelineLea
   ];
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#10142E] p-4">
+    <section className="rounded-sm border border-white/10 bg-[#10142E] p-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {cards.map(card => <div key={card.label} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-[#0A0E27] px-4 py-3"><card.icon size={17} className={card.color} /><div><p className="text-[9px] font-black uppercase tracking-widest text-slate-600">{card.label}</p><p className="mt-0.5 text-lg font-black text-white">{card.value}</p></div></div>)}
+        {cards.map(card => <div key={card.label} className="flex items-center gap-3 rounded-sm border border-white/[0.07] bg-[#0A0E27] px-4 py-3"><card.icon size={17} className={card.color} /><div><p className="text-[9px] font-black uppercase tracking-widest text-slate-600">{card.label}</p><p className="mt-0.5 text-lg font-black text-white">{card.value}</p></div></div>)}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">{stages.map(stage => <span key={stage} className="rounded-full border border-white/[0.07] bg-white/[0.03] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400"><span className="mr-1.5 text-cyan-300">{metrics.stageCounts[stage] || 0}</span>{stage}</span>)}</div>
+      <div className="mt-3 flex flex-wrap gap-2">{stages.map(stage => <span key={stage} className="rounded-full border border-white/[0.07] bg-white/[0.03] px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400"><span className="mr-1.5 text-emerald-300">{metrics.stageCounts[stage] || 0}</span>{stage}</span>)}</div>
     </section>
   );
 };

@@ -269,11 +269,11 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <TrendingUp className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ad Performance</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Ad performance</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               Import Ads Manager results · match to creative · let Sage tell you what to kill or scale
             </p>
@@ -291,7 +291,7 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
       </div>
 
       {/* Import panel */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+      <div className="bg-white border border-slate-200 p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Upload className="w-4 h-4 text-emerald-600" />
           <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Import Results CSV</h2>
@@ -431,7 +431,7 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
       </div>
 
       {/* Leaderboard */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+      <div className="bg-white border border-slate-200 p-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-600" />
@@ -558,7 +558,7 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
       </div>
 
       {/* AI advisor */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+      <div className="bg-white border border-slate-200 p-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-600" />

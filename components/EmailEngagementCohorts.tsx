@@ -192,10 +192,10 @@ const EmailEngagementCohorts: React.FC<Props> = ({ branches, profiles }) => {
   };
 
   return (
-    <div className="mb-6 rounded-[2rem] border border-slate-200 bg-white p-6">
+    <div className="mb-6 border border-slate-200 bg-white p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-tight text-slate-800">
+          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
             <Users size={17} className="text-emerald-600" /> Engagement cohorts
           </h3>
           <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -229,7 +229,7 @@ const EmailEngagementCohorts: React.FC<Props> = ({ branches, profiles }) => {
             {cohorts.map((cohort) => {
               const rate = cohort.eligible > 0 ? Math.round((cohort.people.length / cohort.eligible) * 100) : null;
               return (
-                <button key={cohort.id} type="button" onClick={() => setSelectedCohort(cohort)} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${toneClasses[cohort.tone]}`}>
+                <button key={cohort.id} type="button" onClick={() => setSelectedCohort(cohort)} className={`min-h-11 border p-4 text-left transition hover:border-slate-400 ${toneClasses[cohort.tone]}`}>
                   <div className="mb-2 flex items-center justify-between">
                     {cohort.id.includes('ordered') ? <ShoppingBag size={15} /> : cohort.id.includes('clicked') ? <MousePointerClick size={15} /> : <Users size={15} />}
                     <span className="text-[9px] font-black uppercase tracking-widest">View people</span>
@@ -250,7 +250,7 @@ const EmailEngagementCohorts: React.FC<Props> = ({ branches, profiles }) => {
 
       {selectedCohort && (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${selectedCohort.label} recipients`}>
-          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden border border-slate-200 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
               <div>
                 <h3 className="text-lg font-black text-slate-800">{selectedCohort.label}</h3>

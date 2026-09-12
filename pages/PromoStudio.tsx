@@ -389,7 +389,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
 
   if (loading) return <div className="flex min-h-[55vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-violet-600" /></div>;
   if (unavailable) return (
-    <div className="mx-auto max-w-3xl py-16"><div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-8">
+    <div className="mx-auto max-w-3xl py-16"><div className="border border-amber-200 bg-amber-50 p-8">
       <AlertCircle className="h-8 w-8 text-amber-600" /><h2 className="mt-4 text-xl font-black text-slate-900">Promo Studio foundation is ready locally</h2>
       <p className="mt-2 text-sm leading-6 text-slate-600">{unavailable}</p>
       <p className="mt-3 text-sm leading-6 text-slate-500">Apply the Promo Studio migration and deploy the promo-studio Edge Function to enable this workspace.</p>
@@ -399,7 +399,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
-      <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-violet-950 to-fuchsia-900 p-8 text-white shadow-xl">
+      <section className="overflow-hidden border border-slate-800 bg-slate-950 p-8 text-white">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div><div className="flex items-center gap-3"><div className="rounded-2xl bg-white/10 p-3"><Clapperboard className="h-7 w-7" /></div><div><p className="text-xs font-black uppercase tracking-[0.25em] text-violet-200">Evidence-led creative</p><h1 className="text-3xl font-black">Promo Studio</h1></div></div>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-violet-100">Build branch promos from verified repository evidence, real UI capture, timed voice and music, and reproducible renders.</p></div>
@@ -409,7 +409,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
 
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-5">
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-violet-600">New project</p><h2 className="mt-1 text-lg font-black text-slate-900">Start with intent</h2></div><Plus className="h-5 w-5 text-slate-400" /></div>
             <div className="mt-5 space-y-3">
               <input value={title} onChange={event => setTitle(event.target.value)} maxLength={160} placeholder="Project title" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
@@ -427,7 +427,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
             </div>
           </section>
 
-          {canConfigureBranches && branchId && <details className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+          {canConfigureBranches && branchId && <details className="border border-slate-200 bg-white p-5">
             <summary className="cursor-pointer text-xs font-black uppercase tracking-widest text-slate-600">Configure branch production</summary>
             <p className="mt-3 text-xs leading-5 text-slate-500">Store only a GitHub owner/repository and opaque fixture references. Credentials stay in server secrets and the capture worker.</p>
             <div className="mt-4 space-y-3">
@@ -441,20 +441,20 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
             </div>
           </details>}
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="border border-slate-200 bg-white p-4">
             <div className="flex items-center justify-between px-1"><h2 className="text-xs font-black uppercase tracking-widest text-slate-500">Projects</h2><button onClick={() => void loadProjects()} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><RefreshCw className="h-4 w-4" /></button></div>
             <div className="mt-2 space-y-2">{projects.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No Promo Studio projects yet.</p> : projects.map(project => <button key={project.id} type="button" onClick={() => setSelectedId(project.id)} className={`w-full rounded-2xl border p-3 text-left ${selectedId === project.id ? 'border-violet-300 bg-violet-50' : 'border-slate-100 hover:border-slate-200'}`}><div className="flex items-start justify-between gap-2"><span className="text-sm font-black text-slate-900">{project.title}</span><span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${statusClass[project.status] || statusClass.draft}`}>{project.status.replace(/_/g, ' ')}</span></div><p className="mt-2 text-xs text-slate-500">{project.target_seconds}s · {project.requested_formats.join(' / ')}</p></button>)}</div>
           </section>
         </aside>
 
         <main className="space-y-6">
-          {!detail || !manifest ? <section className="flex min-h-[420px] items-center justify-center rounded-[2rem] border border-dashed border-slate-300 bg-white p-8 text-center"><div><Clapperboard className="mx-auto h-9 w-9 text-slate-300" /><h2 className="mt-4 text-lg font-black text-slate-800">Choose or create a promo</h2><p className="mt-2 text-sm text-slate-500">The project workspace will show only evidence and stages that actually exist.</p></div></section> : <>
-            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          {!detail || !manifest ? <section className="flex min-h-[420px] items-center justify-center border border-dashed border-slate-300 bg-white p-8 text-center"><div><Clapperboard className="mx-auto h-9 w-9 text-slate-300" /><h2 className="mt-4 text-lg font-black text-slate-800">Choose or create a promo</h2><p className="mt-2 text-sm text-slate-500">The project workspace will show only evidence and stages that actually exist.</p></div></section> : <>
+            <section className="border border-slate-200 bg-white p-6">
               <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-violet-600">Revision {detail.revision?.revision_number}</p><h2 className="mt-1 text-2xl font-black text-slate-950">{detail.project.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{detail.project.request_prompt}</p></div><button onClick={() => void loadDetail(detail.project.id)} aria-label="Refresh project" className="rounded-xl border border-slate-200 p-2.5 text-slate-500"><RefreshCw className="h-4 w-4" /></button></div>
               <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Branch</p><p className="mt-1 text-sm font-bold text-slate-800">{manifest.promo.branch.display_name}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Deliverables</p><p className="mt-1 text-sm font-bold text-slate-800">{manifest.promo.formats.join(' · ')}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fingerprint</p><p className="mt-1 truncate font-mono text-xs text-slate-700" title={detail.revision?.manifest_fingerprint}>{detail.revision?.manifest_fingerprint.slice(0, 16)}…</p></div></div>
             </section>
 
-            <section className="overflow-hidden rounded-[2rem] border border-violet-200 bg-gradient-to-br from-white to-violet-50 p-6 shadow-sm">
+            <section className="overflow-hidden border border-violet-200 bg-violet-50 p-6">
               <div className="flex flex-wrap gap-2">{(['Brief', 'Content', 'Production', 'Preview'] as const).map((label, index) => {
                 const phaseIndex = { setup: 0, content: 1, production: 2, preview: 3, complete: 4 }[guidedStep.phase];
                 return <div key={label} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${index < phaseIndex ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : index === phaseIndex ? 'border-violet-300 bg-violet-100 text-violet-700' : 'border-slate-200 bg-white text-slate-400'}`}>{index < phaseIndex && <Check className="h-3 w-3" />}{label}</div>;

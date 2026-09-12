@@ -508,7 +508,7 @@ const AppContent: React.FC = () => {
       case 'post-performance': return <PostPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'content-intelligence': return (
         <FeatureErrorBoundary featureName="Content Intelligence" onExit={() => setActiveView('dashboard')}>
-          <React.Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-emerald-600" /><p className="mt-3 text-xs font-black uppercase tracking-widest text-slate-400">Loading Content Intelligence</p></div></div>}>
+          <React.Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-emerald-600" /><p className="tr-label mt-3">Loading content intelligence</p></div></div>}>
             <ContentIntelligence branchContext={branchContext} addToast={addToast} />
           </React.Suspense>
         </FeatureErrorBoundary>
@@ -587,7 +587,7 @@ const AppContent: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-trellis-canvas">
         <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
       </div>
     );
@@ -611,27 +611,28 @@ const AppContent: React.FC = () => {
       {renderView()}
 
       {/* Global Toast Notification Engine */}
-      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] space-y-3 w-full max-w-md pointer-events-none">
+      <div className="pointer-events-none fixed bottom-6 left-1/2 z-[300] w-full max-w-md -translate-x-1/2 space-y-2 px-4">
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className="pointer-events-auto bg-white/80 backdrop-blur-xl border border-slate-200/50 shadow-2xl p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-bottom-4 duration-300"
+            className="pointer-events-auto flex min-h-14 items-center justify-between border border-trellis-line bg-white p-4 shadow-[var(--trellis-shadow-float)] animate-in slide-in-from-bottom-4 duration-300"
           >
             <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-xl ${
+              <div className={`grid h-9 w-9 place-items-center border ${
                 toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
                 toast.type === 'error' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600'
               }`}>
                 {toast.type === 'success' ? <CheckCircle2 size={18} /> :
                  toast.type === 'error' ? <AlertCircle size={18} /> : <Info size={18} />}
               </div>
-              <p className="text-xs font-black uppercase text-slate-800 tracking-tight leading-tight max-w-[280px]">
+              <p className="max-w-[280px] text-sm font-semibold leading-snug text-trellis-ink">
                 {toast.message}
               </p>
             </div>
             <button
               onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-              className="p-1.5 text-slate-400 hover:text-slate-900 transition-colors"
+              className="min-h-11 min-w-11 text-slate-400 transition-colors hover:bg-trellis-subtle hover:text-trellis-ink"
+              aria-label="Dismiss notification"
             >
               <X size={16} />
             </button>

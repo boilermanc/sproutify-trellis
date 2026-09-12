@@ -46,7 +46,7 @@ const CampaignBrandAssetLibrary: React.FC<CampaignBrandAssetLibraryProps> = ({
   };
 
   return (
-    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+    <div className="bg-white p-6 border border-slate-200 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center">

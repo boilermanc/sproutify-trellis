@@ -90,7 +90,7 @@ const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast, onStatusCha
   };
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+    <div className="rounded-sm border border-white/10 bg-white/[0.025] p-4">
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
           <Telescope size={13} /> Deep Dive
@@ -99,7 +99,7 @@ const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast, onStatusCha
           type="button"
           onClick={handleStart}
           disabled={starting || isRunning}
-          className="flex items-center gap-1.5 rounded-xl bg-[#00D9FF] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#07101D] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-sm bg-[#059669] px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {starting ? <Loader2 size={13} className="animate-spin" /> : <Telescope size={13} />}
           {items.length > 0 ? 'Run again' : 'Run deep dive'}
@@ -108,15 +108,15 @@ const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast, onStatusCha
 
       <div className="mt-3">
         {loading ? (
-          <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={14} className="animate-spin text-cyan-300" /> Loading…</div>
+          <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={14} className="animate-spin text-emerald-300" /> Loading…</div>
         ) : !latest ? (
           <p className="text-xs leading-5 text-slate-400">No deep dive yet. Run one to generate an AI research brief on this lead — their operation, market, online presence, fit, and talking points. It runs in the background and takes a few minutes.</p>
         ) : isRunning ? (
-          <div className="flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] p-3 text-xs font-bold text-cyan-300">
+          <div className="flex items-center gap-2 rounded-sm border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-xs font-bold text-emerald-300">
             <Loader2 size={14} className="animate-spin" /> Researching this lead… this can take a few minutes. You can leave this page — it keeps running.
           </div>
         ) : latest.status === 'failed' ? (
-          <div className="flex items-start gap-2 rounded-xl border border-rose-400/25 bg-rose-400/[0.06] p-3 text-xs leading-5 text-rose-200">
+          <div className="flex items-start gap-2 rounded-sm border border-rose-400/25 bg-rose-400/[0.06] p-3 text-xs leading-5 text-rose-200">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <span><strong className="block text-rose-100">Deep dive failed</strong>{latest.error || 'Manus did not return a result.'} Try running it again.</span>
           </div>
@@ -126,20 +126,20 @@ const LeadDeepDive: React.FC<LeadDeepDiveProps> = ({ lead, addToast, onStatusCha
               <span className="rounded-full border border-emerald-400/25 bg-emerald-400/[0.08] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-300">Complete</span>
               <span className="text-[10px] text-slate-500">{formatWhen(latest.completed_at || latest.created_at)}{latest.model ? ` · ${latest.model}` : ''}</span>
               <div className="ml-auto flex items-center gap-2">
-                <button type="button" onClick={() => handleDownload(latest)} className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]"><Download size={12} /> .md</button>
-                {latest.manus_task_url && <a href={latest.manus_task_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]"><ExternalLink size={12} /> Source</a>}
+                <button type="button" onClick={() => handleDownload(latest)} className="flex items-center gap-1 rounded-sm border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]"><Download size={12} /> .md</button>
+                {latest.manus_task_url && <a href={latest.manus_task_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-sm border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300 hover:bg-white/[0.08]"><ExternalLink size={12} /> Source</a>}
               </div>
             </div>
 
             <div
-              className="max-h-[28rem] overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-700"
+              className="max-h-[28rem] overflow-y-auto rounded-sm border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-700"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(latest.result_md || '') }}
             />
 
             {latest.attachments?.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {latest.attachments.map((a, i) => (
-                  <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-bold text-cyan-300 hover:bg-white/[0.08]">
+                  <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-sm border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-bold text-emerald-300 hover:bg-white/[0.08]">
                     <Download size={12} /> {a.name}
                   </a>
                 ))}

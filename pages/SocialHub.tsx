@@ -1321,12 +1321,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if (!publishing) setPublishConfirm(null); }} />
-            <div className="relative bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8 max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative bg-white border border-slate-200 shadow-xl p-8 max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center gap-3 mb-4">
                 <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center ${iconBg}`}>
                   {React.createElement(getPlatformIcon(platform), { size: 24, className: iconColor })}
                 </div>
-                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Publish to {label}</h3>
+                <h3 className="text-lg font-bold text-slate-900">Publish to {label}</h3>
               </div>
               <p className="text-sm font-medium text-slate-600 leading-relaxed mb-6">
                 Publish this post to {label} for <strong className="text-slate-900">{brandName}</strong>? It will go live immediately.
@@ -1348,17 +1348,17 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         );
       })()}
 
-      <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit max-w-full overflow-x-auto border border-slate-200 shadow-sm">
-        <button onClick={() => setActiveTab('lab')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'lab' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><Zap size={18} /><span>Lab</span></button>
-        <button onClick={() => setActiveTab('queue')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all relative ${activeTab === 'queue' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
+      <div className="flex w-fit max-w-full overflow-x-auto border border-slate-200 bg-white">
+        <button onClick={() => setActiveTab('lab')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'lab' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><Zap size={18} /><span>Lab</span></button>
+        <button onClick={() => setActiveTab('queue')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all relative border-b-2 ${activeTab === 'queue' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
           <Terminal size={18} />
           <span>Queue</span>
           {newSignalCount > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{newSignalCount}</span>
           )}
         </button>
-        <button onClick={() => setActiveTab('pipeline')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'pipeline' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Pipeline</span></button>
-        <button onClick={() => setActiveTab('reports')} className={`flex items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3.5 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'reports' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}><BarChart3 size={18} /><span>Reports</span></button>
+        <button onClick={() => setActiveTab('pipeline')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'pipeline' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Pipeline</span></button>
+        <button onClick={() => setActiveTab('reports')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'reports' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><BarChart3 size={18} /><span>Reports</span></button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1393,10 +1393,10 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
               )}
 
               {workflowStatus === 'idle' ? (
-                <div className={`bg-white p-6 sm:p-12 rounded-[3.5rem] border border-slate-200 shadow-sm relative ${isGenerating ? 'opacity-40' : ''}`}>
-                  {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20 rounded-[3.5rem]"><Loader2 className="animate-spin text-emerald-600" size={56} /></div>}
+                <div className={`bg-white p-6 sm:p-10 border border-slate-200 relative ${isGenerating ? 'opacity-40' : ''}`}>
+                  {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20"><Loader2 className="animate-spin text-emerald-600" size={48} /></div>}
                   <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />Strategy Lab</h3>
-                  <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-5 sm:p-8 text-base sm:text-xl font-medium outline-none focus:bg-white focus:border-emerald-500 transition-all min-h-[220px] shadow-inner mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
+                  <textarea className="w-full bg-slate-50 border border-slate-200 p-5 sm:p-6 text-base sm:text-lg font-medium outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all min-h-[220px] mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
                   <div className="mb-8 p-5 rounded-[2rem] border-2 border-dashed border-emerald-200 bg-emerald-50/40">
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                       <div>
@@ -1429,21 +1429,21 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                       );
                     })}
                   </div>
-                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full py-5 sm:py-8 text-white bg-slate-900 rounded-[2.5rem] font-black text-base sm:text-xl flex items-center justify-center space-x-3 sm:space-x-4 shadow-2xl hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={28} className="text-emerald-400" /><span>Create</span></button>
+                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full min-h-11 py-4 text-white bg-slate-900 font-bold text-base flex items-center justify-center space-x-3 hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={22} className="text-emerald-400" /><span>Create</span></button>
                 </div>
               ) : activeDrafts.length > 0 && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
                   {/* Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 border border-slate-200">
                     <div>
-                      <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Reviewing {activeDrafts.length} Draft{activeDrafts.length > 1 ? 's' : ''}</h3>
+                      <h3 className="text-xl font-bold text-slate-900">Reviewing {activeDrafts.length} draft{activeDrafts.length > 1 ? 's' : ''}</h3>
                       <p className="text-[11px] font-bold text-slate-400 mt-1">One per brand — edit, schedule, or copy each below.</p>
                     </div>
                     <button onClick={() => { setWorkflowStatus('idle'); setActiveDrafts([]); }} className="p-3 text-slate-300 hover:text-rose-500"><X size={24} /></button>
                   </div>
 
                   {/* Shared scheduling controls + batch actions */}
-                  <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm">
+                  <div className="bg-white p-6 border border-slate-200">
                     <div className="flex flex-wrap items-end gap-4 mb-5 p-5 bg-slate-50 rounded-[2rem] border border-slate-100">
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">First post</label>
@@ -1491,7 +1491,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   {activeDrafts.map(draft => {
                     const brand = getBranchForDraft(draft);
                     return (
-                      <div key={draft.id} className="bg-white p-5 sm:p-8 rounded-[3rem] border-2 border-slate-200 shadow-lg">
+                      <div key={draft.id} className="bg-white p-5 sm:p-8 border border-slate-200">
                         <div className="flex flex-wrap items-center justify-between gap-y-3 mb-6 pb-4 border-b border-slate-100">
                           <div className="flex items-center gap-2">
                             {getDraftMediaUrls(draft).length > 0 && !Object.values(draft.versions).some(Boolean) && (

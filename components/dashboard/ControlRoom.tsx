@@ -116,7 +116,7 @@ function timeAgoShort(iso: string): string {
 const BranchStripSkeleton: React.FC = () => (
   <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
     {Array.from({ length: 5 }).map((_, i) => (
-      <div key={i} className="bg-white border border-[#E5E7EB] rounded-[10px] p-[14px] flex flex-col gap-[9px]">
+      <div key={i} className="bg-white border border-[#E5E7EB] rounded-sm p-[14px] flex flex-col gap-[9px]">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 ${SKELETON}`} />
           <div className={`h-3 w-16 ${SKELETON}`} />
@@ -129,14 +129,14 @@ const BranchStripSkeleton: React.FC = () => (
 );
 
 const BranchEmptyState: React.FC<{ onConnectSpoke: () => void }> = ({ onConnectSpoke }) => (
-  <div className="bg-white border border-[#E5E7EB] rounded-[10px] p-8 flex flex-col items-center justify-center text-center gap-2">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-8 flex flex-col items-center justify-center text-center gap-2">
     <Database size={28} className="text-[#CBD5E1]" />
     <p className="text-[14px] font-bold text-[#475569]">No branches connected yet</p>
     <p className="text-[12px] text-[#94A3B8]">Connect a spoke to see profiles, orders and revenue here.</p>
     <button
       type="button"
       onClick={onConnectSpoke}
-      className={`mt-2 bg-[#0B4A6B] hover:bg-[#093a55] transition-colors duration-150 text-white text-[12px] font-semibold px-4 py-2 rounded-[8px] ${FOCUS_RING}`}
+      className={`mt-2 bg-[#0B4A6B] hover:bg-[#093a55] transition-colors duration-150 text-white text-[12px] font-semibold px-4 py-2 rounded-sm ${FOCUS_RING}`}
     >
       Connect your first spoke
     </button>
@@ -151,7 +151,7 @@ const BranchTile: React.FC<{ branch: BranchCardData; onSelectBranch: (slug: stri
       type="button"
       onClick={() => onSelectBranch(branch.slug)}
       title={branch.healthLabel}
-      className={`text-left w-full bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] transition-colors duration-150 rounded-[10px] p-[14px] flex flex-col gap-[9px] ${FOCUS_RING}`}
+      className={`text-left w-full bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] transition-colors duration-150 rounded-sm p-[14px] flex flex-col gap-[9px] ${FOCUS_RING}`}
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className="w-2 h-2 rounded-[2px] flex-shrink-0" style={{ background: branch.color }} />
@@ -198,7 +198,7 @@ const BranchStrip: React.FC<{
 // ── Today timeline ────────────────────────────────────────────────
 
 const TimelineSkeleton: React.FC = () => (
-  <div className="flex-1 bg-white border border-[#E5E7EB] rounded-xl p-[22px] flex flex-col gap-4">
+  <div className="flex-1 bg-white border border-[#E5E7EB] rounded-sm p-[22px] flex flex-col gap-4">
     <div className="flex items-center justify-between">
       <div className={`h-4 w-56 ${SKELETON}`} />
       <div className={`h-4 w-24 ${SKELETON}`} />
@@ -261,7 +261,7 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
         </span>
         {item.sourceTag && (
           <span
-            className={`font-mono text-[9px] font-bold tracking-[0.06em] uppercase px-1.5 py-[2px] rounded-[4px] flex-shrink-0 ${
+            className={`font-mono text-[9px] font-bold tracking-[0.06em] uppercase px-1.5 py-[2px] rounded-sm flex-shrink-0 ${
               item.sourceTag === 'trellis'
                 ? 'bg-[#ECFDF5] text-[#047857]'
                 : 'bg-[#F1F5F9] text-[#64748B]'
@@ -279,7 +279,7 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
       </div>
       <div className="flex items-center gap-2">
         <span
-          className="font-mono text-[10px] font-semibold tracking-[0.06em] uppercase px-2 py-[3px] rounded-[5px] whitespace-nowrap"
+          className="font-mono text-[10px] font-semibold tracking-[0.06em] uppercase px-2 py-[3px] rounded-sm whitespace-nowrap"
           style={{ background: chip.bg, color: chip.text }}
         >
           {chip.label}
@@ -352,7 +352,7 @@ const TodayTimeline: React.FC<{
   };
 
   return (
-    <div className="flex-1 bg-white border border-[#E5E7EB] rounded-xl p-[22px] flex flex-col gap-4 min-w-0">
+    <div className="flex-1 bg-white border border-[#E5E7EB] rounded-sm p-[22px] flex flex-col gap-4 min-w-0">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h3 className="text-[15px] font-bold text-[#111827]">Today across the ecosystem</h3>
@@ -376,14 +376,14 @@ const TodayTimeline: React.FC<{
       {timeline.length > 0 && (hasSourceTags || branchOptions.length > 1) && (
         <div className="flex items-center gap-2 flex-wrap">
           {hasSourceTags && (
-            <div className="inline-flex items-center rounded-[7px] bg-[#F1F5F9] p-[2px]">
+            <div className="inline-flex items-center rounded-sm bg-[#F1F5F9] p-[2px]">
               {SOURCE_FILTERS.map((f) => (
                 <button
                   key={f.id}
                   type="button"
                   onClick={() => setSource(f.id)}
-                  className={`text-[11px] font-semibold px-2.5 py-[3px] rounded-[5px] transition-colors ${FOCUS_RING} ${
-                    source === f.id ? 'bg-white text-[#0B4A6B] shadow-sm' : 'text-[#64748B] hover:text-[#334155]'
+                  className={`text-[11px] font-semibold px-2.5 py-[3px] rounded-sm transition-colors ${FOCUS_RING} ${
+                    source === f.id ? 'bg-white text-[#0B4A6B] ' : 'text-[#64748B] hover:text-[#334155]'
                   }`}
                 >
                   {f.label}
@@ -396,7 +396,7 @@ const TodayTimeline: React.FC<{
               value={branchSlug}
               onChange={(e) => setBranchSlug(e.target.value)}
               aria-label="Filter timeline by branch"
-              className={`text-[11px] font-semibold text-[#334155] bg-[#F1F5F9] rounded-[7px] px-2 py-[4px] ${FOCUS_RING}`}
+              className={`text-[11px] font-semibold text-[#334155] bg-[#F1F5F9] rounded-sm px-2 py-[4px] ${FOCUS_RING}`}
             >
               <option value="all">All branches</option>
               {branchOptions.map(([slug, name]) => (
@@ -451,7 +451,7 @@ const TodayTimeline: React.FC<{
 // ── System health ─────────────────────────────────────────────────
 
 const SystemHealthSkeleton: React.FC = () => (
-  <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-3">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-3">
     <div className={`h-4 w-32 ${SKELETON}`} />
     {Array.from({ length: 3 }).map((_, i) => (
       <div key={i} className="flex flex-col gap-1">
@@ -477,7 +477,7 @@ const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ 
   const rowBorder = healthy ? 'border-[rgba(5,150,105,0.12)]' : 'border-[rgba(220,38,38,0.12)]';
 
   return (
-    <div id="system-health" className={`${cardBg} border ${cardBorder} rounded-xl p-[18px] flex flex-col gap-3`}>
+    <div id="system-health" className={`${cardBg} border ${cardBorder} rounded-sm p-[18px] flex flex-col gap-3`}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {healthy ? (
@@ -520,7 +520,7 @@ const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ 
 // ── Queue · needs a person ────────────────────────────────────────
 
 const QueueSkeleton: React.FC = () => (
-  <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-[13px]">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-[13px]">
     <div className={`h-4 w-40 ${SKELETON}`} />
     {Array.from({ length: 4 }).map((_, i) => (
       <div key={i} className="flex items-center gap-3">
@@ -557,7 +557,7 @@ const QueuePanel: React.FC<{
     .slice(0, 4);
 
   return (
-    <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-[13px]">
+    <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-[13px]">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-bold text-[#111827]">Queue · needs a person</span>
         <button
@@ -574,7 +574,7 @@ const QueuePanel: React.FC<{
         cards.map(({ item, outcome }) => {
           if (outcome?.status === 'success') {
             return (
-              <div key={item.key} className="flex items-stretch gap-3 queue-complete-flash rounded-lg -mx-1 px-1">
+              <div key={item.key} className="flex items-stretch gap-3 queue-complete-flash rounded-sm -mx-1 px-1">
                 <span className="w-1 rounded-[99px] flex-shrink-0 bg-[#10B981]" />
                 <CheckCircle2 size={14} className="queue-check-pop flex-shrink-0 text-[#059669] mt-[1px]" />
                 <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
@@ -632,7 +632,7 @@ const QueuePanel: React.FC<{
 // ── {7|30}-day totals ─────────────────────────────────────────────
 
 const TotalsSkeleton: React.FC = () => (
-  <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-3">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-3">
     <div className={`h-4 w-28 ${SKELETON}`} />
     {Array.from({ length: 4 }).map((_, i) => (
       <div key={i} className="flex items-center gap-2">
@@ -690,7 +690,7 @@ const TotalsPanel: React.FC<{ totals: WindowTotals; window: TimeWindow; isLoadin
   ];
 
   return (
-    <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-3">
+    <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-3">
       <span className="text-[13px] font-bold text-[#111827]">{timeWindow === '7d' ? '7-day totals' : '30-day totals'}</span>
       {rows.map((row) => (
         <div key={row.key} className="flex items-baseline gap-2">

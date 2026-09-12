@@ -70,7 +70,7 @@ const fmtPtsDelta = (v: number | null): { text: string; positive: boolean } | nu
 
 // ── small building blocks ────────────────────────────────────────
 const SkeletonBlock: React.FC<{ className?: string }> = ({ className }) => (
-  <div className={`animate-pulse rounded-[10px] bg-[#E5E7EB]/60 ${className ?? ''}`} />
+  <div className={`animate-pulse rounded-sm bg-[#E5E7EB]/60 ${className ?? ''}`} />
 );
 
 const MetricCell: React.FC<{ value: string; label: string; delta?: { text: string; positive: boolean } | null }> = ({
@@ -107,14 +107,14 @@ const PipelineList: React.FC<{ systems: SystemRow[] }> = ({ systems }) => (
 );
 
 const ConnectSpokeCard: React.FC<{ onConnectSpoke: () => void }> = ({ onConnectSpoke }) => (
-  <div className="flex flex-col items-center justify-center gap-3 rounded-[10px] border border-[#E5E7EB] bg-white px-6 py-14 text-center">
+  <div className="flex flex-col items-center justify-center gap-3 rounded-sm border border-[#E5E7EB] bg-white px-6 py-14 text-center">
     <Database size={28} className="text-[#CBD5E1]" />
     <p className="text-[14px] font-bold text-[#475569]">No branches connected yet</p>
     <p className="text-[12px] text-[#94A3B8]">Connect a spoke to see profiles, orders and revenue here.</p>
     <button
       type="button"
       onClick={onConnectSpoke}
-      className="mt-1 rounded-lg bg-[#0B4A6B] px-4 py-2 text-[12px] font-bold text-white transition-colors duration-150 hover:bg-[#093B57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+      className="mt-1 rounded-sm bg-[#0B4A6B] px-4 py-2 text-[12px] font-bold text-white transition-colors duration-150 hover:bg-[#093B57] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
     >
       Connect your first spoke
     </button>
@@ -140,17 +140,17 @@ const BranchCard: React.FC<{
           onSelect(card.slug);
         }
       }}
-      className="flex cursor-pointer flex-col overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-white transition-colors duration-150 hover:border-[#CBD5E1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+      className="flex cursor-pointer flex-col overflow-hidden rounded-sm border border-[#E5E7EB] bg-white transition-colors duration-150 hover:border-[#CBD5E1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
     >
       <div className="h-[3px] w-full flex-shrink-0" style={{ backgroundColor: card.color }} />
       <div className="flex flex-1 flex-col p-[18px]">
         {/* identity row */}
         <div className="flex items-center gap-3">
           {card.logoUrl ? (
-            <img src={card.logoUrl} alt="" className="h-[34px] w-[34px] flex-shrink-0 rounded-lg object-cover" />
+            <img src={card.logoUrl} alt="" className="h-[34px] w-[34px] flex-shrink-0 rounded-sm object-cover" />
           ) : (
             <span
-              className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-lg text-[14px] font-bold text-white"
+              className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-sm text-[14px] font-bold text-white"
               style={{ backgroundColor: card.color }}
             >
               {card.name.charAt(0).toUpperCase()}
@@ -215,7 +215,7 @@ const BranchCard: React.FC<{
                 e.stopPropagation();
                 if (card.nextAction?.view) onViewChange?.(card.nextAction.view);
               }}
-              className="flex-shrink-0 rounded-[7px] bg-[#111827] px-3 py-[7px] text-[11px] font-bold text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+              className="flex-shrink-0 rounded-sm bg-[#111827] px-3 py-[7px] text-[11px] font-bold text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
             >
               {card.nextAction.label}
             </button>
@@ -259,7 +259,7 @@ const SummaryCard: React.FC<{ totals: WindowTotals; window: TimeWindow; systems:
   ];
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-white p-[18px]">
+    <div className="flex flex-col overflow-hidden rounded-sm border border-[#E5E7EB] bg-white p-[18px]">
       <h3 className="text-[15px] font-bold tracking-[-0.01em] text-[#111827]">All branches</h3>
       <div className="mt-[14px] grid grid-cols-2 gap-x-[10px] gap-y-3">
         {metrics.map((m) => (
@@ -306,7 +306,7 @@ const BranchBoard: React.FC<BranchBoardProps> = ({
   return (
     <div className="flex flex-col gap-[18px]">
       {queue.length > 0 && (
-        <div className="flex flex-wrap items-center gap-[14px] rounded-[10px] border border-[#FED7AA] bg-[#FFF7ED] px-[18px] py-[14px]">
+        <div className="flex flex-wrap items-center gap-[14px] rounded-sm border border-[#FED7AA] bg-[#FFF7ED] px-[18px] py-[14px]">
           <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#EA580C]" />
           <span className="flex-shrink-0 text-[14px] font-bold text-[#7C2D12]">
             {queue.length} items need a person today
@@ -315,7 +315,7 @@ const BranchBoard: React.FC<BranchBoardProps> = ({
           <button
             type="button"
             onClick={onWorkTheList}
-            className="flex-shrink-0 rounded-[7px] bg-[#EA580C] px-[14px] py-2 text-[12px] font-bold text-white transition-colors duration-150 hover:bg-[#C2410C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+            className="flex-shrink-0 rounded-sm bg-[#EA580C] px-[14px] py-2 text-[12px] font-bold text-white transition-colors duration-150 hover:bg-[#C2410C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
           >
             Work the list
           </button>

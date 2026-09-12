@@ -171,7 +171,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext, onOpenArti
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex items-center space-x-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-              activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'
+              activeTab === tab.id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
             <tab.icon size={14} />
@@ -182,7 +182,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext, onOpenArti
 
       {activeTab === 'sim' && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-in fade-in duration-300">
-           <div className="bg-slate-900 p-10 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col min-h-[700px]">
+           <div className="bg-slate-900 p-10 border border-slate-800 relative overflow-hidden flex flex-col min-h-[700px]">
               <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
                  <Network size={120} className="text-emerald-400" />
               </div>
@@ -287,7 +287,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext, onOpenArti
               </div>
            </div>
            <div className="space-y-8">
-              <div className="bg-indigo-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+              <div className="bg-indigo-900 p-8 text-white border border-indigo-800 relative overflow-hidden">
                  <div className="absolute top-0 right-0 p-4 opacity-10"><UserMinus size={80} /></div>
                  <h4 className="text-xs font-black uppercase tracking-widest text-indigo-300 mb-6">Zombie Prevention Protocol</h4>
                  <div className="space-y-6 relative z-10">
@@ -314,7 +314,7 @@ const DevTools: React.FC<DevToolsProps> = ({ profiles, branchContext, onOpenArti
       {activeTab === 'hygiene' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-300">
            <div className="lg:col-span-2 space-y-8">
-              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+              <div className="bg-white p-10 border border-slate-200">
                  <div className="flex justify-between items-center mb-10">
                     <div>
                         <h3 className="text-2xl font-black text-slate-800 flex items-center uppercase tracking-tight">
@@ -372,7 +372,7 @@ AND event_type IN ('open', 'click');`}
               </div>
            </div>
            <div className="space-y-8">
-              <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+              <div className="bg-slate-900 p-8 text-white border border-slate-800 relative overflow-hidden">
                  <div className="absolute top-0 right-0 p-4 opacity-10"><Recycle size={80} /></div>
                  <h4 className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-6">Storage Protocol</h4>
                  <div className="space-y-6 relative z-10">
@@ -399,7 +399,7 @@ AND event_type IN ('open', 'click');`}
       {activeTab === 'worker' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-300">
            <div className="lg:col-span-2 space-y-8">
-              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+              <div className="bg-white p-10 border border-slate-200">
                  <div className="flex justify-between items-center mb-10">
                     <div>
                         <div className="flex items-center space-x-2">
@@ -477,7 +477,7 @@ AND event_type IN ('open', 'click');`}
               </div>
            </div>
            <div className="space-y-8">
-              <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+              <div className="bg-slate-900 p-8 text-white border border-slate-800 relative overflow-hidden">
                  <div className="absolute top-0 right-0 p-4 opacity-10"><Layers size={80} /></div>
                  <h4 className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-6">API Guard Protocol</h4>
                  <div className="space-y-6 relative z-10">
@@ -503,7 +503,7 @@ AND event_type IN ('open', 'click');`}
 
       {activeTab === 'dlq' && (
         <div className="space-y-8 animate-in fade-in duration-300">
-           <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+           <div className="bg-white p-10 border border-slate-200">
               <div className="flex justify-between items-center mb-10">
                  <div>
                     <div className="flex items-center space-x-2">
@@ -550,7 +550,7 @@ AND event_type IN ('open', 'click');`}
 
       {activeTab === 'sql' && (
         <div className="space-y-8 animate-in fade-in duration-300">
-           <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+           <div className="bg-white p-8 border border-slate-200">
               <div className="flex justify-between items-center mb-6">
                  <div className="flex items-center space-x-2">
                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Active Schema</h3>
@@ -569,7 +569,7 @@ AND event_type IN ('open', 'click');`}
 
       {activeTab === 'n8n' && (
         <div className="space-y-12 animate-in fade-in duration-300 pb-20">
-           <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+           <div className="bg-white p-10 border border-slate-200">
               <div className="flex justify-between items-center mb-10 pb-6 border-b border-slate-100">
                  <div>
                     <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center">

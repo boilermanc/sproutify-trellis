@@ -314,7 +314,7 @@ export default function MarketingBrands({
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-600/20 transition-all"
+          className="flex min-h-11 items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition"
         >
           <Plus size={16} />
           New Brand
@@ -330,7 +330,7 @@ export default function MarketingBrands({
 
       {/* ---- Empty state ---- */}
       {!isLoading && filteredBrands.length === 0 && (
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-16 text-center">
+        <div className="bg-white border border-slate-200 p-16 text-center">
           <div className="w-20 h-20 bg-emerald-50 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6">
             <Sparkles size={36} className="text-emerald-500" />
           </div>
@@ -356,7 +356,7 @@ export default function MarketingBrands({
           {filteredBrands.map((brand) => (
             <div
               key={brand.id}
-              className="bg-white rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-7 flex flex-col"
+              className="bg-white border border-slate-200 hover:border-emerald-300 transition-colors p-7 flex flex-col"
             >
               {/* Card header */}
               <div className="flex items-start justify-between mb-4">

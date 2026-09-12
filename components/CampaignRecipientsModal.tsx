@@ -77,16 +77,16 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignId, campaignS
       <div className="fixed inset-0 z-[110] bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
         <div
-          className="bg-white w-full max-w-2xl max-h-[88vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-white/20"
+          className="bg-white w-full max-w-2xl max-h-[88vh] shadow-xl overflow-hidden flex flex-col border border-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 bg-slate-900 text-emerald-400 flex items-center justify-center shrink-0 border border-slate-800">
                 <Users size={18} />
               </div>
               <div className="min-w-0">
-                <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight truncate">Recipients</h2>
+                <h2 className="text-sm font-bold text-slate-900 truncate">Recipients</h2>
                 <p className="text-xs text-slate-400 truncate" title={campaignSubject}>{campaignSubject}</p>
               </div>
             </div>
@@ -104,7 +104,7 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignId, campaignS
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by email..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                className="w-full min-h-11 border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-xs font-medium text-slate-700 placeholder:text-slate-400 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
               />
             </label>
             <div className="flex flex-wrap gap-2">
@@ -141,7 +141,7 @@ export const CampaignRecipientsModal: React.FC<Props> = ({ campaignId, campaignS
             ) : (
               <div className="space-y-2">
                 {filtered.map((r) => (
-                  <div key={r.email} className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                  <div key={r.email} className="bg-slate-50 px-4 py-3 border border-slate-200">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-slate-700 truncate">{r.email}</span>
                       <span className="text-[10px] text-slate-400 shrink-0">{fmtWhen(r.lastEventAt)}</span>

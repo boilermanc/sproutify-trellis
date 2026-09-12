@@ -2938,7 +2938,7 @@ Return ONLY the post content, no explanations or labels.`,
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-12 pb-20">
       <div className="lg:col-span-3 space-y-12">
-        <div className={`rounded-2xl border px-5 py-4 flex flex-wrap items-center justify-between gap-4 ${
+        <div className={`border px-5 py-4 flex flex-wrap items-center justify-between gap-4 ${
           draftSaveError ? 'border-rose-200 bg-rose-50' : 'border-emerald-100 bg-emerald-50/70'
         }`}>
           <div>
@@ -2961,7 +2961,7 @@ Return ONLY the post content, no explanations or labels.`,
             type="button"
             onClick={() => handleSaveDraft()}
             disabled={!isDraftHydrated || isSavingDraft || isLaunching}
-            className="inline-flex items-center gap-2 rounded-xl bg-white border border-emerald-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-emerald-700 shadow-sm hover:bg-emerald-100 transition disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 bg-white border border-emerald-200 px-4 py-2.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition disabled:opacity-50"
           >
             {isSavingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
             Save Draft
@@ -2970,8 +2970,8 @@ Return ONLY the post content, no explanations or labels.`,
 
         {/* Step Progress */}
         <div className="flex justify-between items-start relative px-4">
-          <div className="absolute top-6 left-10 right-10 h-1 bg-slate-100 -z-10 rounded-full">
-            <div className="h-full bg-emerald-500 transition-all duration-700 rounded-full" style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }} />
+          <div className="absolute top-6 left-10 right-10 h-px bg-slate-200 -z-10">
+            <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }} />
           </div>
           {STEPS.map((step, idx) => {
             const isActive = idx === currentStep;
@@ -2984,8 +2984,8 @@ Return ONLY the post content, no explanations or labels.`,
             );
             return (
               <div key={step.id} className={`flex flex-col items-center group ${canNavigate ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`} onClick={() => canNavigate && setCurrentStep(idx)}>
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 border-4 shadow-xl ${
-                  isActive ? 'bg-slate-900 text-white border-emerald-500 scale-110' :
+                <div className={`w-12 h-12 flex items-center justify-center transition-all duration-300 border ${
+                  isActive ? 'bg-slate-900 text-white border-emerald-500' :
                   isCompleted ? 'bg-emerald-600 text-white border-white' :
                   'bg-white text-slate-300 border-slate-100'
                 }`}>
@@ -3009,7 +3009,7 @@ Return ONLY the post content, no explanations or labels.`,
 
         {/* Navigation */}
         <div className="flex justify-between items-center pt-10 border-t border-slate-200">
-          <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={!isDraftHydrated || currentStep === 0 || isLaunching} className="px-8 py-4 flex items-center space-x-3 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-slate-800 transition disabled:opacity-0 group">
+          <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={!isDraftHydrated || currentStep === 0 || isLaunching} className="min-h-11 px-6 py-3 flex items-center space-x-3 text-slate-500 font-bold text-xs hover:text-slate-800 transition disabled:opacity-0 group">
             <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
             <span>Previous Step</span>
           </button>
@@ -3018,7 +3018,7 @@ Return ONLY the post content, no explanations or labels.`,
             <button
               onClick={handleLaunch}
               disabled={!isDraftHydrated || isSavingDraft || isLaunching || audienceSize === 0 || !campaignName || !emailSubject || !consentConfirmed || !emailCcIsValid}
-              className="px-12 py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-slate-900/40 hover:bg-emerald-600 transition disabled:opacity-50 flex items-center space-x-4"
+              className="min-h-11 px-8 py-3 bg-slate-900 text-white font-bold text-base hover:bg-emerald-600 transition disabled:opacity-50 flex items-center space-x-3"
             >
               <Rocket size={24} className="text-emerald-400" />
               <span>Launch Across {enabledChannelCount} Channel{enabledChannelCount !== 1 ? 's' : ''}</span>
@@ -3032,7 +3032,7 @@ Return ONLY the post content, no explanations or labels.`,
                 (currentStep === 1 && (!emailSubject || emailComposeIncomplete || !emailCcIsValid)) ||
                 (currentStep === 2 && triggerType === 'scheduled' && !scheduledDate)
               }
-              className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group"
+              className="min-h-11 px-6 py-3 bg-emerald-600 text-white font-bold text-xs flex items-center space-x-3 hover:bg-emerald-700 transition disabled:opacity-50 group"
             >
               <span>Continue Strategy</span>
               <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
@@ -3044,10 +3044,10 @@ Return ONLY the post content, no explanations or labels.`,
       {/* Sidebar */}
       <div className="lg:col-span-1 space-y-8">
         {/* Strategic Guidance */}
-        <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col min-h-[400px]">
+        <div className="bg-white p-6 border border-slate-200 flex flex-col min-h-[400px]">
           <div className="flex items-center space-x-3 mb-10 border-b border-slate-100 pb-10">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-sm border border-indigo-100"><Info size={20} /></div>
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Sage Guidance</h3>
+            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100"><Info size={20} /></div>
+            <h3 className="text-sm font-bold text-slate-900">Sage guidance</h3>
           </div>
           <div className="flex-1 space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="space-y-4">

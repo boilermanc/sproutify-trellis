@@ -148,13 +148,13 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
   };
 
   return (
-    <section className="rounded-[2rem] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-amber-50 p-6 space-y-5">
+    <section className="border border-slate-200 bg-white p-6 space-y-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-violet-600 text-white flex items-center justify-center shadow-lg"><BarChart3 size={23} /></div>
+          <div className="w-11 h-11 bg-violet-600 text-white flex items-center justify-center border border-violet-700"><BarChart3 size={23} /></div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">PostHog Product Analytics</h3>
+              <h3 className="text-base font-bold text-slate-900">PostHog product analytics</h3>
               <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-violet-700">Federated</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">Raw events stay in PostHog. Trellis caches aggregates and accepts only approved milestones.</p>
@@ -162,7 +162,7 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
         </div>
         <button
           onClick={() => { resetForm(); setShowForm(true); }}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-black text-white hover:bg-violet-700"
+          className="inline-flex min-h-11 items-center justify-center gap-2 bg-violet-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-700"
         >
           <Plus size={15} /> Connect branch
         </button>
@@ -185,7 +185,7 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
       ) : (
         <div className="space-y-3">
           {connections.map(connection => (
-            <div key={connection.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div key={connection.id} className="border border-slate-200 bg-white p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -215,7 +215,7 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] bg-white p-7 shadow-2xl">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-slate-200 bg-white p-7 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
               <div><h3 className="text-lg font-black text-slate-900">{editingId ? 'Edit PostHog connection' : 'Connect PostHog project'}</h3><p className="text-xs text-slate-400">One PostHog project maps to one Trellis branch.</p></div>
               <button onClick={resetForm} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
@@ -268,7 +268,7 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
         const header = `Authorization: Bearer ${webhookSetup.secret}`;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-            <div className="w-full max-w-2xl rounded-[2rem] bg-white p-7 shadow-2xl">
+            <div className="w-full max-w-2xl border border-slate-200 bg-white p-7 shadow-xl">
               <div className="flex items-start justify-between gap-4"><div><h3 className="text-lg font-black text-slate-900">PostHog webhook setup</h3><p className="mt-1 text-xs text-rose-600 font-bold">This secret is shown once. Copy it before closing.</p></div><button onClick={() => setWebhookSetup(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button></div>
               {[['Webhook URL', webhookUrl], ['Authorization header', header]].map(([label, value]) => (
                 <div key={label} className="mt-4"><p className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p><div className="flex items-center gap-2 rounded-xl bg-slate-950 p-3"><code className="min-w-0 flex-1 break-all text-[11px] text-emerald-300">{value}</code><button onClick={() => copy(label, value)} className="shrink-0 rounded-lg bg-white/10 p-2 text-white hover:bg-white/20">{copied === label ? <CheckCircle2 size={14} /> : <Copy size={14} />}</button></div></div>

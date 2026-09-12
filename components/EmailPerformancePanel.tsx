@@ -90,14 +90,14 @@ export const EmailPerformancePanel: React.FC<EmailPerformancePanelProps> = ({ br
   }, [page, pageCount]);
 
   return (
-    <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8">
+    <div className="bg-white border border-slate-200 p-6 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <Mail size={22} className="text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Email Performance</h2>
+            <h2 className="text-lg font-bold text-slate-900">Email performance</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live from Resend delivery events</p>
           </div>
         </div>

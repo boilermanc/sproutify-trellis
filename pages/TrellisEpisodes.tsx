@@ -26,7 +26,7 @@ interface Props {
   geminiApiKey?: string;
 }
 
-const card = 'bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm';
+const card = 'bg-white p-5 border border-slate-200';
 const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
 const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
 const phaseHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';
@@ -449,7 +449,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
       {/* Right: pipeline */}
       <div className="lg:col-span-2">
         {!selected ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center bg-white rounded-[2rem] border border-slate-100">
+          <div className="flex flex-col items-center justify-center py-24 text-center bg-white border border-slate-200">
             <Clapperboard size={44} className="text-slate-300 mb-3" />
             <p className="text-sm font-bold text-slate-600">Select or create an episode</p>
             <p className="text-xs text-slate-400 mt-1 max-w-sm">An episode runs the full pipeline: music → master → artwork → video → metadata → publish. Music is the first asset; everything else attaches here.</p>

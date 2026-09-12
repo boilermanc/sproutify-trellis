@@ -393,11 +393,11 @@ Keep it under 300 words.`;
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <Award className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Post Performance</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Post performance</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               Published Instagram posts · which template/angle actually performs
             </p>
@@ -415,16 +415,16 @@ Keep it under 300 words.`;
       </div>
 
       {loading ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 flex items-center justify-center text-slate-400 gap-2">
+        <div className="bg-white border border-slate-200 p-12 flex items-center justify-center text-slate-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading published posts…
         </div>
       ) : loadError ? (
-        <div className="bg-white rounded-2xl border border-rose-200 shadow-sm p-8 text-center space-y-2">
+        <div className="bg-white border border-rose-200 p-8 text-center space-y-2">
           <p className="text-sm font-bold text-rose-600">Failed to load post performance.</p>
           <p className="text-xs text-slate-400">{loadError}</p>
         </div>
       ) : posts.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center space-y-2">
+        <div className="bg-white border border-slate-200 p-12 text-center space-y-2">
           <Award className="w-8 h-8 text-slate-200 mx-auto" />
           <p className="text-sm font-bold text-slate-500">No organic posts have published yet.</p>
           <p className="text-xs text-slate-400 max-w-md mx-auto">

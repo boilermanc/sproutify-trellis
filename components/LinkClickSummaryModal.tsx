@@ -81,7 +81,7 @@ export const LinkClickSummaryModal: React.FC<Props> = ({ campaignId, campaignSub
       <div className="fixed inset-0 z-[110] bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
         <div
-          className="bg-white w-full max-w-2xl max-h-[88vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-white/20"
+          className="bg-white w-full max-w-2xl max-h-[88vh] shadow-xl overflow-hidden flex flex-col border border-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

@@ -468,11 +468,11 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <CalendarClock className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Post Scheduler</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Post scheduler</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               Bring your own creative — upload, caption, and queue a week in one go
             </p>

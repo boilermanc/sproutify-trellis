@@ -43,7 +43,7 @@ const HelpCenter: React.FC<HelpCenterProps> = ({ initialArticle }) => {
            <span className="text-slate-300">•</span>
            <span className="flex items-center"><Clock size={14} className="mr-2" /> {article.time} Read</span>
         </div>
-        <h1 className="text-5xl font-black text-slate-800 tracking-tighter uppercase leading-[0.9]">{article.title}</h1>
+        <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">{article.title}</h1>
         <p className="text-xl text-slate-500 font-medium italic leading-relaxed max-w-2xl">{article.desc}</p>
       </div>
 

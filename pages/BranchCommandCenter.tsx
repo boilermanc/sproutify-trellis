@@ -126,8 +126,8 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     generateSnapshot(connection.id, 'on_connect').then(snapshot => {
       saveSnapshot(snapshot);
       console.log('[branchSnapshot] Snapshot saved:', snapshot.branch_name,
-        '| Profiles:', snapshot.total_profiles,
-        '| Revenue: $' + snapshot.total_revenue);
+'| Profiles:', snapshot.total_profiles,
+'| Revenue: $' + snapshot.total_revenue);
     }).catch(err => {
       console.warn('[branchSnapshot] Snapshot generation failed (non-blocking):', err);
     });
@@ -473,7 +473,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
     <div className="space-y-6">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-2xl shadow-lg ${
+        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-sm  ${
           toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
         }`}>
           {toast.message}
@@ -493,14 +493,14 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           <button
             onClick={() => branchStats.refresh()}
             disabled={branchStats.isLoading}
-            className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
           >
             {branchStats.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             Refresh
           </button>
           <button
             onClick={() => setIsCreating(true)}
-            className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold transition-colors flex items-center gap-2"
+            className="px-4 py-2 rounded-sm bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold transition-colors flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Add Branch
@@ -510,7 +510,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
 
       {/* Global KPI Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-sm p-4 border border-slate-200 ">
           <div className="flex items-center gap-2 mb-1">
             <Users className="w-4 h-4 text-emerald-600" />
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Profiles</span>
@@ -518,7 +518,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           <p className="text-2xl font-black text-slate-800">{branchStats.totals.profiles.toLocaleString()}</p>
           <p className="text-xs text-slate-400 mt-0.5">{branchStats.totals.profilesWithOrders.toLocaleString()} with orders</p>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-sm p-4 border border-slate-200 ">
           <div className="flex items-center gap-2 mb-1">
             <DollarSign className="w-4 h-4 text-emerald-600" />
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Revenue</span>
@@ -526,7 +526,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           <p className="text-2xl font-black text-slate-800">{formatCurrency(branchStats.totals.revenue)}</p>
           <p className="text-xs text-slate-400 mt-0.5">AOV: {formatCurrency(branchStats.totals.avgOrderValue)}</p>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-sm p-4 border border-slate-200 ">
           <div className="flex items-center gap-2 mb-1">
             <ShoppingCart className="w-4 h-4 text-blue-600" />
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Orders</span>
@@ -534,7 +534,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           <p className="text-2xl font-black text-slate-800">{branchStats.totals.orders.toLocaleString()}</p>
           <p className="text-xs text-slate-400 mt-0.5">{branchStats.totals.repeatBuyers.toLocaleString()} repeat buyers</p>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-sm p-4 border border-slate-200 ">
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-purple-600" />
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Avg LTV</span>
@@ -542,7 +542,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           <p className="text-2xl font-black text-slate-800">{formatCurrency(branchStats.totals.avgLTV)}</p>
           <p className="text-xs text-slate-400 mt-0.5">{branchStats.totals.vipCount.toLocaleString()} VIP ($50+)</p>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-sm p-4 border border-slate-200 ">
           <div className="flex items-center gap-2 mb-1">
             <Activity className="w-4 h-4 text-amber-600" />
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Connections</span>
@@ -562,13 +562,13 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
 
       {/* Empty State */}
       {mergedBranches.length === 0 && !branchStats.isLoading && !isLoadingBranches && (
-        <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-sm p-12 text-center border border-slate-200 ">
           <Database className="w-16 h-16 text-slate-300 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-800 mb-2">No branches or connections yet</h3>
           <p className="text-slate-500 mb-6">Set up a connection in Settings or create a branch to get started.</p>
           <button
             onClick={() => setIsCreating(true)}
-            className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors inline-flex items-center gap-2"
+            className="px-6 py-3 rounded-sm bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors inline-flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             Create Branch
@@ -590,18 +590,18 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
           const socialAccounts = mb.branchId && branchSocialAccounts?.[mb.branchId] ? branchSocialAccounts[mb.branchId] : [];
 
           return (
-            <div key={cardKey} className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <div key={cardKey} className="bg-white rounded-sm border border-slate-200 ">
               {/* Card Header */}
               <div className="p-5 pb-0">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     {/* Brand color swatch / logo */}
                     <div
-                      className="w-11 h-11 rounded-xl flex items-center justify-center text-white text-lg font-black shadow-sm flex-shrink-0"
+                      className="w-11 h-11 rounded-sm flex items-center justify-center text-white text-lg font-black  flex-shrink-0"
                       style={{ backgroundColor: mb.primaryColor }}
                     >
                       {mb.logoUrl ? (
-                        <img src={mb.logoUrl} alt="" className="w-full h-full object-contain rounded-xl" />
+                        <img src={mb.logoUrl} alt="" className="w-full h-full object-contain rounded-sm" />
                       ) : (
                         mb.name.charAt(0)
                       )}
@@ -664,7 +664,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                         table.table_type === 'customers' ? 'bg-emerald-100 text-emerald-700' :
                         table.table_type === 'orders' ? 'bg-blue-100 text-blue-700' :
                         table.table_type === 'order_items' ? 'bg-purple-100 text-purple-700' :
-                        'bg-amber-100 text-amber-700'
+'bg-amber-100 text-amber-700'
                       }`}>
                         {table.table_type === 'customers' && <Users className="w-2.5 h-2.5" />}
                         {table.table_type === 'orders' && <Package className="w-2.5 h-2.5" />}
@@ -688,15 +688,15 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               {stats && stats.profileCount > 0 && (
                 <div className="px-5 pt-3">
                   <div className="grid grid-cols-3 gap-3 mb-3">
-                    <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+                    <div className="bg-slate-50 rounded-sm p-2.5 text-center">
                       <p className="text-lg font-black text-slate-800">{stats.profileCount.toLocaleString()}</p>
                       <p className="text-[9px] font-bold uppercase text-slate-400">Profiles</p>
                     </div>
-                    <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+                    <div className="bg-slate-50 rounded-sm p-2.5 text-center">
                       <p className="text-lg font-black text-emerald-700">{formatCurrency(stats.totalRevenue)}</p>
                       <p className="text-[9px] font-bold uppercase text-slate-400">Revenue</p>
                     </div>
-                    <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+                    <div className="bg-slate-50 rounded-sm p-2.5 text-center">
                       <p className="text-lg font-black text-blue-700">{stats.totalOrders.toLocaleString()}</p>
                       <p className="text-[9px] font-bold uppercase text-slate-400">Orders</p>
                     </div>
@@ -746,9 +746,9 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               {mb.linkStatus === 'branch-only' && mb.branch && (
                 <div className="px-5 pt-3">
                   <div className="flex gap-1.5 mb-2">
-                    <div className="flex-1 h-6 rounded-lg" style={{ backgroundColor: mb.primaryColor }} />
-                    <div className="flex-1 h-6 rounded-lg" style={{ backgroundColor: mb.secondaryColor }} />
-                    <div className="flex-1 h-6 rounded-lg" style={{ backgroundColor: mb.accentColor }} />
+                    <div className="flex-1 h-6 rounded-sm" style={{ backgroundColor: mb.primaryColor }} />
+                    <div className="flex-1 h-6 rounded-sm" style={{ backgroundColor: mb.secondaryColor }} />
+                    <div className="flex-1 h-6 rounded-sm" style={{ backgroundColor: mb.accentColor }} />
                   </div>
                   {mb.fontFamily && <p className="text-[10px] text-slate-400"><span className="font-bold">Font:</span> {mb.fontFamily}</p>}
                   {mb.brandIdentity && (
@@ -760,7 +760,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               {/* Link warnings */}
               {mb.linkStatus === 'connection-only' && mb.connection?.branch_skipped && (
                 <div className="px-5 pt-3">
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2">
+                  <div className="p-2.5 rounded-sm bg-slate-50 border border-slate-200 flex items-center gap-2">
                     <Pause className="w-4 h-4 text-slate-400 flex-shrink-0" />
                     <span className="text-[10px] font-bold text-slate-500">Branch linking deferred — link when ready</span>
                   </div>
@@ -768,7 +768,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               )}
               {mb.linkStatus === 'connection-only' && !mb.connection?.branch_skipped && (
                 <div className="px-5 pt-3">
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2">
+                  <div className="p-2.5 rounded-sm bg-amber-50 border border-amber-200 flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                     <div>
                       <span className="text-[10px] font-bold text-amber-700">Legacy connection — no branch linked</span>
@@ -781,7 +781,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               )}
               {mb.linkStatus === 'branch-only' && (
                 <div className="px-5 pt-3">
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2">
+                  <div className="p-2.5 rounded-sm bg-slate-50 border border-slate-200 flex items-start gap-2">
                     <Database className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
                     <div className="min-w-0">
                       <span className="text-[10px] font-bold text-slate-500">No data connection</span>
@@ -812,7 +812,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               {/* Reconnect error */}
               {reconnectError && (
                 <div className="px-5 pt-2">
-                  <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2">
+                  <div className="p-2.5 rounded-sm bg-red-50 border border-red-200 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                     <span className="text-[10px] font-bold text-red-700">{reconnectError}</span>
                   </div>
@@ -826,7 +826,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   {mb.branchId && (
                     <button
                       onClick={() => openEditDrawer(mb)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors flex items-center gap-1.5"
                     >
                       <Palette className="w-3.5 h-3.5" />
                       Edit Brand
@@ -837,12 +837,12 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   {conn && isActive && (
                     <>
                       <button onClick={() => handleRetest(conn)} disabled={testing}
-                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                        className="px-3 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50">
                         {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                         Test
                       </button>
                       <button onClick={() => handleDisconnect(conn.name)}
-                        className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-bold transition-colors flex items-center gap-1.5">
+                        className="px-3 py-1.5 rounded-sm bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-bold transition-colors flex items-center gap-1.5">
                         <Unplug className="w-3.5 h-3.5" />
                         Disconnect
                       </button>
@@ -850,7 +850,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   )}
                   {conn && isError && (
                     <button onClick={() => handleRetest(conn)} disabled={testing}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                      className="px-3 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50">
                       {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                       Retest
                     </button>
@@ -858,12 +858,12 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   {conn && isDisconnected && (
                     <>
                       <button onClick={() => handleReconnect(conn)} disabled={testing}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                        className="px-3 py-1.5 rounded-sm bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50">
                         {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlugZap className="w-3.5 h-3.5" />}
                         Reconnect
                       </button>
                       <button onClick={() => handleForgetConnection(conn.name)}
-                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold transition-colors" title="Forget">
+                        className="px-3 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold transition-colors" title="Forget">
                         <Settings2 className="w-3.5 h-3.5" />
                       </button>
                     </>
@@ -872,7 +872,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   {/* Link/unlink */}
                   {mb.linkStatus === 'linked' && (
                     <button onClick={() => handleUnlink(mb.branchId!)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-[11px] font-bold transition-colors flex items-center gap-1.5">
+                      className="px-3 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-500 text-[11px] font-bold transition-colors flex items-center gap-1.5">
                       <Unlink className="w-3.5 h-3.5" />
                       Unlink
                     </button>
@@ -880,13 +880,13 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   {mb.linkStatus === 'connection-only' && (
                     <div className="relative">
                       <button onClick={() => setLinkingCardId(linkingCardId === cardKey ? null : cardKey)}
-                        className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition-colors flex items-center gap-1.5">
+                        className="px-3 py-1.5 rounded-sm bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition-colors flex items-center gap-1.5">
                         <Link2 className="w-3.5 h-3.5" />
                         Link to Branch
                         <ChevronDown className="w-3 h-3" />
                       </button>
                       {linkingCardId === cardKey && (
-                        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 w-56 py-1 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-sm  z-20 w-56 py-1 max-h-48 overflow-y-auto">
                           {unlinkedBranches.length === 0 ? (
                             <p className="px-3 py-2 text-xs text-slate-400">No unlinked branches</p>
                           ) : (
@@ -912,13 +912,13 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   {mb.linkStatus === 'branch-only' && (
                     <div className="relative">
                       <button onClick={() => setLinkingCardId(linkingCardId === cardKey ? null : cardKey)}
-                        className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition-colors flex items-center gap-1.5">
+                        className="px-3 py-1.5 rounded-sm bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition-colors flex items-center gap-1.5">
                         <Link2 className="w-3.5 h-3.5" />
                         Link Connection
                         <ChevronDown className="w-3 h-3" />
                       </button>
                       {linkingCardId === cardKey && (
-                        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 w-56 py-1 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-sm  z-20 w-56 py-1 max-h-48 overflow-y-auto">
                           {unlinkedConnections.length === 0 ? (
                             <p className="px-3 py-2 text-xs text-slate-400">No unlinked connections</p>
                           ) : (
@@ -954,15 +954,15 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       {editingBranch && (
         <div className="fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/30" onClick={() => setEditingBranch(null)} />
-          <div className="absolute right-0 top-0 bottom-0 w-full max-w-xl bg-white shadow-2xl overflow-y-auto">
+          <div className="absolute right-0 top-0 bottom-0 w-full max-w-xl bg-white  overflow-y-auto">
             <div className="p-6 space-y-6">
               {/* Drawer Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <button onClick={() => setEditingBranch(null)} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                  <button onClick={() => setEditingBranch(null)} className="p-2 rounded-sm bg-slate-100 hover:bg-slate-200 transition-colors">
                     <ArrowLeft className="w-5 h-5 text-slate-600" />
                   </button>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black shadow-sm"
+                  <div className="w-10 h-10 rounded-sm flex items-center justify-center text-white font-black "
                     style={{ backgroundColor: editedBranch.primary_color || '#10b981' }}>
                     {editedBranch.name?.charAt(0) || 'B'}
                   </div>
@@ -977,27 +977,27 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               </div>
 
               {/* Basic Info */}
-              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+              <div className="bg-slate-50 rounded-sm p-5 border border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2">
                   <Building2 className="w-4 h-4" /> Basic Information
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Name</label>
                     <input type="text" value={editedBranch.name || ''} onChange={(e) => setEditedBranch({ ...editedBranch, name: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-emerald-500" />
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Slug <span className="text-slate-300 normal-case tracking-normal">· permanent</span></label>
                     <input type="text" value={editedBranch.slug || ''} readOnly disabled
                       title="The slug is a permanent identifier. Templates, brands and campaigns are keyed to it — changing it would orphan them."
-                      className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono cursor-not-allowed focus:outline-none" />
+                      className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-sm text-slate-500 font-mono cursor-not-allowed focus:outline-none" />
                     <p className="text-[10px] text-slate-400 mt-1">Permanent identifier — templates, brands &amp; campaigns are keyed to it and can't be re-pointed by editing this.</p>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Type</label>
                     <select value={editedBranch.type || 'external'} onChange={(e) => setEditedBranch({ ...editedBranch, type: e.target.value as 'internal' | 'external' })}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-emerald-500">
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold focus:outline-none focus:border-emerald-500">
                       <option value="internal">Internal</option>
                       <option value="external">External</option>
                     </select>
@@ -1005,30 +1005,30 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Tagline</label>
                     <input type="text" value={editedBranch.tagline || ''} onChange={(e) => setEditedBranch({ ...editedBranch, tagline: e.target.value })}
-                      placeholder="Your catchy tagline..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+                      placeholder="Your catchy tagline..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Logo URL</label>
                     <input type="url" value={editedBranch.logo_url || ''} onChange={(e) => setEditedBranch({ ...editedBranch, logo_url: e.target.value })}
-                      placeholder="https://..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+                      placeholder="https://..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Website URL</label>
                     <input type="url" value={editedBranch.website_url || ''} onChange={(e) => setEditedBranch({ ...editedBranch, website_url: e.target.value })}
-                      placeholder="https://..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+                      placeholder="https://..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Description</label>
                     <textarea value={editedBranch.description || ''} onChange={(e) => setEditedBranch({ ...editedBranch, description: e.target.value })}
                       placeholder="Describe this branch..." rows={3}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 resize-none" />
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 resize-none" />
                   </div>
                 </div>
               </div>
 
               {/* Colors */}
-              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+              <div className="bg-slate-50 rounded-sm p-5 border border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2">
                   <Palette className="w-4 h-4" /> Brand Colors
                 </h3>
                 <div className="grid grid-cols-3 gap-4 mb-3">
@@ -1038,38 +1038,38 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                       <div className="flex items-center gap-2">
                         <input type="color" value={(editedBranch as any)[field] || '#10b981'}
                           onChange={(e) => setEditedBranch({ ...editedBranch, [field]: e.target.value })}
-                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200" />
+                          className="w-10 h-10 rounded-sm cursor-pointer border border-slate-200" />
                         <input type="text" value={(editedBranch as any)[field] || ''}
                           onChange={(e) => setEditedBranch({ ...editedBranch, [field]: e.target.value })}
-                          className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500" />
+                          className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500" />
                       </div>
                     </div>
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <div className="flex-1 h-8 rounded-lg shadow-inner" style={{ backgroundColor: editedBranch.primary_color || '#10b981' }} />
-                  <div className="flex-1 h-8 rounded-lg shadow-inner" style={{ backgroundColor: editedBranch.secondary_color || '#1e293b' }} />
-                  <div className="flex-1 h-8 rounded-lg shadow-inner" style={{ backgroundColor: editedBranch.accent_color || '#f59e0b' }} />
+                  <div className="flex-1 h-8 rounded-sm " style={{ backgroundColor: editedBranch.primary_color || '#10b981' }} />
+                  <div className="flex-1 h-8 rounded-sm " style={{ backgroundColor: editedBranch.secondary_color || '#1e293b' }} />
+                  <div className="flex-1 h-8 rounded-sm " style={{ backgroundColor: editedBranch.accent_color || '#f59e0b' }} />
                 </div>
               </div>
 
               {/* Typography & Voice */}
-              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+              <div className="bg-slate-50 rounded-sm p-5 border border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2">
                   <Type className="w-4 h-4" /> Typography & Voice
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Font Family</label>
                     <select value={editedBranch.font_family || 'Inter'} onChange={(e) => setEditedBranch({ ...editedBranch, font_family: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-emerald-500">
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold focus:outline-none focus:border-emerald-500">
                       {FONT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Tone</label>
                     <select value={editedBranch.tone || 'friendly'} onChange={(e) => setEditedBranch({ ...editedBranch, tone: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-emerald-500">
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold focus:outline-none focus:border-emerald-500">
                       {TONE_OPTIONS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
                     </select>
                   </div>
@@ -1078,7 +1078,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                     <input type="text" value={(editedBranch.brand_keywords || []).join(', ')}
                       onChange={(e) => setEditedBranch({ ...editedBranch, brand_keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) })}
                       placeholder="innovative, sustainable, premium..."
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
                     <p className="mt-1 text-xs text-slate-400">Comma-separated keywords</p>
                   </div>
                   <div className="col-span-2">
@@ -1086,44 +1086,44 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                     <input type="text" value={editedBranch.default_cta || ''}
                       onChange={(e) => setEditedBranch({ ...editedBranch, default_cta: e.target.value })}
                       placeholder="Rejoice — free to try. Link in bio."
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
                     <p className="mt-1 text-xs text-slate-400">Ends every generated caption for this brand. Instagram captions can't hold links, so this is where "link in bio" goes.</p>
                   </div>
                 </div>
               </div>
 
               {/* Email Settings */}
-              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+              <div className="bg-slate-50 rounded-sm p-5 border border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2">
                   <Mail className="w-4 h-4" /> Email Settings
                 </h3>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Contact Email</label>
                     <input type="email" value={editedBranch.contact_email || ''} onChange={(e) => setEditedBranch({ ...editedBranch, contact_email: e.target.value })}
-                      placeholder="contact@example.com" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+                      placeholder="contact@example.com" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Default From Name</label>
                     <input type="text" value={editedBranch.default_from_name || ''} onChange={(e) => setEditedBranch({ ...editedBranch, default_from_name: e.target.value })}
-                      placeholder="Your Brand Name" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+                      placeholder="Your Brand Name" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Default Reply-To</label>
                     <input type="email" value={editedBranch.default_reply_to || ''} onChange={(e) => setEditedBranch({ ...editedBranch, default_reply_to: e.target.value })}
-                      placeholder="reply@example.com" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+                      placeholder="reply@example.com" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-black text-slate-400 mb-1 uppercase tracking-widest">Resend From Address</label>
                     <input type="text" value={editedBranch.resend_from_address || ''} onChange={(e) => setEditedBranch({ ...editedBranch, resend_from_address: e.target.value })}
-                      placeholder="Brand Name <email@domain.com>" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
+                      placeholder="Brand Name <email@domain.com>" className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 font-mono text-sm focus:outline-none focus:border-emerald-500" />
                   </div>
                 </div>
               </div>
 
               {/* Social Accounts */}
-              <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
+              <div className="bg-slate-50 rounded-sm p-5 border border-slate-200">
+                <h3 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2">
                   <Share2 className="w-4 h-4" /> Social Accounts
                 </h3>
 
@@ -1142,21 +1142,21 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                       const Icon = PLATFORM_ICONS[acc.platform] || Globe;
                       return (
                         <div key={`${acc.platform}-${acc.handle}`} className="flex items-center gap-2">
-                          <div className={`p-2 rounded-lg bg-white border border-slate-200 ${PLATFORM_COLORS[acc.platform] || 'text-slate-500'}`}>
+                          <div className={`p-2 rounded-sm bg-white border border-slate-200 ${PLATFORM_COLORS[acc.platform] || 'text-slate-500'}`}>
                             <Icon className="w-4 h-4" />
                           </div>
                           <input
                             type="text"
                             value={acc.handle}
                             onChange={(e) => handleUpdateSocialHandle(idx, e.target.value)}
-                            className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500"
+                            className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500"
                           />
                           {/* Connection status button */}
                           {acc.is_connected ? (
                             <button
                               onClick={() => handleDisconnectSocialPlatform(acc)}
                               disabled={disconnectingPlatform === (acc.id || acc.platform)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black uppercase tracking-wider hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-black uppercase tracking-wider hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
                               title="Click to disconnect"
                             >
                               {disconnectingPlatform === (acc.id || acc.platform) ? (
@@ -1169,7 +1169,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                           ) : (
                             <button
                               onClick={() => handleConnectPlatform(acc)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors"
                               title="Connect via OAuth"
                             >
                               <Unplug className="w-3 h-3" />
@@ -1197,7 +1197,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   <select
                     value={newSocialPlatform}
                     onChange={(e) => setNewSocialPlatform(e.target.value as SocialPlatform)}
-                    className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500"
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold text-sm focus:outline-none focus:border-emerald-500"
                   >
                     {Object.entries(SOCIAL_PLATFORM_META).map(([key, meta]) => (
                       <option key={key} value={key}>{meta.label}</option>
@@ -1208,13 +1208,13 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                     value={newSocialHandle}
                     onChange={(e) => setNewSocialHandle(e.target.value)}
                     placeholder="@handle"
-                    className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 font-bold text-sm focus:outline-none focus:border-emerald-500"
+                    className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 font-bold text-sm focus:outline-none focus:border-emerald-500"
                     onKeyDown={(e) => { if (e.key === 'Enter') handleAddSocialAccount(); }}
                   />
                   <button
                     onClick={handleAddSocialAccount}
                     disabled={!newSocialHandle.trim()}
-                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm transition-colors disabled:opacity-30 flex items-center gap-1.5"
+                    className="px-4 py-2 rounded-sm bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm transition-colors disabled:opacity-30 flex items-center gap-1.5"
                   >
                     <Plus className="w-4 h-4" />
                     Add
@@ -1229,11 +1229,11 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               {/* Footer Actions */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-200 sticky bottom-0 bg-white pb-6">
                 <button onClick={handleArchiveBranch} disabled={isSaving}
-                  className="px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm font-bold">
+                  className="px-4 py-2 rounded-sm border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm font-bold">
                   <Archive className="w-4 h-4" /> Archive
                 </button>
                 <button onClick={handleSaveEdit} disabled={isSaving}
-                  className="px-6 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2">
+                  className="px-6 py-2 rounded-sm bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2">
                   {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
@@ -1245,8 +1245,8 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
       {/* Create Branch Modal */}
       {isCreating && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-[2rem] p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tight">
+          <div className="bg-white rounded-sm p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto ">
+            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3">
               <Plus className="w-6 h-6 text-emerald-500" />
               Create Branch
             </h2>
@@ -1254,14 +1254,14 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Name <span className="text-red-500">*</span></label>
                 <input type="text" value={newBranch.name || ''} onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })}
-                  placeholder="My Branch" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold" />
+                  placeholder="My Branch" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold" />
               </div>
               <div>
                 <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
                   Type
                   <span className="group relative inline-flex">
                     <Info className="w-3 h-3 text-slate-300 hover:text-emerald-500 cursor-help" />
-                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-xl bg-slate-800 px-3 py-2 text-[11px] font-medium normal-case tracking-normal text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 z-10">
+                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-sm bg-slate-800 px-3 py-2 text-[11px] font-medium normal-case tracking-normal text-white opacity-0  transition-opacity group-hover:opacity-100 z-10">
                       <b>Internal</b> — a Sproutify-owned property you operate directly (e.g. farm.sproutify.app).<br />
                       <b>External</b> — a partner or third-party brand you market on behalf of.<br />
                       This tags the branch across Trellis so you can filter and report on owned vs. partner properties.
@@ -1269,7 +1269,7 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
                   </span>
                 </label>
                 <select value={newBranch.type || 'external'} onChange={(e) => setNewBranch({ ...newBranch, type: e.target.value as 'internal' | 'external' })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold">
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold">
                   <option value="internal">Internal</option>
                   <option value="external">External</option>
                 </select>
@@ -1278,23 +1278,23 @@ export default function BranchCommandCenter({ branchStats, spokeConnections, onS
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Tagline</label>
                 <input type="text" value={newBranch.tagline || ''} onChange={(e) => setNewBranch({ ...newBranch, tagline: e.target.value })}
-                  placeholder="Your catchy tagline..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  placeholder="Your catchy tagline..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Primary Color</label>
                 <div className="flex items-center gap-3">
                   <input type="color" value={newBranch.primary_color || DEFAULT_BRANCH_PRIMARY_COLOR} onChange={(e) => handlePrimaryColorPickerChange(e.target.value)}
-                    className="w-12 h-12 rounded-xl cursor-pointer border border-slate-200" />
+                    className="w-12 h-12 rounded-sm cursor-pointer border border-slate-200" />
                   <input type="text" value={newBranchPrimaryColorInput} onChange={(e) => handlePrimaryColorTextChange(e.target.value)}
                     aria-invalid={!HEX_COLOR_PATTERN.test(newBranchPrimaryColorInput)} maxLength={7} spellCheck={false}
-                    className={`flex-1 px-4 py-3 bg-slate-50 border rounded-xl text-slate-800 font-mono focus:outline-none focus:ring-2 ${HEX_COLOR_PATTERN.test(newBranchPrimaryColorInput) ? 'border-slate-200 focus:ring-emerald-500' : 'border-red-300 focus:ring-red-400'}`} />
+                    className={`flex-1 px-4 py-3 bg-slate-50 border rounded-sm text-slate-800 font-mono focus:outline-none focus:ring-2 ${HEX_COLOR_PATTERN.test(newBranchPrimaryColorInput) ? 'border-slate-200 focus:ring-emerald-500' : 'border-red-300 focus:ring-red-400'}`} />
                 </div>
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 mt-8">
-              <button onClick={() => setIsCreating(false)} className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors font-bold">Cancel</button>
+              <button onClick={() => setIsCreating(false)} className="px-6 py-3 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors font-bold">Cancel</button>
               <button onClick={() => handleCreateBranch()} disabled={isSaving || !newBranch.name?.trim()}
-                className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2">
+                className="px-6 py-3 rounded-sm bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2">
                 {isSaving ? 'Creating...' : 'Create Branch'}
               </button>
             </div>

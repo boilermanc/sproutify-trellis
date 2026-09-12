@@ -41,11 +41,11 @@ export default function SubstackChannelPanel({ addToast }: Props) {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-sky-950 p-6 text-white lg:p-7">
+      <section className="overflow-hidden border border-slate-200 bg-white">
+        <div className="bg-slate-900 p-6 text-white lg:p-7">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div className="flex items-start gap-4">
-              <div className="rounded-2xl bg-sky-400/15 p-3 text-sky-300 ring-1 ring-sky-300/20"><Newspaper size={26} /></div>
+              <div className="bg-sky-400/15 p-3 text-sky-300 border border-sky-300/20"><Newspaper size={26} /></div>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-300">Registered publication channel</p>
@@ -74,11 +74,11 @@ export default function SubstackChannelPanel({ addToast }: Props) {
           <h2 className="mt-1 text-lg font-black text-slate-800">Recent Substack articles</h2>
         </div>
         {loading && articles.length === 0 ? (
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-10 text-center text-sm text-slate-400"><RefreshCw className="mx-auto mb-3 animate-spin" size={22} />Syncing the publication feed…</div>
+          <div className="border border-slate-200 bg-white p-10 text-center text-sm text-slate-400"><RefreshCw className="mx-auto mb-3 animate-spin" size={22} />Syncing the publication feed…</div>
         ) : error ? (
-          <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6"><p className="font-bold text-amber-900">The Substack channel is registered, but the feed could not be refreshed.</p><p className="mt-1 text-sm text-amber-700">{error}</p><p className="mt-3 text-xs text-amber-700">Deploy the <code>substack-feed</code> Edge Function, then refresh. The dashboard and stats links above remain available.</p></div>
+          <div className="border border-amber-200 bg-amber-50 p-6"><p className="font-bold text-amber-900">The Substack channel is registered, but the feed could not be refreshed.</p><p className="mt-1 text-sm text-amber-700">{error}</p><p className="mt-3 text-xs text-amber-700">Deploy the <code>substack-feed</code> Edge Function, then refresh. The dashboard and stats links above remain available.</p></div>
         ) : articles.length === 0 ? (
-          <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-10 text-center"><Newspaper className="mx-auto text-slate-300" size={30} /><p className="mt-3 font-black text-slate-700">No public articles found</p><p className="mt-1 text-sm text-slate-400">Published Substack posts will appear here automatically.</p></div>
+          <div className="border border-dashed border-slate-300 bg-white p-10 text-center"><Newspaper className="mx-auto text-slate-300" size={30} /><p className="mt-3 font-bold text-slate-700">No public articles found</p><p className="mt-1 text-sm text-slate-400">Published Substack posts will appear here automatically.</p></div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">{articles.map(article => <article key={article.id} className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-sky-700">{articleSection(article)}</span>{article.publishedAt && <time className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{new Date(article.publishedAt).toLocaleDateString()}</time>}</div><h3 className="mt-4 text-lg font-black leading-snug text-slate-800">{article.title}</h3>{article.description && <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500">{article.description}</p>}<a href={article.url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-sky-700 hover:text-sky-900">Read on Substack <ExternalLink size={13} /></a></article>)}</div>
         )}

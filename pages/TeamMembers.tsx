@@ -92,10 +92,10 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
   return (
     <div className="space-y-6">
       {/* Header — always visible so Invite is reachable even with no members */}
-      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+      <div className="bg-white p-8 rounded-sm border border-slate-200 ">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-emerald-100 rounded-sm flex items-center justify-center">
               <Users className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
@@ -107,7 +107,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
           </div>
           <button
             onClick={openInvite}
-            className="inline-flex items-center space-x-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-widest transition"
+            className="inline-flex items-center space-x-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm font-black text-xs uppercase tracking-widest transition"
           >
             <UserPlus size={16} />
             <span>Invite User</span>
@@ -122,13 +122,13 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
           <span className="ml-3 text-slate-600 font-medium">Loading team members...</span>
         </div>
       ) : error ? (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+        <div className="bg-red-50 border border-red-200 rounded-sm p-8 text-center">
           <p className="text-red-700 font-bold mb-2">Failed to load team members</p>
           <p className="text-red-600 text-sm">{error}</p>
         </div>
       ) : members.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-[2.5rem] p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-6 bg-slate-100 rounded-2xl flex items-center justify-center">
+        <div className="bg-white border border-slate-200 rounded-sm p-12 text-center">
+          <div className="w-16 h-16 mx-auto mb-6 bg-slate-100 rounded-sm flex items-center justify-center">
             <Users className="w-8 h-8 text-slate-400" />
           </div>
           <h3 className="text-lg font-bold text-slate-800 mb-2">No Team Members Yet</h3>
@@ -137,7 +137,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-[3rem] border border-slate-200  overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100">
@@ -154,13 +154,13 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                 const pending = member.metadata?.invite_status === 'pending';
 
                 return (
-                  <tr key={member.id} className="hover:bg-slate-50/80 transition-all">
+                  <tr key={member.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-10 py-6">
                       <div className="flex items-center space-x-4">
                         <div className="relative">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${roleConfig?.bg || 'bg-slate-100'} ${roleConfig?.color || 'text-slate-500'}`}>
+                          <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${roleConfig?.bg || 'bg-slate-100'} ${roleConfig?.color || 'text-slate-500'}`}>
                             {member.avatar_url ? (
-                              <img src={member.avatar_url} alt={member.first_name} className="w-full h-full object-cover rounded-2xl" />
+                              <img src={member.avatar_url} alt={member.first_name} className="w-full h-full object-cover rounded-sm" />
                             ) : (
                               member.first_name.charAt(0)
                             )}
@@ -186,7 +186,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                     </td>
                     <td className="px-10 py-6 text-center">
                       {roleConfig && (
-                        <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl ${roleConfig.bg}`}>
+                        <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-sm ${roleConfig.bg}`}>
                           <RoleIcon size={14} className={roleConfig.color} />
                           <span className={`text-[10px] font-black uppercase tracking-widest ${roleConfig.color}`}>
                             {roleConfig.label}
@@ -197,12 +197,12 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                     <td className="px-10 py-6 text-center">
                       <div className="flex flex-col items-center space-y-1">
                         {pending ? (
-                          <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-sky-100 text-sky-700">
+                          <span className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest bg-sky-100 text-sky-700">
                             <Mail size={10} />
                             <span>Invited</span>
                           </span>
                         ) : (
-                          <span className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                          <span className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest ${
                             member.status === 'active'
                               ? 'bg-emerald-100 text-emerald-700'
                               : member.status === 'archived'
@@ -228,10 +228,10 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
       {/* Invite Modal */}
       {inviteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl p-8">
+          <div className="w-full max-w-md bg-white rounded-sm border border-slate-200  p-8">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
-                <div className="w-11 h-11 bg-emerald-100 rounded-2xl flex items-center justify-center">
+                <div className="w-11 h-11 bg-emerald-100 rounded-sm flex items-center justify-center">
                   <UserPlus className="w-5 h-5 text-emerald-600" />
                 </div>
                 <h3 className="text-lg font-black text-slate-800">Invite a Team Member</h3>
@@ -246,12 +246,12 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
             </div>
 
             {inviteError && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-5">
+              <div className="bg-red-50 border border-red-200 rounded-sm p-4 mb-5">
                 <p className="text-red-700 text-sm font-medium">{inviteError}</p>
               </div>
             )}
             {inviteSuccess && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-5">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-sm p-4 mb-5">
                 <p className="text-emerald-700 text-sm font-medium">{inviteSuccess}</p>
               </div>
             )}
@@ -263,7 +263,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                   type="text"
                   value={inviteFirstName}
                   onChange={(e) => setInviteFirstName(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
                   placeholder="Jane"
                   required
                 />
@@ -275,7 +275,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
                   placeholder="jane@example.com"
                   required
                 />
@@ -293,7 +293,7 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                         key={r}
                         type="button"
                         onClick={() => setInviteRole(r)}
-                        className={`flex items-center space-x-2 px-4 py-3 rounded-xl border transition ${
+                        className={`flex items-center space-x-2 px-4 py-3 rounded-sm border transition ${
                           selected
                             ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-50'
                             : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -311,14 +311,14 @@ const TeamMembers: React.FC<TeamMembersProps> = ({ addToast }) => {
                 <button
                   type="button"
                   onClick={() => setInviteOpen(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-xs uppercase tracking-widest transition"
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-sm font-black text-xs uppercase tracking-widest transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl font-black text-xs uppercase tracking-widest transition flex items-center justify-center"
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-sm font-black text-xs uppercase tracking-widest transition flex items-center justify-center"
                 >
                   {submitting ? (
                     <>

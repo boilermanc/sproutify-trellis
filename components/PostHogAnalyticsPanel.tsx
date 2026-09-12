@@ -58,7 +58,7 @@ const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDat
   }, { dau: 0, wau: 0, mau: 0, sessions: 0, newUsers: 0, returning: 0 }), [results]);
 
   return (
-    <section className="rounded-[2.5rem] border border-violet-200 bg-white p-7 shadow-sm space-y-6">
+    <section className="border border-slate-200 bg-white p-6 sm:p-7 space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><BarChart3 size={21} /></div>

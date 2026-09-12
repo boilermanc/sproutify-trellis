@@ -87,7 +87,7 @@ export default function ContentExperimentWorkspace({ projectId, experiments, hub
   };
 
   return <div className="space-y-6">
-    <section className="rounded-[2rem] border border-violet-200 bg-violet-50 p-6">
+    <section className="border border-violet-200 bg-violet-50 p-6">
       <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">Hub experiment registry</p>
       <h2 className="mt-1 text-lg font-black text-violet-950">Start the review clock from a real published asset</h2>
       <p className="mt-2 text-sm leading-6 text-violet-900">Registration is limited to approved Scheduler publications. The declared window produces a durable due date and one Slack reminder when review becomes due.</p>
@@ -101,11 +101,11 @@ export default function ContentExperimentWorkspace({ projectId, experiments, hub
       </div>}
     </section>
 
-    {experiments.length === 0 ? <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><Beaker className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-4 text-sm font-black uppercase tracking-tight text-slate-700">No experiments registered</h3><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">Register an approved published asset above to start a falsifiable, time-bound experiment.</p></div> : <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => {
+    {experiments.length === 0 ? <div className="border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><Beaker className="mx-auto h-9 w-9 text-slate-300" /><h3 className="mt-4 text-sm font-bold text-slate-700">No experiments registered</h3><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">Register an approved published asset above to start a falsifiable, time-bound experiment.</p></div> : <div className="grid gap-4 lg:grid-cols-2">{experiments.map(experiment => {
       const review = getExperimentReviewState(experiment, posts);
       const isHubExperiment = hubIds.has(experiment.experiment_id);
       const reviewStyle = review.status === 'overdue' ? 'border-rose-200 bg-rose-50 text-rose-700' : review.status === 'due' ? 'border-amber-200 bg-amber-50 text-amber-700' : review.status === 'reviewed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : review.status === 'unlinked' ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-sky-200 bg-sky-50 text-sky-700';
-      return <article key={experiment.experiment_id} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      return <article key={experiment.experiment_id} className="border border-slate-200 bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3"><code className="text-[10px] text-slate-400">{experiment.experiment_id}</code><div className="flex flex-wrap items-center gap-2">{isHubExperiment && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase text-violet-700">Hub tracked</span>}<span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${reviewStyle}`}><CalendarClock size={12} /> {review.label}</span><span className="rounded-full border border-slate-200 px-2.5 py-1 text-[10px] font-black uppercase text-slate-600">{experiment.status}</span></div></div>
         <p className="mt-4 text-sm font-bold leading-6 text-slate-800">{experiment.hypothesis}</p>
         <div className="mt-5 flex flex-wrap gap-2">{experiment.success_metrics.map(metric => <span key={metric} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">{metric}</span>)}</div>

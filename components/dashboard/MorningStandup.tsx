@@ -69,14 +69,14 @@ const PERFORMER_STYLES: Record<'top' | 'bottom', { border: string; bg: string; e
     bg: '#F0FDF4',
     eyebrow: '#059669',
     label: 'Top performer',
-    stripe: 'bg-[repeating-linear-gradient(135deg,#A7F3D0,#A7F3D0_5px,#ECFDF5_5px,#ECFDF5_10px)]',
+    stripe: 'bg-[#ECFDF5] border border-[#A7F3D0]',
   },
   bottom: {
     border: '#FDE68A',
     bg: '#FFFBEB',
     eyebrow: '#B45309',
     label: 'Underperformed',
-    stripe: 'bg-[repeating-linear-gradient(135deg,#FDE68A,#FDE68A_5px,#FFFBEB_5px,#FFFBEB_10px)]',
+    stripe: 'bg-[#FFFBEB] border border-[#FDE68A]',
   },
 };
 
@@ -122,7 +122,7 @@ const ageShort = (iso: string | null): string | null => {
 
 // ── small building blocks ────────────────────────────────────────
 const SkeletonBlock: React.FC<{ className?: string }> = ({ className }) => (
-  <div className={`animate-pulse rounded-xl bg-[#E5E7EB]/60 ${className ?? ''}`} />
+  <div className={`animate-pulse rounded-sm bg-[#E5E7EB]/60 ${className ?? ''}`} />
 );
 
 const PerformerCard: React.FC<{ post: PerformerPost; tone: 'top' | 'bottom' }> = ({ post, tone }) => {
@@ -133,12 +133,12 @@ const PerformerCard: React.FC<{ post: PerformerPost; tone: 'top' | 'bottom' }> =
   if (post.reach != null) metaParts.push(`${formatCompact(post.reach)} reach`);
 
   return (
-    <div className="rounded-xl border p-3" style={{ borderColor: style.border, backgroundColor: style.bg }}>
+    <div className="rounded-sm border p-3" style={{ borderColor: style.border, backgroundColor: style.bg }}>
       <div className="flex gap-3">
         {post.imageUrl ? (
-          <img src={post.imageUrl} alt="" className="h-[52px] w-[52px] flex-shrink-0 rounded-lg object-cover" />
+          <img src={post.imageUrl} alt="" className="h-[52px] w-[52px] flex-shrink-0 rounded-sm object-cover" />
         ) : (
-          <div className={`h-[52px] w-[52px] flex-shrink-0 rounded-lg ${style.stripe}`} />
+          <div className={`h-[52px] w-[52px] flex-shrink-0 rounded-sm ${style.stripe}`} />
         )}
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-[0.12em]" style={{ color: style.eyebrow }}>
@@ -178,7 +178,7 @@ const QueueCard: React.FC<{
   if (outcome?.status === 'success') {
     return (
       <div
-        className={`flex items-center gap-4 rounded-xl border border-[#A7F3D0] px-[18px] py-4 queue-complete-flash ${dismissing ? 'queue-dismissing' : ''}`}
+        className={`flex items-center gap-4 rounded-sm border border-[#A7F3D0] px-[18px] py-4 queue-complete-flash ${dismissing ? 'queue-dismissing' : ''}`}
       >
         <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full bg-[#10B981]" />
         <CheckCircle2 size={22} className="queue-check-pop flex-shrink-0 text-[#059669]" />
@@ -190,7 +190,7 @@ const QueueCard: React.FC<{
         <button
           type="button"
           onClick={handleDismiss}
-          className="flex-shrink-0 rounded-lg border border-[#A7F3D0] bg-white px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#059669] transition-colors duration-150 hover:bg-[#ECFDF5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:ring-offset-2"
+          className="flex-shrink-0 rounded-sm border border-[#A7F3D0] bg-white px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#059669] transition-colors duration-150 hover:bg-[#ECFDF5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:ring-offset-2"
         >
           Dismiss
         </button>
@@ -201,7 +201,7 @@ const QueueCard: React.FC<{
   if (outcome?.status === 'error') {
     return (
       <div
-        className={`flex items-center gap-4 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-[18px] py-4 ${dismissing ? 'queue-dismissing' : ''}`}
+        className={`flex items-center gap-4 rounded-sm border border-[#FECACA] bg-[#FEF2F2] px-[18px] py-4 ${dismissing ? 'queue-dismissing' : ''}`}
       >
         <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full bg-[#DC2626]" />
         <AlertCircle size={22} className="flex-shrink-0 text-[#DC2626]" />
@@ -215,14 +215,14 @@ const QueueCard: React.FC<{
             type="button"
             onClick={() => onPrimary(item)}
             disabled={isSyncing}
-            className="rounded-lg bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#0F172A]"
+            className="rounded-sm bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#0F172A]"
           >
             {isSyncing ? 'Retrying…' : 'Retry'}
           </button>
           <button
             type="button"
             onClick={handleDismiss}
-            className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+            className="rounded-sm border border-[#E2E8F0] bg-white px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
           >
             Dismiss
           </button>
@@ -232,7 +232,7 @@ const QueueCard: React.FC<{
   }
 
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-[#E5E9EE] bg-white px-[18px] py-4 transition-colors duration-150 hover:bg-[#F9FAFB]">
+    <div className="flex items-center gap-4 rounded-sm border border-[#E5E9EE] bg-white px-[18px] py-4 transition-colors duration-150 hover:bg-[#F9FAFB]">
       <span className="h-full w-1 flex-shrink-0 self-stretch rounded-full" style={{ backgroundColor: color }} />
       <div className="flex w-[74px] flex-shrink-0 flex-col gap-1">
         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color }}>
@@ -253,14 +253,14 @@ const QueueCard: React.FC<{
           type="button"
           onClick={() => onPrimary(item)}
           disabled={isSyncing}
-          className="rounded-lg bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#0F172A]"
+          className="rounded-sm bg-[#0F172A] px-[15px] py-[9px] text-[11px] font-extrabold uppercase tracking-[0.06em] text-white transition-colors duration-150 hover:bg-[#1E698F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#0F172A]"
         >
           {isSyncing ? 'Syncing…' : item.actionLabel}
         </button>
         <button
           type="button"
           onClick={() => onSnooze(item.key)}
-          className="rounded-lg border border-[#E2E8F0] px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+          className="rounded-sm border border-[#E2E8F0] px-3 py-[9px] text-[11px] font-semibold text-[#94A3B8] transition-colors duration-150 hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
         >
           Snooze
         </button>
@@ -379,7 +379,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
       {/* Left column */}
       <div className="flex flex-col gap-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-[12px] font-black uppercase tracking-[0.16em] text-[#334155]">Needs you today</h2>
+          <h2 className="text-[12px] font-black  tracking-[0.16em] text-[#334155]">Needs you today</h2>
           <span className="text-[11px] font-semibold text-[#94A3B8]">Ranked by cost of ignoring</span>
         </div>
 
@@ -412,7 +412,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
         )}
 
         {whatWorked && (
-          <div className="mt-[6px] rounded-xl border border-[#E5E9EE] bg-white p-5">
+          <div className="mt-[6px] rounded-sm border border-[#E5E9EE] bg-white p-5">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-[13px] font-extrabold text-[#0B4A6B]">What worked · last 7 days</h3>
               <button
@@ -433,7 +433,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
 
       {/* Right column */}
       <div className="flex flex-col gap-[14px]">
-        <div className="rounded-xl border border-[#E5E9EE] bg-white p-[18px]">
+        <div className="rounded-sm border border-[#E5E9EE] bg-white p-[18px]">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-[13px] font-extrabold text-[#0B4A6B]">This week</h3>
             <span className="text-[11px] font-bold text-[#94A3B8]">vs prior week</span>
@@ -458,14 +458,14 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#E5E9EE] bg-white p-[18px]">
+        <div className="rounded-sm border border-[#E5E9EE] bg-white p-[18px]">
           <h3 className="mb-3 text-[13px] font-extrabold text-[#0B4A6B]">Branches at a glance</h3>
           <div className="flex flex-col gap-3">
             {branchCards.length === 0 && <p className="text-[12px] text-[#94A3B8]">No branches connected yet.</p>}
             {branchCards.map((b) => (
               <div key={b.slug} className="flex items-center gap-3">
                 <span
-                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[7px] text-[11px] font-extrabold text-white"
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-sm text-[11px] font-extrabold text-white"
                   style={{ backgroundColor: b.color }}
                 >
                   {b.name.charAt(0).toUpperCase()}
@@ -489,7 +489,7 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#E5E9EE] bg-white p-[18px]">
+        <div className="rounded-sm border border-[#E5E9EE] bg-white p-[18px]">
           <h3 className="mb-3 text-[13px] font-extrabold text-[#0B4A6B]">Pipelines running</h3>
           <div className="flex flex-col gap-[10px]">
             {systems.length === 0 && <p className="text-[12px] text-[#94A3B8]">No pipelines reporting yet.</p>}

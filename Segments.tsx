@@ -772,7 +772,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
         {isCreating ? (
           /* Segment Builder */
           <div className="p-6 max-w-3xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="bg-white rounded-none shadow-none border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-gray-900">{editingSegment ? 'Edit Segment' : 'Create New Segment'}</h2>
                 <button
@@ -883,7 +883,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
               </div>
 
               {newSegmentKind === 'campaign_engagement' && (
-                <div className="mb-6 space-y-4 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+                <div className="mb-6 space-y-4 rounded-none border border-blue-200 bg-blue-50/50 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900">Campaign-scoped tracked opens</h3>
@@ -957,7 +957,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
               )}
 
               {newSegmentKind === 'link_interest' && (
-                <div className="mb-6 space-y-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4">
+                <div className="mb-6 space-y-4 rounded-none border border-violet-200 bg-violet-50/50 p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900">Tracked link signal</h3>
@@ -1121,9 +1121,9 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
         ) : selectedSegment ? (
           /* Segment Details View */
           <div className="p-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="bg-white rounded-none shadow-none border border-gray-200 p-6 mb-6">
               <div className="flex items-start gap-4">
-                <div className={`p-3 rounded-xl border ${colorMap[selectedSegment.color || 'gray']}`}>
+                <div className={`p-3 rounded-none border ${colorMap[selectedSegment.color || 'gray']}`}>
                   {iconMap[selectedSegment.icon || 'layers']}
                 </div>
                 <div className="flex-1">
@@ -1271,7 +1271,7 @@ export const Segments: React.FC<SegmentsProps> = ({ spokeConnections, branchStat
             </div>
 
             {/* Matching Profiles Preview */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-none shadow-none border border-gray-200 overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 <h3 className="font-medium text-gray-900">Matching Profiles</h3>
                 <button

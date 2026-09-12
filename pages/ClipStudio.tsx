@@ -30,7 +30,7 @@ interface Props {
   geminiApiKey?: string;
 }
 
-const card = 'bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm';
+const card = 'bg-white p-5 border border-slate-200';
 const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
 const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
 const panelHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';

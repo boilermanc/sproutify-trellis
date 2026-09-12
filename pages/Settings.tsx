@@ -164,7 +164,7 @@ const Settings: React.FC<SettingsProps> = ({
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-              activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'
+              activeTab === tab.id ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
             <tab.icon size={14} />
@@ -173,7 +173,7 @@ const Settings: React.FC<SettingsProps> = ({
         ))}
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden min-h-[500px] flex flex-col">
+      <div className="bg-white border border-slate-200 overflow-hidden min-h-[500px] flex flex-col">
         <div className="flex-1 p-10">
           {activeTab === 'integrations' && (
             <div className="space-y-8 animate-in fade-in duration-300">
@@ -194,7 +194,7 @@ const Settings: React.FC<SettingsProps> = ({
               <PostHogConnectionsPanel branches={branches} />
 
               {/* Manus Deep Research */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 space-y-5">
+              <div className="border border-slate-200 p-6 space-y-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
@@ -351,7 +351,7 @@ const Settings: React.FC<SettingsProps> = ({
               {/* Add Integration Modal */}
               {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
+                  <div className="bg-white border border-slate-200 p-8 w-full max-w-md shadow-xl">
                     <div className="flex justify-between items-center mb-6">
                       <h3 className="text-lg font-black text-slate-800 uppercase">Add Integration</h3>
                       <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-800">
@@ -469,7 +469,7 @@ const Settings: React.FC<SettingsProps> = ({
                         key={provider.id}
                         onClick={() => setLocalApiKeys({...localApiKeys, active_llm: provider.id})}
                         className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center text-center space-y-3 ${
-                          localApiKeys.active_llm === provider.id ? 'border-emerald-500 bg-emerald-50 shadow-lg' : 'border-slate-100 hover:bg-slate-50'
+                          localApiKeys.active_llm === provider.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'
                         }`}
                       >
                          <provider.icon size={24} className={provider.color} />
@@ -650,11 +650,11 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
 
               {/* Meta / Instagram Card */}
-              <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+              <div className="border border-slate-200 overflow-hidden">
                 {/* Card Header */}
-                <div className="p-6 flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 border-b border-slate-100">
+                <div className="p-6 flex items-center justify-between bg-slate-50 border-b border-slate-200">
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                    <div className="w-11 h-11 border border-slate-800 bg-slate-900 flex items-center justify-center">
                       <Instagram size={22} className="text-white" />
                     </div>
                     <div>
@@ -861,7 +861,7 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
 
               {/* X / Twitter Placeholder */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 flex items-center justify-between opacity-50">
+              <div className="border border-slate-200 p-6 flex items-center justify-between opacity-50">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center">
                     <span className="text-white font-black text-lg">&#120143;</span>
@@ -875,7 +875,7 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
 
               {/* LinkedIn Placeholder */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 flex items-center justify-between opacity-50">
+              <div className="border border-slate-200 p-6 flex items-center justify-between opacity-50">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 rounded-2xl bg-blue-700 flex items-center justify-center">
                     <span className="text-white font-black text-sm">in</span>
@@ -898,7 +898,7 @@ const Settings: React.FC<SettingsProps> = ({
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-black text-sm flex items-center space-x-2 shadow-lg hover:bg-emerald-700 transition"
+              className="min-h-11 px-8 py-3 bg-emerald-600 text-white font-bold text-sm flex items-center space-x-2 hover:bg-emerald-700 transition"
             >
               {isSaving ? <RefreshCw className="animate-spin" /> : <Save size={18} />}
               <span>{isSaving ? 'Updating Vault...' : 'Save Configuration'}</span>

@@ -122,7 +122,7 @@ export default function MotionPosts({ branches, addToast }: MotionPostsProps) {
     </header>
 
     <section className="grid gap-6 xl:grid-cols-[.9fr_1.1fr]">
-      <div className="rounded-[2rem] border border-slate-200 bg-slate-950 p-4 shadow-sm">
+      <div className="border border-slate-800 bg-slate-950 p-4">
         <button type="button" onClick={() => fileInput.current?.click()} className="group relative flex aspect-[9/16] max-h-[690px] w-full items-center justify-center overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900">
           {previewUrl ? <img src={previewUrl} alt="Motion Post source preview" className="h-full w-full object-cover" /> : <div className="px-8 text-center text-slate-400"><ImagePlus className="mx-auto" size={34} /><p className="mt-4 text-sm font-black text-white">Upload the image to animate</p><p className="mt-1 text-xs">Portrait images work best for Instagram Reels.</p></div>}
           <span className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white backdrop-blur"><Upload size={13} /> {previewUrl ? 'Replace' : 'Browse'}</span>
@@ -130,7 +130,7 @@ export default function MotionPosts({ branches, addToast }: MotionPostsProps) {
         <input ref={fileInput} type="file" accept="image/*,.jfif" className="hidden" onChange={event => { chooseFile(event.target.files?.[0] || null); event.target.value = ''; }} />
       </div>
 
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
+      <div className="border border-slate-200 bg-white p-6 lg:p-8">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="text-xs font-bold text-slate-600">Branch<select value={branchId} onChange={event => setBranchId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm">{branches.filter(branch => branch.is_active).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
           <label className="text-xs font-bold text-slate-600">Post title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" /></label>
@@ -155,7 +155,7 @@ export default function MotionPosts({ branches, addToast }: MotionPostsProps) {
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-5">
           <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Estimated xAI cost</p><p className="text-lg font-black text-slate-900">${estimatedCost.toFixed(2)} <span className="text-xs font-bold text-slate-400">per attempt</span></p></div>
-          <button type="button" onClick={submit} disabled={submitting || !file || !branchId || prompt.trim().length < 12} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-violet-200 disabled:cursor-not-allowed disabled:opacity-40">
+          <button type="button" onClick={submit} disabled={submitting || !file || !branchId || prompt.trim().length < 12} className="inline-flex min-h-11 items-center gap-2 bg-violet-600 px-6 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">
             {submitting ? <Loader2 size={17} className="animate-spin" /> : <Wand2 size={17} />} {submitting ? 'Starting…' : 'Animate post'}
           </button>
         </div>
@@ -164,7 +164,7 @@ export default function MotionPosts({ branches, addToast }: MotionPostsProps) {
 
     <section>
       <div className="mb-4 flex items-center gap-2"><Film size={18} className="text-violet-600" /><h2 className="text-lg font-black text-slate-900">Motion Post Library</h2></div>
-      {loading ? <div className="flex justify-center rounded-[2rem] border border-slate-200 bg-white py-16"><Loader2 className="animate-spin text-violet-600" /></div> : jobs.length === 0 ? <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-400">Your generated Motion Posts will appear here.</div> : <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{jobs.map(job => {
+      {loading ? <div className="flex justify-center border border-slate-200 bg-white py-16"><Loader2 className="animate-spin text-violet-600" /></div> : jobs.length === 0 ? <div className="border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-400">Your generated Motion Posts will appear here.</div> : <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{jobs.map(job => {
         const active = ACTIVE.has(job.status);
         const ready = job.status === 'ready' || job.status === 'published';
         const finish = job.latest_finish;
@@ -172,7 +172,7 @@ export default function MotionPosts({ branches, addToast }: MotionPostsProps) {
         const finalUrl = finish?.status === 'succeeded' && finish.output_url ? finish.output_url : job.output_url;
         const publication = job.latest_publication;
         const publicationActive = publication?.status === 'scheduled' || publication?.status === 'publishing';
-        return <article key={job.id} className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+        return <article key={job.id} className="overflow-hidden border border-slate-200 bg-white">
           <div className="relative aspect-[9/16] max-h-[560px] bg-slate-950">
             {finalUrl ? <video controls playsInline preload="metadata" src={finalUrl} className="h-full w-full object-cover" /> : job.source_url ? <img src={job.source_url} alt="Motion Post source" className="h-full w-full object-cover opacity-80" /> : null}
             {active && <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60 text-white backdrop-blur-sm"><Loader2 className="animate-spin" size={28} /><p className="mt-3 text-xs font-black uppercase tracking-widest">{STATUS_LABEL[job.status]}</p><div className="mt-3 h-1.5 w-40 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-violet-400 transition-all" style={{ width: `${Math.max(5, job.progress)}%` }} /></div><p className="mt-2 text-[10px] text-white/70">{job.progress}%</p></div>}
@@ -188,7 +188,7 @@ export default function MotionPosts({ branches, addToast }: MotionPostsProps) {
             {ready && <div className="mt-4 flex flex-wrap gap-2">
               <a href={finalUrl!} download className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-600"><Download size={13} /> Download</a>
               <button type="button" onClick={() => setFinishingJob(job)} disabled={finishActive} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-violet-700 disabled:opacity-40"><Type size={13} /> {finish?.status === 'succeeded' ? 'Edit text' : 'Add text'}</button>
-              <button type="button" onClick={() => setPublishingJob(job)} disabled={!job.caption || finishActive || publicationActive} className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-fuchsia-600 to-orange-500 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white disabled:opacity-40"><CalendarClock size={13} /> {publicationActive ? 'In queue' : 'Schedule Reel'}</button>
+              <button type="button" onClick={() => setPublishingJob(job)} disabled={!job.caption || finishActive || publicationActive} className="inline-flex min-h-11 items-center gap-1.5 bg-violet-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><CalendarClock size={13} /> {publicationActive ? 'In queue' : 'Schedule Reel'}</button>
             </div>}
             <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>{new Date(job.created_at).toLocaleString()}</span><span>{job.cost_actual != null ? `$${Number(job.cost_actual).toFixed(2)} actual` : `$${Number(job.cost_estimate).toFixed(2)} est.`}</span></div>
           </div>

@@ -499,7 +499,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
         </div>
 
         {/* Create form */}
-        <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+        <div className="bg-white p-6 border border-slate-200 space-y-4">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Plus size={14} /> New Session</h3>
           <div className="flex flex-wrap gap-2">
             {SESSION_PRESETS.map(p => (
@@ -629,7 +629,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
       {/* ── Right: session detail ── */}
       <div className="lg:col-span-2">
         {!selected ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center bg-white rounded-[2rem] border border-slate-100">
+          <div className="flex flex-col items-center justify-center py-24 text-center bg-white border border-slate-200">
             <ListMusic size={44} className="text-slate-300 mb-3" />
             <p className="text-sm font-bold text-slate-600">Select or create a session</p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs">Plan a set of tracks, generate them, approve the keepers, and stitch them into one master.</p>
@@ -637,7 +637,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
         ) : (
           <div className="space-y-5">
             {/* Session header */}
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+            <div className="bg-white p-6 border border-slate-200">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-black text-slate-800">{selected.title}</h3>
@@ -710,7 +710,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
 
             {/* Final master */}
             {(latestReadyRender || activeRender || latestFailedRender || selected.status === 'failed') && (
-              <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-sm ${sessionFailure ? 'border-rose-200' : 'border-emerald-200'}`}>
+              <div className={`bg-white p-6 border ${sessionFailure ? 'border-rose-300' : 'border-emerald-300'}`}>
                 <h4 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 mb-3 ${sessionFailure ? 'text-rose-700' : 'text-emerald-700'}`}>
                   {sessionFailure ? <AlertCircle size={15} /> : <Layers size={15} />}
                   Final Master

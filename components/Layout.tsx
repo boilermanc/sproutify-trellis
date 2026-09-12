@@ -151,11 +151,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
     ?? activeView.replace(/-/g, ' ');
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="trellis-app flex h-screen overflow-hidden bg-trellis-canvas text-trellis-ink">
       {/* Mobile backdrop */}
       {isMobileNavOpen && (
         <div
-          className="fixed inset-0 z-30 bg-slate-900/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/60 lg:hidden"
           onClick={() => setIsMobileNavOpen(false)}
           aria-hidden="true"
         />
@@ -163,38 +163,41 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
       {/* Sidebar — static on desktop, slide-in drawer on mobile */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-yale-blue flex flex-col shrink-0 transform transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[232px] shrink-0 transform flex-col bg-yale-blue transition-transform duration-200 ease-out lg:static lg:translate-x-0 ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="p-6 flex items-center justify-between text-sky-300 border-b border-blue-slate-2/30">
-          <div className="flex items-center space-x-3">
-            <Sprout size={28} />
-            <span className="font-bold text-xl text-white tracking-tight">Trellis</span>
+        <div className="flex h-16 items-center justify-between border-b border-white/15 px-5 text-emerald-300">
+          <div className="flex items-center gap-3">
+            <Sprout size={24} strokeWidth={1.75} />
+            <div>
+              <span className="block text-lg font-bold tracking-tight text-white">Trellis</span>
+              <span className="block font-mono text-[9px] uppercase tracking-[0.14em] text-white/45">Marketing operations</span>
+            </div>
           </div>
           <button
             onClick={() => setIsMobileNavOpen(false)}
-            className="lg:hidden text-white/70 hover:text-white transition-colors"
+            className="min-h-11 min-w-11 border border-white/15 text-white/70 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
             aria-label="Close navigation"
           >
             <X size={22} />
           </button>
         </div>
 
-        <nav className="flex-1 mt-6 px-3 space-y-1 overflow-y-auto custom-scrollbar">
+        <nav className="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-4">
           {/* Pinned — always visible, no group header */}
           {PINNED.map((item) => (
             <button
               key={item.id}
               onClick={() => onViewChange(item.id as ViewState)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
+              className={`group flex min-h-11 w-full items-center gap-3 border-l-2 px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
                 activeView === item.id
-                ? 'bg-sky-400/20 text-sky-300 shadow-lg shadow-yale-blue/20'
-                : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
+                ? 'border-emerald-400 bg-white/10 text-white'
+                : 'border-transparent text-white/70 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <item.icon size={20} />
-              <span className="font-medium text-sm">{item.label}</span>
+              <item.icon size={18} strokeWidth={1.75} />
+              <span>{item.label}</span>
             </button>
           ))}
 
@@ -202,13 +205,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
           {NAV_GROUPS.map((group) => {
             const isOpen = openSections[group.id] || group.id === activeGroupId;
             return (
-              <div key={group.id} className="pt-3">
+              <div key={group.id} className="border-t border-white/10 pt-3 first:border-t-0">
                 <button
                   onClick={() => toggleSection(group.id)}
-                  className="w-full flex items-center justify-between px-4 py-1.5 rounded-lg text-white/40 hover:text-white/80 transition-colors"
+                  className="flex min-h-9 w-full items-center justify-between px-3 py-1 font-mono text-white/45 transition-colors hover:text-white/80"
                   aria-expanded={isOpen}
                 >
-                  <span className="text-[10px] font-black uppercase tracking-widest">{group.label}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">{group.label}</span>
                   <ChevronDown
                     size={14}
                     className={`transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
@@ -216,19 +219,19 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                 </button>
 
                 {isOpen && (
-                  <div className="space-y-1 mt-1">
+                  <div className="mt-1 space-y-0.5">
                     {group.items.map((item) => (
                       <button
                         key={item.id}
                         onClick={() => onViewChange(item.id as ViewState)}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
+                        className={`group flex min-h-11 w-full items-center gap-3 border-l-2 px-3 py-2.5 text-left text-sm font-medium transition-colors ${
                           activeView === item.id
-                          ? 'bg-sky-400/20 text-sky-300 shadow-lg shadow-yale-blue/20'
-                          : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
+                          ? 'border-emerald-400 bg-white/10 text-white'
+                          : 'border-transparent text-white/70 hover:bg-white/5 hover:text-white'
                         }`}
                       >
-                        <item.icon size={20} />
-                        <span className="font-medium text-sm">{item.label}</span>
+                        <item.icon size={18} strokeWidth={1.75} />
+                        <span>{item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -238,42 +241,42 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
           })}
         </nav>
 
-        <div className="p-4 border-t border-blue-slate-2/30 space-y-2 bg-yale-blue/50">
+        <div className="space-y-1 border-t border-white/15 bg-black/5 p-3">
           <button
             onClick={() => onViewChange('help-center')}
-            className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-colors ${
-              activeView === 'help-center' ? 'bg-blue-slate-2 text-white' : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
+            className={`flex min-h-11 w-full items-center gap-3 border-l-2 px-3 py-2 text-sm font-medium transition-colors ${
+              activeView === 'help-center' ? 'border-emerald-400 bg-white/10 text-white' : 'border-transparent text-white/70 hover:bg-white/5 hover:text-white'
             }`}
           >
-            <HelpCircle size={18} className="text-sky-300" />
-            <span className="text-[10px] font-black uppercase tracking-widest">Help Center</span>
+            <HelpCircle size={18} />
+            <span>Help Center</span>
           </button>
 
           <button
             onClick={() => onViewChange('settings')}
-            className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-colors ${
-              activeView === 'settings' ? 'bg-blue-slate-2 text-white' : 'text-white/75 hover:bg-blue-slate-2 hover:text-white'
+            className={`flex min-h-11 w-full items-center gap-3 border-l-2 px-3 py-2 text-sm font-medium transition-colors ${
+              activeView === 'settings' ? 'border-emerald-400 bg-white/10 text-white' : 'border-transparent text-white/70 hover:bg-white/5 hover:text-white'
             }`}
           >
             <Settings size={18} />
-            <span className="text-[10px] font-black uppercase tracking-widest">App Settings</span>
+            <span>App Settings</span>
           </button>
 
-          <div className="flex items-center space-x-3 p-3 bg-blue-slate-2/30 rounded-xl mt-2 group border border-blue-slate-2/30 hover:border-cornflower-ocean/30 transition-colors">
+          <div className="group mt-2 flex items-center gap-3 border border-white/15 p-3 transition-colors hover:border-white/30">
             <button
               onClick={() => onViewChange('user-profile')}
-              className="flex items-center space-x-3 flex-1 min-w-0 hover:opacity-90 transition-opacity"
+              className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-left transition-opacity hover:opacity-90"
               title="Edit Profile"
             >
               <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-cerulean/20 text-cornflower-ocean flex items-center justify-center font-bold text-sm shadow-inner shrink-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-white/20 bg-white/10 text-sm font-bold text-white">
                   {user.name.charAt(0)}
                 </div>
                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-cornflower-ocean rounded-full border-2 border-yale-blue" />
               </div>
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-xs font-black text-white truncate uppercase tracking-tighter">{user.name}</p>
-                <p className="text-[10px] text-sky-300 truncate flex items-center group-hover:text-sky-200 transition-colors">
+                <p className="truncate text-xs font-semibold text-white">{user.name}</p>
+                <p className="flex truncate font-mono text-[9px] uppercase tracking-wide text-white/45 transition-colors group-hover:text-white/70">
                   <Pencil size={8} className="mr-1" />
                   Edit Profile
                 </p>
@@ -281,7 +284,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
             </button>
             <button
               onClick={onLogout}
-              className="text-white/60 hover:text-rose-400 transition-colors"
+              className="min-h-11 min-w-11 text-white/60 transition-colors hover:bg-white/10 hover:text-rose-300"
               title="Sign out"
             >
               <LogOut size={16} />
@@ -291,17 +294,17 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-slate-50 relative">
-        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 lg:px-8 py-4 flex justify-between items-center gap-3">
+      <main className="relative flex-1 overflow-y-auto bg-trellis-canvas">
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-3 border-b border-trellis-line bg-white/95 px-4 backdrop-blur lg:px-8">
           <div className="flex items-center space-x-2 min-w-0">
             <button
               onClick={() => setIsMobileNavOpen(true)}
-              className="lg:hidden p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
+              className="-ml-2 min-h-11 min-w-11 shrink-0 border border-transparent text-slate-500 transition-colors hover:border-trellis-line hover:bg-trellis-subtle hover:text-trellis-ink lg:hidden"
               aria-label="Open navigation"
             >
               <Menu size={22} />
             </button>
-            <h2 className="text-lg lg:text-xl font-semibold text-slate-800 capitalize truncate">
+            <h2 className="truncate text-lg font-bold tracking-tight text-trellis-ink lg:text-xl">
               {pageTitle}
             </h2>
             {PAGE_INFO[activeView] && (
@@ -313,16 +316,16 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
              <div className="relative" ref={branchPickerRef}>
                <button
                  onClick={() => setIsBranchPickerOpen(!isBranchPickerOpen)}
-                 className="flex items-center space-x-2 px-3 lg:px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200"
+                 className="flex min-h-11 items-center gap-2 border border-trellis-line bg-white px-3 text-sm font-semibold text-trellis-ink transition-colors hover:border-slate-400 lg:px-4"
                >
                  <GitBranch size={16} className="text-emerald-600 shrink-0" />
-                 <span className="hidden sm:inline text-xs font-black uppercase tracking-widest text-slate-700">
+                 <span className="hidden sm:inline">
                    {branchContext.isAllSelected
                      ? `All Branches (${branchContext.allBranches.length})`
                      : `${branchContext.activeBranchSlugs.length} of ${branchContext.allBranches.length} Branches`
                    }
                  </span>
-                 <span className="sm:hidden text-xs font-black uppercase tracking-widest text-slate-700">
+                 <span className="sm:hidden">
                    {branchContext.isAllSelected
                      ? `All (${branchContext.allBranches.length})`
                      : `${branchContext.activeBranchSlugs.length}/${branchContext.allBranches.length}`
@@ -332,9 +335,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                </button>
 
                {isBranchPickerOpen && (
-                 <div className="absolute top-full mt-2 right-0 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+                 <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden border border-trellis-line bg-white shadow-[var(--trellis-shadow-float)]">
                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                     <span className="text-xs font-black uppercase tracking-widest text-slate-500">Branch Scope</span>
+                     <span className="tr-label">Branch scope</span>
                      <div className="flex items-center space-x-2">
                        <button
                          onClick={() => branchContext.setActiveBranchSlugs(branchContext.allBranches.map(b => b.slug))}
@@ -363,7 +366,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                                : [...branchContext.activeBranchSlugs, branch.slug];
                              branchContext.setActiveBranchSlugs(newSlugs);
                            }}
-                           className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all ${
+                           className={`flex min-h-11 w-full items-center gap-3 border px-3 py-2.5 transition-colors ${
                              isActive ? 'bg-emerald-50 border border-emerald-200' : 'hover:bg-slate-50 border border-transparent'
                            }`}
                          >
@@ -380,7 +383,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                              </p>
                              <p className="text-[10px] text-slate-400">{branch.slug}</p>
                            </div>
-                           <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                           <span className={`border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider ${
                              branch.type === 'internal' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
                            }`}>
                              {branch.type}
@@ -392,7 +395,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                    <div className="p-3 border-t border-slate-100 bg-slate-50">
                      <button
                        onClick={() => setIsBranchPickerOpen(false)}
-                       className="w-full py-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-700 transition"
+                       className="min-h-11 w-full font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-700 transition-colors hover:bg-emerald-50"
                      >
                        Apply Scope
                      </button>
@@ -403,7 +406,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
              <button
                onClick={() => onViewChange('support-hub')}
-               className={`p-2 rounded-xl transition-all group relative ${activeView === 'support-hub' ? 'bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}
+               className={`group relative min-h-11 min-w-11 border transition-colors ${activeView === 'support-hub' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-transparent text-slate-500 hover:border-trellis-line hover:bg-trellis-subtle hover:text-indigo-700'}`}
                title="Support Hub"
              >
                 <GraduationCap size={22} />
@@ -414,13 +417,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
              <button
                onClick={() => onViewChange('help-center')}
-               className={`p-2 rounded-xl transition-all group relative ${activeView === 'help-center' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-sm' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-100'}`}
+               className={`group relative min-h-11 min-w-11 border transition-colors ${activeView === 'help-center' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:border-trellis-line hover:bg-trellis-subtle hover:text-emerald-700'}`}
                title="Academy / Help Center"
              >
                 <HelpCircle size={20} />
              </button>
 
-            <span className="hidden xl:flex text-xs font-semibold bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full items-center border border-emerald-200">
+            <span className="hidden items-center border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-emerald-800 xl:flex">
               <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2 animate-pulse"></span>
               {brand.name} Orchestrator v1.2
             </span>

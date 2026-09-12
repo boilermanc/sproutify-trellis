@@ -13,7 +13,7 @@ import { TimelineEntry } from '../../types';
 
 const EVENT_STYLES: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
   lead_note: { icon: StickyNote, color: 'text-slate-300', bg: 'bg-slate-400/10' },
-  lead_call: { icon: Phone, color: 'text-cyan-300', bg: 'bg-cyan-400/10' },
+  lead_call: { icon: Phone, color: 'text-emerald-300', bg: 'bg-emerald-400/10' },
   lead_email: { icon: Mail, color: 'text-rose-300', bg: 'bg-rose-400/10' },
   lead_reply: { icon: Mail, color: 'text-emerald-300', bg: 'bg-emerald-400/10' },
   lead_meeting: { icon: CalendarDays, color: 'text-indigo-300', bg: 'bg-indigo-400/10' },
@@ -99,7 +99,7 @@ const renderEmailDetail = (payload: Record<string, unknown>) => {
   const body = textValue(payload, 'body');
   const preview = textValue(payload, 'preview');
   return (
-    <span className="mt-3 block space-y-2 rounded-lg bg-[#10142E] p-3">
+    <span className="mt-3 block space-y-2 rounded-sm bg-[#10142E] p-3">
       {to && <span className="block text-[10px] text-slate-500"><span className="text-slate-600">To&nbsp;&nbsp;</span>{to}</span>}
       {subject && <span className="block text-[10px] text-slate-400"><span className="text-slate-600">Subject&nbsp;&nbsp;</span><span className="font-bold text-slate-300">{subject}</span></span>}
       {body ? (
@@ -130,7 +130,7 @@ const renderEngagementChips = (
   const chips = [] as React.ReactNode[];
   if (eng?.bounced) chips.push(pill('Bounced', true, 'bg-rose-400/10 text-rose-300'));
   else chips.push(pill('Delivered', !!eng?.delivered, 'bg-emerald-400/10 text-emerald-300'));
-  chips.push(pill('Opened', !!eng?.opened, 'bg-cyan-400/10 text-cyan-300'));
+  chips.push(pill('Opened', !!eng?.opened, 'bg-emerald-400/10 text-emerald-300'));
   chips.push(pill('Clicked', !!eng?.clicked, 'bg-indigo-400/10 text-indigo-300'));
   if (eng?.complained) chips.push(pill('Complained', true, 'bg-rose-400/10 text-rose-300'));
   return <span className="mt-1.5 flex flex-wrap gap-1">{chips}</span>;
@@ -147,18 +147,18 @@ const LeadTimeline: React.FC<LeadTimelineProps> = ({ entries, loading, engagemen
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+    <section className="rounded-sm border border-white/10 bg-white/[0.025] p-4">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Activity timeline</h3>
+        <h3 className="text-[10px] font-black   text-slate-500">Activity timeline</h3>
         {!loading && entries.length > 0 && <span className="text-[10px] font-bold text-slate-600">Newest first</span>}
       </div>
 
       {loading ? (
         <div className="space-y-4" aria-label="Loading lead timeline">
-          {[0, 1, 2].map(item => <div key={item} className="flex animate-pulse gap-3"><div className="h-9 w-9 rounded-xl bg-white/[0.07]" /><div className="flex-1 space-y-2 pt-1"><div className="h-3 w-2/3 rounded bg-white/[0.07]" /><div className="h-2 w-24 rounded bg-white/[0.05]" /></div></div>)}
+          {[0, 1, 2].map(item => <div key={item} className="flex animate-pulse gap-3"><div className="h-9 w-9 rounded-sm bg-white/[0.07]" /><div className="flex-1 space-y-2 pt-1"><div className="h-3 w-2/3 rounded bg-white/[0.07]" /><div className="h-2 w-24 rounded bg-white/[0.05]" /></div></div>)}
         </div>
       ) : entries.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
+        <div className="rounded-sm border border-dashed border-white/10 px-4 py-8 text-center">
           <StickyNote className="mx-auto mb-2 text-slate-600" size={20} />
           <p className="text-xs font-bold text-slate-400">No activity recorded yet</p>
           <p className="mt-1 text-[10px] text-slate-600">Calls, notes, meetings, emails, and stage changes will appear here.</p>
@@ -175,17 +175,17 @@ const LeadTimeline: React.FC<LeadTimelineProps> = ({ entries, loading, engagemen
                 key={entry.id}
                 type="button"
                 onClick={() => setExpandedId(current => current === entry.id ? null : entry.id)}
-                className="flex w-full gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-white/[0.035]"
+                className="flex w-full gap-3 rounded-sm px-2 py-3 text-left transition hover:bg-white/[0.035]"
                 aria-expanded={expanded}
               >
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${style.bg} ${style.color}`}><Icon size={16} /></span>
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-sm ${style.bg} ${style.color}`}><Icon size={16} /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-bold leading-5 text-slate-200">{summarizeTimelineEntry(entry)}</span>
                   <span className="mt-0.5 block text-[10px] text-slate-600" title={new Date(entry.created_at).toLocaleString()}>{formatRelativeTime(entry.created_at)}</span>
                   {entry.event_type === 'lead_email' && renderEngagementChips(entry.payload || {}, engagement)}
                   {expanded && (entry.event_type === 'lead_email'
                     ? renderEmailDetail(entry.payload || {})
-                    : details.length > 0 && <span className="mt-3 block space-y-1 rounded-lg bg-[#10142E] p-3">{details.map(([label, value]) => <span key={label} className="grid grid-cols-[7rem_1fr] gap-2 text-[10px]"><span className="capitalize text-slate-600">{label}</span><span className="break-words text-slate-400">{value}</span></span>)}</span>)}
+                    : details.length > 0 && <span className="mt-3 block space-y-1 rounded-sm bg-[#10142E] p-3">{details.map(([label, value]) => <span key={label} className="grid grid-cols-[7rem_1fr] gap-2 text-[10px]"><span className="capitalize text-slate-600">{label}</span><span className="break-words text-slate-400">{value}</span></span>)}</span>)}
                 </span>
               </button>
             );

@@ -201,12 +201,12 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
 
   if (loading) return <div className="flex min-h-[55vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>;
   if (unavailable) return (
-    <div className="mx-auto max-w-3xl py-16"><div className="rounded-3xl border border-amber-200 bg-amber-50 p-8"><AlertCircle className="h-8 w-8 text-amber-600" /><h2 className="mt-4 text-xl font-black text-slate-900">Media Generation foundation is ready locally</h2><p className="mt-2 text-sm leading-6 text-slate-600">{unavailable}</p><button onClick={() => void loadFoundation()} className="mt-5 rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white">Try again</button></div></div>
+    <div className="mx-auto max-w-3xl py-16"><div className="border border-amber-200 bg-amber-50 p-8"><AlertCircle className="h-8 w-8 text-amber-600" /><h2 className="mt-4 text-xl font-black text-slate-900">Media Generation foundation is ready locally</h2><p className="mt-2 text-sm leading-6 text-slate-600">{unavailable}</p><button onClick={() => void loadFoundation()} className="mt-5 min-h-11 bg-slate-900 px-4 py-2 text-sm font-bold text-white">Try again</button></div></div>
   );
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
-      <div className="rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-8 text-white shadow-xl">
+      <div className="border border-slate-800 bg-slate-950 p-8 text-white">
         <div className="flex items-center gap-3"><div className="rounded-2xl bg-white/10 p-3"><Film className="h-7 w-7" /></div><div><p className="text-xs font-black uppercase tracking-[0.25em] text-indigo-200">On-demand GPU</p><h1 className="text-3xl font-black">Media Generation</h1></div></div>
         <p className="mt-4 max-w-3xl text-sm leading-6 text-indigo-100">Create video with LongCat now and add other GPU providers later. Inputs stay private, every attempt is tracked, and existing Trellis editors remain intact.</p>
       </div>
@@ -220,7 +220,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
 
       {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} finishingEnabled={configuration?.finishing_enabled === true} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-5">
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="border border-slate-200 bg-white p-5">
             <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">Project</h2>
             <select value={selectedProjectId} onChange={event => setSelectedProjectId(event.target.value)} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold">
               <option value="">Choose a project</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -232,14 +232,14 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="border border-slate-200 bg-white p-5">
             <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">Model & mode</h2>
             <label className="mt-3 block text-xs font-bold text-slate-500">Model<select value={modelId} onChange={event => setModelId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-900">{models.map(model => <option key={model.id} value={model.id}>{model.display_name}</option>)}</select></label>
             <label className="mt-3 block text-xs font-bold text-slate-500">Generation mode<select value={taskType} onChange={event => setTaskType(event.target.value as MediaGenerationTaskType)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-900">{(selectedModel?.task_types || []).map(task => <option key={task} value={task}>{taskLabels[task]}</option>)}</select></label>
             {modelId === 'longcat-video-avatar-1.5' && <p className="mt-3 rounded-xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-700">Avatar 1.5 uses its required eight-step distilled mode and is configured for a two-GPU worker.</p>}
           </section>
 
-          <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+          <section className="border border-emerald-200 bg-emerald-50 p-5">
             <div className="flex items-center gap-2 text-sm font-black text-emerald-900"><ShieldCheck className="h-5 w-5" /> Spend protection</div>
             <div className="mt-3 space-y-2 text-xs leading-5 text-emerald-800">
               <p>One GPU worker maximum</p>
@@ -252,7 +252,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
         </aside>
 
         <main className="space-y-6">
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="border border-slate-200 bg-white p-6">
             <h2 className="text-lg font-black text-slate-900">Describe the shot</h2>
             <textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={5} placeholder="Describe the subject, action, setting, camera, and mood…" className="mt-4 w-full rounded-2xl border border-slate-200 p-4 text-sm leading-6 outline-none focus:border-indigo-400" />
             <textarea value={negativePrompt} onChange={event => setNegativePrompt(event.target.value)} rows={2} placeholder="Optional: what should the model avoid?" className="mt-3 w-full rounded-2xl border border-slate-200 p-4 text-sm outline-none focus:border-indigo-400" />
@@ -270,17 +270,17 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
             </div> : <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-xs leading-5 text-indigo-700">Talking-character length follows the uploaded audio. Trellis will read the audio duration before dispatch and show the final cost review.</div>}
           </section>
 
-          {modelId === 'longcat-video-base' && <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          {modelId === 'longcat-video-base' && <section className="border border-slate-200 bg-white p-6">
             <TimedTextTimeline durationSeconds={durationSeconds} cues={textCues} onChange={cues => { setTextCues(cues); setConfirmingCost(false); }} />
           </section>}
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="border border-slate-200 bg-white p-6">
             {!confirmingCost ? <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-lg font-black text-slate-900">Ready to generate?</h2><p className="mt-1 text-xs text-slate-500">Nothing is billed until you review and confirm.</p></div><button disabled={busy || !selectedProjectId || !prompt.trim() || !configuration?.generation_enabled || !configuration?.cost_tracking_configured} onClick={reviewGeneration} className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 disabled:opacity-40"><Play className="h-4 w-4 fill-current" /> Review cost</button></div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
               <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-amber-700">Final confirmation</p><h2 className="mt-1 text-xl font-black text-slate-900">Start one GPU generation?</h2><div className="mt-3 flex flex-wrap gap-4 text-xs font-bold text-slate-600"><span className="flex items-center gap-1.5"><Clock3 className="h-4 w-4" /> {modelId === 'longcat-video-base' ? `${durationSeconds.toFixed(1)}s output` : 'Audio-timed output'}</span>{modelId === 'longcat-video-base' && <span className="flex items-center gap-1.5"><DollarSign className="h-4 w-4" /> About ${costEstimate.toFixed(2)} cold</span>}<span className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4" /> One worker maximum</span></div><p className="mt-3 max-w-2xl text-xs leading-5 text-amber-800">This is an estimate based on the measured H100 proof run. The server returns to zero after the job.</p></div><div className="flex gap-2"><button type="button" disabled={busy} onClick={() => setConfirmingCost(false)} className="rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-xs font-black text-slate-600">Go back</button><button type="button" disabled={busy} onClick={() => void submit()} className="flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />} Confirm & generate</button></div></div>
             </div>}
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="border border-slate-200 bg-white p-6">
             <div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Queue & results</h2><p className="mt-1 text-xs text-slate-500">{activeIds.length} active · {jobs.length} total</p></div><button disabled={!selectedProjectId} onClick={() => selectedProjectId && getMediaGenerationJobs(selectedProjectId).then(setJobs).catch(error => addToast(error instanceof Error ? error.message : 'Could not refresh jobs.', 'error'))} className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:text-indigo-600"><RefreshCw className="h-4 w-4" /></button></div>
             <div className="mt-5 space-y-3">
               {jobs.length === 0 && <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm text-slate-500">Your first generation will appear here.</div>}

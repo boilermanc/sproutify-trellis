@@ -27,11 +27,11 @@ interface ProfilesProps {
 }
 
 const SITE_ICONS: Record<string, any> = {
-  'atlurbanfarms.com': Building2,
-  'micro.sproutify.app': Sprout,
-  'farm.sproutify.app': Sprout,
-  'school.sproutify.app': GraduationCap,
-  'letsrejoice.app': Heart,
+'atlurbanfarms.com': Building2,
+'micro.sproutify.app': Sprout,
+'farm.sproutify.app': Sprout,
+'school.sproutify.app': GraduationCap,
+'letsrejoice.app': Heart,
 };
 
 // BranchBadge component for displaying branch pills
@@ -293,7 +293,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+      <div className="bg-red-50 border border-red-200 rounded-sm p-8 text-center">
         <p className="text-red-700 font-bold mb-2">Failed to load profiles</p>
         <p className="text-red-600 text-sm">{error}</p>
       </div>
@@ -302,14 +302,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
   return (
     <div className="space-y-6 relative h-full pb-20">
-      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-8">
+      <div className="bg-white p-8 rounded-sm border border-slate-200  space-y-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="relative flex-1 max-w-xl">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input type="text" placeholder="Search by email, name, or Spoke UUID..." className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-inner font-bold text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <input type="text" placeholder="Search by email, name, or Spoke UUID..." className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition  font-bold text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
           <div className="flex items-center space-x-3">
-             <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center space-x-2">
+             <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-sm flex items-center space-x-2">
                 <DatabaseZap size={14} className="text-indigo-600" />
                 <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Composite Sync: Active</span>
              </div>
@@ -320,12 +320,12 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
           <div className="flex items-center space-x-4">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Source</label>
-            <div className="flex bg-slate-100 p-1 rounded-xl">
+            <div className="flex bg-slate-100 p-1 rounded-sm">
               <button
                 onClick={() => setDataSource('local')}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors ${
                   dataSource === 'local'
-                    ? 'bg-emerald-600 text-white shadow-sm'
+                    ? 'bg-emerald-600 text-white '
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
@@ -333,9 +333,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               </button>
               <button
                 onClick={() => setDataSource('federated')}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors ${
                   dataSource === 'federated'
-                    ? 'bg-emerald-600 text-white shadow-sm'
+                    ? 'bg-emerald-600 text-white '
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
@@ -345,7 +345,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           </div>
 
           {activeConnectionCount > 0 && (
-            <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center space-x-2">
+            <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-sm flex items-center space-x-2">
               <Link size={12} className="text-emerald-600" />
               <span className="text-[10px] font-bold text-emerald-700">
                 {activeConnectionCount} active connection{activeConnectionCount !== 1 ? 's' : ''}
@@ -383,7 +383,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   <button
                     key={connection.id}
                     onClick={() => toggleSpokeSelection(connection.id)}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg border-2 transition-all ${
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-sm border-2 transition-colors ${
                       isSelected
                         ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
                         : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
@@ -413,7 +413,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               <button
                 onClick={() => branchStats.refresh()}
                 disabled={isFederating}
-                className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isFederating ? (
                   <RefreshCw size={14} className="animate-spin" />
@@ -436,7 +436,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
         {dataSource === 'federated' && activeConnectionCount === 0 && (
           <div className="pt-4 border-t border-slate-100">
-            <div className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center space-x-2">
+            <div className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-sm flex items-center space-x-2">
               <AlertCircle size={16} className="text-amber-600" />
               <span className="text-sm font-bold text-amber-700">No active connections. Add connections in Settings → Connections.</span>
             </div>
@@ -444,7 +444,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         )}
 
         {federationError && (
-          <div className="flex items-center space-x-2 p-3 bg-rose-50 border border-rose-100 rounded-xl">
+          <div className="flex items-center space-x-2 p-3 bg-rose-50 border border-rose-100 rounded-sm">
             <AlertCircle size={16} className="text-rose-500" />
             <span className="text-sm font-bold text-rose-700">{federationError}</span>
           </div>
@@ -454,21 +454,21 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         {dataSource === 'federated' && profileStats && (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
             {/* Total Profiles */}
-            <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <div className="bg-white rounded-sm p-4 border border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Profiles</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">{profileStats.totalProfiles}</p>
               <p className="text-xs text-gray-400 mt-1">{profileStats.withOrders} with orders</p>
             </div>
 
             {/* Total Orders */}
-            <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <div className="bg-white rounded-sm p-4 border border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Orders</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">{profileStats.totalOrders.toLocaleString()}</p>
               <p className="text-xs text-gray-400 mt-1">across all profiles</p>
             </div>
 
             {/* Total LTV */}
-            <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <div className="bg-white rounded-sm p-4 border border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Total Revenue</p>
               <p className="text-2xl font-bold text-emerald-600 mt-1">
                 ${profileStats.totalLTV.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -477,7 +477,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             </div>
 
             {/* Avg Order Value */}
-            <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <div className="bg-white rounded-sm p-4 border border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide">Avg Order</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
                 ${profileStats.avgOrderValue.toFixed(2)}
@@ -486,14 +486,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             </div>
 
             {/* VIP Count */}
-            <div className="bg-white rounded-xl p-4 border border-gray-100">
+            <div className="bg-white rounded-sm p-4 border border-gray-100">
               <p className="text-xs text-gray-500 uppercase tracking-wide">VIP Customers</p>
               <p className="text-2xl font-bold text-amber-600 mt-1">{profileStats.vipCount}</p>
               <p className="text-xs text-gray-400 mt-1">LTV ≥ $50</p>
             </div>
 
             {/* Opted-In */}
-            <div className="bg-white rounded-xl p-4 border border-emerald-100">
+            <div className="bg-white rounded-sm p-4 border border-emerald-100">
               <p className="text-xs text-emerald-600 uppercase tracking-wide font-bold">Opted-In</p>
               <p className="text-2xl font-bold text-emerald-700 mt-1">{profileStats.optedIn}</p>
               <p className="text-xs text-gray-400 mt-1">
@@ -504,7 +504,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             </div>
 
             {/* Opted-Out */}
-            <div className="bg-white rounded-xl p-4 border border-rose-100">
+            <div className="bg-white rounded-sm p-4 border border-rose-100">
               <p className="text-xs text-rose-600 uppercase tracking-wide font-bold">Opted-Out</p>
               <p className="text-2xl font-bold text-rose-600 mt-1">{profileStats.optedOut}</p>
               <p className="text-xs text-gray-400 mt-1">unsubscribed</p>
@@ -512,7 +512,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
             {/* Consent Unverified */}
             {profileStats.consentUnverified > 0 && (
-              <div className="bg-white rounded-xl p-4 border border-amber-100">
+              <div className="bg-white rounded-sm p-4 border border-amber-100">
                 <p className="text-xs text-amber-600 uppercase tracking-wide font-bold">Unverified</p>
                 <p className="text-2xl font-bold text-amber-600 mt-1">{profileStats.consentUnverified}</p>
                 <p className="text-xs text-gray-400 mt-1">consent unknown</p>
@@ -529,7 +529,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               <select
                 value={selectedBranchFilter || ''}
                 onChange={(e) => setSelectedBranchFilter(e.target.value || null)}
-                className="appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 pr-10 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                className="appearance-none bg-slate-50 border border-slate-200 rounded-sm px-4 py-2.5 pr-10 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
               >
                 <option value="">All Branches</option>
                 {branches.map((branch) => (
@@ -560,25 +560,25 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
       {/* Empty-selection gate: in federated mode, require a branch pick before loading profiles */}
       {dataSource === 'federated' && activeConnectionCount > 0 && selectedSpokeIds.size === 0 ? (
-        <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm p-12 sm:p-20 flex flex-col items-center justify-center text-center">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5">
+        <div className="bg-white rounded-[3rem] border border-slate-200  p-12 sm:p-20 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-sm bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5">
             <GitBranch size={28} className="text-emerald-600" />
           </div>
-          <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Select a branch to load profiles</h3>
+          <h3 className="text-lg font-black text-slate-800">Select a branch to load profiles</h3>
           <p className="mt-2 max-w-md text-sm font-bold text-slate-400">
             Pick one or more data sources from <span className="text-slate-600">Select Data Sources</span> above. Nothing is queried until you choose which branch you want to look at.
           </p>
           {activeConnectionCount > 1 && (
             <button
               onClick={selectAllSpokes}
-              className="mt-6 flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition"
+              className="mt-6 flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 transition"
             >
               <DatabaseZap size={14} /> Load all {activeConnectionCount} branches
             </button>
           )}
         </div>
       ) : (
-      <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-[3rem] border border-slate-200  overflow-hidden">
         {/* Mobile cards — the full table is unreadable on a phone */}
         <div className="lg:hidden divide-y divide-slate-50">
           {dataSource === 'local' ? (
@@ -588,7 +588,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 onClick={() => setSelectedProfileId(profile.id)}
                 className={`w-full text-left flex items-center gap-3 p-4 transition ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : 'hover:bg-slate-50/80'}`}
               >
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base shrink-0 ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
+                <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-slate-800 text-sm truncate">{profile.first_name}</p>
                   <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
@@ -610,7 +610,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 onClick={() => setSelectedFederatedProfile(profile)}
                 className="w-full text-left flex items-center gap-3 p-4 hover:bg-slate-50/80 transition"
               >
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base shrink-0 ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                   {(profile.first_name || profile.email || '?').charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -671,10 +671,10 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <tbody className="divide-y divide-slate-50">
             {dataSource === 'local' ? (
               paginatedProfiles.map((profile) => (
-                <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-all cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
+                <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-colors cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
                   <td className="px-10 py-6">
                     <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
+                      <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
                       <div>
                         <p className="font-black text-slate-800 text-sm">{profile.first_name}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
@@ -682,7 +682,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                     </div>
                   </td>
                   <td className="px-10 py-6 text-center">
-                     <div className="inline-flex items-center space-x-2 bg-slate-50 px-3 py-1 rounded-lg border border-slate-100">
+                     <div className="inline-flex items-center space-x-2 bg-slate-50 px-3 py-1 rounded-sm border border-slate-100">
                         <Fingerprint size={10} className="text-indigo-400" />
                         <span className="text-[10px] font-mono text-slate-600 font-bold">{profile.spoke_uuid || 'UNSET'}</span>
                      </div>
@@ -701,12 +701,12 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               filteredFederatedProfiles.map((profile, index) => (
                 <tr
                   key={`${profile._spoke_id}-${profile.email}-${index}`}
-                  className="hover:bg-slate-50/80 transition-all cursor-pointer"
+                  className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                   onClick={() => setSelectedFederatedProfile(profile)}
                 >
                   <td className="px-10 py-6">
                     <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                         {(profile.first_name || profile.email || '?').charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -724,7 +724,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                     </div>
                   </td>
                   <td className="px-10 py-6 text-center">
-                    <div className="inline-flex items-center space-x-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">
+                    <div className="inline-flex items-center space-x-2 bg-indigo-50 px-3 py-1 rounded-sm border border-indigo-100">
                       <Link size={10} className="text-indigo-500" />
                       <span className="text-[10px] font-bold text-indigo-700">{profile._spoke_name}</span>
                     </div>
@@ -772,7 +772,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   </td>
                   <td className="px-10 py-6 text-right">
                     <div className="flex flex-col items-end gap-1">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                      <span className={`inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-bold uppercase ${
                         profile.subscribed
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
                           : profile.subscribed === false
@@ -808,7 +808,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              className="appearance-none bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              className="appearance-none bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
               <option value={10}>10</option>
               <option value={25}>25</option>
@@ -821,7 +821,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="p-2 rounded-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
               <ChevronLeft size={18} className="text-slate-600" />
             </button>
@@ -842,7 +842,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   <button
                     key={pageNum}
                     onClick={() => setCurrentPage(pageNum)}
-                    className={`w-10 h-10 rounded-xl text-sm font-bold transition ${
+                    className={`w-10 h-10 rounded-sm text-sm font-bold transition ${
                       currentPage === pageNum
                         ? 'bg-emerald-600 text-white'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -857,7 +857,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             <button
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              className="p-2 rounded-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
               <ChevronRight size={18} className="text-slate-600" />
             </button>
@@ -873,36 +873,36 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       {selectedProfile && (
         <>
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-40" onClick={() => setSelectedProfileId(null)}></div>
-          <div className="fixed top-0 right-0 h-full w-full max-w-xl bg-white shadow-2xl z-50 animate-in slide-in-from-right duration-300 flex flex-col">
+          <div className="fixed top-0 right-0 h-full w-full max-w-xl bg-white  z-50 animate-in slide-in-from-right duration-300 flex flex-col">
             <div className="p-10 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs">Identity Intelligence Slide</h3>
+                <h3 className="font-black text-slate-800   text-xs">Identity Intelligence Slide</h3>
                 <HelpLink articleId="art_federated_model" variant="icon-only" onOpenArticle={onOpenArticle!} />
               </div>
-              <button onClick={() => setSelectedProfileId(null)} className="p-2 text-slate-400 hover:text-slate-900 bg-slate-50 rounded-xl"><X size={24} /></button>
+              <button onClick={() => setSelectedProfileId(null)} className="p-2 text-slate-400 hover:text-slate-900 bg-slate-50 rounded-sm"><X size={24} /></button>
             </div>
             <div className="p-10 space-y-10 flex-1 overflow-y-auto custom-scrollbar">
                <div className="flex items-center space-x-6">
-                  <div className={`w-24 h-24 rounded-[2.5rem] flex items-center justify-center text-4xl font-black ${selectedProfile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{selectedProfile.first_name.charAt(0)}</div>
+                  <div className={`w-24 h-24 rounded-sm flex items-center justify-center text-4xl font-black ${selectedProfile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{selectedProfile.first_name.charAt(0)}</div>
                   <div>
                     <h4 className="text-2xl font-black text-slate-800">{selectedProfile.first_name}</h4>
                     <p className="text-sm text-slate-400 font-mono mb-4">{selectedProfile.email}</p>
                     <div className="space-y-2">
-                       <div className="px-4 py-2 bg-slate-50 border border-slate-100 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest italic flex items-center">
+                       <div className="px-4 py-2 bg-slate-50 border border-slate-100 text-slate-400 rounded-sm text-[10px] font-black uppercase tracking-widest italic flex items-center">
                           <ShieldCheck size={14} className="mr-2" /> Composite Identity Lock
                        </div>
-                       <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center">
+                       <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center">
                           <Fingerprint size={14} className="mr-2" /> ID: {selectedProfile.spoke_uuid}
                        </div>
                     </div>
                   </div>
                </div>
                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                  <div className="bg-slate-50 p-6 rounded-sm border border-slate-100">
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Estimated LTV</p>
                      <p className="text-2xl font-black text-slate-800">${selectedProfile.ltv.toLocaleString()}</p>
                   </div>
-                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                  <div className="bg-slate-50 p-6 rounded-sm border border-slate-100">
                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Engagement Pulse</p>
                      {/* `|| 85` used to render here, so every customer showed a
                          fabricated 85% — including genuinely disengaged ones,
@@ -916,7 +916,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                </div>
                {/* Per-Branch Consent Panel */}
                {editingConsent && (
-                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                 <div className="bg-white p-6 rounded-sm border border-slate-200  space-y-4">
                    <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center">
                      <ShieldCheck size={14} className="mr-2 text-emerald-600" />
                      Branch Consent
@@ -925,7 +925,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                    {(Object.entries(editingConsent) as [string, BranchConsentEntry][]).map(([branchSlug, consent]) => {
                      const branchInfo = branchContext?.allBranches.find(b => b.slug === branchSlug);
                      return (
-                       <div key={branchSlug} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-slate-200 transition">
+                       <div key={branchSlug} className="flex items-center justify-between p-3 rounded-sm border border-slate-100 hover:border-slate-200 transition">
                          <div className="flex items-center space-x-3">
                            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: branchInfo?.primary_color || '#94a3b8' }} />
                            <div>
@@ -940,7 +940,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                              onClick={() => {
                                setEditingConsent(updateBranchConsent(editingConsent, branchSlug, !consent.subscribed, consent.paused));
                              }}
-                             className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
+                             className={`px-3 py-1 rounded-sm text-[10px] font-black uppercase tracking-widest transition ${
                                consent.subscribed
                                  ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                                  : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
@@ -953,7 +953,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                                onClick={() => {
                                  setEditingConsent(updateBranchConsent(editingConsent, branchSlug, consent.subscribed, !consent.paused));
                                }}
-                               className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${
+                               className={`px-3 py-1 rounded-sm text-[10px] font-black uppercase tracking-widest transition ${
                                  consent.paused
                                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                                    : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
@@ -967,13 +967,13 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                      );
                    })}
                    {consentSaveStatus === 'error' && consentSaveError && (
-                     <div className="flex items-center space-x-2 p-3 bg-rose-50 border border-rose-100 rounded-xl">
+                     <div className="flex items-center space-x-2 p-3 bg-rose-50 border border-rose-100 rounded-sm">
                        <AlertCircle size={14} className="text-rose-500 shrink-0" />
                        <span className="text-xs font-bold text-rose-700">{consentSaveError}</span>
                      </div>
                    )}
                    {consentSaveStatus === 'saved' && (
-                     <div className="flex items-center space-x-2 p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
+                     <div className="flex items-center space-x-2 p-3 bg-emerald-50 border border-emerald-100 rounded-sm">
                        <ShieldCheck size={14} className="text-emerald-500 shrink-0" />
                        <span className="text-xs font-bold text-emerald-700">Consent updated successfully.</span>
                      </div>
@@ -1010,17 +1010,17 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                          setConsentSaveStatus('error');
                        }
                      }}
-                     className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                     className="w-full py-3 bg-emerald-600 text-white rounded-sm text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition  disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      {consentSaveStatus === 'saving' ? 'Saving…' : 'Save Consent Changes'}
                    </button>
                  </div>
                )}
-               <div className="bg-indigo-900 p-8 rounded-[2.5rem] text-white relative overflow-hidden shadow-xl">
+               <div className="bg-indigo-900 p-8 rounded-sm text-white relative overflow-hidden ">
                   <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles size={80} /></div>
                   <h5 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-4">Sage Orchestration Advice</h5>
                   <p className="text-sm font-medium italic mb-6">"Identify user behavior across {selectedProfile.branches.length} spokes. UUID tracking ensures identity pivots are captured during email migration."</p>
-                  <button onClick={() => onTestFlow?.(selectedProfile.email)} className="w-full py-4 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-xs font-black uppercase tracking-widest transition">Preview Sync Strategy</button>
+                  <button onClick={() => onTestFlow?.(selectedProfile.email)} className="w-full py-4 bg-indigo-500 hover:bg-indigo-400 text-white rounded-sm text-xs font-black uppercase tracking-widest transition">Preview Sync Strategy</button>
                </div>
             </div>
           </div>

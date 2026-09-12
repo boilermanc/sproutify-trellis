@@ -143,11 +143,11 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <Rocket className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Campaigns</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Campaigns</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               {branchContext && !branchContext.isAllSelected
                 ? `Scoped to ${branchContext.activeBranchSlugs.length} of ${branchContext.allBranches.length} branches · change in the top bar`
@@ -174,7 +174,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
           { label: 'Tracked Open Rate', value: `${pct(totals.opened, totals.delivered)}%`, icon: Eye, color: 'text-blue-600' },
           { label: 'Click Rate', value: `${pct(totals.clicked, totals.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600' },
         ].map((k) => (
-          <div key={k.label} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div key={k.label} className="bg-white border border-slate-200 p-5">
             <div className="flex items-center gap-2 mb-2">
               <k.icon className={`w-4 h-4 ${k.color}`} />
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{k.label}</span>
@@ -185,7 +185,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
       </div>
 
       {/* List */}
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center gap-2 text-slate-400 py-20">
             <Loader2 className="w-5 h-5 animate-spin" /> Loading campaigns…
@@ -233,7 +233,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
                       </div>
                     </div>
                     {c.status === 'draft' ? (
-                      <div className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-700 shrink-0">
+                      <div className="hidden sm:inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-700 shrink-0">
                         <Pencil className="w-3.5 h-3.5" /> Continue Editing
                       </div>
                     ) : (
@@ -377,7 +377,7 @@ const CampaignDetailDrawer: React.FC<{
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 overflow-y-auto">
+      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
           <div className="min-w-0">
             <h2 className="text-xl font-black text-slate-800 truncate">{c.name}</h2>
@@ -455,7 +455,7 @@ const CampaignDetailDrawer: React.FC<{
                 <button
                   onClick={handleRetry}
                   disabled={retrying}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-600 transition disabled:opacity-50"
+                className="w-full min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold hover:bg-emerald-600 transition disabled:opacity-50"
                 >
                   {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   Retry failed recipients
@@ -506,7 +506,7 @@ const CampaignDetailDrawer: React.FC<{
               <button
                 type="button"
                 onClick={() => setShowRecipients(true)}
-                className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition"
+                className="w-full mt-3 min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
               >
                 <Users className="w-4 h-4" />
                 See tracked opens, clicks & complaints
@@ -516,7 +516,7 @@ const CampaignDetailDrawer: React.FC<{
               <button
                 type="button"
                 onClick={() => onResend(c)}
-                className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition"
+                className="w-full mt-2 min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition"
               >
                 <MailPlus className="w-4 h-4" />
                 Resend to non-openers
@@ -630,7 +630,7 @@ const ResendModal: React.FC<{
     <>
       <div className="fixed inset-0 bg-black/40 z-[60]" onClick={onClose} />
       <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-none">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl pointer-events-auto overflow-hidden">
+        <div className="w-full max-w-md bg-white border border-slate-200 shadow-xl pointer-events-auto overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
               <MailPlus className="w-5 h-5 text-blue-600" />
@@ -694,7 +694,7 @@ const ResendModal: React.FC<{
               type="button"
               onClick={handleSend}
               disabled={loading || sending || recipients.length === 0 || !subject.trim()}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition disabled:opacity-40"
+              className="min-h-11 flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold hover:bg-blue-600 transition disabled:opacity-40"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               Send reminder

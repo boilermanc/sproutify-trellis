@@ -113,7 +113,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
 
       {/* Top Controller */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit border border-slate-200 shadow-inner">
+        <div className="flex bg-slate-100 w-fit border border-slate-200">
           <button
             onClick={() => setActiveMode('builder')}
             className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeMode === 'builder' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
@@ -153,7 +153,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
 
         {/* Left Library: Node Library */}
         <div className="lg:col-span-1 space-y-8">
-           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+           <div className="bg-white p-8 border border-slate-200">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center">
                  <PlusCircle size={16} className="mr-2" />
                  Step Library
@@ -209,7 +209,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
               </div>
            </div>
 
-           <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden">
+           <div className="bg-slate-900 p-8 text-white border border-slate-800 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-10">
                  <ShieldCheck size={80} className="text-emerald-400" />
               </div>
@@ -220,7 +220,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
 
         {/* Center: Visual Canvas */}
         <div className="lg:col-span-2">
-           <div className="bg-white rounded-[4rem] border-4 border-slate-100 shadow-sm min-h-[800px] flex flex-col relative overflow-hidden">
+           <div className="bg-white border border-slate-200 min-h-[800px] flex flex-col relative overflow-hidden">
               {/* Background Grid Lines */}
               <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
 
@@ -299,7 +299,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
 
         {/* Right Sidebar: Configuration / Sage Advice */}
         <div className="lg:col-span-1 space-y-8">
-           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+           <div className="bg-white p-8 border border-slate-200">
               <div className="flex items-center space-x-3 mb-8">
                  <div className="w-10 h-10 rounded-2xl bg-slate-900 text-emerald-400 flex items-center justify-center shadow-lg"><Settings size={20} /></div>
                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Step Logic</h3>
@@ -339,7 +339,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
               )}
            </div>
 
-           <div className="bg-emerald-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden flex flex-col min-h-[400px]">
+           <div className="bg-emerald-900 p-8 text-white border border-emerald-800 relative overflow-hidden flex flex-col min-h-[400px]">
               <div className="absolute top-0 right-0 p-6 opacity-10">
                  <Sparkles size={120} className="text-emerald-400" />
               </div>
@@ -388,7 +388,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
               const isCopied = copiedBlueprint === key;
 
               return (
-                <div key={key} className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div key={key} className="bg-white border border-slate-200 overflow-hidden flex flex-col">
                   <div className="p-8 flex-1">
                     <div className="flex items-center space-x-3 mb-4">
                       <div className={`p-3 rounded-2xl bg-slate-50 ${meta.color}`}>

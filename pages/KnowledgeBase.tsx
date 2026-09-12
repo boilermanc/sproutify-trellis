@@ -84,7 +84,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle })
       
       {/* Top Knowledge Toolbar */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] border border-slate-200 shadow-inner">
+        <div className="flex bg-slate-100 border border-slate-200">
           <button 
             onClick={() => setActiveTab('docs')}
             className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'docs' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}
@@ -124,11 +124,11 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle })
         
         {/* Main Content Area */}
         <div className="lg:col-span-3 space-y-6">
-           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm">
+           <div className="bg-white p-8 border border-slate-200">
               <div className="relative mb-10">
                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
                  <input 
-                   className="w-full pl-16 pr-8 py-5 bg-slate-50 border-2 border-slate-100 rounded-3xl text-sm font-bold focus:bg-white focus:border-emerald-500 transition-all shadow-inner outline-none"
+                   className="w-full min-h-11 pl-16 pr-8 py-4 bg-white border border-slate-300 text-sm font-medium focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition outline-none"
                    placeholder={`Search ${activeTab === 'docs' ? 'support documents' : 'FAQs'} by title, content or site tags...`}
                    value={searchTerm}
                    onChange={e => setSearchTerm(e.target.value)}
@@ -193,7 +193,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle })
 
         {/* Knowledge Sidebar */}
         <div className="lg:col-span-1 space-y-8">
-           <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+           <div className="bg-slate-900 p-8 text-white border border-slate-800 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-10">
                  <Cpu size={120} className="text-emerald-400" />
               </div>
@@ -224,7 +224,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle })
               </div>
            </div>
 
-           <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col min-h-[400px]">
+           <div className="bg-white p-10 border border-slate-200 flex flex-col min-h-[400px]">
               <div className="flex items-center space-x-3 mb-10 border-b border-slate-50 pb-10">
                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-sm border border-indigo-100"><Sparkles size={20} /></div>
                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Sage Knowledge Audit</h3>
@@ -276,7 +276,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle })
       {/* Record Editor Modal */}
       {showEditor && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-4xl h-[85vh] rounded-[4rem] shadow-2xl overflow-hidden flex flex-col border border-white/20">
+           <div className="bg-white w-full max-w-4xl h-[85vh] shadow-xl overflow-hidden flex flex-col border border-slate-200">
               <div className="p-10 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                  <div className="flex items-center space-x-6">
                     <div className="w-16 h-16 bg-slate-900 text-emerald-400 rounded-3xl flex items-center justify-center shadow-lg"><Plus size={32} /></div>
