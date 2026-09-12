@@ -4,16 +4,17 @@ import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, Tre
 import { Article } from '../src/data/helpContent';
 import EmailPerformancePanel from '../components/EmailPerformancePanel';
 import PostHogAnalyticsPanel from '../components/PostHogAnalyticsPanel';
+import AppStoreAnalyticsPanel from '../components/AppStoreAnalyticsPanel';
 import YouTubePerformancePanel from '../components/YouTubePerformancePanel';
 import SocialPerformancePanel from '../components/SocialPerformancePanel';
 import EventRegistrationPanel from '../components/EventRegistrationPanel';
 import {
   BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity, Share2,
   ShieldCheck, AlertTriangle, Crown,
-  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe, CalendarDays
+  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe, CalendarDays, Smartphone
 } from 'lucide-react';
 
-type ReportsTab = 'audience' | 'social' | 'email' | 'events' | 'youtube' | 'product' | 'blueprints';
+type ReportsTab = 'audience' | 'social' | 'email' | 'events' | 'youtube' | 'product' | 'app-store' | 'blueprints';
 const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
   { id: 'audience', label: 'Audience', icon: Users },
   { id: 'social', label: 'Social', icon: Share2 },
@@ -21,6 +22,7 @@ const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
   { id: 'events', label: 'Events', icon: CalendarDays },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
   { id: 'product', label: 'Product', icon: Activity },
+  { id: 'app-store', label: 'App Store', icon: Smartphone },
   { id: 'blueprints', label: 'Blueprints', icon: FileText },
 ];
 
@@ -280,6 +282,13 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
         <EmailPerformancePanel
           branches={branchContext?.allBranches || []}
           profiles={profiles}
+        />
+      )}
+
+      {activeTab === 'app-store' && (
+        <AppStoreAnalyticsPanel
+          branches={branchContext?.allBranches || []}
+          branchContext={branchContext}
         />
       )}
 

@@ -1,0 +1,62 @@
+{
+  "name": "Trellis: Daily App Store Analytics Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 16 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Daily at 16:15 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/app-store-analytics",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"op\":\"sync\"}",
+        "options": {
+          "timeout": 300000,
+          "response": { "response": { "neverError": false, "responseFormat": "json" } }
+        }
+      },
+      "name": "Import Apple Daily Aggregates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Required credential\n\nUse the existing Trellis **HTTP Header Auth** refresh credential on the HTTP node:\n\n- Name: `x-trellis-refresh-secret`\n- Value: the Supabase `POSTHOG_REFRESH_SECRET` value already used by B7\n\nThe endpoint performs its own constant-time secret or authenticated-user check. It imports only allowlisted Standard reports, aggregates numeric measures by app/date/report, and never retains Apple's detailed rows. Activate after importing this blueprint.",
+        "width": 620,
+        "height": 320
+      },
+      "name": "Setup and Security Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [80, -160]
+    }
+  ],
+  "connections": {
+    "Daily at 16:15 UTC": {
+      "main": [[{ "node": "Import Apple Daily Aggregates", "type": "main", "index": 0 }]]
+    }
+  }
+}

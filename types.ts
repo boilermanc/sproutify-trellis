@@ -2492,6 +2492,33 @@ export interface CreateMediaGenerationJob {
   idempotency_key?: string;
 }
 
+export interface AppStoreApp {
+  id: string;
+  branch_id: string;
+  apple_app_id: string;
+  name: string;
+  status: 'active' | 'pending' | 'error' | 'disconnected';
+  last_synced_at: string | null;
+  last_error: string | null;
+  branches?: { name?: string | null; slug?: string | null } | null;
+}
+
+export interface AppStoreMetricSnapshot {
+  app_id: string;
+  branch_id: string;
+  metric_date: string;
+  report_name: string;
+  category: 'APP_USAGE' | 'APP_STORE_ENGAGEMENT' | 'COMMERCE' | 'PERFORMANCE';
+  metrics: Record<string, number>;
+  fetched_at: string;
+}
+
+export interface AppStoreAnalyticsResult {
+  apps: AppStoreApp[];
+  snapshots: AppStoreMetricSnapshot[];
+  window_days: 7 | 30 | 90;
+}
+
 // ---------------------------------------------------------------------------
 // SpectIQ founder prospecting (isolated from tenant profiles and Farm leads)
 // ---------------------------------------------------------------------------
