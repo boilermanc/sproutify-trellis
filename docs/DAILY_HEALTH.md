@@ -6,6 +6,8 @@ The bot creates one issue per actionable component under the `trellis-health` la
 
 ## What is measured
 
+The dashboard uses a neutral health panel with independent row colors: green for passed checks, red for failed checks needing repair, amber for review/stale findings, and gray for optional or unverified checks. Passed and optional checks are grouped separately from actionable findings. The GitHub repair queue link explains the handoff: an issue is a tracked finding, not an automatic code-repair job. A green connection check verifies access only, not fresh or complete customer data.
+
 - **Webhook registration:** read-only GET checks. n8n returns a special 404 message for a registered POST-only webhook, which counts as registered. A generic proxy 404 is an error, not evidence that the workflow is inactive. 401/403/429/5xx are errors. Registration does not prove that downstream rendering, publishing, or sending succeeds.
 - **Spoke access:** read-only HEAD requests to every enabled configured table, with the stored credential resolved server-side. No profile rows are returned or saved. Disconnected spokes are excluded. Missing configuration and failed inventory queries are unknown. Successful access does not establish record freshness, completeness, or that RLS exposes the expected rows.
 - **Email quality:** three exact database counts of `sent`, `bounced`, and `complained` events over a fixed rolling seven-day interval. This avoids the Data API row limit. Counts cover all recorded events in the shared Resend account. Complaints or a bounce rate above 5% prompt review, not a provider-outage label. This threshold is an operational alert rule, not an automatic send/pause decision.

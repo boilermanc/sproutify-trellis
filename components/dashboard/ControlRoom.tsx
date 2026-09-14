@@ -56,6 +56,16 @@ const SYSTEM_DOT: Record<SystemStatus, string> = {
   optional: '#94A3B8',
 };
 
+const SYSTEM_STYLE: Record<SystemStatus, { label: string; className: string }> = {
+  ok: { label: 'Check passed', className: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
+  down: { label: 'Needs repair', className: 'bg-red-50 border-red-200 text-red-800' },
+  error: { label: 'Check failed', className: 'bg-red-50 border-red-200 text-red-800' },
+  warning: { label: 'Needs review', className: 'bg-amber-50 border-amber-200 text-amber-800' },
+  stale: { label: 'Out of date', className: 'bg-amber-50 border-amber-200 text-amber-800' },
+  unknown: { label: 'Not verified', className: 'bg-slate-50 border-slate-200 text-slate-700' },
+  optional: { label: 'Optional', className: 'bg-slate-50 border-slate-200 text-slate-600' },
+};
+
 const STATE_CHIP: Record<TimelineState, { dot: string; bg: string; text: string; label: string }> = {
   posted: { dot: '#10B981', bg: '#ECFDF5', text: '#047857', label: 'POSTED' },
   synced: { dot: '#10B981', bg: '#ECFDF5', text: '#047857', label: 'SYNCED' },
@@ -488,61 +498,64 @@ const SystemHealthSkeleton: React.FC = () => (
 const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ systems, isLoading }) => {
   if (isLoading) return <SystemHealthSkeleton />;
 
-  const healthy = systems.length > 0 && systems.every((s) => s.status === 'ok' || s.status === 'optional');
-  const downCount = systems.filter((s) => s.status === 'down').length;
-  const errorCount = systems.filter((s) => s.status === 'error').length;
-  const reviewCount = systems.filter((s) => s.status === 'warning').length;
-  const unknownCount = systems.filter((s) => s.status === 'unknown').length;
-  const staleCount = systems.filter((s) => s.status === 'stale').length;
-  const summaryParts: string[] = [];
-  if (downCount) summaryParts.push(`${downCount} DOWN`);
-  if (errorCount) summaryParts.push(`${errorCount} ERROR`);
-  if (reviewCount) summaryParts.push(`${reviewCount} REVIEW`);
-  if (unknownCount) summaryParts.push(`${unknownCount} UNKNOWN`);
-  if (staleCount) summaryParts.push(`${staleCount} STALE`);
+  const attention = systems.filter((s) => s.status !== 'ok' && s.status !== 'optional');
+  const passed = systems.filter((s) => s.status === 'ok');
+  const optional = systems.filter((s) => s.status === 'optional');
 
-  const cardBg = healthy ? 'bg-[#F0FDF4]' : 'bg-[#FEF2F2]';
-  const cardBorder = healthy ? 'border-[#A7F3D0]' : 'border-[#FECACA]';
-  const rowBorder = healthy ? 'border-[rgba(5,150,105,0.12)]' : 'border-[rgba(220,38,38,0.12)]';
+  const renderRow = (s: SystemRow) => (
+    <div key={s.key} className={`flex flex-col gap-1 rounded border p-3 ${SYSTEM_STYLE[s.status].className}`}>
+      <div className="flex flex-wrap items-center gap-2 min-w-0">
+        <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: SYSTEM_DOT[s.status] }} />
+        <span className="text-[12px] font-semibold flex-1 min-w-0 break-words">{s.name}</span>
+        <span className="text-[11px] font-semibold flex-shrink-0">{SYSTEM_STYLE[s.status].label}</span>
+      </div>
+      <div className="text-[11px] text-slate-600 leading-[1.5] pl-[14px]">{s.detail}</div>
+      {s.checked_at && <div className="text-[10px] text-slate-500 pl-[14px]">Checked {new Date(s.checked_at).toLocaleString()}</div>}
+    </div>
+  );
 
   return (
-    <div id="system-health" className={`${cardBg} border ${cardBorder} rounded-sm p-[18px] flex flex-col gap-3`}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {healthy ? (
-            <CheckCircle2 size={16} className="text-[#059669] flex-shrink-0" />
-          ) : (
-            <ShieldAlert size={16} className="text-[#DC2626] flex-shrink-0" />
-          )}
-          <span className={`text-[13px] font-bold truncate ${healthy ? 'text-[#065F46]' : 'text-[#991B1B]'}`}>
-            {healthy ? 'Required checks passed' : 'System health'}
-          </span>
-        </div>
-        {!healthy && summaryParts.length > 0 && (
-          <span className="font-mono text-[10px] text-[#B91C1C] text-right">{summaryParts.join(' · ')}</span>
-        )}
+    <div id="system-health" className="bg-white border border-slate-200 rounded-sm p-[18px] flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-slate-800">
+        <ShieldAlert size={16} className="flex-shrink-0" />
+        <span className="text-[13px] font-bold">System health</span>
       </div>
-      <p className="text-[11px] text-[#64748B]">Ecosystem-wide checks. Email quality covers the last 7 days.</p>
-      <div className="flex flex-col">
-        {systems.map((s, i) => (
-          <div
-            key={s.key}
-            className={`flex flex-col gap-1 ${i < systems.length - 1 ? `pb-[10px] mb-[10px] border-b ${rowBorder}` : ''}`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: SYSTEM_DOT[s.status] }} />
-              <span className="font-mono text-[11px] text-[#1F2937] truncate flex-1 min-w-0">{s.name}</span>
-              <span
-                className="font-mono text-[10px] font-semibold flex-shrink-0"
-                style={{ color: SYSTEM_DOT[s.status] }}
-              >
-                {s.code}
-              </span>
-            </div>
-            <div className="text-[11px] text-[#6B7280] leading-[1.45] pl-[14px]">{s.detail}</div>
-            {s.checked_at && <div className="text-[10px] text-[#64748B] pl-[14px]">Checked {new Date(s.checked_at).toLocaleString()}</div>}
-          </div>
-        ))}
+      <p className="text-[12px] text-slate-700">
+        {systems.length === 0 ? 'No checks available yet.' : `${attention.length} need attention · ${passed.length} passed · ${optional.length} optional`}
+      </p>
+      <p className="text-[11px] text-slate-600 leading-relaxed">
+        Green: check passed. Red: repair needed. Amber: review needed, not necessarily an outage.
+        Gray: optional or not verified. Connection checks do not prove data is current or complete.
+        Email quality covers the last 7 days.
+      </p>
+      <div className="flex flex-col gap-2">{attention.map(renderRow)}</div>
+      {passed.length > 0 && (
+        <details className="rounded border border-emerald-200 bg-emerald-50 p-3">
+          <summary className={`cursor-pointer text-[12px] font-semibold text-emerald-800 rounded ${FOCUS_RING}`}>
+            {passed.length} checks passed — no action needed for these checks
+          </summary>
+          <div className="mt-3 flex flex-col gap-2">{passed.map(renderRow)}</div>
+        </details>
+      )}
+      {optional.length > 0 && (
+        <details className="rounded border border-slate-200 bg-slate-50 p-3">
+          <summary className={`cursor-pointer text-[12px] font-semibold text-slate-600 rounded ${FOCUS_RING}`}>
+            {optional.length} optional integrations — not counted as problems
+          </summary>
+          <div className="mt-3 flex flex-col gap-2">{optional.map(renderRow)}</div>
+        </details>
+      )}
+      <div className="border-t border-slate-200 pt-3 text-[11px] text-slate-600 leading-relaxed">
+        <a
+          href="https://github.com/boilermanc/sproutify-trellis/issues?q=is%3Aissue+is%3Aopen+label%3Atrellis-health"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-block text-[12px] font-semibold text-[#1E698F] underline rounded ${FOCUS_RING}`}
+        >
+          Open GitHub repair queue ↗
+        </a>
+        <p className="mt-1">The daily bot creates or updates issues for checks needing attention. It does not fix code automatically.</p>
+        <p className="mt-1">Ask Codex to fix an issue, review and deploy the fix, then the bot closes it after a complete recheck confirms recovery.</p>
       </div>
     </div>
   );
