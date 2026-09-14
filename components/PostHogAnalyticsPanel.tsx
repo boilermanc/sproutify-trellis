@@ -101,13 +101,13 @@ const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDat
                     {result.stale && <span className="rounded-full bg-amber-100 px-2 py-1 text-[8px] font-black uppercase text-amber-700">Stale fallback</span>}
                   </div>
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.signed_up}</p><p className="text-[8px] font-black uppercase text-violet-500">Signed up</p></div>
-                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.onboarded}</p><p className="text-[8px] font-black uppercase text-violet-500">Onboarded</p></div>
-                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.activated}</p><p className="text-[8px] font-black uppercase text-violet-500">Activated</p></div>
+                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.signed_up}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.signed_up || 'Signed up'}</p></div>
+                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.onboarded}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.onboarded || 'Onboarded'}</p></div>
+                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.activated}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.activated || 'Activated'}</p></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Signup → onboarding</p><p className="mt-1 text-lg font-black text-slate-800">{data.lifecycle_funnel.signup_to_onboarding_pct.toFixed(1)}%</p></div>
-                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Onboarding → activation</p><p className="mt-1 text-lg font-black text-slate-800">{data.lifecycle_funnel.onboarding_to_activation_pct.toFixed(1)}%</p></div>
+                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{data.lifecycle_funnel.conversion_labels?.signup_to_onboarding || 'Signup → onboarding'}</p><p className="mt-1 text-lg font-black text-slate-800">{data.lifecycle_funnel.signup_to_onboarding_pct.toFixed(1)}%</p></div>
+                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{data.lifecycle_funnel.conversion_labels?.onboarding_to_activation || 'Onboarding → activation'}</p><p className="mt-1 text-lg font-black text-slate-800">{data.lifecycle_funnel.onboarding_to_activation_pct.toFixed(1)}%</p></div>
                     <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">7-day retention</p><p className="mt-1 text-lg font-black text-emerald-700">{data.retention.day_7_pct.toFixed(1)}%</p></div>
                     <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">30-day retention</p><p className="mt-1 text-lg font-black text-emerald-700">{data.retention.day_30_pct.toFixed(1)}%</p></div>
                   </div>

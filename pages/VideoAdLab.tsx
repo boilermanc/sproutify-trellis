@@ -211,6 +211,20 @@ const statusChipClasses = (status: VideoAdStatus): string =>
 
 // ─── Component ───────────────────────────────────────────────────────
 const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext }) => {
+  // Dashboard review cards deep-link here with the affected branch. Keep the
+  // value in component state after consuming the URL parameter so returning to
+  // Creative Studio later from the sidebar does not reopen stale work.
+  const [reviewQueueBranch, setReviewQueueBranch] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('reviewBranch'),
+  );
+  useEffect(() => {
+    if (!reviewQueueBranch) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('reviewBranch')) return;
+    url.searchParams.delete('reviewBranch');
+    window.history.replaceState({}, '', url);
+  }, [reviewQueueBranch]);
+
   // ── Branch options — pulled from the real branches (fall back to the static
   //    ecosystem list only if branch context hasn't loaded). ──
   const branchOptions = useMemo(() => {
@@ -574,10 +588,30 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   useEffect(() => {
     (async () => {
       try {
-        const fetched = await getVideoAdJobs();
+        // Match the Dashboard queue's window so a review card never counts
+        // jobs that Creative Studio then fails to load.
+        const fetched = await getVideoAdJobs(undefined, 100);
         knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
         setJobs(fetched);
-        setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
+        setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
+
+        // A dashboard card represents all review-ready jobs for one branch and
+        // uses the oldest job for its age. Open that same oldest job directly,
+        // in the full review panel, so the click lands on actual work.
+        if (reviewQueueBranch) {
+          const target = fetched
+            .filter(job => job.branch === reviewQueueBranch && job.status === 'awaiting_approval' && !isCardBackground(job))
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
+          if (target) {
+            setBranch(target.branch);
+            setFormat(target.format || 'video');
+            setTrackedJobId(target.id);
+            setStep(4);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            addToast(`No review-ready creatives remain for ${branchName(reviewQueueBranch)}.`, 'info');
+          }
+        }
       } catch (err: any) {
         console.error('[VideoAdLab] Failed to load jobs:', err);
         addToast(`Failed to load video jobs: ${err.message}`, 'error');
@@ -620,10 +654,10 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(undefined, 100);
       knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
       setJobs(fetched);
-      setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
+      setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
       addToast('Video library refreshed', 'info');
     } catch (err: any) {
       console.error('[VideoAdLab] Failed to refresh jobs:', err);
@@ -684,9 +718,12 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // it here — otherwise the same creative gets two identical review panels.
   const awaitingApprovalJobs = useMemo(
     () => jobs.filter(j =>
-      j.status === 'awaiting_approval' && !isCardBackground(j) && !(step === 4 && j.id === trackedJobId),
+      j.status === 'awaiting_approval'
+      && !isCardBackground(j)
+      && (!reviewQueueBranch || j.branch === reviewQueueBranch)
+      && !(step === 4 && j.id === trackedJobId),
     ),
-    [jobs, step, trackedJobId],
+    [jobs, reviewQueueBranch, step, trackedJobId],
   );
 
   // ── The job the Progress step is watching ──
@@ -2708,6 +2745,20 @@ STRICT RULES:
             <h3 className="text-sm font-black uppercase tracking-tight text-amber-800">
               Needs Your Review ({awaitingApprovalJobs.length})
             </h3>
+            {reviewQueueBranch && (
+              <>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200">
+                  {branchName(reviewQueueBranch)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReviewQueueBranch(null)}
+                  className="text-[10px] font-bold text-amber-700 underline decoration-amber-300 underline-offset-2 hover:text-amber-900"
+                >
+                  Show all branches
+                </button>
+              </>
+            )}
           </div>
 
           <div className="grid gap-4">

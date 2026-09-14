@@ -436,7 +436,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
 
         {/* Global Overlays */}
         <ContextAwareHelp activeView={activeView} onOpenArticle={onOpenHelpArticle} onOpenHelpCenter={onOpenHelpCenter} />
-        <SageChat brand={brand} profiles={profiles} apiKeys={apiKeys} spokeConnections={spokeConnections} />
+        <SageChat brand={brand} profiles={profiles} apiKeys={apiKeys} spokeConnections={spokeConnections} branchContext={branchContext} />
       </main>
     </div>
   );

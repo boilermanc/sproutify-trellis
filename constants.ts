@@ -15,6 +15,7 @@ import SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA from './supabase/migrations/202609112
 import SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA from './supabase/migrations/20260911233823_add_spectiq_prospect_research.sql?raw';
 import SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA from './supabase/migrations/20260912005803_add_spectiq_research_snapshot_contract.sql?raw';
 import APP_STORE_ANALYTICS_SQL_SCHEMA from './supabase/migrations/20260912124945_app_store_analytics.sql?raw';
+import CONTENT_TREND_RADAR_SQL_SCHEMA from './supabase/migrations/20260912160554_content_trend_radar.sql?raw';
 
 export interface BriefAxis {
   name: string;
@@ -2989,6 +2990,7 @@ ${SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA}
 ${SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA}
 ${SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA}
 ${APP_STORE_ANALYTICS_SQL_SCHEMA}
+${CONTENT_TREND_RADAR_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

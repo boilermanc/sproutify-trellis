@@ -26,10 +26,13 @@ const MAX_CHUNKS = 120;       // ~12k recipients/invocation; rest resumes via cr
 
 type Rec = { id: string; email: string; first_name: string | null; unsubscribe_token: string | null };
 
-function personalize(template: string, unsubTemplate: string, scope: string, r: Rec): string {
-  const unsub = (unsubTemplate && r.unsubscribe_token)
+function buildUnsubscribeUrl(unsubTemplate: string, scope: string, r: Rec): string {
+  return (unsubTemplate && r.unsubscribe_token)
     ? unsubTemplate.replace(/\{\{\s*token\s*\}\}/g, r.unsubscribe_token)
     : `${SUPABASE_URL}/functions/v1/unsubscribe?email=${encodeURIComponent(r.email)}&scope=${encodeURIComponent(scope)}`;
+}
+
+function personalize(template: string, unsubscribeUrl: string, r: Rec): string {
   const firstName = r.first_name?.trim() || "";
   const personalized = template.replace(
     /<!--\s*IF_FIRST_NAME\s*-->([\s\S]*?)<!--\s*END_IF_FIRST_NAME\s*-->/gi,
@@ -39,7 +42,7 @@ function personalize(template: string, unsubTemplate: string, scope: string, r: 
     // Templates without a conditional greeting retain the established fallback.
     .replace(/\{\{\s*first_name\s*\}\}/g, firstName || "Friend")
     .replace(/\{\{\s*email\s*\}\}/g, r.email)
-    .replace(/\{\{\s*unsubscribe_url\s*\}\}/g, unsub);
+    .replace(/\{\{\s*unsubscribe_url\s*\}\}/g, unsubscribeUrl);
 }
 
 const json = (b: unknown, status = 200) =>
@@ -111,13 +114,20 @@ Deno.serve(async () => {
       }
       if (send.length === 0) continue;
 
-      const batch = send.map((r: Rec) => ({
-        from,
-        to: [r.email],
-        ...(cc ? { cc: [cc] } : {}),
-        subject,
-        html: personalize(template, unsubTemplate, scope, r),
-      }));
+      const batch = send.map((r: Rec) => {
+        const unsubscribeUrl = buildUnsubscribeUrl(unsubTemplate, scope, r);
+        return {
+          from,
+          to: [r.email],
+          ...(cc ? { cc: [cc] } : {}),
+          subject,
+          html: personalize(template, unsubscribeUrl, r),
+          headers: {
+            "List-Unsubscribe": `<${unsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
+        };
+      });
       try {
         const resp = await fetch(RESEND_BATCH_URL, {
           method: "POST",

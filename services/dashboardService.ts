@@ -595,6 +595,11 @@ export function buildQueue(
   const waitingByBranch = new Map<string, VideoAdJob[]>();
   for (const job of videoAdJobs) {
     if (job.status !== 'awaiting_approval') continue;
+    // Card Studio background jobs stop at awaiting_approval because the card
+    // composer consumes their frame automatically. They are inputs, not ads a
+    // person can approve, and Creative Studio intentionally hides them.
+    const requestPayload = parseJsonbField<Record<string, unknown>>(job.request_payload, {});
+    if (requestPayload.purpose === 'card_background') continue;
     if (!waitingByBranch.has(job.branch)) waitingByBranch.set(job.branch, []);
     waitingByBranch.get(job.branch)!.push(job);
   }
@@ -610,7 +615,9 @@ export function buildQueue(
       branchColor: branch?.primary_color || '#64748B',
       branchSlug: branch?.slug ?? slug,
       occurredAt: oldest,
-      actionLabel: 'Approve',
+      // This opens the matching creative in the review workspace. It does not
+      // approve anything until the user has inspected the asset there.
+      actionLabel: 'Review',
       actionView: 'video-ad-lab',
     });
   }

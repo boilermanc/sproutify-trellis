@@ -10,12 +10,10 @@ import {
   rowObject,
   runPosthogQuery,
 } from "../_shared/posthog.ts";
+import { posthogLifecycleForBranch } from "../_shared/posthog-contract.mjs";
 
 const CACHE_MS = 60 * 60 * 1000;
 const WINDOWS = new Set([7, 30, 90]);
-const SIGNUP_EVENTS = ["user_signed_up", "account_created"];
-const ONBOARDING_EVENTS = ["onboarding_completed"];
-const ACTIVATION_EVENTS = ["activation_milestone_reached"];
 
 const n = (value: unknown): number => {
   const number = Number(value ?? 0);
@@ -73,6 +71,10 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const lifecycle = posthogLifecycleForBranch(connection.branches?.slug);
+    const SIGNUP_EVENTS = lifecycle.signup_events;
+    const ONBOARDING_EVENTS = lifecycle.onboarding_events;
+    const ACTIVATION_EVENTS = lifecycle.activation_events;
     const apiKey = await decryptSecret(connection.api_key_ciphertext);
     const allAllowedEvents = Array.isArray(connection.allowed_events) ? connection.allowed_events.map(String) : [];
     const milestoneEvents = allAllowedEvents.filter((event: string) =>
@@ -157,6 +159,8 @@ Deno.serve(async (req: Request) => {
       sessions: n(activity.sessions),
       users: { total_in_window: uniqueUsers, new: newUsers, returning: Math.max(0, uniqueUsers - newUsers) },
       lifecycle_funnel: {
+        labels: lifecycle.labels,
+        conversion_labels: lifecycle.conversion_labels,
         signed_up: signedUp,
         onboarded,
         activated,

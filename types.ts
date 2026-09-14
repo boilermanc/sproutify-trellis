@@ -192,6 +192,8 @@ export interface PostHogAnalyticsSummary {
   sessions: number;
   users: { total_in_window: number; new: number; returning: number };
   lifecycle_funnel: {
+    labels?: { signed_up: string; onboarded: string; activated: string };
+    conversion_labels?: { signup_to_onboarding: string; onboarding_to_activation: string };
     signed_up: number;
     onboarded: number;
     activated: number;

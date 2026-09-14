@@ -1,0 +1,33 @@
+begin;
+set local role service_role;
+do $test$
+declare r public.content_radar_runs; r2 public.content_radar_runs; o public.content_radar_opportunities; token uuid; probe text := 'radar-test-' || replace(gen_random_uuid()::text,'-','');
+begin
+ insert into public.content_radar_settings(project_id,config,enabled) values(probe,'{"interval_days":7}',false);
+ select * into r from public.claim_content_radar_run(probe,'scheduled');
+ if r.id is not null then raise exception 'Paused schedule ran'; end if;
+ select * into r from public.claim_content_radar_run(probe,'manual');
+ if r.id is null then raise exception 'Manual claim failed'; end if;
+ select * into r2 from public.claim_content_radar_run(probe,'manual');
+ if r2.id is not null then raise exception 'Concurrent scan claimed'; end if;
+ select * into r from public.complete_content_radar_run(r.id,'[{"query":"test seedlings","query_key":"test seedlings","country":"US","title":"Test","recommendation":"new_article","evidence":{}}]','[]',null);
+ if r.status <> 'completed' or r.new_opportunities <> 1 then raise exception 'Completion failed'; end if;
+ select * into r2 from public.claim_content_radar_run(probe,'manual');
+ if r2.id is not null then raise exception 'Cooldown failed'; end if;
+ select * into r2 from public.claim_content_radar_run(probe,'csv');
+ select * into r2 from public.complete_content_radar_run(r2.id,'[{"query":"test seedlings","query_key":"test seedlings","country":"US","title":"Duplicate","recommendation":"new_article","evidence":{}}]','[]',null);
+ if r2.status <> 'empty' or r2.new_opportunities <> 0 then raise exception 'Duplicate saved'; end if;
+ select * into o from public.content_radar_opportunities where project_id=probe;
+ select * into o from public.claim_content_radar_draft(probe,o.id);
+ if o.draft_status <> 'generating' or o.draft_token is null then raise exception 'Draft claim failed'; end if;
+ token := o.draft_token;
+ if (public.claim_content_radar_draft(probe,o.id)).id is not null then raise exception 'Duplicate draft claimed'; end if;
+ update public.content_radar_opportunities set draft_started_at=now()-interval '11 minutes' where id=o.id;
+ select * into o from public.claim_content_radar_draft(probe,o.id);
+ if o.draft_token = token then raise exception 'Draft lease token was reused'; end if;
+ update public.content_radar_opportunities set status='dismissed',draft_status='failed' where id=o.id;
+ if (public.claim_content_radar_draft(probe,o.id)).id is not null then raise exception 'Dismissed opportunity drafted'; end if;
+end $test$;
+select 'PASS: pause, claim exclusion, cooldown, completion, deduplication, draft lease recovery, dismissal' as verification;
+rollback;
+select relname,relrowsecurity,has_table_privilege('authenticated',oid,'SELECT') as authenticated_select,has_table_privilege('service_role',oid,'SELECT') as service_select from pg_class where oid in ('public.content_radar_settings'::regclass,'public.content_radar_runs'::regclass,'public.content_radar_opportunities'::regclass);

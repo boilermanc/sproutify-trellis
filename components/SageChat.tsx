@@ -7,9 +7,10 @@ import {
   ShieldCheck, Zap, ChevronRight, BarChart3,
   Search, ExternalLink, HelpCircle
 } from 'lucide-react';
-import { ChatMessage, LlmProvider, Brand, Ticket, Profile, ApiKeyConfig, SpokeConnection } from '../types';
+import { ChatMessage, LlmProvider, Brand, Ticket, Profile, ApiKeyConfig, SpokeConnection, BranchContext } from '../types';
 import { chatWithSage } from '../services/aiService';
 import { answerEventRegistrationQuestion } from '../services/sageEventReportingService';
+import { answerPosthogAnalyticsQuestion, type PosthogConversation } from '../services/sagePosthogReportingService';
 import {
   fetchRecentCampaignPerformance,
   fetchSharedCampaignOpeners,
@@ -22,6 +23,7 @@ interface SageChatProps {
   profiles?: Profile[];
   apiKeys?: ApiKeyConfig;
   spokeConnections?: SpokeConnection[];
+  branchContext?: BranchContext;
 }
 
 // Stylized Icon Component with Purple-Pink Gradient Background
@@ -115,15 +117,19 @@ const answerRecentEmailOpenQuestion = async (text: string, profiles: Profile[]):
   return `${heading}\n\n${result.campaigns.map(formatCampaignOpenLine).join('\n')}\n\n“Opened” means unique recipients whose email client reported an open. Privacy protections and blocked images can make this lower than the true readership.`;
 };
 
-const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [], apiKeys, spokeConnections = [] }) => {
+const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profiles = [], apiKeys, spokeConnections = [], branchContext }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'sage', content: `Hi — I’m Sage. Ask me about ${brand?.name || 'this brand'} campaigns, email performance, ATL event registrations, profiles, or support. I’ll use live data where it’s connected and tell you when it isn’t.`, timestamp: new Date().toISOString() }
+    { role: 'sage', content: `Hi — I’m Sage. Ask me about ${brand?.name || 'this brand'} campaigns, email performance, ATL event registrations, or PostHog product analytics across your connected properties. I’ll use live data where it’s connected and tell you when it isn’t.`, timestamp: new Date().toISOString() }
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const posthogContext = useRef<PosthogConversation | null>(null);
+  const branchScopeKey = `${branchContext?.isAllSelected}:${[...(branchContext?.activeBranchSlugs || [])].sort().join(',')}`;
+
+  useEffect(() => { posthogContext.current = null; }, [branchScopeKey]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -156,7 +162,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
       "How many people opened the last two ATL Urban Farms emails?",
       "How many people registered for ATL events?",
       "What live data can you access?",
-      "Where can I review campaign performance?"
+      "How are all PostHog properties doing?"
     ];
 
     if (words.has('farm')) dynamicQuestions.unshift("Check Farm activity for these customers");
@@ -192,16 +198,23 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
     const atlConnection = spokeConnections.find((connection) =>
       connection.status === 'active' && connection.supabase_url.includes('povudgtvzggnxwgtjexa')
     );
-    const factualEventResponse = await answerEventRegistrationQuestion(text, atlConnection?.id || null, profiles);
-    const factualEmailResponse = factualEventResponse ? null : await answerRecentEmailOpenQuestion(text, profiles);
-    const response = factualEventResponse || factualEmailResponse || await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
-      tickets: [],
-      brandName: brand?.name || 'Trellis'
-    });
-    
-    const sageMsg: ChatMessage = { role: 'sage', content: response, timestamp: new Date().toISOString() };
-    setMessages(prev => [...prev, sageMsg]);
-    setIsTyping(false);
+    try {
+      // Product events must be handled before the broader ATL event matcher.
+      const factualPosthogResponse = await answerPosthogAnalyticsQuestion(text, branchContext, posthogContext.current);
+      posthogContext.current = factualPosthogResponse?.context || null;
+      const factualEventResponse = factualPosthogResponse ? null : await answerEventRegistrationQuestion(text, atlConnection?.id || null, profiles);
+      const factualEmailResponse = factualPosthogResponse || factualEventResponse ? null : await answerRecentEmailOpenQuestion(text, profiles);
+      const response = factualPosthogResponse?.text || factualEventResponse || factualEmailResponse || await chatWithSage(activeKeys, messages, text, provider as LlmProvider, {
+        tickets: [],
+        brandName: brand?.name || 'Trellis'
+      });
+      setMessages(prev => [...prev, { role: 'sage', content: response, timestamp: new Date().toISOString() }]);
+    } catch {
+      posthogContext.current = null;
+      setMessages(prev => [...prev, { role: 'sage', content: 'I couldn’t read the requested report. Please retry; I won’t guess at the numbers.', timestamp: new Date().toISOString() }]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const toggleMaximize = () => setIsMaximized(!isMaximized);
@@ -210,7 +223,8 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
     return (
       <button 
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-8 right-8 z-50 hidden h-16 w-16 items-center justify-center overflow-hidden rounded-full border-4 border-white p-0 text-white shadow-2xl transition-transform hover:scale-110 sm:flex"
+        aria-label="Open Sage"
+        className="fixed bottom-8 right-8 z-50 flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-4 border-white p-0 text-white shadow-2xl transition-transform hover:scale-110"
         style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)' }}
       >
         <Sparkles size={28} className="group-hover:rotate-12 transition-transform relative z-10 text-white" />
@@ -284,6 +298,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
                     />
                     <button 
                       type="submit"
+                      aria-label="Send message"
                       disabled={!input.trim() || isTyping}
                       className="absolute right-4 w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg transition-all disabled:opacity-30 active:scale-90 z-20"
                       style={{ backgroundColor: brand?.primaryColor || '#10b981' }}
@@ -446,6 +461,7 @@ const SageChat: React.FC<SageChatProps> = ({ provider = 'gemini', brand, profile
           />
           <button 
             type="submit"
+            aria-label="Send message"
             disabled={!input.trim() || isTyping}
             className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 text-white rounded-lg transition disabled:opacity-30 z-20 shadow-sm flex items-center justify-center p-0"
             style={{ backgroundColor: brand?.primaryColor || '#10b981' }}

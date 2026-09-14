@@ -148,10 +148,25 @@ function fmtCompactOrDash(n: number | null): string {
 const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }) => {
   // ── Branch selection ──
   const branchOptions = branchContext?.allBranches ?? [];
+  const [composeBranch] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('composeBranch'),
+  );
   const [branchId, setBranchId] = useState('');
   useEffect(() => {
-    if (!branchId && branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [branchOptions, branchId]);
+    if (!branchId && branchOptions.length > 0) {
+      const requested = composeBranch
+        ? branchOptions.find(branch => branch.slug === composeBranch)
+        : undefined;
+      setBranchId(requested?.id || branchOptions[0].id);
+    }
+  }, [branchOptions, branchId, composeBranch]);
+  useEffect(() => {
+    if (!composeBranch) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('composeBranch')) return;
+    url.searchParams.delete('composeBranch');
+    window.history.replaceState({}, '', url);
+  }, [composeBranch]);
   const selectedBranch = branchOptions.find(b => b.id === branchId) || null;
 
   // Queue shows every brand's posts, so each row needs its brand name resolved

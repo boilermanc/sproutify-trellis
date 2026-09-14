@@ -20,6 +20,7 @@ import {
   DEFAULT_POSTHOG_PROPERTIES,
   deletePosthogConnection,
   fetchPosthogConnections,
+  getPosthogBranchDefaults,
   rotatePosthogWebhookSecret,
   savePosthogConnection,
   testPosthogConnection,
@@ -78,6 +79,16 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
       allowed_properties: csv(DEFAULT_POSTHOG_PROPERTIES),
     });
     setShowForm(false);
+  };
+
+  const selectBranch = (branchId: string) => {
+    const defaults = getPosthogBranchDefaults(branches.find(branch => branch.id === branchId)?.slug);
+    setForm(current => ({
+      ...current,
+      branch_id: branchId,
+      allowed_events: csv(defaults.allowed_events),
+      allowed_properties: csv(defaults.allowed_properties),
+    }));
   };
 
   const edit = (connection: PostHogConnection) => {
@@ -223,7 +234,7 @@ const PostHogConnectionsPanel: React.FC<Props> = ({ branches }) => {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 Branch
-                <select value={form.branch_id} disabled={!!editingId} onChange={event => setForm(current => ({ ...current, branch_id: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold normal-case tracking-normal text-slate-800 outline-none focus:border-violet-500 disabled:opacity-60">
+                <select value={form.branch_id} disabled={!!editingId} onChange={event => selectBranch(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold normal-case tracking-normal text-slate-800 outline-none focus:border-violet-500 disabled:opacity-60">
                   <option value="">Select a branch</option>
                   {availableBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </select>

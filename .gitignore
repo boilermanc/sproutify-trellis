@@ -27,3 +27,4 @@ __pycache__/
 # Local tooling state (machine-specific, should not be tracked)
 supabase/.temp/
 .claude/settings.local.json
+.codex-worktrees/

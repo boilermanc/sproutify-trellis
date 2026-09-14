@@ -349,6 +349,18 @@ const MorningStandup: React.FC<MorningStandupProps> = ({
       return;
     }
     if (item.actionView) {
+      // Carry the queue item's identity into the destination instead of merely
+      // opening a generic module. Each destination consumes its parameter once
+      // and opens the branch-specific work surface.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reviewBranch');
+      url.searchParams.delete('composeBranch');
+      if (item.branchSlug && item.actionView === 'video-ad-lab') {
+        url.searchParams.set('reviewBranch', item.branchSlug);
+      } else if (item.branchSlug && item.actionView === 'post-scheduler') {
+        url.searchParams.set('composeBranch', item.branchSlug);
+      }
+      window.history.replaceState({}, '', url);
       onViewChange?.(item.actionView);
     }
   };

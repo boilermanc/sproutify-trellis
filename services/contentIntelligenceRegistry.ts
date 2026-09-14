@@ -112,7 +112,7 @@ function parseJsonl<T>(raw: string, path: string, errors: string[]): T[] {
     });
 }
 
-function blankProject(projectId: string): ContentIntelligenceProject {
+export function blankProject(projectId: string): ContentIntelligenceProject {
   return {
     projectId,
     topics: [],

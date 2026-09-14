@@ -21,7 +21,7 @@ const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'events', label: 'Events', icon: CalendarDays },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
-  { id: 'product', label: 'Product', icon: Activity },
+  { id: 'product', label: 'PostHog', icon: Activity },
   { id: 'app-store', label: 'App Store', icon: Smartphone },
   { id: 'blueprints', label: 'Blueprints', icon: FileText },
 ];

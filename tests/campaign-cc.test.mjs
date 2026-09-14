@@ -26,3 +26,13 @@ test('campaign CC reaches both test RPC and durable batch sends', async () => {
   assert.match(resend, /p_from:[\s\S]*p_cc:/);
   assert.match(worker, /\.\.\.\(cc \? \{ cc: \[cc\] \} : \{\}\)/);
 });
+
+test('campaign sends use one recipient-specific URL for the footer and RFC 8058 headers', async () => {
+  const worker = await read('supabase/functions/campaign-sender/index.ts');
+
+  assert.match(worker, /function buildUnsubscribeUrl\(/);
+  assert.match(worker, /const unsubscribeUrl = buildUnsubscribeUrl\(unsubTemplate, scope, r\)/);
+  assert.match(worker, /html: personalize\(template, unsubscribeUrl, r\)/);
+  assert.match(worker, /"List-Unsubscribe": `<\$\{unsubscribeUrl\}>`/);
+  assert.match(worker, /"List-Unsubscribe-Post": "List-Unsubscribe=One-Click"/);
+});

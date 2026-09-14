@@ -1,10 +1,60 @@
 export const EVENT_MAP = Object.freeze({
   user_signed_up: 'product_signup',
   account_created: 'product_signup',
+  signup_completed: 'product_signup',
   onboarding_completed: 'product_onboarding_completed',
   activation_milestone_reached: 'product_activated',
+  first_record_added: 'product_activated',
   meaningful_return: 'product_returned',
 });
+
+export const DEFAULT_POSTHOG_EVENTS = [
+  'user_signed_up', 'account_created', 'onboarding_completed',
+  'activation_milestone_reached', 'core_feature_milestone', 'meaningful_return',
+];
+export const DEFAULT_POSTHOG_PROPERTIES = [
+  'platform', 'feature', 'milestone', 'app_version', 'return_interval_bucket',
+];
+
+export function getPosthogBranchDefaults(branchSlug) {
+  if (branchSlug === 'rekkrd') {
+    return {
+      allowed_events: [
+        'signup_completed', 'first_record_added', 'discogs_connected',
+        'discogs_import_completed', 'collection_value_viewed', 'third_spin_logged',
+      ],
+      allowed_properties: ['platform', 'surface', 'placement', 'value'],
+    };
+  }
+  return {
+    allowed_events: [...DEFAULT_POSTHOG_EVENTS],
+    allowed_properties: [...DEFAULT_POSTHOG_PROPERTIES],
+  };
+}
+
+// Queries and webhook ingestion must agree on which events represent a lifecycle step.
+export function posthogEventsForType(eventType) {
+  return Object.keys(EVENT_MAP).filter(event => EVENT_MAP[event] === eventType);
+}
+
+export function posthogLifecycleForBranch(branchSlug) {
+  // Preserve the deployed Rejoice install/identity proxy until it emits lifecycle events.
+  const rejoice = branchSlug === 'rejoice';
+  return {
+    signup_events: rejoice ? ['Application Installed'] : posthogEventsForType('product_signup'),
+    onboarding_events: rejoice ? ['$identify'] : posthogEventsForType('product_onboarding_completed'),
+    activation_events: posthogEventsForType('product_activated'),
+    labels: {
+      signed_up: rejoice ? 'Installed' : 'Signed up',
+      onboarded: rejoice ? 'Identified' : 'Onboarded',
+      activated: 'Activated',
+    },
+    conversion_labels: {
+      signup_to_onboarding: rejoice ? 'Install → identified' : 'Signup → onboarding',
+      onboarding_to_activation: rejoice ? 'Identified → activated' : 'Onboarding → activation',
+    },
+  };
+}
 
 const SENSITIVE_KEYS = /(journal|prayer|mood|emotion|faith|belief|message|content|text|note|url|path|email|name|phone|address|token|secret)/i;
 
