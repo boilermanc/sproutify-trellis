@@ -19,6 +19,7 @@ import TrellisStudio from './pages/TrellisStudio';
 import StudioAlbums from './pages/StudioAlbums';
 import TrellisEpisodes from './pages/TrellisEpisodes';
 import ClipStudio from './pages/ClipStudio';
+import Transcriptions from './pages/Transcriptions';
 import AdPerformance from './pages/AdPerformance';
 import PostScheduler from './pages/PostScheduler';
 import CardStudio from './pages/CardStudio';
@@ -517,6 +518,7 @@ const AppContent: React.FC = () => {
       case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
       case 'trellis-episodes': return <TrellisEpisodes branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
       case 'clip-studio': return <ClipStudio branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'transcriptions': return <Transcriptions addToast={addToast} />;
       case 'ad-performance': return <AdPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
       case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;

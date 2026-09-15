@@ -611,7 +611,37 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'prospecting' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'promo-studio' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'prospecting' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'promo-studio' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'transcriptions' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+
+export interface TranscriptionSegment {
+  id?: string;
+  speaker?: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptionJob {
+  id: string;
+  created_by: string;
+  title: string;
+  original_filename: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  file_size_bytes: number;
+  mode: 'standard' | 'diarized';
+  provider: 'openai' | 'elevenlabs' | 'gemini';
+  model: string;
+  language: string | null;
+  status: 'uploaded' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  transcript_text: string | null;
+  segments: TranscriptionSegment[];
+  duration_seconds: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface StudioAlbum {
   id: string;

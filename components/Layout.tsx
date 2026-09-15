@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Users, Workflow, Mail, Code2, Sprout,
   CheckSquare, Rocket, Share2, Settings, LogOut, HelpCircle,
   LifeBuoy, BarChart3, BookOpen, GraduationCap, UserCog, Pencil, GitBranch, Layers, Dna,
-  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle, Sparkles, TrendingUp, CalendarClock, LayoutTemplate, Award, UserPlus, BrainCircuit, SearchCheck
+  ChevronDown, Plug, Wand2, Palette, Video, Menu, X, Music, Clapperboard, Film, Send, MessageCircle, Sparkles, TrendingUp, CalendarClock, LayoutTemplate, Award, UserPlus, BrainCircuit, SearchCheck, Mic2
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -72,6 +72,7 @@ const NAV_GROUPS = [
       { id: 'ad-performance', label: 'Ad Performance', icon: TrendingUp },
       { id: 'post-performance', label: 'Post Performance', icon: Award },
       { id: 'clip-studio', label: 'Clip Studio', icon: Film },
+      { id: 'transcriptions', label: 'Transcriptions', icon: Mic2 },
       { id: 'trellis-studio', label: 'Trellis Sessions', icon: Music },
       { id: 'studio-albums', label: 'Studio Albums', icon: Music },
       { id: 'trellis-episodes', label: 'Trellis Episodes', icon: Clapperboard },
