@@ -12,13 +12,17 @@ test('Transcription Studio is private, owner-scoped, and supports timed exports'
   assert.match(migration, /auth\.uid\(\)\) = created_by/);
   assert.match(migration, /storage\.foldername\(name\)/);
   assert.match(service, /'srt' \| 'vtt'/);
+  assert.match(service, /audio_duration_secs/);
+  assert.match(service, /'json'/);
   assert.match(page, /Identify speakers/);
 });
 
 test('transcription provider calls stay server-side and sanitize stored model output', () => {
   assert.doesNotMatch(service, /api\.openai\.com/);
   assert.match(edge, /api\.openai\.com\/v1\/audio\/transcriptions/);
-  assert.match(edge, /gpt-4o-mini-transcribe/);
+  assert.match(edge, /timestamp_granularities\[\]/);
+  assert.match(edge, /"word", "segment"/);
+  assert.match(edge, /"whisper-1"/);
   assert.match(edge, /gpt-4o-transcribe-diarize/);
   assert.match(edge, /sanitizePII/);
 });

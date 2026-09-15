@@ -32,6 +32,28 @@ function normalizeSegments(result: any) {
   })).filter((segment: any) => segment.text && segment.end >= segment.start);
 }
 
+function normalizeWords(result: any) {
+  const source = Array.isArray(result?.words) ? result.words : [];
+  return source.map((word: any) => ({
+    text: sanitizePII(clean(word.word ?? word.text, 200)),
+    start: Math.max(0, Number(word.start ?? word.start_seconds ?? 0) || 0),
+    end: Math.max(0, Number(word.end ?? word.end_seconds ?? 0) || 0),
+  })).filter((word: any) => word.text && word.end >= word.start);
+}
+
+async function requestTranscription(audio: Blob, job: any, apiKey: string, model: string, responseFormat: string, timestamps: string[] = []) {
+  const form = new FormData();
+  form.append("file", new File([audio], job.original_filename, { type: job.mime_type }));
+  form.append("model", model);
+  form.append("response_format", responseFormat);
+  for (const timestamp of timestamps) form.append("timestamp_granularities[]", timestamp);
+  if (model === "gpt-4o-transcribe-diarize") form.append("chunking_strategy", "auto");
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: AbortSignal.timeout(140000) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(clean(result?.error?.message || `Provider returned HTTP ${response.status}.`, 500));
+  return result;
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -55,12 +77,12 @@ Deno.serve(async (request: Request) => {
       const mimeType = clean(body.mime_type, 100).toLowerCase();
       const size = Number(body.file_size_bytes);
       const mode = body.mode === "diarized" ? "diarized" : "standard";
-      if (!title || !filename || !Number.isSafeInteger(size) || size < 1 || size > 104857600) throw new Error("Choose a valid file smaller than 100 MB.");
+      if (!title || !filename || !Number.isSafeInteger(size) || size < 1 || size > 26214400) throw new Error("Choose a valid file no larger than 25 MB.");
       if (!/^(audio|video)\//.test(mimeType)) throw new Error("Only audio and video uploads can be transcribed.");
       const id = crypto.randomUUID();
       const extension = filename.includes(".") ? filename.split(".").pop()!.replace(/[^a-z0-9]/gi, "").slice(0, 8) : "audio";
       const path = `${user.id}/${id}/source.${extension || "audio"}`;
-      const model = mode === "diarized" ? "gpt-4o-transcribe-diarize" : "gpt-4o-mini-transcribe";
+      const model = mode === "diarized" ? "gpt-4o-transcribe-diarize+whisper-1" : "whisper-1";
       const { data: job, error } = await db.from("transcription_jobs").insert({ id, created_by: user.id, title, original_filename: filename, storage_path: path, mime_type: mimeType, file_size_bytes: size, mode, model }).select("*").single();
       if (error) throw new Error(error.message);
       const { data: upload, error: uploadError } = await db.storage.from(BUCKET).createSignedUploadUrl(path, { upsert: false });
@@ -79,24 +101,17 @@ Deno.serve(async (request: Request) => {
         if (audioError || !audio) throw new Error(audioError?.message || "Uploaded audio could not be read.");
         const apiKey = Deno.env.get("OPENAI_API_KEY") || secret?.openai_api_key;
         if (!apiKey) throw new Error("Add an OpenAI API key in Trellis Settings before transcribing.");
-        const form = new FormData();
-        form.append("file", new File([audio], job.original_filename, { type: job.mime_type }));
-        form.append("model", job.model);
-        if (job.mode === "diarized") {
-          form.append("response_format", "diarized_json");
-          form.append("chunking_strategy", "auto");
-        } else {
-          form.append("response_format", "verbose_json");
-          form.append("timestamp_granularities[]", "segment");
-        }
-        const response = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: AbortSignal.timeout(140000) });
-        const result = await response.json();
-        if (!response.ok) throw new Error(clean(result?.error?.message || `Provider returned HTTP ${response.status}.`, 500));
-        const segments = normalizeSegments(result);
-        const transcript = sanitizePII(clean(result.text || segments.map((segment: any) => `${segment.speaker ? `${segment.speaker}: ` : ""}${segment.text}`).join("\n"), 200000));
+        const timingResult = await requestTranscription(audio, job, apiKey, "whisper-1", "verbose_json", ["word", "segment"]);
+        const diarizedResult = job.mode === "diarized"
+          ? await requestTranscription(audio, job, apiKey, "gpt-4o-transcribe-diarize", "diarized_json")
+          : timingResult;
+        const segments = normalizeSegments(diarizedResult);
+        const words = normalizeWords(timingResult);
+        if (!words.length) throw new Error("The provider returned no word-level timing data.");
+        const transcript = sanitizePII(clean(diarizedResult.text || timingResult.text || segments.map((segment: any) => `${segment.speaker ? `${segment.speaker}: ` : ""}${segment.text}`).join("\n"), 200000));
         if (!transcript) throw new Error("The provider returned an empty transcript.");
-        const duration = Number(result.duration || Math.max(0, ...segments.map((segment: any) => segment.end))) || null;
-        const { data: completed, error } = await db.from("transcription_jobs").update({ status: "completed", transcript_text: transcript, segments, duration_seconds: duration, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id).eq("created_by", user.id).select("*").single();
+        const duration = Number(timingResult.duration || Math.max(0, ...words.map((word: any) => word.end), ...segments.map((segment: any) => segment.end))) || null;
+        const { data: completed, error } = await db.from("transcription_jobs").update({ status: "completed", transcript_text: transcript, segments, words, duration_seconds: duration, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id).eq("created_by", user.id).select("*").single();
         if (error) throw new Error(error.message);
         return json({ job: completed });
       } catch (error) {

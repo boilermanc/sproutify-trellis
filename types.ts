@@ -621,6 +621,12 @@ export interface TranscriptionSegment {
   text: string;
 }
 
+export interface TranscriptionWord {
+  text: string;
+  start: number;
+  end: number;
+}
+
 export interface TranscriptionJob {
   id: string;
   created_by: string;
@@ -637,6 +643,7 @@ export interface TranscriptionJob {
   status: 'uploaded' | 'processing' | 'completed' | 'failed' | 'cancelled';
   transcript_text: string | null;
   segments: TranscriptionSegment[];
+  words: TranscriptionWord[];
   duration_seconds: number | null;
   error_message: string | null;
   created_at: string;

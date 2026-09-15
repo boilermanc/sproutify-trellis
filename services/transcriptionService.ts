@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { TranscriptionJob, TranscriptionSegment } from '../types';
 
 const BUCKET = 'transcription-audio';
-const MAX_BYTES = 100 * 1024 * 1024;
+const MAX_BYTES = 25 * 1024 * 1024;
 
 async function functionError(error: unknown): Promise<string> {
   if (error instanceof FunctionsHttpError) {
@@ -27,7 +27,7 @@ export async function listTranscriptions(): Promise<TranscriptionJob[]> {
 }
 
 export async function createTranscription(file: File, title: string, mode: 'standard' | 'diarized'): Promise<TranscriptionJob> {
-  if (!file.size || file.size > MAX_BYTES) throw new Error('Choose an audio or video file smaller than 100 MB.');
+  if (!file.size || file.size > MAX_BYTES) throw new Error('Choose an audio or video file no larger than 25 MB.');
   const prepared = await call<{ job: TranscriptionJob; upload: { path: string; token: string } }>('create_upload', {
     title, filename: file.name, mime_type: file.type || 'application/octet-stream', file_size_bytes: file.size, mode,
   });
@@ -54,16 +54,21 @@ const clock = (seconds: number, vtt = false) => {
   return `${hours}:${minutes}:${secs}${vtt ? '.' : ','}${millis}`;
 };
 
-export function exportTranscript(job: TranscriptionJob, format: 'txt' | 'srt' | 'vtt'): void {
+export function exportTranscript(job: TranscriptionJob, format: 'txt' | 'srt' | 'vtt' | 'json'): void {
   let content = job.transcript_text || '';
   const segments: TranscriptionSegment[] = Array.isArray(job.segments) ? job.segments : [];
-  if (format === 'srt' || format === 'vtt') {
+  if (format === 'json') {
+    content = JSON.stringify({
+      audio_duration_secs: Number(job.duration_seconds || 0),
+      words: (job.words || []).map(word => ({ text: word.text, start: word.start, end: word.end })),
+    }, null, 2);
+  } else if (format === 'srt' || format === 'vtt') {
     const cues = segments.length ? segments : [{ start: 0, end: Math.max(1, job.duration_seconds || 1), text: content }];
     content = `${format === 'vtt' ? 'WEBVTT\n\n' : ''}${cues.map((segment, index) =>
       `${format === 'srt' ? `${index + 1}\n` : ''}${clock(segment.start, format === 'vtt')} --> ${clock(segment.end, format === 'vtt')}\n${segment.speaker ? `${segment.speaker}: ` : ''}${segment.text.trim()}`
     ).join('\n\n')}\n`;
   }
-  const blob = new Blob([content], { type: format === 'txt' ? 'text/plain' : `text/${format}` });
+  const blob = new Blob([content], { type: format === 'json' ? 'application/json' : format === 'txt' ? 'text/plain' : `text/${format}` });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
