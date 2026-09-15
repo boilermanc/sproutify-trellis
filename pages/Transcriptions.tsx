@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileAudio, Loader2, Mic2, Save, Trash2, Upload } from 'lucide-react';
 import type { TranscriptionJob } from '../types';
 import { createTranscription, deleteTranscription, exportTranscript, listTranscriptions, updateTranscript } from '../services/transcriptionService';
@@ -15,7 +15,23 @@ const Transcriptions: React.FC<Props> = ({ addToast }) => {
   const [loading, setLoading] = useState(true);
   const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const selected = useMemo(() => jobs.find(job => job.id === selectedId) || null, [jobs, selectedId]);
+
+  const selectFile = (next: File | null) => {
+    if (!next) return;
+    if (!/^(audio|video)\//.test(next.type)) {
+      addToast?.('Drop an audio or video file.', 'error');
+      return;
+    }
+    if (next.size > 25 * 1024 * 1024) {
+      addToast?.('The recording must be no larger than 25 MB.', 'error');
+      return;
+    }
+    setFile(next);
+    if (!title) setTitle(next.name.replace(/\.[^.]+$/, ''));
+  };
 
   const load = async () => {
     try {
@@ -60,8 +76,23 @@ const Transcriptions: React.FC<Props> = ({ addToast }) => {
   return <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
     <section className="overflow-hidden rounded-[2rem] bg-slate-950 p-6 text-white shadow-xl sm:p-8">
       <div className="flex items-start gap-4"><div className="rounded-2xl bg-emerald-400/15 p-3 text-emerald-300"><Mic2 size={26} /></div><div><p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-300">Content Studio</p><h1 className="mt-1 text-3xl font-black tracking-tight">Transcription Studio</h1><p className="mt-2 max-w-2xl text-sm text-slate-300">Turn recordings into editable transcripts, timed captions, and HyperFrames-ready word timing. Files stay in private Trellis storage.</p></div></div>
-      <div className="mt-6 grid gap-3 lg:grid-cols-[1fr_1fr_auto_auto]">
-        <label className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold"><span className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">Recording</span><input type="file" accept="audio/*,video/*" onChange={event => { const next = event.target.files?.[0] || null; setFile(next); if (next && !title) setTitle(next.name.replace(/\.[^.]+$/, '')); }} className="block w-full text-xs text-slate-200 file:mr-3 file:rounded-xl file:border-0 file:bg-emerald-500 file:px-3 file:py-2 file:font-bold file:text-white" /></label>
+      <div className="mt-6 grid gap-3 lg:grid-cols-[1.4fr_1fr_auto_auto]">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInputRef.current?.click(); } }}
+          onDragEnter={event => { event.preventDefault(); setIsDragging(true); }}
+          onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setIsDragging(true); }}
+          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDragging(false); }}
+          onDrop={event => { event.preventDefault(); setIsDragging(false); selectFile(event.dataTransfer.files?.[0] || null); }}
+          className={`flex min-h-24 cursor-pointer items-center gap-4 rounded-2xl border-2 border-dashed px-5 py-4 text-left transition focus:outline-none focus:ring-2 focus:ring-emerald-300 ${isDragging ? 'scale-[1.01] border-emerald-300 bg-emerald-400/15' : file ? 'border-emerald-400/60 bg-emerald-400/10' : 'border-white/25 bg-white/5 hover:border-emerald-300/70 hover:bg-white/10'}`}
+          aria-label="Upload recording. Drag and drop an audio or video file, or press Enter to browse."
+        >
+          <input ref={fileInputRef} type="file" accept="audio/*,video/*" onChange={event => selectFile(event.target.files?.[0] || null)} className="sr-only" />
+          <div className={`rounded-2xl p-3 ${isDragging || file ? 'bg-emerald-400 text-slate-950' : 'bg-white/10 text-emerald-300'}`}>{isDragging ? <Download size={24} /> : <Upload size={24} />}</div>
+          <div className="min-w-0"><span className="block text-[10px] font-black uppercase tracking-wider text-emerald-300">Recording · 25 MB max</span><span className="mt-1 block truncate text-sm font-black text-white">{isDragging ? 'Drop it here' : file ? file.name : 'Drag audio or video here'}</span><span className="mt-1 block text-xs font-medium text-slate-400">{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB · click to replace` : 'or click to browse your files'}</span></div>
+        </div>
         <label className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3"><span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">Title</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="Interview or voice note" className="w-full bg-transparent text-sm font-bold text-white outline-none placeholder:text-slate-500" /></label>
         <label className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3"><span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">Mode</span><select value={mode} onChange={event => setMode(event.target.value as typeof mode)} className="bg-slate-900 text-sm font-bold text-white outline-none"><option value="standard">Standard</option><option value="diarized">Identify speakers</option></select></label>
         <button onClick={submit} disabled={busy || !file} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 text-sm font-black uppercase tracking-wider text-white disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />} Transcribe</button>

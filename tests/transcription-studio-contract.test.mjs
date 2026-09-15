@@ -15,6 +15,10 @@ test('Transcription Studio is private, owner-scoped, and supports timed exports'
   assert.match(service, /audio_duration_secs/);
   assert.match(service, /'json'/);
   assert.match(page, /Identify speakers/);
+  assert.match(page, /onDragOver/);
+  assert.match(page, /onDrop/);
+  assert.match(page, /Drag audio or video here/);
+  assert.match(page, /25 MB max/);
 });
 
 test('transcription provider calls stay server-side and sanitize stored model output', () => {
