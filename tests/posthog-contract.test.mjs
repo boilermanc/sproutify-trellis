@@ -5,7 +5,10 @@ import {
   DEFAULT_POSTHOG_EVENTS,
   DEFAULT_POSTHOG_PROPERTIES,
   getPosthogBranchDefaults,
+  REJOICE_CANONICAL_EVENTS,
+  REJOICE_CANONICAL_PROPERTIES,
   normalizePosthogEmail,
+  posthogEmailForBranch,
   posthogEventsForType,
   posthogLifecycleForBranch,
   qualifyPosthogEventId,
@@ -40,12 +43,12 @@ test('Rekkrd defaults accept shipped product milestones and their categorical pr
   }, defaults.allowed_properties), { platform: 'ios', surface: 'ios', placement: 'app', value: 12 });
 });
 
-test('Rejoice keeps its deployed install proxy without applying it to Rekkrd', () => {
+test('Rejoice reconciles canonical lifecycle events with its deployed proxy', () => {
   const rejoice = posthogLifecycleForBranch('rejoice');
-  assert.deepEqual(rejoice.signup_events, ['Application Installed']);
-  assert.deepEqual(rejoice.onboarding_events, ['$identify']);
-  assert.equal(rejoice.labels.signed_up, 'Installed');
-  assert.equal(rejoice.conversion_labels.signup_to_onboarding, 'Install → identified');
+  assert.deepEqual(rejoice.signup_events, ['user_signed_up', 'Application Installed']);
+  assert.deepEqual(rejoice.onboarding_events, ['onboarding_completed', '$identify']);
+  assert.equal(rejoice.labels.signed_up, 'Signup / install signal');
+  assert.equal(rejoice.conversion_labels.signup_to_onboarding, 'Signup and onboarding signals');
   const rekkrd = posthogLifecycleForBranch('rekkrd');
   assert.ok(rekkrd.signup_events.includes('signup_completed'));
   assert.ok(!rekkrd.signup_events.includes('Application Installed'));
@@ -53,8 +56,23 @@ test('Rejoice keeps its deployed install proxy without applying it to Rekkrd', (
   assert.equal(rekkrd.labels.signed_up, 'Signed up');
 });
 
+test('Rejoice defaults include canonical growth events and categorical properties', () => {
+  const defaults = getPosthogBranchDefaults('rejoice');
+  assert.deepEqual(defaults.allowed_events, REJOICE_CANONICAL_EVENTS);
+  assert.deepEqual(defaults.allowed_properties, REJOICE_CANONICAL_PROPERTIES);
+  for (const event of ['devotion_completed', 'paywall_viewed', 'share_card_created', 'review_prompt_requested']) {
+    assert.ok(defaults.allowed_events.includes(event));
+  }
+  assert.deepEqual(sanitizePosthogProperties({
+    custom_feeling: true,
+    feeling: 'anxious',
+    platform: 'ios',
+    email: 'private@example.com',
+  }, defaults.allowed_properties), { custom_feeling: true, platform: 'ios' });
+});
+
 test('other branches retain the existing defaults and receive independent editable lists', () => {
-  for (const slug of ['rejoice', 'unknown', undefined]) {
+  for (const slug of ['unknown', undefined]) {
     assert.deepEqual(getPosthogBranchDefaults(slug), {
       allowed_events: DEFAULT_POSTHOG_EVENTS, allowed_properties: DEFAULT_POSTHOG_PROPERTIES,
     });
@@ -90,6 +108,8 @@ test('drops sensitive keys and free-text-like values even when allowlisted', () 
 test('normalizes valid email and rejects malformed identity values', () => {
   assert.equal(normalizePosthogEmail(' User@Example.com '), 'user@example.com');
   assert.equal(normalizePosthogEmail('anonymous-id'), null);
+  assert.equal(posthogEmailForBranch('rejoice', 'user@example.com'), null);
+  assert.equal(posthogEmailForBranch('atl', ' User@Example.com '), 'user@example.com');
 });
 
 test('qualifies event IDs by project for cross-project idempotency', () => {

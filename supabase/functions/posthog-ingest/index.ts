@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { adminClient, cors, hashWebhookSecret, json, secureEqual } from "../_shared/posthog.ts";
 import {
   canonicalEventType,
-  normalizePosthogEmail,
+  posthogEmailForBranch,
   qualifyPosthogEventId,
   sanitizePosthogProperties,
 } from "../_shared/posthog-contract.mjs";
@@ -38,7 +38,12 @@ Deno.serve(async (req: Request) => {
   if (!qualifiedEventId) return json({ error: "A valid PostHog event UUID is required" }, 400);
   const canonicalType = canonicalEventType(eventName);
   const branchUserId = String(body.branch_user_id || body.distinct_id || "").trim().slice(0, 200) || null;
-  const email = normalizePosthogEmail(body.email);
+  const sourceSite = connection.branches?.slug || String(connection.branch_id);
+  // Rejoice deliberately has no email-based PostHog/Trellis identity path.
+  // Drop the field at the ingestion boundary even if a PostHog webhook is
+  // accidentally configured to include it. Other established Trellis spokes
+  // retain their existing email-matching behavior.
+  const email = posthogEmailForBranch(sourceSite, body.email);
   const occurredAt = new Date(body.occurred_at || body.timestamp || Date.now());
   if (Number.isNaN(occurredAt.getTime())) return json({ error: "Invalid event timestamp" }, 400);
   const properties = sanitizePosthogProperties(
@@ -51,7 +56,7 @@ Deno.serve(async (req: Request) => {
     event_id: qualifiedEventId,
     connection_id: connection.id,
     event_type: canonicalType,
-    source_site: connection.branches?.slug || String(connection.branch_id),
+    source_site: sourceSite,
     branch_user_id: branchUserId,
     email,
     occurred_at: occurredAt.toISOString(),

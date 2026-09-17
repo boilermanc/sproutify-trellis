@@ -5,8 +5,24 @@ export const EVENT_MAP = Object.freeze({
   onboarding_completed: 'product_onboarding_completed',
   activation_milestone_reached: 'product_activated',
   first_record_added: 'product_activated',
-  meaningful_return: 'product_returned',
 });
+
+export const REJOICE_CANONICAL_EVENTS = [
+  'app_first_opened', 'devotion_generation_started',
+  'devotion_generation_succeeded', 'devotion_generation_failed',
+  'onboarding_completed', 'devotion_started', 'devotion_completed',
+  'activation_milestone_reached', 'user_signed_up', 'paywall_viewed',
+  'plan_selected', 'purchase_started', 'share_card_created',
+  'share_link_opened', 'shared_devotion_imported', 'review_prompt_shown',
+  'review_prompt_requested', 'review_prompt_dismissed', 'promo_code_applied',
+];
+
+export const REJOICE_CANONICAL_PROPERTIES = [
+  'platform', 'app_version', 'build_profile', 'identity_state', 'attribution_source', 'method',
+  'email_confirmation_required', 'failure_code', 'feature', 'plan',
+  'share_method', 'prompt_surface', 'campaign', 'custom_feeling', 'reused',
+  'duration_bucket',
+];
 
 export const DEFAULT_POSTHOG_EVENTS = [
   'user_signed_up', 'account_created', 'onboarding_completed',
@@ -17,6 +33,12 @@ export const DEFAULT_POSTHOG_PROPERTIES = [
 ];
 
 export function getPosthogBranchDefaults(branchSlug) {
+  if (branchSlug === 'rejoice') {
+    return {
+      allowed_events: [...REJOICE_CANONICAL_EVENTS],
+      allowed_properties: [...REJOICE_CANONICAL_PROPERTIES],
+    };
+  }
   if (branchSlug === 'rekkrd') {
     return {
       allowed_events: [
@@ -38,20 +60,21 @@ export function posthogEventsForType(eventType) {
 }
 
 export function posthogLifecycleForBranch(branchSlug) {
-  // Preserve the deployed Rejoice install/identity proxy until it emits lifecycle events.
+  // Rejoice runs canonical and deployed proxy signals in parallel during its
+  // reconciliation window. These are independent stage counts, not an ordered funnel.
   const rejoice = branchSlug === 'rejoice';
   return {
-    signup_events: rejoice ? ['Application Installed'] : posthogEventsForType('product_signup'),
-    onboarding_events: rejoice ? ['$identify'] : posthogEventsForType('product_onboarding_completed'),
+    signup_events: rejoice ? ['user_signed_up', 'Application Installed'] : posthogEventsForType('product_signup'),
+    onboarding_events: rejoice ? ['onboarding_completed', '$identify'] : posthogEventsForType('product_onboarding_completed'),
     activation_events: posthogEventsForType('product_activated'),
     labels: {
-      signed_up: rejoice ? 'Installed' : 'Signed up',
-      onboarded: rejoice ? 'Identified' : 'Onboarded',
+      signed_up: rejoice ? 'Signup / install signal' : 'Signed up',
+      onboarded: rejoice ? 'First devotion displayed / identity signal' : 'Onboarded',
       activated: 'Activated',
     },
     conversion_labels: {
-      signup_to_onboarding: rejoice ? 'Install → identified' : 'Signup → onboarding',
-      onboarding_to_activation: rejoice ? 'Identified → activated' : 'Onboarding → activation',
+      signup_to_onboarding: rejoice ? 'Signup and onboarding signals' : 'Signup → onboarding',
+      onboarding_to_activation: rejoice ? 'Onboarding and activation signals' : 'Onboarding → activation',
     },
   };
 }
@@ -76,6 +99,12 @@ export function sanitizePosthogProperties(properties, allowed) {
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return {};
   const output = {};
   for (const key of allowed) {
+    // Rejoice's custom_feeling is a boolean classification only. Text values
+    // remain blocked along with every other feeling-bearing key.
+    if (key === 'custom_feeling' && typeof properties[key] === 'boolean') {
+      output[key] = properties[key];
+      continue;
+    }
     if (SENSITIVE_KEYS.test(key)) continue;
     const value = scalarCategory(properties[key]);
     if (value !== undefined) output[key] = value;
@@ -86,6 +115,10 @@ export function sanitizePosthogProperties(properties, allowed) {
 export function normalizePosthogEmail(value) {
   const email = String(value || '').trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 320 ? email : null;
+}
+
+export function posthogEmailForBranch(branchSlug, value) {
+  return branchSlug === 'rejoice' ? null : normalizePosthogEmail(value);
 }
 
 export function qualifyPosthogEventId(projectId, eventUuid) {

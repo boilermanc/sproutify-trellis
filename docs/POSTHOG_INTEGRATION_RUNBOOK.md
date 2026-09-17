@@ -68,6 +68,16 @@ For B7, update `YOUR_HUB_PROJECT`, create an **HTTP Header Auth** credential nam
 
 Trellis always drops keys resembling journal, prayer, mood, emotion, faith, free text, URLs, contact fields, or secrets—even if they are accidentally added to the connection allowlist.
 
+### Rejoice canonical transition
+
+Rejoice accepts its canonical guest-first lifecycle, marketing, and monetization UX events. It never accepts prayer, journal, devotion content, raw feelings, names, email, URLs, referrers, promo text, or campaign URLs. `custom_feeling` is accepted only as a boolean classification.
+
+For 14 days, query `user_signed_up` alongside `Application Installed` and `onboarding_completed` alongside `$identify`. Switch reporting to canonical signals when coverage is at least 95%, retain legacy diagnostics for another 30 days, then remove the proxy mapping. Completion and activation can precede signup, so all lifecycle stages are independent counts rather than a strict ordered funnel.
+
+RevenueCat remains revenue truth. Rejoice's `purchase_started` and `plan_selected` describe paywall UX only. Display calendar periods in `America/New_York`; compute 24-hour and 168-hour activation windows as elapsed UTC time. Filter internal UUIDs, development, previews, and TestFlight from production dashboards.
+
+Feeling-cohort data may enter Trellis only from Rejoice's protected aggregate view: rolling 30/90-day buckets, minimum group size 10, and no UUIDs, study IDs, custom text, or devotion content.
+
 ## Connect Rekkrd
 
 Connected and verified on 2026-09-12. Hub connection ID:
@@ -138,8 +148,8 @@ across branches.
 Interpretation safeguards:
 
 - Lifecycle stages count distinct IDs independently; their ratios do not prove a
-  sequenced signup-to-activation conversion funnel. Rejoice keeps its
-  Installed/Identified proxy labels.
+  sequenced signup-to-activation conversion funnel. Rejoice temporarily counts
+  canonical and legacy proxy signals together during reconciliation.
 - Repeat activity measures the overlap between adjacent 7- or 30-day periods,
   rather than exact day-7/day-30 signup-cohort retention. Empty previous periods
   mean insufficient history. `users.returning` is not used as a repeat-user count.
