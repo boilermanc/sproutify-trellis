@@ -61,7 +61,6 @@ For B7, update `YOUR_HUB_PROJECT`, create an **HTTP Header Auth** credential nam
   "event": "{event.event}",
   "distinct_id": "{event.distinct_id}",
   "timestamp": "{event.timestamp}",
-  "email": "{person.properties.email}",
   "properties": {event.properties}
 }
 ```
@@ -71,6 +70,10 @@ Trellis always drops keys resembling journal, prayer, mood, emotion, faith, free
 ### Rejoice canonical transition
 
 Rejoice accepts its canonical guest-first lifecycle, marketing, and monetization UX events. It never accepts prayer, journal, devotion content, raw feelings, names, email, URLs, referrers, promo text, or campaign URLs. `custom_feeling` is accepted only as a boolean classification.
+
+Unlike older spoke templates, the Rejoice destination must omit `email` and the
+entire PostHog `person` object. The Hub also forces Rejoice email to `null` at
+ingestion as a defense in depth.
 
 For 14 days, query `user_signed_up` alongside `Application Installed` and `onboarding_completed` alongside `$identify`. Switch reporting to canonical signals when coverage is at least 95%, retain legacy diagnostics for another 30 days, then remove the proxy mapping. Completion and activation can precede signup, so all lifecycle stages are independent counts rather than a strict ordered funnel.
 
