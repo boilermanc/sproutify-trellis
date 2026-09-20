@@ -515,6 +515,8 @@ export interface FetchAllSpokesOrdersResult {
   errors: string[];
 }
 
+const allOrdersCache = new Map<string, { expiresAt: number; promise: Promise<FetchAllSpokesOrdersResult> }>();
+
 export const fetchAllSpokesOrders = async (
   connections: SpokeConnection[]
 ): Promise<FetchAllSpokesOrdersResult> => {
@@ -523,22 +525,26 @@ export const fetchAllSpokesOrders = async (
     c.tables.some(t => t.table_type === 'orders' && t.enabled)
   );
 
-  const results = await Promise.allSettled(
-    activeConnections.map(conn => fetchSpokeOrders(conn))
-  );
+  const cacheKey = activeConnections.map(connection => `${connection.id}:${connection.last_tested_at || connection.created_at}`).sort().join('|');
+  const cached = allOrdersCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
 
-  const orders: NormalizedOrder[] = [];
-  const errors: string[] = [];
+  const promise = (async () => {
+    const results = await Promise.allSettled(activeConnections.map(conn => fetchSpokeOrders(conn)));
 
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      orders.push(...result.value);
-    } else {
-      errors.push(`${activeConnections[index].name}: ${result.reason}`);
-    }
-  });
+    const orders: NormalizedOrder[] = [];
+    const errors: string[] = [];
 
-  return { orders, errors };
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') orders.push(...result.value);
+      else errors.push(`${activeConnections[index].name}: ${result.reason}`);
+    });
+
+    return { orders, errors };
+  })();
+  allOrdersCache.set(cacheKey, { expiresAt: Date.now() + 60_000, promise });
+  promise.catch(() => allOrdersCache.delete(cacheKey));
+  return promise;
 };
 
 // Order items fetching - supports multiple order_items tables

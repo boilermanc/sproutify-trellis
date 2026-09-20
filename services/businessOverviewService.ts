@@ -38,6 +38,26 @@ export interface BusinessOverviewResult {
 
 const metric = (input: Omit<BusinessMetric, 'key'> & { key: BusinessMetric['key'] }): BusinessMetric => input;
 
+const productAnalyticsCache = new Map<string, { expiresAt: number; promise: Promise<{ connections: PostHogConnection[]; results: PostHogAnalyticsResult[]; failures: number }> }>();
+
+function loadProductAnalytics(scoped: Branch[], window: TimeWindow) {
+  const key = `${window}:${scoped.map(branch => branch.id).sort().join('|')}`;
+  const cached = productAnalyticsCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+  const promise = fetchPosthogConnections().then(async connections => {
+    const active = connections.filter(connection => connection.status === 'active' && scoped.some(branch => branch.id === connection.branch_id));
+    const settled = await Promise.allSettled(active.map(connection => fetchPosthogAnalytics(connection.id, window === '30d' ? 30 : 7)));
+    return {
+      connections: active,
+      results: settled.filter((item): item is PromiseFulfilledResult<PostHogAnalyticsResult> => item.status === 'fulfilled').map(item => item.value),
+      failures: settled.filter(item => item.status === 'rejected').length,
+    };
+  });
+  productAnalyticsCache.set(key, { expiresAt: Date.now() + 5 * 60_000, promise });
+  promise.catch(() => productAnalyticsCache.delete(key));
+  return promise;
+}
+
 function scopedBranches(branches: Branch[], context?: BranchContext): Branch[] {
   if (!context || context.isAllSelected) return branches;
   const selected = new Set(context.activeBranchSlugs);
@@ -58,16 +78,10 @@ export async function fetchBusinessOverview(input: {
   let posthogResults: PostHogAnalyticsResult[] = [];
 
   try {
-    posthogConnections = (await fetchPosthogConnections()).filter(connection =>
-      connection.status === 'active' && scoped.some(branch => branch.id === connection.branch_id),
-    );
-    const settled = await Promise.allSettled(
-      posthogConnections.map(connection => fetchPosthogAnalytics(connection.id, input.window === '30d' ? 30 : 7)),
-    );
-    posthogResults = settled
-      .filter((item): item is PromiseFulfilledResult<PostHogAnalyticsResult> => item.status === 'fulfilled')
-      .map(item => item.value);
-    const failures = settled.filter(item => item.status === 'rejected').length;
+    const analytics = await loadProductAnalytics(scoped, input.window);
+    posthogConnections = analytics.connections;
+    posthogResults = analytics.results;
+    const failures = analytics.failures;
     if (failures) errors.push(`${failures} product analytics source${failures === 1 ? '' : 's'} could not be refreshed.`);
   } catch {
     errors.push('Product analytics connections could not be loaded.');
@@ -156,4 +170,3 @@ export async function fetchBusinessOverview(input: {
     ],
   };
 }
-
