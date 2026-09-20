@@ -74,6 +74,27 @@ export function computeFirstTimeBuyers(orders, connectionId, window, now = Date.
   return [...firstPurchase.values()].filter(occurredAt => occurredAt >= start && occurredAt < end).length;
 }
 
+export function computeProfileRegistrations(profiles, connectionId, window, now = Date.now()) {
+  const { start, end } = businessWindowBounds(window, now);
+  const seen = new Set();
+  let registrations = 0;
+  let newsletterOptIns = 0;
+
+  for (const profile of profiles || []) {
+    if (profile?._spoke_id !== connectionId) continue;
+    const occurredAt = timestamp(profile.created_at);
+    if (occurredAt === null || occurredAt < start || occurredAt >= end) continue;
+    const email = String(profile.email || '').trim().toLowerCase();
+    const identity = email ? `email:${email}` : profile.id ? `id:${profile.id}` : null;
+    if (!identity || seen.has(identity)) continue;
+    seen.add(identity);
+    registrations++;
+    if (profile.subscribed === true) newsletterOptIns++;
+  }
+
+  return { registrations, newsletterOptIns };
+}
+
 export function formatBusinessRange(window, now = new Date()) {
   const days = window === '30d' ? 30 : 7;
   const current = zonedParts(now.getTime());

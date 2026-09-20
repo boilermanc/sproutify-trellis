@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { businessWindowBounds, buyerIdentity, computeFirstTimeBuyers, isPaidOrder } from '../services/businessOverviewContract.mjs';
+import { businessWindowBounds, buyerIdentity, computeFirstTimeBuyers, computeProfileRegistrations, isPaidOrder } from '../services/businessOverviewContract.mjs';
 
 test('requires paid evidence and rejects terminal unpaid states', () => {
   assert.equal(isPaidOrder({ paid_at: '2026-09-19T12:00:00Z', status: 'pending' }), false);
@@ -37,4 +37,16 @@ test('respects the fall DST boundary for New York calendar days', () => {
   const now = new Date('2026-11-03T17:00:00Z').getTime();
   const bounds = businessWindowBounds('7d', now);
   assert.equal(new Date(bounds.start).toISOString(), '2026-10-28T04:00:00.000Z');
+});
+
+test('counts and deduplicates Sproutify Home profile registrations and newsletter opt-ins', () => {
+  const now = new Date('2026-09-14T03:59:59Z').getTime();
+  const profiles = [
+    { id: '1', email: 'one@example.com', created_at: '2026-09-08T14:00:00Z', subscribed: true, _spoke_id: 'home' },
+    { id: '2', email: 'two@example.com', created_at: '2026-09-09T14:00:00Z', subscribed: false, _spoke_id: 'home' },
+    { id: 'duplicate', email: ' TWO@example.com ', created_at: '2026-09-09T15:00:00Z', subscribed: false, _spoke_id: 'home' },
+    { id: '3', email: 'three@example.com', created_at: '2026-09-09T16:00:00Z', subscribed: false, _spoke_id: 'home' },
+    { id: 'other', email: 'other@example.com', created_at: '2026-09-09T16:00:00Z', subscribed: true, _spoke_id: 'other' },
+  ];
+  assert.deepEqual(computeProfileRegistrations(profiles, 'home', '7d', now), { registrations: 3, newsletterOptIns: 1 });
 });

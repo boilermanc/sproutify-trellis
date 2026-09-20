@@ -524,6 +524,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             branchContext={branchContext}
             spokeConnections={spokeConnections}
             orders={orders}
+            profiles={branchStats.enrichedProfiles || []}
             window={timeWindow}
             refreshKey={businessRefreshKey}
             onResult={setBusinessOverviewResult}

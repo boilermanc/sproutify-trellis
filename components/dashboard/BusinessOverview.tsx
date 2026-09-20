@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Loader2, Users, WalletCards, X } from 'lucide-react';
-import { Branch, BranchContext, SpokeConnection } from '../../types';
+import { Branch, BranchContext, EnrichedProfile, SpokeConnection } from '../../types';
 import { NormalizedOrder } from '../../spokeConnector';
 import { fetchBusinessOverview, BusinessMetric, BusinessOverviewResult } from '../../services/businessOverviewService';
 import { TimeWindow } from './types';
@@ -10,6 +10,7 @@ interface Props {
   branchContext?: BranchContext;
   spokeConnections: SpokeConnection[];
   orders: NormalizedOrder[];
+  profiles: EnrichedProfile[];
   window: TimeWindow;
   refreshKey: number;
   weeklyActions?: React.ReactNode;
@@ -27,7 +28,7 @@ const stateStyle: Record<BusinessMetric['state'], string> = {
 
 const metricIcon = { registrations: Users, paying: WalletCards, expired: AlertTriangle, ending: Clock3 };
 
-const BusinessOverview: React.FC<Props> = ({ branches, branchContext, spokeConnections, orders, window, refreshKey, weeklyActions, onResult }) => {
+const BusinessOverview: React.FC<Props> = ({ branches, branchContext, spokeConnections, orders, profiles, window, refreshKey, weeklyActions, onResult }) => {
   const [result, setResult] = useState<BusinessOverviewResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BusinessMetric | null>(null);
@@ -37,12 +38,12 @@ const BusinessOverview: React.FC<Props> = ({ branches, branchContext, spokeConne
     let cancelled = false;
     setLoading(true);
     onResult?.(null);
-    fetchBusinessOverview({ branches, branchContext, spokeConnections, orders, window })
+    fetchBusinessOverview({ branches, branchContext, spokeConnections, orders, profiles, window })
       .then(data => { if (!cancelled) { setResult(data); onResult?.(data); } })
       .catch(() => { if (!cancelled) { setResult(null); onResult?.(null); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [branches, scopeKey, spokeConnections, orders, window, refreshKey]);
+  }, [branches, scopeKey, spokeConnections, orders, profiles, window, refreshKey]);
 
   return (
     <section className="mb-[18px] border border-[#DCE3E8] bg-white p-4 sm:p-6" aria-labelledby="business-overview-title">

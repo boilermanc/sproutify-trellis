@@ -1,7 +1,7 @@
-import { Branch, BranchContext, PostHogAnalyticsResult, PostHogConnection, SpokeConnection } from '../types';
+import { Branch, BranchContext, EnrichedProfile, PostHogAnalyticsResult, PostHogConnection, SpokeConnection } from '../types';
 import { NormalizedOrder } from '../spokeConnector';
 import { fetchPosthogAnalytics, fetchPosthogConnections } from './posthogService';
-import { computeFirstTimeBuyers, formatBusinessRange } from './businessOverviewContract.mjs';
+import { computeFirstTimeBuyers, computeProfileRegistrations, formatBusinessRange } from './businessOverviewContract.mjs';
 import { TimeWindow } from '../components/dashboard/types';
 
 export type BusinessMetricState = 'available' | 'partial' | 'unconnected' | 'not_applicable' | 'error';
@@ -69,6 +69,7 @@ export async function fetchBusinessOverview(input: {
   branchContext?: BranchContext;
   spokeConnections: SpokeConnection[];
   orders: NormalizedOrder[];
+  profiles: EnrichedProfile[];
   window: TimeWindow;
 }): Promise<BusinessOverviewResult> {
   const scoped = scopedBranches(input.branches, input.branchContext);
@@ -90,6 +91,7 @@ export async function fetchBusinessOverview(input: {
   const posthogByBranch = new Map(posthogResults.map(result => [result.branch_id, result]));
   const registrationDetails: BusinessMetricBranchDetail[] = scoped.map(branch => {
     const result = posthogByBranch.get(branch.id);
+    const connectionId = connectionByBranch.get(branch.id);
     if (branch.slug === 'rekkrd' && result) return {
       branchId: branch.id, branchName: branch.name, branchSlug: branch.slug,
       value: result.data.lifecycle_funnel.signed_up, state: 'available', source: 'PostHog · signup_completed',
@@ -100,13 +102,24 @@ export async function fetchBusinessOverview(input: {
       value: null, state: 'partial', source: 'PostHog',
       reason: 'The current Rejoice signal combines signup and app-install events, so it is not promoted as registrations.', refreshedAt: result.fetched_at,
     };
+    if (branch.slug === 'sproutify-home' && connectionId) {
+      const sourceProfiles = input.profiles.filter(profile => profile._spoke_id === connectionId);
+      const windowed = computeProfileRegistrations(sourceProfiles, connectionId, input.window);
+      const activeSubscribers = sourceProfiles.filter(profile => profile.subscribed === true).length;
+      return {
+        branchId: branch.id, branchName: branch.name, branchSlug: branch.slug,
+        value: windowed.registrations, state: 'partial', source: 'Sproutify Home · trellis_home_customers.created_at',
+        reason: `${windowed.newsletterOptIns} of ${windowed.registrations} new signup${windowed.registrations === 1 ? '' : 's'} opted into the newsletter. Current audience: ${sourceProfiles.length} profiles and ${activeSubscribers} active subscribers. Customer creation is used as the registration signal until the auth contract is signed off.`,
+        refreshedAt: new Date().toISOString(),
+      };
+    }
     return {
       branchId: branch.id, branchName: branch.name, branchSlug: branch.slug,
       value: null, state: 'unconnected', source: 'Registration source not verified',
       reason: 'A profile or customer creation timestamp is not automatically an account registration.', refreshedAt: null,
     };
   });
-  const registrationAvailable = registrationDetails.filter(detail => detail.state === 'available');
+  const registrationAvailable = registrationDetails.filter(detail => detail.value !== null);
 
   const buyerDetails: BusinessMetricBranchDetail[] = scoped.map(branch => {
     const connectionId = connectionByBranch.get(branch.id);
@@ -146,7 +159,7 @@ export async function fetchBusinessOverview(input: {
       metric({
         key: 'registrations', label: 'New registrations',
         value: registrationAvailable.length ? registrationAvailable.reduce((sum, detail) => sum + (detail.value || 0), 0) : null,
-        state: registrationAvailable.length ? (registrationAvailable.length === scoped.length ? 'available' : 'partial') : errors.length ? 'error' : 'unconnected',
+        state: registrationAvailable.length ? (registrationAvailable.length === scoped.length && registrationAvailable.every(detail => detail.state === 'available') ? 'available' : 'partial') : errors.length ? 'error' : 'unconnected',
         covered: registrationAvailable.length, eligible: scoped.length, sourceLabel: 'Verified product signup events',
         explanation: 'Only branches with a verified account-registration event contribute to this total.', details: registrationDetails,
       }),
