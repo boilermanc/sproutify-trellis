@@ -34,7 +34,6 @@ interface ControlRoomProps {
   syncingConnIds?: string[];
   outcomes?: Record<string, QueueOutcome>;
   onDismissOutcome?: (key: string) => void;
-  weeklyActions?: React.ReactNode;
 }
 
 // ── Design tokens (per docs/design_handoff_dashboard_redesign) ──────
@@ -773,7 +772,6 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
   syncingConnIds,
   outcomes,
   onDismissOutcome,
-  weeklyActions,
 }) => {
   return (
     <div className="grid grid-cols-1 items-start gap-3 sm:gap-5 xl:grid-cols-[1fr_330px]">
@@ -801,7 +799,6 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
           onDismissOutcome={onDismissOutcome}
         />
         <TotalsPanel totals={totals} window={timeWindow} isLoading={isLoading} />
-        {weeklyActions}
       </div>
     </div>
   );

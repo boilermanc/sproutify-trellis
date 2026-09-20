@@ -3,6 +3,7 @@ import { Campaign } from '../supabaseService';
 import { TrellisUser } from '../types';
 import { QueueItem, WeeklyActionCandidate, WeeklyActionState, WeeklyActionStateStatus } from '../components/dashboard/types';
 import { selectWeeklyActions as applyWeeklyActionRules } from './weeklyActionsRules.mjs';
+import type { BusinessOverviewResult } from './businessOverviewService';
 
 export const DEFAULT_WEEKLY_ACTION_BUDGET = 120;
 export const MAX_WEEKLY_ACTIONS = 3;
@@ -36,13 +37,38 @@ export function buildWeeklyActionCandidates(params: {
   users: TrellisUser[];
   branchIdsBySlug: Record<string, string>;
   activeBranchSlugs: string[];
+  businessOverview?: BusinessOverviewResult | null;
 }): WeeklyActionCandidate[] {
-  const { queue, campaigns, users, branchIdsBySlug, activeBranchSlugs } = params;
+  const { queue, campaigns, users, branchIdsBySlug, activeBranchSlugs, businessOverview } = params;
   const inScope = (slugs: string[]) => activeBranchSlugs.length === 0 || slugs.length === 0 || slugs.some(slug => activeBranchSlugs.includes(slug));
   const branchSlugFor = (value: string) => branchIdsBySlug[value]
     ? value
     : Object.entries(branchIdsBySlug).find(([, id]) => id === value)?.[0] || value;
   const candidates: WeeklyActionCandidate[] = [];
+
+  const registrations = businessOverview?.metrics.find(metric => metric.key === 'registrations');
+  const verifiedRegistrationSlugs = registrations?.details
+    .filter(detail => detail.state === 'available' && detail.value !== null)
+    .map(detail => detail.branchSlug) || [];
+  if (registrations?.value != null && registrations.value > 0 && verifiedRegistrationSlugs.length > 0) {
+    const owner = ownerFor(null, users, verifiedRegistrationSlugs, branchIdsBySlug);
+    candidates.push({
+      key: `business-registration-review:${verifiedRegistrationSlugs.slice().sort().join(',')}`,
+      kind: 'business_metric_review',
+      title: `Review ${registrations.value.toLocaleString()} verified registration${registrations.value === 1 ? '' : 's'}`,
+      why: 'These are verified product signups in the selected business period, ready for an aggregate follow-up review.',
+      evidence: `${registrations.value.toLocaleString()} registrations · ${registrations.covered}/${registrations.eligible} branches verified · ${registrations.sourceLabel}`,
+      branchSlugs: verifiedRegistrationSlugs,
+      ...owner,
+      effortMinutes: 15,
+      preparedStep: 'Open Product Analytics with the current brand scope, confirm the registration pattern, and record any supported follow-up work.',
+      primaryLabel: 'Review registrations',
+      destination: 'reports',
+      resultCheck: 'After review, confirm any follow-up is recorded through an existing approved workflow; this action does not create an outreach list.',
+      sourceUpdatedAt: businessOverview.refreshedAt,
+      priority: 85,
+    });
+  }
 
   for (const campaign of campaigns) {
     const campaignBranchSlugs = campaign.branches.map(branchSlugFor);

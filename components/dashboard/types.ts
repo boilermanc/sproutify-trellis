@@ -116,7 +116,7 @@ export interface QueueOutcome {
 }
 
 // ── Weekly business actions ─────────────────────────────────────────
-export type WeeklyActionKind = 'campaign_draft' | 'operational_review';
+export type WeeklyActionKind = 'campaign_draft' | 'operational_review' | 'business_metric_review';
 export type WeeklyActionStateStatus = 'active' | 'completed' | 'dismissed' | 'deferred';
 
 export interface WeeklyActionCandidate {

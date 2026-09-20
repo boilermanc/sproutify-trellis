@@ -30,6 +30,8 @@ test('future deferrals stay hidden and return for eligibility after their date',
 test('implementation preserves branch permission, scope, stable identity and non-execution boundaries', () => {
   const service = readFileSync(new URL('../services/weeklyActionsService.ts', import.meta.url), 'utf8');
   const dashboard = readFileSync(new URL('../pages/Dashboard.tsx', import.meta.url), 'utf8');
+  const overview = readFileSync(new URL('../components/dashboard/BusinessOverview.tsx', import.meta.url), 'utf8');
+  const controlRoom = readFileSync(new URL('../components/dashboard/ControlRoom.tsx', import.meta.url), 'utf8');
   const migration = readFileSync(new URL('../supabase/migrations/20260920152407_add_dashboard_action_states.sql', import.meta.url), 'utf8');
   assert.match(service, /canOwnBranch/);
   assert.match(service, /activeBranchSlugs/);
@@ -37,6 +39,10 @@ test('implementation preserves branch permission, scope, stable identity and non
   assert.match(service, /queue:\$\{item\.key\}/);
   assert.doesNotMatch(service, /sendCampaign|publishCampaign|launchCampaignDraft/);
   assert.match(dashboard, /onOpenCampaignDraft/);
+  assert.match(dashboard, /businessOverview: businessOverviewResult/);
+  assert.match(overview, /weeklyActions/);
+  assert.doesNotMatch(overview, /verify-payment-source|connect-trial-lifecycle|rankBusinessActions/);
+  assert.doesNotMatch(controlRoom, /weeklyActions/);
   assert.match(migration, /user_id = auth\.uid\(\)/);
   assert.match(migration, /CHECK \(status IN \('active', 'completed', 'dismissed', 'deferred'\)\)/);
 });
@@ -44,4 +50,6 @@ test('implementation preserves branch permission, scope, stable identity and non
 test('unsupported trial and conversion signals do not create recommendations', () => {
   const service = readFileSync(new URL('../services/weeklyActionsService.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(service, /trial_ending|conversion_change|registration_change/);
+  assert.match(service, /business-registration-review/);
+  assert.match(service, /detail\.state === 'available'/);
 });

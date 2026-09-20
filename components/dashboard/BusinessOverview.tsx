@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Loader2, Users, WalletCards, X } from 'lucide-react';
-import { Branch, BranchContext, SpokeConnection, ViewState } from '../../types';
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock3, Loader2, Users, WalletCards, X } from 'lucide-react';
+import { Branch, BranchContext, SpokeConnection } from '../../types';
 import { NormalizedOrder } from '../../spokeConnector';
 import { fetchBusinessOverview, BusinessMetric, BusinessOverviewResult } from '../../services/businessOverviewService';
 import { TimeWindow } from './types';
-import { rankBusinessActions } from '../../services/jevActionService';
 
 interface Props {
   branches: Branch[];
@@ -13,7 +12,8 @@ interface Props {
   orders: NormalizedOrder[];
   window: TimeWindow;
   refreshKey: number;
-  onViewChange?: (view: ViewState) => void;
+  weeklyActions?: React.ReactNode;
+  onResult?: (result: BusinessOverviewResult | null) => void;
 }
 
 const stateLabel: Record<BusinessMetric['state'], string> = {
@@ -27,49 +27,22 @@ const stateStyle: Record<BusinessMetric['state'], string> = {
 
 const metricIcon = { registrations: Users, paying: WalletCards, expired: AlertTriangle, ending: Clock3 };
 
-const BusinessOverview: React.FC<Props> = ({ branches, branchContext, spokeConnections, orders, window, refreshKey, onViewChange }) => {
+const BusinessOverview: React.FC<Props> = ({ branches, branchContext, spokeConnections, orders, window, refreshKey, weeklyActions, onResult }) => {
   const [result, setResult] = useState<BusinessOverviewResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BusinessMetric | null>(null);
-  const [rankedActionIds, setRankedActionIds] = useState<string[]>([]);
   const scopeKey = branchContext?.activeBranchSlugs.join('|') || 'all';
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    onResult?.(null);
     fetchBusinessOverview({ branches, branchContext, spokeConnections, orders, window })
-      .then(data => { if (!cancelled) setResult(data); })
-      .catch(() => { if (!cancelled) setResult(null); })
+      .then(data => { if (!cancelled) { setResult(data); onResult?.(data); } })
+      .catch(() => { if (!cancelled) { setResult(null); onResult?.(null); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [branches, scopeKey, spokeConnections, orders, window, refreshKey]);
-
-  const actions = useMemo(() => {
-    if (!result) return [];
-    const registrations = result.metrics.find(metric => metric.key === 'registrations');
-    return [
-      registrations?.value != null ? { id: 'review-registrations',
-        title: 'Review this week’s verified registrations', detail: `${registrations.value.toLocaleString()} verified signup${registrations.value === 1 ? '' : 's'} are ready to inspect in Product Analytics.`, owner: 'Sheree', effort: '15 min', view: 'reports' as ViewState,
-      } : null,
-      { id: 'verify-payment-source', title: 'Verify the next payment source', detail: 'Confirm first-payment, renewal, refund, and test-account rules so another branch can enter the paying-customer total.', owner: 'Clint', effort: '30 min', view: 'branches' as ViewState },
-      { id: 'connect-trial-lifecycle', title: 'Connect authoritative trial lifecycle data', detail: 'Map trial status, scheduled end, grace, extension, cancellation, and conversion before follow-up actions are enabled.', owner: 'Clint', effort: '45 min', view: 'settings' as ViewState },
-    ].filter(Boolean).slice(0, 3) as Array<{ id: string; title: string; detail: string; owner: string; effort: string; view: ViewState }>;
-  }, [result]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setRankedActionIds([]);
-    rankBusinessActions(actions.map(({ id, title, detail, owner, effort }) => ({ id, title, detail, owner, effort })))
-      .then(ids => { if (!cancelled) setRankedActionIds(ids); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [actions]);
-
-  const displayedActions = useMemo(() => {
-    if (!rankedActionIds.length) return actions;
-    const rank = new Map<string, number>(rankedActionIds.map((id, index) => [id, index]));
-    return [...actions].sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99));
-  }, [actions, rankedActionIds]);
 
   return (
     <section className="mb-[18px] border border-[#DCE3E8] bg-white p-4 sm:p-6" aria-labelledby="business-overview-title">
@@ -98,16 +71,7 @@ const BusinessOverview: React.FC<Props> = ({ branches, branchContext, spokeConne
         {loading && !result && Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[150px] animate-pulse bg-slate-100" />)}
       </div>
 
-      <div className="mt-6 border-t border-[#E5E7EB] pt-5">
-        <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-black text-[#0F172A]">What needs your attention</h2><p className="text-[11px] text-[#64748B]">Prepared work within a two-hour combined weekly budget</p></div><span className="rounded-full bg-[#ECFDF5] px-3 py-1 text-[10px] font-black text-[#047857]">≤ 2 hours</span></div>
-        <div className="grid gap-2 lg:grid-cols-3">
-          {displayedActions.map((action, index) => <div key={action.title} className="flex min-h-[124px] flex-col border border-[#E5E7EB] p-4">
-            <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-wider text-[#64748B]"><span>{index + 1}</span><span>{action.owner}</span><span>·</span><span>{action.effort}</span></div>
-            <p className="mt-2 text-sm font-black text-[#0F172A]">{action.title}</p><p className="mt-1 flex-1 text-[11px] leading-relaxed text-[#64748B]">{action.detail}</p>
-            <button type="button" onClick={() => onViewChange?.(action.view)} className="mt-3 inline-flex items-center gap-1 self-start text-[11px] font-black text-[#0B6B4B]">Open <ArrowRight size={12} /></button>
-          </div>)}
-        </div>
-      </div>
+      <div className="mt-6 border-t border-[#E5E7EB] pt-5">{weeklyActions}</div>
 
       {selected && <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35" role="dialog" aria-modal="true" aria-label={`${selected.label} details`} onMouseDown={event => { if (event.target === event.currentTarget) setSelected(null); }}>
         <div className="h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-2xl sm:p-7">

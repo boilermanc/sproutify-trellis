@@ -36,6 +36,7 @@ import {
   DEFAULT_WEEKLY_ACTION_BUDGET, buildWeeklyActionCandidates, fetchWeeklyActionStates,
   saveWeeklyActionState, selectWeeklyActions,
 } from '../services/weeklyActionsService';
+import type { BusinessOverviewResult } from '../services/businessOverviewService';
 
 // The three tabs replace the old overview page wholesale. Sage is deliberately
 // absent here (no briefing, no "strategic action" banner) — the floating chat in
@@ -112,6 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [actionStates, setActionStates] = useState<Record<string, WeeklyActionState>>({});
   const [actionsLoading, setActionsLoading] = useState(true);
   const [actionsRefreshedAt, setActionsRefreshedAt] = useState<string | null>(null);
+  const [businessOverviewResult, setBusinessOverviewResult] = useState<BusinessOverviewResult | null>(null);
 
   // Tab lives in the URL so a reload or a shared link lands on the same view.
   const selectTab = useCallback((next: DashboardTab) => {
@@ -364,7 +366,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     users: team,
     branchIdsBySlug: Object.fromEntries(branches.map(branch => [branch.slug, branch.id])),
     activeBranchSlugs: scopedBranches.map(branch => branch.slug),
-  }), [queue, campaigns, team, branches, scopedBranches]);
+    businessOverview: businessOverviewResult,
+  }), [queue, campaigns, team, branches, scopedBranches, businessOverviewResult]);
   const weeklyActions = useMemo(() => {
     const withPersistedOwners = weeklyCandidates.map(candidate => {
       const persistedOwnerId = actionStates[candidate.key]?.ownerId;
@@ -523,7 +526,22 @@ const Dashboard: React.FC<DashboardProps> = ({
             orders={orders}
             window={timeWindow}
             refreshKey={businessRefreshKey}
-            onViewChange={onViewChange}
+            onResult={setBusinessOverviewResult}
+            weeklyActions={(
+              <WeeklyActions
+                actions={weeklyActions}
+                users={team}
+                scopeLabel={isAllBranches ? 'All brands' : scopedBranches.map(branch => branch.name).join(', ')}
+                refreshedAt={businessOverviewResult?.refreshedAt || actionsRefreshedAt}
+                budgetMinutes={DEFAULT_WEEKLY_ACTION_BUDGET}
+                isLoading={isLoading || actionsLoading}
+                onOpen={openWeeklyAction}
+                onComplete={action => updateWeeklyAction(action, 'completed')}
+                onDismiss={action => updateWeeklyAction(action, 'dismissed')}
+                onDefer={(action, until) => updateWeeklyAction(action, 'deferred', action.ownerId, until)}
+                onAssign={(action, ownerId) => updateWeeklyAction(action, 'active', ownerId || null)}
+              />
+            )}
           />
         )}
 
@@ -545,21 +563,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             syncingConnIds={syncingConnIds}
             outcomes={outcomes}
             onDismissOutcome={dismissOutcome}
-            weeklyActions={(
-              <WeeklyActions
-                actions={weeklyActions}
-                users={team}
-                scopeLabel={isAllBranches ? 'All brands' : scopedBranches.map(branch => branch.name).join(', ')}
-                refreshedAt={actionsRefreshedAt}
-                budgetMinutes={DEFAULT_WEEKLY_ACTION_BUDGET}
-                isLoading={isLoading || actionsLoading}
-                onOpen={openWeeklyAction}
-                onComplete={action => updateWeeklyAction(action, 'completed')}
-                onDismiss={action => updateWeeklyAction(action, 'dismissed')}
-                onDefer={(action, until) => updateWeeklyAction(action, 'deferred', action.ownerId, until)}
-                onAssign={(action, ownerId) => updateWeeklyAction(action, 'active', ownerId || null)}
-              />
-            )}
           />
         )}
 
