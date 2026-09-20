@@ -115,6 +115,39 @@ export interface QueueOutcome {
   at: string;
 }
 
+// ── Weekly business actions ─────────────────────────────────────────
+export type WeeklyActionKind = 'campaign_draft' | 'operational_review';
+export type WeeklyActionStateStatus = 'active' | 'completed' | 'dismissed' | 'deferred';
+
+export interface WeeklyActionCandidate {
+  key: string;
+  kind: WeeklyActionKind;
+  title: string;
+  why: string;
+  evidence: string;
+  branchSlugs: string[];
+  ownerId: string | null;
+  ownerName: string;
+  eligibleOwnerIds: string[];
+  effortMinutes: number;
+  preparedStep: string;
+  primaryLabel: string;
+  destination: ViewState;
+  destinationId?: string;
+  resultCheck: string;
+  sourceUpdatedAt: string;
+  priority: number;
+}
+
+export interface WeeklyActionState {
+  actionKey: string;
+  status: WeeklyActionStateStatus;
+  ownerId: string | null;
+  deferredUntil: string | null;
+  sourceUpdatedAt: string;
+  completedAt: string | null;
+}
+
 // ── Branch Board ──────────────────────────────────────────────────
 export type BranchHealth = 'healthy' | 'aging' | 'stale' | 'down' | 'offline';
 

@@ -502,7 +502,7 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
+      case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} onOpenCampaignDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'leads': return <Leads branchContext={branchContext} addToast={addToast} />;
       case 'prospecting': return <Prospecting addToast={addToast} />;
@@ -600,7 +600,7 @@ const AppContent: React.FC = () => {
           onConnectionAutoStartConsumed={() => setConnectionAutoStart(prev => ({ nonce: 0, name: undefined }))}
         />
       );
-      default: return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
+      default: return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} onOpenCampaignDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
     }
   };
 

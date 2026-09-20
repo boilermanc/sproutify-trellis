@@ -27,6 +27,15 @@ import BusinessOverview from '../components/dashboard/BusinessOverview';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { fetchOpenLeadCountsByBranch } from '../leadService';
 import { fetchDashboardEmailEvents } from '../supabase/functions/_shared/system-health.mjs';
+import { fetchCampaigns, Campaign } from '../supabaseService';
+import { listTrellisUsers } from '../trellisUsersService';
+import { TrellisUser } from '../types';
+import WeeklyActions from '../components/dashboard/WeeklyActions';
+import { WeeklyActionCandidate, WeeklyActionState, WeeklyActionStateStatus } from '../components/dashboard/types';
+import {
+  DEFAULT_WEEKLY_ACTION_BUDGET, buildWeeklyActionCandidates, fetchWeeklyActionStates,
+  saveWeeklyActionState, selectWeeklyActions,
+} from '../services/weeklyActionsService';
 
 // The three tabs replace the old overview page wholesale. Sage is deliberately
 // absent here (no briefing, no "strategic action" banner) — the floating chat in
@@ -52,6 +61,7 @@ interface DashboardProps {
   onToggleFavorite?: unknown;
   scheduledPosts?: unknown;
   setScheduledPosts?: unknown;
+  onOpenCampaignDraft?: (id: string) => void;
 }
 
 const TABS: { id: DashboardTab; label: string }[] = [
@@ -74,7 +84,7 @@ function initialWindow(): TimeWindow {
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 
 const Dashboard: React.FC<DashboardProps> = ({
-  onViewChange, spokeConnections, onSpokeConnectionsChange, branchStats, branches = [], branchContext,
+  onViewChange, onOpenCampaignDraft, spokeConnections, onSpokeConnectionsChange, branchStats, branches = [], branchContext,
 }) => {
   const [tab, setTab] = useState<DashboardTab>(initialTab);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>(initialWindow);
@@ -97,6 +107,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
   const [openLeadCounts, setOpenLeadCounts] = useState<Record<string, number>>({});
   const [businessRefreshKey, setBusinessRefreshKey] = useState(0);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [team, setTeam] = useState<TrellisUser[]>([]);
+  const [actionStates, setActionStates] = useState<Record<string, WeeklyActionState>>({});
+  const [actionsLoading, setActionsLoading] = useState(true);
+  const [actionsRefreshedAt, setActionsRefreshedAt] = useState<string | null>(null);
 
   // Tab lives in the URL so a reload or a shared link lands on the same view.
   const selectTab = useCallback((next: DashboardTab) => {
@@ -173,6 +188,22 @@ const Dashboard: React.FC<DashboardProps> = ({
     loadAll().finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
   }, [loadAll]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setActionsLoading(true);
+    Promise.all([fetchCampaigns(), listTrellisUsers(), fetchWeeklyActionStates()])
+      .then(([campaignRows, usersResult, states]) => {
+        if (cancelled) return;
+        setCampaigns(campaignRows);
+        setTeam(usersResult.data || []);
+        setActionStates(states);
+        setActionsRefreshedAt(new Date().toISOString());
+      })
+      .catch(error => console.error('[dashboard] weekly actions failed:', error))
+      .finally(() => { if (!cancelled) setActionsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // One shared report powers the dashboard and GitHub's daily repair queue.
   // It uses safe reads, exact email counts, and fresh spoke access checks.
@@ -327,6 +358,46 @@ const Dashboard: React.FC<DashboardProps> = ({
       });
   }, [checkedConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats, snoozed]);
 
+  const weeklyCandidates = useMemo(() => buildWeeklyActionCandidates({
+    queue,
+    campaigns,
+    users: team,
+    branchIdsBySlug: Object.fromEntries(branches.map(branch => [branch.slug, branch.id])),
+    activeBranchSlugs: scopedBranches.map(branch => branch.slug),
+  }), [queue, campaigns, team, branches, scopedBranches]);
+  const weeklyActions = useMemo(() => {
+    const withPersistedOwners = weeklyCandidates.map(candidate => {
+      const persistedOwnerId = actionStates[candidate.key]?.ownerId;
+      if (!persistedOwnerId || !candidate.eligibleOwnerIds.includes(persistedOwnerId)) return candidate;
+      const owner = team.find(user => user.id === persistedOwnerId);
+      return { ...candidate, ownerId: persistedOwnerId, ownerName: owner?.full_name || owner?.email || 'Unassigned' };
+    });
+    return selectWeeklyActions(withPersistedOwners, actionStates, DEFAULT_WEEKLY_ACTION_BUDGET);
+  }, [weeklyCandidates, actionStates, team]);
+
+  const updateWeeklyAction = useCallback(async (
+    action: WeeklyActionCandidate,
+    status: WeeklyActionStateStatus,
+    ownerId = action.ownerId,
+    deferredUntil: string | null = null,
+  ) => {
+    try {
+      await saveWeeklyActionState(action, status, ownerId, deferredUntil);
+      setActionStates(previous => ({ ...previous, [action.key]: {
+        actionKey: action.key, status, ownerId, deferredUntil,
+        sourceUpdatedAt: action.sourceUpdatedAt,
+        completedAt: status === 'completed' ? new Date().toISOString() : null,
+      } }));
+    } catch (error) {
+      console.error('[dashboard] weekly action state failed:', error);
+    }
+  }, []);
+
+  const openWeeklyAction = useCallback((action: WeeklyActionCandidate) => {
+    if (action.destination === 'campaign-builder' && action.destinationId) onOpenCampaignDraft?.(action.destinationId);
+    else onViewChange?.(action.destination);
+  }, [onOpenCampaignDraft, onViewChange]);
+
   const branchCards = useMemo(
     () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, checkedConnections, timeWindow)
       .map(card => ({
@@ -474,6 +545,21 @@ const Dashboard: React.FC<DashboardProps> = ({
             syncingConnIds={syncingConnIds}
             outcomes={outcomes}
             onDismissOutcome={dismissOutcome}
+            weeklyActions={(
+              <WeeklyActions
+                actions={weeklyActions}
+                users={team}
+                scopeLabel={isAllBranches ? 'All brands' : scopedBranches.map(branch => branch.name).join(', ')}
+                refreshedAt={actionsRefreshedAt}
+                budgetMinutes={DEFAULT_WEEKLY_ACTION_BUDGET}
+                isLoading={isLoading || actionsLoading}
+                onOpen={openWeeklyAction}
+                onComplete={action => updateWeeklyAction(action, 'completed')}
+                onDismiss={action => updateWeeklyAction(action, 'dismissed')}
+                onDefer={(action, until) => updateWeeklyAction(action, 'deferred', action.ownerId, until)}
+                onAssign={(action, ownerId) => updateWeeklyAction(action, 'active', ownerId || null)}
+              />
+            )}
           />
         )}
 
