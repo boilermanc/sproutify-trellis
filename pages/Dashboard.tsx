@@ -23,6 +23,7 @@ import ControlRoom from '../components/dashboard/ControlRoom';
 import MorningStandup from '../components/dashboard/MorningStandup';
 import BranchBoard from '../components/dashboard/BranchBoard';
 import EmailPulse from '../components/dashboard/EmailPulse';
+import BusinessOverview from '../components/dashboard/BusinessOverview';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { fetchOpenLeadCountsByBranch } from '../leadService';
 import { fetchDashboardEmailEvents } from '../supabase/functions/_shared/system-health.mjs';
@@ -95,6 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [snoozed, setSnoozed] = useState<Record<string, string>>({});
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
   const [openLeadCounts, setOpenLeadCounts] = useState<Record<string, number>>({});
+  const [businessRefreshKey, setBusinessRefreshKey] = useState(0);
 
   // Tab lives in the URL so a reload or a shared link lands on the same view.
   const selectTab = useCallback((next: DashboardTab) => {
@@ -202,6 +204,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsRefreshing(true);
     try {
       await Promise.all([loadAll(), loadWebhookHealth(true), branchStats.refresh?.()]);
+      setBusinessRefreshKey(value => value + 1);
     } finally {
       setIsRefreshing(false);
     }
@@ -441,6 +444,18 @@ const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       <div className="px-3 py-3 sm:px-5 sm:py-5 lg:px-7">
+        {tab === 'control' && (
+          <BusinessOverview
+            branches={branches}
+            branchContext={branchContext}
+            spokeConnections={spokeConnections}
+            orders={orders}
+            window={timeWindow}
+            refreshKey={businessRefreshKey}
+            onViewChange={onViewChange}
+          />
+        )}
+
         {tab === 'control' && (
           <ControlRoom
             healthLoading={healthLoading}
