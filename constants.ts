@@ -19,6 +19,7 @@ import CONTENT_TREND_RADAR_SQL_SCHEMA from './supabase/migrations/20260912160554
 import TRANSCRIPTION_STUDIO_SQL_SCHEMA from './supabase/migrations/20260915170335_transcription_studio.sql?raw';
 import HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA from './supabase/migrations/20260915171954_hyperframes_transcription_contract.sql?raw';
 import DASHBOARD_ACTION_STATES_SQL_SCHEMA from './supabase/migrations/20260920152407_add_dashboard_action_states.sql?raw';
+import KEYWORD_EXPLORER_SQL_SCHEMA from './supabase/migrations/20260922113126_keyword_explorer.sql?raw';
 
 export interface BriefAxis {
   name: string;
@@ -2997,6 +2998,7 @@ ${CONTENT_TREND_RADAR_SQL_SCHEMA}
 ${TRANSCRIPTION_STUDIO_SQL_SCHEMA}
 ${HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA}
 ${DASHBOARD_ACTION_STATES_SQL_SCHEMA}
+${KEYWORD_EXPLORER_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {
