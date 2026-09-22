@@ -7,6 +7,55 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFileSync(join(root, path), 'utf8');
 
+// Source-level wiring contracts complement the isolated browser fixtures; they
+// do not assert rendered layout dimensions or replace browser interaction tests.
+test('compact navigation keeps four primary destinations and the remaining tools accessible', () => {
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(page, /const PRIMARY_TABS: Tab\[\] = \['overview', 'brief', 'radar', 'assets'\]/);
+  const navigation = page.match(/<nav aria-label="Content intelligence sections"[\s\S]*?<\/nav>/)?.[0];
+  assert.ok(navigation, 'navigation retains an accessible landmark');
+  assert.match(navigation, /TABS\.filter\(item => PRIMARY_TABS\.includes\(item\.id\)\)/);
+  assert.match(navigation, /aria-label="More content tools"/);
+  assert.match(navigation, /TABS\.filter\(item => !PRIMARY_TABS\.includes\(item\.id\)\)/);
+  assert.match(navigation, /aria-current=\{tab === item\.id \? 'page' : undefined\}/);
+  assert.doesNotMatch(navigation, /\{TABS\.map\(/, 'all tools must not expand into primary buttons again');
+});
+
+test('empty overview offers a brief action instead of zero cards or developer setup', () => {
+  const page = read('pages/ContentIntelligence.tsx');
+  const emptyOverview = page.match(/\{tab === 'overview' && !hasRecords &&[\s\S]*?(?=\{tab === 'overview' && hasRecords)/)?.[0];
+  assert.ok(emptyOverview, 'empty and populated overviews have separate rendering branches');
+  assert.match(emptyOverview, /onClick=\{\(\) => setTab\('brief'\)\}/);
+  assert.match(emptyOverview, /Open Brand Brief/);
+  assert.doesNotMatch(emptyOverview, /Canonical topics|Metric snapshots|MarkdownPanel|create-project/);
+  assert.match(page, /\]\.filter\(item => item\.value > 0\)\.map/);
+  assert.match(page, /project\.topicClusters\.trim\(\) && <section/);
+  assert.match(page, /project\.openQuestions\.trim\(\) && <section/);
+  assert.match(page, /tab === 'guide'[\s\S]*?<details[\s\S]*?Developer setup: versioned content partitions/);
+});
+
+test('project switching preserves the selected tab and every parent navigation path guards dirty edits', () => {
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(page, /const confirmBriefNavigation = \(\) => !briefDirty \|\| window\.confirm\(/);
+  const tabHandler = page.match(/const setTab = \(next: Tab\) => \{([\s\S]*?)\n  \};/)?.[1];
+  const projectHandler = page.match(/const setProjectId = \(next: string\) => \{([\s\S]*?)\n  \};/)?.[1];
+  assert.ok(tabHandler && projectHandler, 'both navigation handlers must exist');
+  assert.match(tabHandler, /if \(next === tab \|\| !confirmBriefNavigation\(\)\) return;\s*setBriefDirty\(false\);\s*setTabState\(next\);/);
+  assert.match(projectHandler, /if \(next === projectId \|\| !confirmBriefNavigation\(\)\) return;\s*setBriefDirty\(false\);\s*setProjectIdState\(next\);/);
+  assert.doesNotMatch(projectHandler, /setTab/, 'changing brand must not reset the active task to Overview');
+  assert.equal([...page.matchAll(/setTabState\(/g)].length, 1, 'raw tab setter may only run inside the guarded handler');
+  assert.equal([...page.matchAll(/setProjectIdState\(/g)].length, 1, 'raw project setter may only run inside the guarded handler');
+  assert.match(page, /aria-label="Content project"[^>]*onChange=\{event => setProjectId\(event\.target\.value\)\}/);
+  assert.match(page, /onDirtyChange=\{setBriefDirty\}/);
+});
+
+test('brief view excludes unrelated canonical warnings and developer footer', () => {
+  const page = read('pages/ContentIntelligence.tsx');
+  assert.match(page, /tab !== 'brief' && project\.loadErrors\.length > 0/);
+  assert.match(page, /tab !== 'brief' && !\(tab === 'overview' && !hasRecords\) && <footer/);
+  assert.match(page, /tab === 'brief' && <div key=\{project\.projectId\}><OpportunityBriefPanel/);
+});
+
 test('Content Intelligence is a first-class routed navigation destination', () => {
   assert.match(read('types.ts'), /'content-intelligence'/);
   assert.match(read('components/Layout.tsx'), /Content Intelligence/);

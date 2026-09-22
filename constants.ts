@@ -20,6 +20,7 @@ import TRANSCRIPTION_STUDIO_SQL_SCHEMA from './supabase/migrations/2026091517033
 import HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA from './supabase/migrations/20260915171954_hyperframes_transcription_contract.sql?raw';
 import DASHBOARD_ACTION_STATES_SQL_SCHEMA from './supabase/migrations/20260920152407_add_dashboard_action_states.sql?raw';
 import KEYWORD_EXPLORER_SQL_SCHEMA from './supabase/migrations/20260922113126_keyword_explorer.sql?raw';
+import OPPORTUNITY_BRIEF_SQL_SCHEMA from './supabase/migrations/20260922143248_opportunity_brief_versions.sql?raw';
 
 export interface BriefAxis {
   name: string;
@@ -2999,6 +3000,7 @@ ${TRANSCRIPTION_STUDIO_SQL_SCHEMA}
 ${HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA}
 ${DASHBOARD_ACTION_STATES_SQL_SCHEMA}
 ${KEYWORD_EXPLORER_SQL_SCHEMA}
+${OPPORTUNITY_BRIEF_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {
