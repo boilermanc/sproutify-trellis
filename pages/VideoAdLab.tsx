@@ -1,8 +1,9 @@
+import { markStudioDraftChanged } from '../services/contentStudioDraft';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig, TextOverlayLayer } from '../types';
 import { GoogleGenAI } from '@google/genai';
-import { BRANCH_DISPLAY_NAMES, formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
+import { formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
 import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
@@ -69,6 +70,7 @@ async function deleteTemplate(id: string): Promise<void> {
 
 // ─── Constants ───────────────────────────────────────────────────────
 interface VideoAdLabProps {
+  selectedBranchSlug: string;
   profiles: Profile[];
   spokeConnections: SpokeConnection[];
   geminiApiKey: string;
@@ -77,7 +79,6 @@ interface VideoAdLabProps {
 }
 
 const TERMINAL_STATUSES: VideoAdStatus[] = ['completed', 'failed', 'cancelled'];
-const BRANCH_KEYS = Object.keys(BRANCH_DISPLAY_NAMES);
 
 // Static/Carousel formats don't use the wider video aspect ratio set —
 // these are the ratios the n8n image pipelines actually support.
@@ -210,12 +211,12 @@ const statusChipClasses = (status: VideoAdStatus): string =>
   'bg-amber-50 text-amber-600';
 
 // ─── Component ───────────────────────────────────────────────────────
-const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext }) => {
+const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext, selectedBranchSlug }) => {
   // Dashboard review cards deep-link here with the affected branch. Keep the
   // value in component state after consuming the URL parameter so returning to
   // Creative Studio later from the sidebar does not reopen stale work.
   const [reviewQueueBranch, setReviewQueueBranch] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get('reviewBranch'),
+    new URLSearchParams(window.location.search).get('reviewBranch') === selectedBranchSlug ? selectedBranchSlug : null,
   );
   useEffect(() => {
     if (!reviewQueueBranch) return;
@@ -225,14 +226,6 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     window.history.replaceState({}, '', url);
   }, [reviewQueueBranch]);
 
-  // ── Branch options — pulled from the real branches (fall back to the static
-  //    ecosystem list only if branch context hasn't loaded). ──
-  const branchOptions = useMemo(() => {
-    if (branchContext?.allBranches?.length) {
-      return branchContext.allBranches.map(b => ({ value: b.slug, label: b.name }));
-    }
-    return BRANCH_KEYS.map(k => ({ value: k, label: BRANCH_DISPLAY_NAMES[k] }));
-  }, [branchContext]);
   // Prefer the real branch name for display; fall back to the slug formatter.
   const branchName = (slug: string) =>
     branchContext?.allBranches.find(b => b.slug === slug)?.name || formatBranchName(slug);
@@ -264,11 +257,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   }, [format]);
 
   // ── Form fields (shared across formats where sensible) ──
-  const [branch, setBranch] = useState('');
-  // Default to the first real branch once branch options are available.
-  useEffect(() => {
-    if (!branch && branchOptions.length > 0) setBranch(branchOptions[0].value);
-  }, [branchOptions, branch]);
+  const branch = selectedBranchSlug;
   const [productDescription, setProductDescription] = useState('');
   const [targetSegment, setTargetSegment] = useState('');
   const [tone, setTone] = useState<string>(TONE_PRESETS[0]);
@@ -590,7 +579,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
       try {
         // Match the Dashboard queue's window so a review card never counts
         // jobs that Creative Studio then fails to load.
-        const fetched = await getVideoAdJobs(undefined, 100);
+        const fetched = await getVideoAdJobs(selectedBranchSlug, 100);
         knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
         setJobs(fetched);
         setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
@@ -598,12 +587,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
         // A dashboard card represents all review-ready jobs for one branch and
         // uses the oldest job for its age. Open that same oldest job directly,
         // in the full review panel, so the click lands on actual work.
-        if (reviewQueueBranch) {
+        if (reviewQueueBranch === selectedBranchSlug) {
           const target = fetched
             .filter(job => job.branch === reviewQueueBranch && job.status === 'awaiting_approval' && !isCardBackground(job))
             .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
           if (target) {
-            setBranch(target.branch);
             setFormat(target.format || 'video');
             setTrackedJobId(target.id);
             setStep(4);
@@ -654,7 +642,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const fetched = await getVideoAdJobs(undefined, 100);
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100);
       knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
       setJobs(fetched);
       setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
@@ -677,16 +665,11 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const isCardBackground = (j: VideoAdJob) => j.request_payload?.purpose === 'card_background';
 
   // ── Branch-scoped jobs ──
-  // The generation wizard keeps its own branch picker; this only scopes the
-  // jobs history (and its count badges) to the global Branch Scope picker in
-  // the top bar. `j.branch` is a slug. Card backgrounds are filtered out here
-  // so every downstream view (library rows + all count badges) sees ads only.
+  // All creation and review use the branch selected in the header.
   const scopedJobs = useMemo(() => {
     const ads = jobs.filter(j => !isCardBackground(j));
-    if (!branchContext || branchContext.isAllSelected) return ads;
-    const activeSlugs = new Set(branchContext.activeBranchSlugs);
-    return ads.filter(j => j.branch && activeSlugs.has(j.branch));
-  }, [jobs, branchContext]);
+    return ads.filter(j => j.branch === selectedBranchSlug);
+  }, [jobs, selectedBranchSlug]);
 
   // ── Filtered jobs ──
   const filteredJobs = useMemo(() => {
@@ -717,13 +700,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // The Progress step already shows the job it's tracking in full, so exclude
   // it here — otherwise the same creative gets two identical review panels.
   const awaitingApprovalJobs = useMemo(
-    () => jobs.filter(j =>
+    () => scopedJobs.filter(j =>
       j.status === 'awaiting_approval'
       && !isCardBackground(j)
       && (!reviewQueueBranch || j.branch === reviewQueueBranch)
       && !(step === 4 && j.id === trackedJobId),
     ),
-    [jobs, reviewQueueBranch, step, trackedJobId],
+    [scopedJobs, reviewQueueBranch, step, trackedJobId],
   );
 
   // ── The job the Progress step is watching ──
@@ -778,6 +761,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     if (!templateId) return;
     const tpl = templates.find(t => t.id === templateId);
     if (!tpl) return;
+    markStudioDraftChanged();
     const s = tpl.settings;
     if (s.pipeline) setPipeline(s.pipeline);
     if (s.actorGender) setActorGender(s.actorGender);
@@ -875,7 +859,7 @@ STRICT RULES:
       setSaveAsTemplate(false);
       setNewTemplateName('');
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
@@ -911,7 +895,7 @@ STRICT RULES:
       setTrackedJobId(result.job_id);
       setStep(4);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
@@ -961,7 +945,7 @@ STRICT RULES:
       // review queue below pick each one up as it finishes.
       setStep(0);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Batch submit failed: ${err.message}`, 'error');
@@ -990,7 +974,7 @@ STRICT RULES:
       setTrackedJobId(result.job_id);
       setStep(4);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
@@ -1085,7 +1069,7 @@ STRICT RULES:
       // If the Progress step was watching this job, follow the retry instead.
       setTrackedJobId(prev => prev === job.id ? result.job_id : prev);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug);
       setJobs(fetched);
     } catch (err: any) {
       addToast(err.message || 'Regenerate failed.', 'error');
@@ -1280,7 +1264,7 @@ STRICT RULES:
         </div>
 
         {/* Template selector — video only, since static/carousel don't have Look & Feel settings to template */}
-        {format === 'video' && (
+        {format === 'video' && step > 0 && templates.length > 0 && (
           <div className="flex items-center gap-2">
             <BookTemplate size={16} className="text-slate-400" />
             <select
@@ -1373,17 +1357,8 @@ STRICT RULES:
             {/* Branch */}
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
-              <select
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
-              >
-                {branchOptions.length === 0 && <option value="">No branches available</option>}
-                {branchOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-400 mt-1">Which brand is this video for?</p>
+              <p className="text-sm font-bold text-slate-700">{branchName(branch)}</p>
+              <p className="text-xs text-slate-400 mt-1">Selected in the page header.</p>
             </div>
 
             {/* Product Description */}
@@ -1488,16 +1463,7 @@ STRICT RULES:
             {/* Branch */}
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
-              <select
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
-              >
-                {branchOptions.length === 0 && <option value="">No branches available</option>}
-                {branchOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              <p className="text-sm font-bold text-slate-700">{branchName(branch)}</p>
             </div>
 
             {/* Message — single job, or one line per image in batch mode */}
@@ -1512,7 +1478,7 @@ STRICT RULES:
                       {availableStaticBatchPresets.map(preset => (
                         <button
                           key={preset.label}
-                          onClick={() => setStaticBatchText(preset.lines.join('\n'))}
+                          onClick={() => { markStudioDraftChanged(); setStaticBatchText(preset.lines.join('\n')); }}
                           className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition"
                         >
                           <Wand2 size={12} /> {preset.label}
@@ -1581,7 +1547,7 @@ STRICT RULES:
                 ] as const).map(opt => (
                   <button
                     key={opt.value}
-                    onClick={() => setImageStyle(opt.value)}
+                    onClick={() => { markStudioDraftChanged(); setImageStyle(opt.value); }}
                     className={`border-2 rounded-xl p-3 text-left transition ${
                       imageStyle === opt.value ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
                     }`}
@@ -1605,7 +1571,7 @@ STRICT RULES:
                 {STATIC_ASPECT_RATIOS.map(ar => (
                   <button
                     key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
+                    onClick={() => { markStudioDraftChanged(); setAspectRatio(ar.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1650,7 +1616,7 @@ STRICT RULES:
                 ] as const).map(p => (
                   <button
                     key={p.value}
-                    onClick={() => setPlatform(p.value)}
+                    onClick={() => { markStudioDraftChanged(); setPlatform(p.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1731,7 +1697,7 @@ STRICT RULES:
                     ] as const).map(m => (
                       <button
                         key={m.value}
-                        onClick={() => setRefMode(m.value)}
+                        onClick={() => { markStudioDraftChanged(); setRefMode(m.value); }}
                         className={`border rounded-full px-4 py-1.5 text-sm transition ${
                           refMode === m.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                         }`}
@@ -1779,16 +1745,7 @@ STRICT RULES:
             {/* Branch */}
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
-              <select
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
-              >
-                {branchOptions.length === 0 && <option value="">No branches available</option>}
-                {branchOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              <p className="text-sm font-bold text-slate-700">{branchName(branch)}</p>
             </div>
 
             {/* Topic */}
@@ -1822,7 +1779,7 @@ STRICT RULES:
                 {SLIDE_COUNT_OPTIONS.map(n => (
                   <button
                     key={n}
-                    onClick={() => setSlideCount(n)}
+                    onClick={() => { markStudioDraftChanged(); setSlideCount(n); }}
                     className={`w-10 h-10 rounded-full text-sm font-bold border transition ${
                       slideCount === n ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1841,7 +1798,7 @@ STRICT RULES:
                 {CAROUSEL_ASPECT_RATIOS.map(ar => (
                   <button
                     key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
+                    onClick={() => { markStudioDraftChanged(); setAspectRatio(ar.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1864,7 +1821,7 @@ STRICT RULES:
                 ] as const).map(p => (
                   <button
                     key={p.value}
-                    onClick={() => setPlatform(p.value)}
+                    onClick={() => { markStudioDraftChanged(); setPlatform(p.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1924,7 +1881,7 @@ STRICT RULES:
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => setPipeline(opt.value as 'talking_head' | 'full_scene')}
+                      onClick={() => { markStudioDraftChanged(); setPipeline(opt.value as 'talking_head' | 'full_scene'); }}
                       className={`border-2 rounded-xl p-4 text-left transition ${
                         selected ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
@@ -1949,7 +1906,7 @@ STRICT RULES:
                 {(['female', 'male'] as const).map(g => (
                   <button
                     key={g}
-                    onClick={() => setActorGender(g)}
+                    onClick={() => { markStudioDraftChanged(); setActorGender(g); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       actorGender === g ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1983,7 +1940,7 @@ STRICT RULES:
                 {ASPECT_RATIOS.map(ar => (
                   <button
                     key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
+                    onClick={() => { markStudioDraftChanged(); setAspectRatio(ar.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -2755,7 +2712,7 @@ STRICT RULES:
                   onClick={() => setReviewQueueBranch(null)}
                   className="text-[10px] font-bold text-amber-700 underline decoration-amber-300 underline-offset-2 hover:text-amber-900"
                 >
-                  Show all branches
+                  Show all reviews
                 </button>
               </>
             )}
@@ -2985,7 +2942,8 @@ STRICT RULES:
       )}
 
       {/* ── Video Library ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <details className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <summary className="cursor-pointer p-6 text-sm font-bold text-slate-700">Browse saved creatives ({scopedJobs.length})</summary>
         {/* Header */}
         <div className="p-6 border-b border-slate-100">
           <div className="flex items-center justify-between mb-4">
@@ -3850,7 +3808,7 @@ STRICT RULES:
             </div>
           </div>
         )}
-      </div>
+      </details>
 
       {/* ── Export for Meta Ads modal ── */}
       {adExportJobId && (() => {

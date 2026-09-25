@@ -13,6 +13,7 @@ import { generateText } from '../services/aiService';
 interface AdPerformanceProps {
   apiKeys?: ApiKeyConfig;
   branchContext?: BranchContext;
+  selectedBranchSlug: string;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -51,7 +52,7 @@ const fmtDate = (iso?: string | null): string => {
 
 const entryKey = (e: CreativeLeaderboardEntry): string => e.creative_job_id || `unmatched:${e.ad_name}`;
 
-const AdPerformance: React.FC<AdPerformanceProps> = ({ apiKeys, branchContext, addToast }) => {
+const AdPerformance: React.FC<AdPerformanceProps> = ({ selectedBranchSlug, apiKeys, branchContext, addToast }) => {
   const activeKeys = apiKeys || DEFAULT_KEYS;
 
   // ── Import state ──
@@ -67,7 +68,7 @@ const AdPerformance: React.FC<AdPerformanceProps> = ({ apiKeys, branchContext, a
   const [leaderboard, setLeaderboard] = useState<CreativeLeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>('spend');
-  const [branchFilter, setBranchFilter] = useState<string>('all');
+  const branchFilter = selectedBranchSlug;
 
   // ── AI advisor state ──
   const [aiLoading, setAiLoading] = useState(false);
@@ -118,7 +119,8 @@ const AdPerformance: React.FC<AdPerformanceProps> = ({ apiKeys, branchContext, a
     try {
       const { rows, errors } = parseAdsManagerCsv(csvText);
       const jobs = await fetchCreativeJobsForMatching();
-      const matched = matchRowsToJobs(rows, jobs);
+      const matched = matchRowsToJobs(rows, jobs).filter(row => row.matched_branch === selectedBranchSlug);
+      if (matched.length < rows.length) errors.push(`${rows.length - matched.length} row(s) were excluded because they could not be matched to this branch. Export ads for the selected branch and use the creative ad names.`);
       setMatchedRows(matched);
       setParseErrors(errors);
       if (matched.length === 0 && errors.length === 0) {
@@ -159,15 +161,8 @@ const AdPerformance: React.FC<AdPerformanceProps> = ({ apiKeys, branchContext, a
   // ── Branch scoping ──
   // Creative is per-brand, so a cross-brand leaderboard compares ads that were
   // never competing. Filter before ranking, flagging winners, or advising.
-  const branchOptions = useMemo(() => {
-    const slugs: string[] = Array.from(
-      new Set<string>(leaderboard.map(e => e.branch).filter((b): b is string => !!b)),
-    );
-    return slugs.sort((a, b) => branchLabel(a).localeCompare(branchLabel(b)));
-  }, [leaderboard, branchContext]);
-
   const scopedLeaderboard = useMemo(
-    () => (branchFilter === 'all' ? leaderboard : leaderboard.filter(e => e.branch === branchFilter)),
+    () => leaderboard.filter(e => e.branch === branchFilter),
     [leaderboard, branchFilter],
   );
 
@@ -294,7 +289,7 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
       <div className="bg-white border border-slate-200 p-6 space-y-4">
         <div className="flex items-center gap-2">
           <Upload className="w-4 h-4 text-emerald-600" />
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Import Results CSV</h2>
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">1. Import results for this branch</h2>
         </div>
         <p className="text-xs text-slate-500">
           In Ads Manager: Ads tab → select your date range → Export → Export table data (.csv). Paste the file contents below, or choose the file directly.
@@ -431,26 +426,13 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
       </div>
 
       {/* Leaderboard */}
-      <div className="bg-white border border-slate-200 p-6 space-y-4">
+      {(leaderboardLoading || scopedLeaderboard.length > 0) && <div className="bg-white border border-slate-200 p-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-600" />
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Creative Leaderboard</h2>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">2. Compare creative results</h2>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {branchOptions.length > 1 && (
-              <select
-                value={branchFilter}
-                onChange={e => { setBranchFilter(e.target.value); setAiResult(null); }}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-600 focus:outline-none focus:border-emerald-500 transition"
-                title="Creative is per-brand — compare within one brand at a time"
-              >
-                <option value="all">All brands</option>
-                {branchOptions.map(slug => (
-                  <option key={slug} value={slug}>{branchLabel(slug)}</option>
-                ))}
-              </select>
-            )}
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
             {(['spend', 'ctr', 'cost_per_conversion'] as SortKey[]).map((key) => (
               <button
@@ -555,10 +537,10 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
             </table>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* AI advisor */}
-      <div className="bg-white border border-slate-200 p-6 space-y-4">
+      {scopedLeaderboard.length > 0 && <div className="bg-white border border-slate-200 p-6 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-600" />
@@ -590,7 +572,7 @@ If there isn't enough data yet to recommend killing or scaling anything, say so 
             Sage will only cite the numbers in the leaderboard above — including each creative's original generation prompt and headline — and will say "not enough data" rather than guess when a creative hasn't run long enough.
           </p>
         )}
-      </div>
+      </div>}
     </div>
   );
 };

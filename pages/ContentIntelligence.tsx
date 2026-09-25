@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FC } from 'react';
+import { useEffect, useMemo, useState, type FC } from 'react';
 import {
   Activity,
   BadgeCheck,
@@ -60,6 +60,7 @@ import {
 type Tab = 'overview' | 'brief' | 'radar' | 'keywords' | 'channels' | 'guide' | 'topics' | 'assets' | 'experiments' | 'performance' | 'learnings' | 'workflow';
 
 interface Props {
+  selectedBranchSlug: string;
   branchContext: BranchContext;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -509,7 +510,7 @@ function TaskCommandBuilder({ project, addToast }: { project: ContentIntelligenc
   return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><div className="rounded-xl bg-emerald-100 p-2 text-emerald-700"><ListChecks size={18} /></div><div><h2 className="font-black text-slate-800">Create a branch-local task</h2><p className="text-xs text-slate-400">Required ownership and hypothesis fields are built into the command.</p></div></div><div className="mt-6 grid gap-4 md:grid-cols-2"><label className="text-xs font-bold text-slate-600">Task ID<input value={taskId} onChange={event => setTaskId(event.target.value)} className={inputClass} /></label><label className="text-xs font-bold text-slate-600">Platform<input value={platform} onChange={event => setPlatform(event.target.value)} className={inputClass} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Target audience<input value={audience} onChange={event => setAudience(event.target.value)} placeholder="Who is this specifically for?" className={inputClass} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Topic or question<input value={topic} onChange={event => setTopic(event.target.value)} placeholder="What real question will the asset answer?" className={inputClass} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Hypothesis<textarea value={hypothesis} onChange={event => setHypothesis(event.target.value)} placeholder="What should change, compared with what, and why?" className={`${inputClass} min-h-24`} /></label><label className="text-xs font-bold text-slate-600 md:col-span-2">Success metrics<input value={metrics} onChange={event => setMetrics(event.target.value)} className={inputClass} /></label></div></section><aside className="rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl"><p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Copy-ready PowerShell command</p><code className="mt-4 block break-words text-xs leading-6 text-slate-200">{command}</code><button type="button" onClick={copy} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white transition hover:bg-emerald-400"><Clipboard size={15} /> Copy command</button><p className="mt-5 text-xs leading-5 text-slate-400">Run this from the repository. The validated helper creates the task files; the browser cannot write into Git working trees.</p></aside></div>;
 }
 
-export default function ContentIntelligence({ branchContext, addToast }: Props) {
+export default function ContentIntelligence({ branchContext, selectedBranchSlug, addToast }: Props) {
   // Native research can start before a brand has a versioned knowledge partition.
   const configured = useMemo(() => {
     const projects = new Map(CONTENT_INTELLIGENCE_PROJECTS.map(project => [project.projectId, project]));
@@ -518,16 +519,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     });
     return [...projects.values()];
   }, [branchContext.allBranches]);
-  const selectedProjectId = branchContext.activeBranchSlugs.length === 1
-    ? branchContext.activeBranchSlugs.find(slug => configured.some(project => project.projectId === slug)) || ''
-    : '';
-  const [projectId, setProjectIdState] = useState('');
-  const [scopeReady, setScopeReady] = useState(false);
-  const previousBranchSlugs = useRef<string[]>([]);
-  useEffect(() => {
-    branchContext.setActiveBranchSlugs([]);
-    setScopeReady(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const projectId = selectedBranchSlug;
   const [tab, setTabState] = useState<Tab>('overview');
   const [briefDirty, setBriefDirty] = useState(false);
   const confirmBriefNavigation = () => !briefDirty || window.confirm('Discard unsaved brand brief edits and leave this view?');
@@ -536,18 +528,6 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     setBriefDirty(false);
     setTabState(next);
   };
-  useEffect(() => {
-    if (!scopeReady) return;
-    if (selectedProjectId !== projectId) {
-      if (!confirmBriefNavigation()) {
-        branchContext.setActiveBranchSlugs(previousBranchSlugs.current);
-        return;
-      }
-      setBriefDirty(false);
-      setProjectIdState(selectedProjectId);
-    }
-    previousBranchSlugs.current = branchContext.activeBranchSlugs;
-  }, [scopeReady, selectedProjectId, branchContext.activeBranchSlugs]); // eslint-disable-line react-hooks/exhaustive-deps
   const [approvedPosts, setApprovedPosts] = useState<ContentPost[]>([]);
   const [approvedTopics, setApprovedTopics] = useState<ContentTopic[]>([]);
   const [importedPerformance, setImportedPerformance] = useState<ContentPerformanceEvent[]>([]);
@@ -676,7 +656,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
         { label: 'Published assets', value: publishedCount, icon: FileText, color: 'text-emerald-600 bg-emerald-50' },
         { label: 'Running experiments', value: runningCount, icon: Beaker, color: 'text-violet-600 bg-violet-50' },
         { label: 'Metric snapshots', value: performance.length, icon: Activity, color: 'text-amber-600 bg-amber-50' },
-      ].filter(item => item.value > 0).map(item => <article key={item.label} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4"><div className={`rounded-xl p-2 ${item.color}`}><item.icon size={18} /></div><div><p className="text-xl font-black text-slate-800">{item.value}</p><p className="text-xs font-bold text-slate-500">{item.label}</p></div></article>)}</section>{(project.topicClusters.trim() || project.openQuestions.trim()) && <div className="grid gap-4 xl:grid-cols-2">{project.topicClusters.trim() && <section className="rounded-2xl border border-slate-200 bg-white p-5"><MarkdownPanel markdown={project.topicClusters} empty="" /></section>}{project.openQuestions.trim() && <section className="rounded-2xl border border-slate-200 bg-white p-5"><MarkdownPanel markdown={project.openQuestions} empty="" /></section>}</div>}</div>}
+      ].filter(item => item.value > 0).map(item => <article key={item.label} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4"><div className={`rounded-xl p-2 ${item.color}`}><item.icon size={18} /></div><div><p className="text-xl font-black text-slate-800">{item.value}</p><p className="text-xs font-bold text-slate-500">{item.label}</p></div></article>)}</section>{(project.topicClusters.trim() || project.openQuestions.trim()) && <div className="grid gap-4 xl:grid-cols-2">{project.topicClusters.trim() && <details className="rounded-2xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer font-bold text-slate-800">Explore topic clusters</summary><div className="mt-4"><MarkdownPanel markdown={project.topicClusters} empty="" /></div></details>}{project.openQuestions.trim() && <details className="rounded-2xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer font-bold text-slate-800">Review open questions</summary><div className="mt-4"><MarkdownPanel markdown={project.openQuestions} empty="" /></div></details>}</div>}</div>}
       {tab === 'channels' && <SubstackChannelPanel addToast={addToast} />}
       {tab === 'brief' && <div key={project.projectId}><OpportunityBriefPanel projectId={project.projectId} addToast={addToast} onDirtyChange={setBriefDirty} /></div>}
       {tab === 'radar' && <div key={project.projectId}><ContentTrendRadar project={project} posts={posts} website={branchContext.allBranches.find(branch => branch.slug === project.projectId)?.website_url} addToast={addToast} /></div>}
@@ -689,7 +669,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
       {tab === 'learnings' && <div className="space-y-6"><LearningPromotionWorkspace project={project} posts={posts} performance={performance} approved={approvedLearnings} loading={learningsLoading} addToast={addToast} onApproved={learning => setApprovedLearnings(current => [learning, ...current])} /><div className="grid gap-6 xl:grid-cols-2"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-emerald-700"><Lightbulb size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Versioned learnings</span></div><MarkdownPanel markdown={project.contentLearnings} empty="No durable learnings exported to the repository." /></section><div className="space-y-6"><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-sky-700"><BookOpen size={18} /><span className="text-[10px] font-black uppercase tracking-widest">Project strategy</span></div><MarkdownPanel markdown={project.contentStrategy} empty="No content strategy found." /></section><section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex items-center gap-2 text-violet-700"><Sparkles size={18} /><span className="text-[10px] font-black uppercase tracking-widest">SEO and social rules</span></div><MarkdownPanel markdown={project.seoSocialRules} empty="No channel rules found." /></section></div></div></div>}
       {tab === 'workflow' && <TaskCommandBuilder project={project} addToast={addToast} />}
 
-      {tab !== 'brief' && !(tab === 'overview' && !hasRecords) && <footer className="flex flex-wrap items-center justify-between gap-3 px-2 text-xs text-slate-400"><span className="inline-flex items-center gap-1.5"><Check size={13} className="text-emerald-500" /> Registry combines reviewed Hub approvals with <code>.trellis/knowledge/projects/{project.projectId}</code></span><span className="inline-flex items-center gap-1.5"><CircleHelp size={13} /> Run <code>npm run content -- validate</code> before merging versioned knowledge.</span></footer>}
+      {tab === 'guide' && <footer className="flex flex-wrap items-center justify-between gap-3 px-2 text-xs text-slate-400"><span className="inline-flex items-center gap-1.5"><Check size={13} className="text-emerald-500" /> Registry combines reviewed Hub approvals with <code>.trellis/knowledge/projects/{project.projectId}</code></span><span className="inline-flex items-center gap-1.5"><CircleHelp size={13} /> Run <code>npm run content -- validate</code> before merging versioned knowledge.</span></footer>}
     </div>
   );
 }

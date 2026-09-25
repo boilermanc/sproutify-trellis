@@ -14,6 +14,7 @@ import MotionPostPublishDialog from '../components/motion-posts/MotionPostPublis
 interface MotionPostsProps {
   branches: Branch[];
   branchContext: BranchContext;
+  selectedBranchSlug: string;
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -24,11 +25,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const PRICE_PER_SECOND: Record<string, number> = { '480p': 0.08, '720p': 0.14, '1080p': 0.25 };
 
-export default function MotionPosts({ branches, branchContext, addToast }: MotionPostsProps) {
-  const headerBranchSlug = branchContext.activeBranchSlugs.length === 1 ? branchContext.activeBranchSlugs[0] : '';
-  const [branchSlug, setBranchSlug] = useState('');
-  const [scopeReady, setScopeReady] = useState(false);
-  const previousBranchSlugs = useRef<string[]>([]);
+export default function MotionPosts({ branches, selectedBranchSlug, addToast }: MotionPostsProps) {
+  const branchSlug = selectedBranchSlug;
   const selectedBranch = branches.find(branch => branch.slug === branchSlug && branch.is_active);
   const branchId = selectedBranch?.id || '';
   const [file, setFile] = useState<File | null>(null);
@@ -47,36 +45,8 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
   const [finishingJob, setFinishingJob] = useState<MotionPostJob | null>(null);
   const [publishingJob, setPublishingJob] = useState<MotionPostJob | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    branchContext.setActiveBranchSlugs([]);
-    setScopeReady(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!scopeReady) return;
-    if (headerBranchSlug !== branchSlug) {
-      const hasDraft = Boolean(file || title.trim() || prompt.trim() || caption.trim() || audioKey || duration !== 7 || resolution !== '720p');
-      if (branchSlug && hasDraft && !window.confirm('Switch branches and clear this Motion Post draft?')) {
-        branchContext.setActiveBranchSlugs(previousBranchSlugs.current);
-        return;
-      }
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setFile(null);
-      setPreviewUrl('');
-      setTitle('');
-      setPrompt('');
-      setCaption('');
-      setAudioKey('');
-      setAudioStart(0);
-      setDuration(7);
-      setResolution('720p');
-      setBranchSlug(headerBranchSlug);
-      setFinishingJob(null);
-      setPublishingJob(null);
-    }
-    previousBranchSlugs.current = branchContext.activeBranchSlugs;
-  }, [scopeReady, headerBranchSlug, branchContext.activeBranchSlugs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [workspace, setWorkspace] = useState<'create' | 'library'>('create');
+  const [draftStep, setDraftStep] = useState<2 | 3 | 4>(2);
 
   const branchJobs = jobs.filter(job => job.branch_id === branchId || (!job.branch_id && job.branch_slug === branchSlug));
   const selectedAudio = useMemo(
@@ -138,6 +108,7 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
         audio: selectedAudio, audio_start_seconds: audioStart, caption,
       });
       setJobs(current => [job, ...current]);
+      setWorkspace('library');
       addToast(selectedAudio ? 'Animation started. Your selected music will be mixed when it finishes.' : 'Animation started.', 'success');
     } catch (error) {
       addToast(error instanceof Error ? error.message : 'Could not start the Motion Post.', 'error');
@@ -150,7 +121,7 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
       <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Motion Posts</h1>
     </header>
     <section className="rounded-2xl border border-violet-200 bg-white p-6 shadow-sm">
-      <p className="text-xs font-black uppercase tracking-widest text-violet-700">Step 1 of 5</p>
+      <p className="text-xs font-black uppercase tracking-widest text-violet-700">Get started</p>
       <h2 className="mt-2 text-xl font-black text-slate-900">{branchSlug ? 'Loading selected branch' : 'Choose a branch to begin'}</h2>
       <p className="mt-2 max-w-xl text-sm text-slate-600">Use the branch switcher in the top header. Then upload an image, describe its motion, review the settings and cost, and start the animation.</p>
     </section>
@@ -170,28 +141,29 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
       </button>
     </header>
 
-    <ol aria-label="Motion Post steps" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {[
-        ['1', 'Choose branch', selectedBranch.name],
-        ['2', 'Upload image', file ? 'Image ready' : 'Next'],
-        ['3', 'Write the post', title.trim() && prompt.trim().length >= 12 && caption.trim() ? 'Ready' : 'Add details'],
-        ['4', 'Review settings', 'Music is optional'],
-        ['5', 'Animate', 'Then finish and schedule'],
-      ].map(([number, label, detail]) => <li key={number} className="rounded-xl border border-slate-200 bg-white px-4 py-3"><p className="text-[10px] font-black uppercase tracking-wider text-violet-600">Step {number}</p><p className="mt-1 text-sm font-bold text-slate-900">{label}</p><p className="mt-1 text-xs text-slate-500">{detail}</p></li>)}
-    </ol>
+    {branchJobs.length > 0 && <nav aria-label="Motion Posts workspace" className="flex gap-2">
+      <button type="button" onClick={() => setWorkspace('create')} aria-pressed={workspace === 'create'} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold">Create a post</button>
+      <button type="button" onClick={() => setWorkspace('library')} aria-pressed={workspace === 'library'} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold">Library ({branchJobs.length})</button>
+    </nav>}
 
-    <section className="grid gap-6 xl:grid-cols-[.9fr_1.1fr]">
-      <div className="border border-slate-800 bg-slate-950 p-4">
-        <h2 className="mb-4 text-sm font-black text-white">Step 2 - Upload the image to animate</h2>
-        <button type="button" onClick={() => fileInput.current?.click()} className="group relative flex aspect-[9/16] max-h-[690px] w-full items-center justify-center overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900">
+    {workspace === 'create' && <nav aria-label="Motion Post steps" className="flex flex-wrap gap-2">
+      {([2, 3, 4] as const).map(step => <button type="button" key={step} disabled={step > 2 && !file || step === 4 && (!title.trim() || prompt.trim().length < 12 || !caption.trim())} onClick={() => setDraftStep(step)} aria-current={draftStep === step ? 'step' : undefined} className={`min-h-11 rounded-xl border px-4 py-2 text-sm font-bold disabled:opacity-40 ${draftStep === step ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-slate-600'}`}>{step === 2 ? '1. Image' : step === 3 ? '2. Post details' : '3. Review and animate'}</button>)}
+    </nav>}
+
+    {workspace === 'create' && <section className="mx-auto max-w-3xl">
+      {draftStep === 2 && <div className="border border-slate-800 bg-slate-950 p-4">
+        <h2 className="mb-4 text-sm font-black text-white">Upload the image to animate</h2>
+        <button type="button" onClick={() => fileInput.current?.click()} className="group relative flex aspect-[9/16] max-h-[420px] w-full items-center justify-center overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900">
           {previewUrl ? <img src={previewUrl} alt="Motion Post source preview" className="h-full w-full object-cover" /> : <div className="px-8 text-center text-slate-400"><ImagePlus className="mx-auto" size={34} /><p className="mt-4 text-sm font-black text-white">Upload the image to animate</p><p className="mt-1 text-xs">Portrait images work best for Instagram Reels.</p></div>}
           <span className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-white backdrop-blur"><Upload size={13} /> {previewUrl ? 'Replace' : 'Browse'}</span>
         </button>
         <input ref={fileInput} type="file" accept="image/*,.jfif" className="hidden" onChange={event => { chooseFile(event.target.files?.[0] || null); event.target.value = ''; }} />
-      </div>
+        <button type="button" disabled={!file} onClick={() => setDraftStep(3)} className="mt-4 min-h-11 rounded-xl bg-violet-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-40">Next: post details</button>
+      </div>}
 
-      <div className="border border-slate-200 bg-white p-6 lg:p-8">
-        <h2 className="text-lg font-black text-slate-900">Step 3 - Write the post</h2>
+      {draftStep !== 2 && <div className="border border-slate-200 bg-white p-6 lg:p-8">
+        {draftStep === 3 && <>
+        <h2 className="text-lg font-black text-slate-900">Write the post</h2>
         <p className="mt-1 text-xs text-slate-500">Creating for {selectedBranch.name}. Change branches in the top header.</p>
         <label className="mt-5 block text-xs font-bold text-slate-600">Post title<input value={title} onChange={event => setTitle(event.target.value)} maxLength={120} placeholder="Name this post" className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" /></label>
 
@@ -200,7 +172,11 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
 
         <label className="mt-5 block text-xs font-bold text-slate-600">Instagram caption<textarea value={caption} onChange={event => setCaption(event.target.value)} rows={4} maxLength={2200} placeholder="Write the caption that will accompany the Reel." className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm" /></label>
 
-        <h2 className="mt-8 text-lg font-black text-slate-900">Step 4 - Review settings and cost</h2>
+        <div className="mt-5 flex justify-between gap-3"><button type="button" onClick={() => setDraftStep(2)} className="min-h-11 px-3 text-sm font-bold text-slate-600">Back to image</button><button type="button" disabled={!title.trim() || prompt.trim().length < 12 || !caption.trim()} onClick={() => setDraftStep(4)} className="min-h-11 rounded-xl bg-violet-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Next: review settings</button></div>
+        </>}
+        {draftStep === 4 && <>
+        <h2 className="text-lg font-black text-slate-900">Review settings and cost</h2>
+        <p className="mt-2 text-sm text-slate-600">{title} for {selectedBranch.name}. Music is optional.</p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div><p className="text-xs font-bold text-slate-600">Duration</p><div className="mt-1.5 grid grid-cols-4 gap-2">{([5, 7, 10, 15] as const).map(value => <button key={value} type="button" onClick={() => setDuration(value)} className={`rounded-xl border px-2 py-2.5 text-xs font-black ${duration === value ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 text-slate-600'}`}>{value}s</button>)}</div></div>
           <label className="text-xs font-bold text-slate-600">Generation quality<select value={resolution} onChange={event => setResolution(event.target.value as typeof resolution)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"><option value="480p">480p draft</option><option value="720p">720p recommended</option><option value="1080p">1080p final</option></select></label>
@@ -216,13 +192,15 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-5">
           <div><p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Estimated xAI cost</p><p className="text-lg font-black text-slate-900">${estimatedCost.toFixed(2)} <span className="text-xs font-bold text-slate-400">per attempt</span></p></div>
           <button type="button" onClick={submit} disabled={submitting || !file || !branchId || !title.trim() || prompt.trim().length < 12 || !caption.trim()} className="inline-flex min-h-11 items-center gap-2 bg-violet-600 px-6 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">
-            {submitting ? <Loader2 size={17} className="animate-spin" /> : <Wand2 size={17} />} {submitting ? 'Starting…' : 'Step 5 - Animate post'}
+            {submitting ? <Loader2 size={17} className="animate-spin" /> : <Wand2 size={17} />} {submitting ? 'Starting…' : 'Animate post'}
           </button>
         </div>
-      </div>
-    </section>
+        <button type="button" onClick={() => setDraftStep(3)} className="mt-4 min-h-11 text-sm font-bold text-slate-600">Back to post details</button>
+        </>}
+      </div>}
+    </section>}
 
-    <section>
+    {workspace === 'library' && <section>
       <div className="mb-4"><div className="flex items-center gap-2"><Film size={18} className="text-violet-600" /><h2 className="text-lg font-black text-slate-900">Motion Post Library for {selectedBranch.name}</h2></div><p className="mt-1 text-xs text-slate-500">When an animation is ready, add text if needed, then schedule the Reel.</p></div>
       {loading ? <div className="flex justify-center border border-slate-200 bg-white py-16"><Loader2 className="animate-spin text-violet-600" /></div> : branchJobs.length === 0 ? <div className="border border-dashed border-slate-300 bg-white py-16 text-center text-sm text-slate-400">Your generated Motion Posts will appear here.</div> : <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{branchJobs.map(job => {
         const active = ACTIVE.has(job.status);
@@ -254,6 +232,6 @@ export default function MotionPosts({ branches, branchContext, addToast }: Motio
           </div>
         </article>;
       })}</div>}
-    </section>
+    </section>}
   </div>;
 }

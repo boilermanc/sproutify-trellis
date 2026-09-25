@@ -12,11 +12,12 @@ test('dashboard excludes Card Studio background jobs from human review work', ()
   assert.match(dashboardService, /actionLabel: 'Review'/);
 });
 
-test('dashboard actions preserve branch context at useful destinations', () => {
+test('dashboard review links honor the explicitly selected header branch', () => {
   assert.match(standup, /searchParams\.set\('reviewBranch', item\.branchSlug\)/);
   assert.match(standup, /searchParams\.set\('composeBranch', item\.branchSlug\)/);
   assert.match(creativeStudio, /job\.branch === reviewQueueBranch/);
+  assert.match(creativeStudio, /reviewQueueBranch === selectedBranchSlug/);
   assert.match(creativeStudio, /setTrackedJobId\(target\.id\)/);
-  assert.match(creativeStudio, /getVideoAdJobs\(undefined, 100\)/);
-  assert.match(postScheduler, /branch\.slug === composeBranch/);
+  assert.match(creativeStudio, /getVideoAdJobs\(selectedBranchSlug, 100\)/);
+  assert.match(postScheduler, /b\.slug === selectedBranchSlug/);
 });

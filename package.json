@@ -14,6 +14,7 @@
     "test:reddit-ads": "node --test tests/reddit-ads-contract.test.mjs",
     "test:studio": "node --test tests/studio-album-planning.test.mjs tests/studio-album-contract.test.mjs",
     "test:media-generation": "node --test tests/media-generation-contract.test.mjs",
+    "test:content-studio-browser": "node tests/content-studio-browser.mjs && node tests/content-studio-social-browser.mjs && node tests/content-studio-production-browser.mjs && node tests/content-studio-visual-browser.mjs",
     "test:motion-posts": "node --test tests/motion-posts-contract.test.mjs",
     "test:transcriptions": "node --test tests/transcription-studio-contract.test.mjs",
     "test:promo-proof": "node --test tests/promo-proof-contract.test.mjs",

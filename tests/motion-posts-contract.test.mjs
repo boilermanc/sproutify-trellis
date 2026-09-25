@@ -82,15 +82,15 @@ test('Motion Posts uses one header branch and guides a branch-specific draft', (
   const app = read('App.tsx');
   const layout = read('components/Layout.tsx');
   const page = read('pages/MotionPosts.tsx');
-  assert.match(app, /<MotionPosts branches=\{branches\} branchContext=\{branchContext\}/);
-  assert.match(layout, /const singleBranchView = activeView === 'content-intelligence' \|\| activeView === 'motion-posts'/);
-  assert.match(page, /branchContext\.setActiveBranchSlugs\(\[\]\)/);
+  assert.match(app, /<MotionPosts selectedBranchSlug=\{selectedStudioBranchSlug\}/);
+  assert.match(layout, /Boolean\(studioView\?\.branchRequired\)/);
+  assert.match(page, /const branchSlug = selectedBranchSlug/);
   assert.match(page, /Choose a branch to begin/);
   assert.doesNotMatch(page, /<label[^>]*>Branch<select/);
   assert.match(page, /const branchId = selectedBranch\?\.id \|\| ''/);
-  assert.match(page, /Switch branches and clear this Motion Post draft/);
+  assert.match(app, /studioDirty.current && !window.confirm/);
   assert.match(page, /branchJobs = jobs\.filter/);
-  for (const step of ['Upload image', 'Write the post', 'Review settings', 'Animate']) {
+  for (const step of ['Upload the image', 'Write the post', 'Review settings', 'Animate']) {
     assert.match(page, new RegExp(step));
   }
 });

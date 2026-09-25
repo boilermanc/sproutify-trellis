@@ -1,3 +1,4 @@
+import { markStudioDraftChanged } from '../services/contentStudioDraft';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, DollarSign, Film, LibraryBig, Loader2, Play, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Square, Upload } from 'lucide-react';
 import type { Branch, MediaGenerationJob, MediaGenerationProject, MediaGenerationTaskType, MediaModelCatalogEntry, MediaTextCue } from '../types';
@@ -21,6 +22,7 @@ import GeneratedMediaLibrary from '../components/media/GeneratedMediaLibrary';
 import MediaGenerationGuide from '../components/media/MediaGenerationGuide';
 
 interface Props {
+  selectedBranchSlug: string;
   branches: Branch[];
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -53,13 +55,13 @@ const durationPresets = [
 const durationForFrames = (frames: number) => (frames - 1) / 15;
 const estimatedColdCost = (frames: number) => 0.29 + (frames / 17) * 0.02;
 
-const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
+const MediaGeneration: React.FC<Props> = ({ branches, addToast, selectedBranchSlug }) => {
   const [projects, setProjects] = useState<MediaGenerationProject[]>([]);
   const [models, setModels] = useState<MediaModelCatalogEntry[]>([]);
   const [jobs, setJobs] = useState<MediaGenerationJob[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectBranch, setNewProjectBranch] = useState('');
+  const newProjectBranch = branches.find(branch => branch.slug === selectedBranchSlug)?.id || '';
   const [modelId, setModelId] = useState('longcat-video-base');
   const [taskType, setTaskType] = useState<MediaGenerationTaskType>('text_to_video');
   const [prompt, setPrompt] = useState('');
@@ -95,9 +97,10 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
     try {
       setLoading(true);
       const [projectRows, modelRows, guardrails] = await Promise.all([getMediaProjects(), getMediaModels(), getMediaGenerationConfiguration()]);
-      setProjects(projectRows);
+      const scopedProjects = projectRows.filter(project => project.branch_id === newProjectBranch);
+      setProjects(scopedProjects);
       setModels(modelRows);
-      setSelectedProjectId(current => current || projectRows[0]?.id || '');
+      setSelectedProjectId(current => scopedProjects.some(project => project.id === current) ? current : '');
       setModelId(current => modelRows.some(model => model.id === current) ? current : modelRows[0]?.id || current);
       setConfiguration(guardrails);
       setUnavailable(null);
@@ -106,7 +109,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [newProjectBranch]);
 
   useEffect(() => { void loadFoundation(); }, [loadFoundation]);
   useEffect(() => {
@@ -208,7 +211,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
       <div className="border border-slate-800 bg-slate-950 p-8 text-white">
         <div className="flex items-center gap-3"><div className="rounded-2xl bg-white/10 p-3"><Film className="h-7 w-7" /></div><div><p className="text-xs font-black uppercase tracking-[0.25em] text-indigo-200">On-demand GPU</p><h1 className="text-3xl font-black">Media Generation</h1></div></div>
-        <p className="mt-4 max-w-3xl text-sm leading-6 text-indigo-100">Create video with LongCat now and add other GPU providers later. Inputs stay private, every attempt is tracked, and existing Trellis editors remain intact.</p>
+        <p className="mt-4 max-w-3xl text-sm leading-6 text-indigo-100">Choose or create a project, describe your video, then review the cost before generating.</p>
       </div>
 
       <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
@@ -216,31 +219,31 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
         <button type="button" onClick={() => setWorkspaceView('library')} className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black ${workspaceView === 'library' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}><LibraryBig className="h-4 w-4" /> Created media</button>
       </div>
 
-      {workspaceView === 'create' && <MediaGenerationGuide />}
+      {workspaceView === 'create' && <details className="rounded-xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-bold text-slate-600">How video generation works</summary><MediaGenerationGuide /></details>}
 
-      {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} finishingEnabled={configuration?.finishing_enabled === true} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+      {workspaceView === 'library' ? <GeneratedMediaLibrary branches={branches} selectedBranchId={newProjectBranch} finishingEnabled={configuration?.finishing_enabled === true} publishingEnabled={configuration?.publishing_handoff_enabled === true} addToast={addToast} /> : <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <aside className="space-y-5">
           <section className="border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">Project</h2>
-            <select value={selectedProjectId} onChange={event => setSelectedProjectId(event.target.value)} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold">
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">1. Choose or create a project</h2>
+            {projects.length > 0 && <select aria-label="Project" value={selectedProjectId} onChange={event => setSelectedProjectId(event.target.value)} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold">
               <option value="">Choose a project</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </select>
+            </select>}
+            {projects.length === 0 && <p className="mt-3 text-sm text-slate-500">Create your first project for this branch to begin.</p>}
             <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
               <input value={newProjectName} onChange={event => setNewProjectName(event.target.value)} placeholder="New project name" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-              <select value={newProjectBranch} onChange={event => setNewProjectBranch(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">Personal project</option>{branches.filter(branch => branch.is_active).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select>
               <button disabled={busy || !newProjectName.trim()} onClick={() => void createProject()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-40"><Plus className="h-4 w-4" /> Create project</button>
             </div>
           </section>
 
-          <section className="border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">Model & mode</h2>
+          {selectedProjectId && <section className="border border-slate-200 bg-white p-5">
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-500">2. Choose a video type</h2>
             <label className="mt-3 block text-xs font-bold text-slate-500">Model<select value={modelId} onChange={event => setModelId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-900">{models.map(model => <option key={model.id} value={model.id}>{model.display_name}</option>)}</select></label>
             <label className="mt-3 block text-xs font-bold text-slate-500">Generation mode<select value={taskType} onChange={event => setTaskType(event.target.value as MediaGenerationTaskType)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-900">{(selectedModel?.task_types || []).map(task => <option key={task} value={task}>{taskLabels[task]}</option>)}</select></label>
             {modelId === 'longcat-video-avatar-1.5' && <p className="mt-3 rounded-xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-700">Avatar 1.5 uses its required eight-step distilled mode and is configured for a two-GPU worker.</p>}
-          </section>
+          </section>}
 
-          <section className="border border-emerald-200 bg-emerald-50 p-5">
-            <div className="flex items-center gap-2 text-sm font-black text-emerald-900"><ShieldCheck className="h-5 w-5" /> Spend protection</div>
+          {selectedProjectId && <details className="border border-emerald-200 bg-emerald-50 p-5">
+            <summary className="cursor-pointer text-sm font-black text-emerald-900">Spend protection</summary>
             <div className="mt-3 space-y-2 text-xs leading-5 text-emerald-800">
               <p>One GPU worker maximum</p>
               <p>Scale-to-zero after 60 seconds idle</p>
@@ -248,12 +251,12 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
               <p>Cost review required before every generation</p>
             </div>
             {configuration && (!configuration.generation_enabled || !configuration.cost_tracking_configured) && <p className="mt-4 rounded-xl border border-amber-200 bg-white p-3 text-xs font-bold leading-5 text-amber-800">Pilot dispatch is paused. {configuration.cost_tracking_configured ? 'An administrator must enable the circuit breaker.' : 'The billing rate must be configured first.'}</p>}
-          </section>
+          </details>}
         </aside>
 
-        <main className="space-y-6">
+        {selectedProjectId && <main className="space-y-6">
           <section className="border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-black text-slate-900">Describe the shot</h2>
+            <h2 className="text-lg font-black text-slate-900">3. Describe the shot</h2>
             <textarea value={prompt} onChange={event => setPrompt(event.target.value)} rows={5} placeholder="Describe the subject, action, setting, camera, and mood…" className="mt-4 w-full rounded-2xl border border-slate-200 p-4 text-sm leading-6 outline-none focus:border-indigo-400" />
             <textarea value={negativePrompt} onChange={event => setNegativePrompt(event.target.value)} rows={2} placeholder="Optional: what should the model avoid?" className="mt-3 w-full rounded-2xl border border-slate-200 p-4 text-sm outline-none focus:border-indigo-400" />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -264,15 +267,15 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
 
             {modelId === 'longcat-video-base' ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black uppercase tracking-wider text-slate-500">Clip length</p><p className="mt-1 text-xs text-slate-400">480p widescreen · 15 frames per second</p></div><div className="flex items-center gap-1.5 text-xs font-black text-slate-700"><Clock3 className="h-4 w-4 text-indigo-600" /> {durationSeconds.toFixed(1)} seconds</div></div>
-              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">{durationPresets.map(preset => <button key={preset.frames} type="button" onClick={() => { setFrames(preset.frames); setConfirmingCost(false); }} className={`rounded-xl border px-2 py-2.5 text-xs font-black transition ${frames === preset.frames ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}`}>{preset.label}</button>)}</div>
+              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">{durationPresets.map(preset => <button key={preset.frames} type="button" onClick={() => { markStudioDraftChanged(); setFrames(preset.frames); setConfirmingCost(false); }} className={`rounded-xl border px-2 py-2.5 text-xs font-black transition ${frames === preset.frames ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}`}>{preset.label}</button>)}</div>
               <p className="mt-3 text-[11px] leading-5 text-slate-500">Longer videos will use scene continuation. The first launch keeps each generation to one tested segment.</p>
               <label className="mt-3 block text-[10px] font-black uppercase tracking-wider text-slate-400">Seed<input type="number" value={seed} onChange={event => setSeed(Number(event.target.value) || 0)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700" /></label>
             </div> : <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-xs leading-5 text-indigo-700">Talking-character length follows the uploaded audio. Trellis will read the audio duration before dispatch and show the final cost review.</div>}
           </section>
 
-          {modelId === 'longcat-video-base' && <section className="border border-slate-200 bg-white p-6">
-            <TimedTextTimeline durationSeconds={durationSeconds} cues={textCues} onChange={cues => { setTextCues(cues); setConfirmingCost(false); }} />
-          </section>}
+          {modelId === 'longcat-video-base' && <details className="border border-slate-200 bg-white p-6"><summary className="cursor-pointer text-sm font-bold text-slate-600">Add timed text (optional)</summary>
+            <TimedTextTimeline durationSeconds={durationSeconds} cues={textCues} onChange={cues => { markStudioDraftChanged(); setTextCues(cues); setConfirmingCost(false); }} />
+          </details>}
 
           <section className="border border-slate-200 bg-white p-6">
             {!confirmingCost ? <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-lg font-black text-slate-900">Ready to generate?</h2><p className="mt-1 text-xs text-slate-500">Nothing is billed until you review and confirm.</p></div><button disabled={busy || !selectedProjectId || !prompt.trim() || !configuration?.generation_enabled || !configuration?.cost_tracking_configured} onClick={reviewGeneration} className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 disabled:opacity-40"><Play className="h-4 w-4 fill-current" /> Review cost</button></div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -280,7 +283,7 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
             </div>}
           </section>
 
-          <section className="border border-slate-200 bg-white p-6">
+          {jobs.length > 0 && <section className="border border-slate-200 bg-white p-6">
             <div className="flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Queue & results</h2><p className="mt-1 text-xs text-slate-500">{activeIds.length} active · {jobs.length} total</p></div><button disabled={!selectedProjectId} onClick={() => selectedProjectId && getMediaGenerationJobs(selectedProjectId).then(setJobs).catch(error => addToast(error instanceof Error ? error.message : 'Could not refresh jobs.', 'error'))} className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:text-indigo-600"><RefreshCw className="h-4 w-4" /></button></div>
             <div className="mt-5 space-y-3">
               {jobs.length === 0 && <div className="rounded-2xl bg-slate-50 p-8 text-center text-sm text-slate-500">Your first generation will appear here.</div>}
@@ -296,8 +299,8 @@ const MediaGeneration: React.FC<Props> = ({ branches, addToast }) => {
                 {job.status === 'succeeded' && !resultUrls[job.id] && <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" />Output stored privately and ready to review.</p>}
               </div>)}
             </div>
-          </section>
-        </main>
+          </section>}
+        </main>}
       </div>}
     </div>
   );

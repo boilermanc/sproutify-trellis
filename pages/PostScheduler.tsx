@@ -14,6 +14,7 @@ import { fetchLatestInsights, getDisplayInsights, PostInsightSnapshot } from '..
 
 interface PostSchedulerProps {
   branchContext?: BranchContext;
+  selectedBranchSlug: string;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -145,32 +146,12 @@ function fmtCompactOrDash(n: number | null): string {
   return n === null ? '—' : fmtCompactCount(n);
 }
 
-const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }) => {
+const PostScheduler: React.FC<PostSchedulerProps> = ({ selectedBranchSlug, branchContext, addToast }) => {
   // ── Branch selection ──
   const branchOptions = branchContext?.allBranches ?? [];
-  const [composeBranch] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get('composeBranch'),
-  );
-  const [branchId, setBranchId] = useState('');
-  useEffect(() => {
-    if (!branchId && branchOptions.length > 0) {
-      const requested = composeBranch
-        ? branchOptions.find(branch => branch.slug === composeBranch)
-        : undefined;
-      setBranchId(requested?.id || branchOptions[0].id);
-    }
-  }, [branchOptions, branchId, composeBranch]);
-  useEffect(() => {
-    if (!composeBranch) return;
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has('composeBranch')) return;
-    url.searchParams.delete('composeBranch');
-    window.history.replaceState({}, '', url);
-  }, [composeBranch]);
-  const selectedBranch = branchOptions.find(b => b.id === branchId) || null;
+  const selectedBranch = branchOptions.find(b => b.slug === selectedBranchSlug) || null;
 
-  // Queue shows every brand's posts, so each row needs its brand name resolved
-  // from slug. Falls back to the raw slug for any brand not in the picker.
+  // Resolve the header-selected branch for queue labels.
   const brandNameBySlug = useMemo(() => {
     const m = new Map<string, string>();
     branchOptions.forEach(b => m.set(b.slug, b.name));
@@ -198,7 +179,6 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   // ── Queue view controls (all brands, filterable + sortable) ──
-  const [queueBrandFilter, setQueueBrandFilter] = useState<string>('all');
   const [sortMode, setSortMode] = useState<'auto' | 'date_asc' | 'date_desc' | 'brand' | 'status'>('auto');
 
   // ── Inline edit of a queued (still `scheduled`) row ──
@@ -212,14 +192,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [postInsights, setPostInsights] = useState<Map<string, PostInsightSnapshot>>(new Map());
   const [insightsLoading, setInsightsLoading] = useState(false);
 
-  // Queue is brand-agnostic now — it loads every brand's posts so the whole
-  // schedule is visible in one place. The brand picker above drives uploads
-  // only; the queue's own filter (below) narrows what's shown.
+  // The header selection scopes both uploads and the saved queue.
   const loadQueue = async () => {
     setQueueLoading(true);
     try {
       const posts = await fetchScheduledPosts();
-      setQueue(posts);
+      setQueue(posts.filter(post => post.branch_slug === selectedBranchSlug || post.branch_id === selectedBranch?.id));
     } catch (e) {
       addToast?.(e instanceof Error ? e.message : 'Failed to load the scheduled queue.', 'error');
     } finally {
@@ -427,7 +405,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
     const byDateAsc = (a: ScheduledPost, b: ScheduledPost) =>
       new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime();
     return (list: ScheduledPost[], isHistory: boolean): ScheduledPost[] => {
-      const out = (queueBrandFilter === 'all' ? list : list.filter(p => p.branch_slug === queueBrandFilter)).slice();
+      const out = list.slice();
       switch (sortMode) {
         case 'date_asc': out.sort(byDateAsc); break;
         case 'date_desc': out.sort((a, b) => -byDateAsc(a, b)); break;
@@ -438,7 +416,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       return out;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queueBrandFilter, sortMode, brandNameBySlug]);
+  }, [sortMode, brandNameBySlug]);
 
   const upcoming = useMemo(
     () => applyView(queue.filter(p => p.status === 'scheduled' || p.status === 'publishing'), false),
@@ -513,29 +491,11 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         </p>
       </div>
 
-      {/* Brand selector */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-3">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Brand</span>
-        {branchOptions.length === 0 ? (
-          <p className="text-sm text-slate-400">No brands available yet.</p>
-        ) : (
-          <select
-            value={branchId}
-            onChange={e => setBranchId(e.target.value)}
-            className="w-full lg:w-80 text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-          >
-            {branchOptions.map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
-
       {/* Drop zone */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div className="flex items-center gap-2">
           <ImagePlus className="w-4 h-4 text-emerald-600" />
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Drop This Week's Images</h2>
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">1. Upload images or videos</h2>
         </div>
 
         <label
@@ -571,7 +531,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CalendarClock className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto-schedule all rows</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">2. Set publishing dates</span>
               </div>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col gap-1">
@@ -617,7 +577,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Bulk caption add-on</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Optional: add a shared caption</span>
               </div>
               <p className="text-[11px] text-slate-400">
                 Creative Studio posts get the brand's default CTA automatically — uploads don't, so add a standing CTA or hashtag set here
@@ -761,24 +721,15 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       </div>
 
       {/* Queue list */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+      {(queueLoading || queue.length > 0) && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-emerald-600" />
             <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-              Scheduled Queue · {queueBrandFilter === 'all' ? 'All Brands' : brandName(queueBrandFilter)}
+              Scheduled Queue · {selectedBranch?.name}
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <select
-              value={queueBrandFilter}
-              onChange={e => setQueueBrandFilter(e.target.value)}
-              title="Filter the queue by brand"
-              className="text-xs font-bold text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-            >
-              <option value="all">All brands</option>
-              {branchOptions.map(b => <option key={b.id} value={b.slug}>{b.name}</option>)}
-            </select>
             <select
               value={sortMode}
               onChange={e => setSortMode(e.target.value as typeof sortMode)}
@@ -805,7 +756,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Upcoming</span>
               {upcoming.length === 0 ? (
                 <p className="text-xs text-slate-300 py-3">
-                  {queueBrandFilter === 'all' ? 'Nothing scheduled yet.' : `Nothing scheduled yet for ${brandName(queueBrandFilter)}.`}
+                  Nothing scheduled yet. Upload media above to create your first post.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -1051,7 +1002,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             </div>
           </>
         )}
-      </div>
+      </div>}
     </div>
   );
 };

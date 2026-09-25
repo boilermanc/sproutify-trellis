@@ -1,3 +1,4 @@
+import { markStudioDraftChanged } from '../services/contentStudioDraft';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, Wand2, RefreshCw, Trash2, CheckCircle2, Loader2, Download,
@@ -31,6 +32,7 @@ import { supabase as hubClient } from '../lib/supabase';
 // ────────────────────────────────────────────────────────────────────
 
 interface CardStudioProps {
+  selectedBranchSlug: string;
   apiKeys: ApiKeyConfig;
   branchContext?: BranchContext;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -250,13 +252,9 @@ function clearBranchDraft(branchSlug: string): void {
   }
 }
 
-const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToast }) => {
+const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToast, selectedBranchSlug }) => {
   const branchOptions = branchContext?.allBranches ?? [];
-  const [branchId, setBranchId] = useState('');
-  useEffect(() => {
-    if (!branchId && branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [branchOptions, branchId]);
-  const selectedBranch = branchOptions.find((b) => b.id === branchId) || null;
+  const selectedBranch = branchOptions.find((b) => b.slug === selectedBranchSlug) || null;
 
   const [brief, setBrief] = useState('');
   const [activePreset, setActivePreset] = useState<string | null>(null);
@@ -460,12 +458,10 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   );
 
   const applyPreset = (preset: (typeof CARD_BRIEF_PRESETS)[number]) => {
+    if (preset.brief.trim()) markStudioDraftChanged();
     setBrief(preset.brief);
     setActivePreset(preset.label);
-    if (preset.branchSlug) {
-      const match = branchOptions.find((b) => b.slug === preset.branchSlug);
-      if (match) setBranchId(match.id);
-    }
+
   };
 
   const handleSuggestBrief = async () => {
@@ -496,6 +492,7 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         conceptCount: count,
         scriptureMode: selectedBranch.slug === 'rejoice' ? scripturePolicy : undefined,
       });
+      if (suggestion.trim()) markStudioDraftChanged();
       setBrief(suggestion);
       setActivePreset(null);
     } catch (error) {
@@ -951,16 +948,6 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         </div>
       </div>
 
-      {/* Explainer */}
-      <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-        <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-        <p className="text-xs text-slate-500">
-          Most of these are drawn layouts, not photographs — a verse on a gradient, a bold statement, a grid. "Editorial" is the hybrid: the same
-          kind of structured layout, drawn over a real photograph you attach. Image models can't render text or lay out a grid reliably, so an AI
-          creative director writes the concept and a renderer draws it. Nothing gets queued until you approve it.
-        </p>
-      </div>
-
       {/* Restored draft banner */}
       {draftRestoredAt && cards.length > 0 && (
         <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -983,23 +970,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
 
       {/* Brief form */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex flex-col gap-1 lg:w-64">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Brand</span>
-            {branchOptions.length === 0 ? (
-              <p className="text-sm text-slate-400 py-2">No brands available yet.</p>
-            ) : (
-              <select
-                value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
-                className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-              >
-                {branchOptions.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
+        <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-bold text-slate-600">Adjust style and number of concepts</summary><div className="mt-3 flex flex-col lg:flex-row gap-4">
+
 
           {brandCreativeDirections.length > 0 && (
             <div className="flex flex-col gap-1 lg:w-64">
@@ -1057,6 +1029,9 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           </div>
         </div>
 
+        </details>
+        <h2 className="text-lg font-bold text-slate-800">1. Describe your cards</h2>
+        <p className="text-sm text-slate-500">Write a brief or choose a starting idea. Then generate concepts to review and approve.</p>
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Brief</span>
           <textarea
@@ -1118,11 +1093,11 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
       </div>
 
       {/* Gallery */}
-      <div className="space-y-4">
+      <div className={cards.length || isGenerating ? "space-y-4" : "hidden"}>
         <div className="flex items-center gap-2">
           <ImageIcon className="w-4 h-4 text-emerald-600" />
           <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-            Concepts {cards.length > 0 ? `· ${reviewingCount} in review` : ''}
+            2. Review concepts {cards.length > 0 ? `· ${reviewingCount} in review` : ''}
           </h2>
         </div>
 

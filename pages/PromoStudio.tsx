@@ -1,3 +1,4 @@
+import { markStudioDraftChanged } from '../services/contentStudioDraft';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, Check, CheckCircle2, Clapperboard, Clock3, FileCode2, Film,
@@ -16,6 +17,7 @@ import { PROMO_CAMERA_MOVEMENTS, PROMO_CAMERA_MOVEMENT_BY_ID } from '../features
 import { planPromoPreviewWorkflow, type PromoGuidedStep } from '../features/promo-studio/guidedWorkflow';
 
 interface Props {
+  selectedBranchSlug: string;
   branches: Branch[];
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -35,14 +37,13 @@ const statusClass: Record<string, string> = {
   draft: 'border-slate-200 bg-slate-100 text-slate-600',
 };
 
-const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
-  const activeBranches = useMemo(() => branches.filter(branch => branch.is_active), [branches]);
+const PromoStudio: React.FC<Props> = ({ branches, addToast, selectedBranchSlug }) => {
   const [projects, setProjects] = useState<PromoProject[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState<PromoProjectDetail | null>(null);
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [branchId, setBranchId] = useState('');
+  const branchId = branches.find(branch => branch.slug === selectedBranchSlug)?.id || '';
   const [targetSeconds, setTargetSeconds] = useState(10);
   const [formats, setFormats] = useState<Array<typeof formatOptions[number]>>(['9:16']);
   const [loading, setLoading] = useState(true);
@@ -70,9 +71,9 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
   const loadProjects = useCallback(async () => {
     try {
       setLoading(true);
-      const rows = await listPromoProjects();
+      const rows = (await listPromoProjects()).filter(project => project.branch_id === branchId);
       setProjects(rows);
-      setSelectedId(current => current || rows[0]?.id || '');
+      setSelectedId(current => rows.some(project => project.id === current) ? current : '');
       setUnavailable(null);
       try {
         const readiness = await listPromoBranchReadiness();
@@ -85,7 +86,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
     } catch (error) {
       setUnavailable(error instanceof Error ? error.message : 'Promo Studio is not deployed yet.');
     } finally { setLoading(false); }
-  }, []);
+  }, [branchId]);
 
   const loadDetail = useCallback(async (projectId: string) => {
     try {
@@ -99,7 +100,6 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
 
   useEffect(() => { void loadProjects(); }, [loadProjects]);
   useEffect(() => { if (selectedId) void loadDetail(selectedId); else setDetail(null); }, [loadDetail, selectedId]);
-  useEffect(() => { if (!branchId && activeBranches[0]) setBranchId(activeBranches[0].id); }, [activeBranches, branchId]);
   useEffect(() => {
     const source = selectedReadiness?.source;
     setSourceDraft({
@@ -402,30 +402,28 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
       <section className="overflow-hidden border border-slate-800 bg-slate-950 p-8 text-white">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div><div className="flex items-center gap-3"><div className="rounded-2xl bg-white/10 p-3"><Clapperboard className="h-7 w-7" /></div><div><p className="text-xs font-black uppercase tracking-[0.25em] text-violet-200">Evidence-led creative</p><h1 className="text-3xl font-black">Promo Studio</h1></div></div>
-          <p className="mt-4 max-w-3xl text-sm leading-6 text-violet-100">Build branch promos from verified repository evidence, real UI capture, timed voice and music, and reproducible renders.</p></div>
+          <p className="mt-4 max-w-3xl text-sm leading-6 text-violet-100">Start with a title and what your promo should communicate. Then follow the next action to produce, review, and publish it.</p></div>
           <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-xs font-bold"><ShieldCheck className="h-4 w-4 text-emerald-300" /> Claims and provenance stay gated</div>
         </div>
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-5">
-          <section className="border border-slate-200 bg-white p-5">
-            <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-violet-600">New project</p><h2 className="mt-1 text-lg font-black text-slate-900">Start with intent</h2></div><Plus className="h-5 w-5 text-slate-400" /></div>
+          <details open={!selectedId} className="border border-slate-200 bg-white p-5">
+            <summary className="cursor-pointer text-sm font-bold text-slate-800">Create a new promo</summary>
+            <div className="mt-4 flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-violet-600">New project</p><h2 className="mt-1 text-lg font-black text-slate-900">Start with intent</h2></div><Plus className="h-5 w-5 text-slate-400" /></div>
             <div className="mt-5 space-y-3">
               <input value={title} onChange={event => setTitle(event.target.value)} maxLength={160} placeholder="Project title" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
               <textarea value={prompt} onChange={event => setPrompt(event.target.value)} maxLength={12000} rows={4} placeholder="What should this promo communicate?" className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400" />
-              <select value={branchId} onChange={event => setBranchId(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-400">
-                <option value="">Choose a branch</option>{activeBranches.map(branch => { const readiness = branchReadiness.find(item => item.branch_id === branch.id); return <option key={branch.id} value={branch.id}>{branch.name}{readiness ? readiness.generation_ready ? ' · evidence ready' : ' · setup needed' : ''}</option>; })}
-              </select>
               {selectedReadiness && <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><div className="flex flex-wrap gap-1.5">{[
                 ['Repository', selectedReadiness.repository_ready], ['Brand', selectedReadiness.brand_ready],
                 ['Capture', selectedReadiness.capture_ready], ['Instagram', selectedReadiness.instagram_ready],
               ].map(([label, ready]) => <span key={String(label)} className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${ready ? statusClass.ready : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{ready ? '✓ ' : ''}{label}</span>)}</div>{selectedReadiness.blockers.length > 0 && <p className="mt-2 text-[11px] leading-4 text-slate-500">Still needed: {selectedReadiness.blockers.join(' · ')}</p>}</div>}
-              <div className="grid grid-cols-3 gap-2">{formatOptions.map(format => <button key={format} type="button" onClick={() => setFormats(current => current.includes(format) ? current.filter(item => item !== format) : [...current, format])} className={`rounded-xl border px-2 py-2 text-xs font-black ${formats.includes(format) ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-500'}`}>{formats.includes(format) && <Check className="mr-1 inline h-3 w-3" />}{format}</button>)}</div>
+              <div className="grid grid-cols-3 gap-2">{formatOptions.map(format => <button key={format} type="button" onClick={() => { markStudioDraftChanged(); setFormats(current => current.includes(format) ? current.filter(item => item !== format) : [...current, format]); }} className={`rounded-xl border px-2 py-2 text-xs font-black ${formats.includes(format) ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 text-slate-500'}`}>{formats.includes(format) && <Check className="mr-1 inline h-3 w-3" />}{format}</button>)}</div>
               <label className="block text-xs font-bold text-slate-500">Target seconds<input type="number" min={1} max={600} value={targetSeconds} onChange={event => setTargetSeconds(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-400" /></label>
               <button type="button" disabled={busy || !title.trim() || !prompt.trim() || !branchId || formats.length === 0} onClick={() => void createProject()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Create draft</button>
             </div>
-          </section>
+          </details>
 
           {canConfigureBranches && branchId && <details className="border border-slate-200 bg-white p-5">
             <summary className="cursor-pointer text-xs font-black uppercase tracking-widest text-slate-600">Configure branch production</summary>
@@ -466,7 +464,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
               </div>
             </section>
 
-            <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Production gates</p><h2 className="mt-1 text-xl font-black text-slate-900">What is real, and what is missing</h2></div><ShieldCheck className="h-6 w-6 text-violet-500" /></div><div className="mt-5 grid gap-3 md:grid-cols-2">{stages.map(stage => <div key={stage.name} className="flex items-start gap-3 rounded-2xl border border-slate-100 p-4"><div className={`rounded-xl p-2 ${stage.ready ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{stage.ready ? <CheckCircle2 className="h-4 w-4" /> : <stage.icon className="h-4 w-4" />}</div><div><p className="text-sm font-black text-slate-800">{stage.name}</p><p className="mt-1 text-xs leading-5 text-slate-500">{stage.note}</p></div></div>)}</div></section>
+            <details className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"><summary className="cursor-pointer text-sm font-bold text-slate-700">View production checklist</summary><div className="mt-4 flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Production gates</p><h2 className="mt-1 text-xl font-black text-slate-900">What is real, and what is missing</h2></div><ShieldCheck className="h-6 w-6 text-violet-500" /></div><div className="mt-5 grid gap-3 md:grid-cols-2">{stages.map(stage => <div key={stage.name} className="flex items-start gap-3 rounded-2xl border border-slate-100 p-4"><div className={`rounded-xl p-2 ${stage.ready ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{stage.ready ? <CheckCircle2 className="h-4 w-4" /> : <stage.icon className="h-4 w-4" />}</div><div><p className="text-sm font-black text-slate-800">{stage.name}</p><p className="mt-1 text-xs leading-5 text-slate-500">{stage.note}</p></div></div>)}</div></details>
 
             {manifest.evidence.claims.length > 0 && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Claims review</p><h2 className="mt-1 text-xl font-black text-slate-900">Evidence before approval</h2><p className="mt-2 text-sm text-slate-500">Generated claims remain unapproved. Unsupported claims block strict-mode final approval.</p></div><ShieldCheck className="h-6 w-6 text-violet-500" /></div>
@@ -486,7 +484,7 @@ const PromoStudio: React.FC<Props> = ({ branches, addToast }) => {
               })}</div>
             </section>}
 
-            {manifest.script.status === 'approved' && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            {manifest.script.status === 'approved' && (manifest.voice.takes.length > 0 || manifest.music.takes.length > 0) && <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-widest text-slate-400">Audio review</p><h2 className="mt-1 text-xl font-black text-slate-900">Voice and music</h2><p className="mt-2 text-sm text-slate-500">Listen when Trellis asks for your approval. Caption timing is created automatically from the approved narration.</p></div><details className="relative"><summary className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-600">Generate another take</summary><div className="mt-2 flex flex-wrap justify-end gap-2"><button disabled={busy || manifest.voice.takes.length >= 3} onClick={() => void runAudioAction(() => queuePromoVoiceGeneration(detail.project.id, 'warm_authority'), 'Voice generation queued.')} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-700 disabled:opacity-40"><Volume2 className="mr-2 inline h-4 w-4" />Voice</button><button disabled={busy || manifest.music.takes.length >= 3} onClick={() => void runAudioAction(() => queuePromoMusicGeneration(detail.project.id, 'balanced'), 'Music generation queued.')} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-700 disabled:opacity-40"><Music2 className="mr-2 inline h-4 w-4" />Music</button></div></details></div>
               <div className="mt-5 space-y-3">
                 {generatedVoiceResults.map(take => <div key={take.id} className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4"><p className="text-sm font-black text-slate-900">Narration take {take.take_number}</p><p className="mt-1 text-xs text-slate-500">{take.provider} · {Number(take.duration_seconds).toFixed(1)}s · Trellis is preparing caption timing</p></div>)}

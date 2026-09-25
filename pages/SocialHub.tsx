@@ -23,6 +23,7 @@ interface SocialHubProps {
   profiles: Profile[];
   setEvents: React.Dispatch<React.SetStateAction<MarketingEvent[]>>;
   branchContext?: BranchContext;
+  selectedBranchSlug: string;
   branches?: Branch[];
   branchSocialAccounts?: BranchSocialAccountsMap;
   socialSignals: SocialActivity[];
@@ -184,7 +185,7 @@ const generateWithFallback = async <T,>(
   throw lastErr;
 };
 
-const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle, onNavigate }) => {
+const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals: allSocialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle, onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline' | 'reports'>('lab');
 
   // ─── Reports tab: published posts from marketing_events ─────────────
@@ -210,7 +211,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     setReportsError(null);
     try {
       const posts = await getPublishedPosts();
-      setReportPosts(posts);
+      setReportPosts(posts.filter(post => post.branch_id === branches?.find(branch => branch.slug === selectedBranchSlug)?.id));
       setReportsLoaded(true);
     } catch (err) {
       console.error('Failed to load published posts:', err);
@@ -286,7 +287,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       return stored ? JSON.parse(stored).published || [] : [];
     } catch { return []; }
   });
-  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
+  const selectedBranchIds = useMemo(() => (branches || []).filter(branch => branch.slug === selectedBranchSlug).map(branch => branch.id), [branches, selectedBranchSlug]);
+  const socialSignals = allSocialSignals.filter(signal => !!signal.branch_id && selectedBranchIds.includes(signal.branch_id));
 
   // Content-only mode: which platforms to generate variants for (no publishing — export to Meta Business Suite)
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatform[]>(['facebook', 'instagram']);
@@ -346,20 +348,6 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
     }
   }, [selectedCalendarDay, selectedCalendarEvent]);
 
-  // Filter branches by active context
-  const availableBranches = useMemo(() => {
-    if (!branches) return [];
-    if (!branchContext || branchContext.isAllSelected) return branches.filter(b => b.is_active);
-    return branches.filter(b => b.is_active && branchContext.activeBranchSlugs.includes(b.slug));
-  }, [branches, branchContext]);
-
-  // Auto-select first branch
-  useEffect(() => {
-    if (selectedBranchIds.length === 0 && availableBranches.length > 0) {
-      setSelectedBranchIds([availableBranches[0].id]);
-    }
-  }, [availableBranches, selectedBranchIds]);
-
   // One-time cleanup: collapse any duplicate scheduled posts (same id) left over from the pre-fix duplication bug.
   useEffect(() => {
     setScheduledPosts(prev => {
@@ -404,11 +392,6 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
   const isBranchPlatformConnected = (branchId: string | undefined | null, platform: string) =>
     !!branchId && !!branchConnections[branchId]?.has(platform);
 
-  const toggleBranch = (branchId: string) => {
-    setSelectedBranchIds(prev =>
-      prev.includes(branchId) ? prev.filter(id => id !== branchId) : [...prev, branchId]
-    );
-  };
 
   // Queue filtered signals
   const filteredSignals = useMemo(() => {
@@ -493,8 +476,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       });
     });
 
-    return events;
-  }, [scheduledPosts, deployedCampaigns, branches]);
+    return events.filter(event => selectedBranchIds.includes(event.branch_id));
+  }, [scheduledPosts, deployedCampaigns, branches, selectedBranchIds]);
 
   // Upcoming events grouped by day — powers the mobile agenda (phones can't show a 7-col grid)
   const agendaGroups = useMemo(() => {
@@ -1224,7 +1207,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   const handleRespondToSignal = (signal: SocialActivity) => {
     setBaseContent(signal.content);
-    if (signal.branch_id) setSelectedBranchIds([signal.branch_id]);
+
     setSocialSignals(prev => prev.map(s => s.id === signal.id ? { ...s, status: 'actioned' as const, actioned_at: new Date().toISOString() } : s));
     updateSignalStatus(signal.id, 'actioned');
     setActiveTab('lab');
@@ -1300,8 +1283,8 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
 
   const allPipelinePosts = useMemo(() => {
     const drafts = activeDrafts.filter(d => d.status === 'drafting');
-    return [...drafts, ...scheduledPosts, ...publishedPosts, ...archivedPosts];
-  }, [activeDrafts, scheduledPosts, publishedPosts, archivedPosts]);
+    return [...drafts, ...scheduledPosts, ...publishedPosts, ...archivedPosts].filter(draft => !!draft.branch_id && selectedBranchIds.includes(draft.branch_id));
+  }, [activeDrafts, scheduledPosts, publishedPosts, archivedPosts, selectedBranchIds]);
 
   const conflictCount = calendarAlerts.filter(a => a.type === 'conflict').length;
   const gapCount = calendarAlerts.filter(a => a.type === 'gap').length;
@@ -1349,55 +1332,30 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
       })()}
 
       <div className="flex w-fit max-w-full overflow-x-auto border border-slate-200 bg-white">
-        <button onClick={() => setActiveTab('lab')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'lab' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><Zap size={18} /><span>Lab</span></button>
+        <button onClick={() => setActiveTab('lab')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'lab' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><Zap size={18} /><span>Create a post</span></button>
         <button onClick={() => setActiveTab('queue')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all relative border-b-2 ${activeTab === 'queue' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
           <Terminal size={18} />
-          <span>Queue</span>
+          <span>Social inbox</span>
           {newSignalCount > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{newSignalCount}</span>
           )}
         </button>
-        <button onClick={() => setActiveTab('pipeline')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'pipeline' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Pipeline</span></button>
+        <button onClick={() => setActiveTab('pipeline')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'pipeline' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><CalendarDays size={18} /><span>Calendar</span></button>
         <button onClick={() => setActiveTab('reports')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'reports' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><BarChart3 size={18} /><span>Reports</span></button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className={`grid grid-cols-1 gap-8 ${activeTab !== 'lab' ? 'lg:grid-cols-3' : ''}`}>
         <div className="lg:col-span-2 min-h-[700px]">
           {/* ═══════════════ LAB TAB ═══════════════ */}
           {activeTab === 'lab' && (
             <div className="space-y-8 animate-in fade-in duration-500">
-              {availableBranches.length > 0 && (
-                <div className="flex items-start gap-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-2.5">Brands</label>
-                  <div className="flex flex-wrap items-center gap-2 flex-1">
-                    {availableBranches.map(b => {
-                      const active = selectedBranchIds.includes(b.id);
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => toggleBranch(b.id)}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${active ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
-                        >
-                          <span className="w-2.5 h-2.5 rounded" style={{ backgroundColor: b.primary_color || '#6b7280' }} />
-                          {b.name}
-                          {active && <Check size={12} className="text-emerald-400" />}
-                        </button>
-                      );
-                    })}
-                    {selectedBranchIds.length > 1 && (
-                      <span className="text-[10px] font-black text-emerald-600 ml-1 uppercase tracking-wider">Fan-out · {selectedBranchIds.length} brands</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
               {workflowStatus === 'idle' ? (
                 <div className={`bg-white p-6 sm:p-10 border border-slate-200 relative ${isGenerating ? 'opacity-40' : ''}`}>
                   {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20"><Loader2 className="animate-spin text-emerald-600" size={48} /></div>}
-                  <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />Strategy Lab</h3>
+                  <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />1. Describe your post</h3>
                   <textarea className="w-full bg-slate-50 border border-slate-200 p-5 sm:p-6 text-base sm:text-lg font-medium outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all min-h-[220px] mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
-                  <div className="mb-8 p-5 rounded-[2rem] border-2 border-dashed border-emerald-200 bg-emerald-50/40">
+                  <details className="mb-8 p-5 rounded-[2rem] border-2 border-dashed border-emerald-200 bg-emerald-50/40">
+                    <summary className="cursor-pointer text-sm font-bold text-emerald-800 mb-3">Use an image or video you already have</summary>
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                       <div>
                         <p className="text-sm font-black text-emerald-800 uppercase tracking-tight">Already made your creative?</p>
@@ -1410,9 +1368,9 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                     </div>
                     <input value={importDescription} onChange={e => setImportDescription(e.target.value)} placeholder="Optional: tell Sage what this creative is about so it can write better metadata" className="w-full px-4 py-3 bg-white border border-emerald-100 rounded-xl text-sm font-medium outline-none focus:border-emerald-500" />
                     {selectedBranchIds.length !== 1 && <p className="mt-2 text-[10px] font-bold text-amber-700">Choose exactly one brand above to import media.</p>}
-                  </div>
+                  </details>
                   <div className="flex flex-wrap items-center gap-2 mb-10">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">Platforms</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1">2. Choose platforms</span>
                     {(['facebook', 'instagram', 'x', 'linkedin'] as SocialPlatform[]).map(p => {
                       const Icon = getPlatformIcon(p);
                       const active = selectedPlatforms.includes(p);
@@ -1429,7 +1387,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                       );
                     })}
                   </div>
-                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full min-h-11 py-4 text-white bg-slate-900 font-bold text-base flex items-center justify-center space-x-3 hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={22} className="text-emerald-400" /><span>Create</span></button>
+                  <button onClick={() => handleGenerateVariants()} disabled={!baseContent || isGenerating || selectedPlatforms.length === 0} className="w-full min-h-11 py-4 text-white bg-slate-900 font-bold text-base flex items-center justify-center space-x-3 hover:bg-emerald-600 transition disabled:opacity-20"><Sparkles size={22} className="text-emerald-400" /><span>Create drafts</span></button>
                 </div>
               ) : activeDrafts.length > 0 && (
                 <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
@@ -1437,7 +1395,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
                   <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 border border-slate-200">
                     <div>
                       <h3 className="text-xl font-bold text-slate-900">Reviewing {activeDrafts.length} draft{activeDrafts.length > 1 ? 's' : ''}</h3>
-                      <p className="text-[11px] font-bold text-slate-400 mt-1">One per brand — edit, schedule, or copy each below.</p>
+                      <p className="text-[11px] font-bold text-slate-400 mt-1">Review the copy, then schedule, publish, or export your post.</p>
                     </div>
                     <button onClick={() => { setWorkflowStatus('idle'); setActiveDrafts([]); }} className="p-3 text-slate-300 hover:text-rose-500"><X size={24} /></button>
                   </div>
@@ -2370,7 +2328,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-8">
+        {activeTab !== 'lab' && <div className="space-y-8">
           {/* Intent Watcher */}
           <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center mb-10"><Target size={22} className="mr-4 text-pink-500" />Intent Watcher</h3>
@@ -2436,7 +2394,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ profiles, setEvents, branchContex
               </div>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

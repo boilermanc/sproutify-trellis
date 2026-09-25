@@ -1,6 +1,8 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
+import ContentStudioStart from './components/ContentStudioStart';
+import { CONTENT_STUDIO_VIEWS } from './services/contentStudioViews';
 import Dashboard from './pages/Dashboard';
 import Profiles from './pages/Profiles';
 import Leads from './pages/Leads';
@@ -69,7 +71,7 @@ type AuthView = 'login' | 'reset-password';
 const AppContent: React.FC = () => {
   const { user, loading, isPasswordRecovery, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
-  const [activeView, setActiveView] = useState<ViewState>('dashboard');
+  const [activeView, setActiveViewState] = useState<ViewState>('dashboard');
   const [campaignDraftId, setCampaignDraftId] = useState<string | null>(null);
   const [focusedCampaignId, setFocusedCampaignId] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team' | undefined>(undefined);
@@ -80,6 +82,43 @@ const AppContent: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [allBranches, setAllBranches] = useState<BranchInfo[]>([]);
   const [activeBranchSlugs, setActiveBranchSlugs] = useState<string[]>([]);
+  const [studioScope, setStudioScope] = useState<{ view: ViewState; slug: string }>({ view: 'dashboard', slug: '' });
+  const studioDirty = useRef(false);
+  const studioView = CONTENT_STUDIO_VIEWS[activeView];
+  const selectedStudioBranchSlug = studioScope.view === activeView
+    && allBranches.some(branch => branch.slug === studioScope.slug)
+    ? studioScope.slug : '';
+
+  useEffect(() => {
+    setStudioScope({ view: activeView, slug: '' });
+    studioDirty.current = false;
+  }, [activeView]);
+
+  const setActiveView = (view: ViewState) => {
+    if (view === activeView) return;
+    if (studioView && studioDirty.current && !window.confirm('Leave this workspace? Save your draft first if you want to keep it.')) return;
+    studioDirty.current = false;
+    setActiveViewState(view);
+  };
+
+  useEffect(() => {
+    const markDirty = () => { if (studioView) studioDirty.current = true; };
+    window.addEventListener('studio-draft-change', markDirty);
+    return () => window.removeEventListener('studio-draft-change', markDirty);
+  }, [studioView]);
+
+  const changeBranchScope = (slugs: string[]) => {
+    if (!studioView?.branchRequired) {
+      setActiveBranchSlugs(slugs);
+      return;
+    }
+    const slug = slugs.length === 1 && allBranches.some(branch => branch.slug === slugs[0]) ? slugs[0] : '';
+    if (slug === selectedStudioBranchSlug) return;
+    if (studioDirty.current && !window.confirm('Switch branches and leave the current draft? Save your work first if you want to keep it.')) return;
+    studioDirty.current = false;
+    setStudioScope({ view: activeView, slug });
+  };
+
 
   // Initialize Global State from LocalStorage or Mocks
   const [events, setEvents] = useState<MarketingEvent[]>(() => {
@@ -222,9 +261,9 @@ const AppContent: React.FC = () => {
 
   const branchContext: BranchContext = {
     allBranches,
-    activeBranchSlugs,
-    setActiveBranchSlugs,
-    isAllSelected: activeBranchSlugs.length === allBranches.length,
+    activeBranchSlugs: studioView?.branchRequired ? (selectedStudioBranchSlug ? [selectedStudioBranchSlug] : []) : activeBranchSlugs,
+    setActiveBranchSlugs: changeBranchScope,
+    isAllSelected: studioView?.branchRequired ? false : activeBranchSlugs.length === allBranches.length,
   };
 
   // Real email engagement, loaded once and joined onto profiles below. Before
@@ -509,28 +548,28 @@ const AppContent: React.FC = () => {
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setCampaignDraftId(null); setActiveView('campaign-builder'); }} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
       case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onBranchesChange={refreshBranches} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
-      case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
-      case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
-      case 'media-generation': return <MediaGeneration branches={branches} addToast={addToast} />;
-      case 'motion-posts': return <MotionPosts branches={branches} branchContext={branchContext} addToast={addToast} />;
-      case 'promo-studio': return <PromoStudio branches={branches} addToast={addToast} />;
-      case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
+      case 'social-hub': return <SocialHub selectedBranchSlug={selectedStudioBranchSlug} profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
+      case 'video-ad-lab': return <VideoAdLab selectedBranchSlug={selectedStudioBranchSlug} profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
+      case 'media-generation': return <MediaGeneration selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} />;
+      case 'motion-posts': return <MotionPosts selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchContext={branchContext} addToast={addToast} />;
+      case 'promo-studio': return <PromoStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} />;
+      case 'trellis-studio': return <TrellisStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
       case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
-      case 'trellis-episodes': return <TrellisEpisodes branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
-      case 'clip-studio': return <ClipStudio branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'trellis-episodes': return <TrellisEpisodes selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'clip-studio': return <ClipStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
       case 'transcriptions': return <Transcriptions addToast={addToast} />;
-      case 'ad-performance': return <AdPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
-      case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'post-performance': return <PostPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
+      case 'ad-performance': return <AdPerformance selectedBranchSlug={selectedStudioBranchSlug} apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
+      case 'post-scheduler': return <PostScheduler selectedBranchSlug={selectedStudioBranchSlug} branchContext={branchContext} addToast={addToast} />;
+      case 'card-studio': return <CardStudio selectedBranchSlug={selectedStudioBranchSlug} apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
+      case 'post-performance': return <PostPerformance selectedBranchSlug={selectedStudioBranchSlug} apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
       case 'content-intelligence': return (
         <FeatureErrorBoundary featureName="Content Intelligence" onExit={() => setActiveView('dashboard')}>
           <React.Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-emerald-600" /><p className="tr-label mt-3">Loading content intelligence</p></div></div>}>
-            <ContentIntelligence branchContext={branchContext} addToast={addToast} />
+            <ContentIntelligence selectedBranchSlug={selectedStudioBranchSlug} branchContext={branchContext} addToast={addToast} />
           </React.Suspense>
         </FeatureErrorBoundary>
       );
-      case 'reddit-growth': return <RedditGrowth branchContext={branchContext} apiKeys={apiKeys} addToast={addToast} onNavigate={setActiveView} />;
+      case 'reddit-growth': return <RedditGrowth selectedBranchSlug={selectedStudioBranchSlug} branchContext={branchContext} apiKeys={apiKeys} addToast={addToast} onNavigate={setActiveView} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} addToast={addToast} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
@@ -627,7 +666,13 @@ const AppContent: React.FC = () => {
 
   return (
     <Layout activeView={activeView} onViewChange={(v) => { setSettingsInitialTab(undefined); if (v === 'campaign-builder') setCampaignDraftId(null); setActiveView(v); }} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} spokeConnections={spokeConnections} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
-      {renderView()}
+      {studioView?.branchRequired && !selectedStudioBranchSlug
+        ? <ContentStudioStart title={studioView.title} nextAction={studioView.nextAction} branchesAvailable={allBranches.length > 0} />
+        : <div key={studioView ? `${activeView}:${selectedStudioBranchSlug}` : 'main-view'} onChangeCapture={event => {
+          if (!studioView) return;
+          const target = event.target as HTMLInputElement;
+          if (target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || (target.tagName === 'INPUT' && target.type !== 'search')) studioDirty.current = true;
+        }}>{renderView()}</div>}
 
       {/* Global Toast Notification Engine */}
       <div className="pointer-events-none fixed bottom-6 left-1/2 z-[300] w-full max-w-md -translate-x-1/2 space-y-2 px-4">

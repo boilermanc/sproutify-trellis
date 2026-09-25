@@ -5,6 +5,7 @@ import { approveMediaGenerationOutput, createMediaPlatformExport, deleteMediaGen
 import MediaFinishingEditor from './MediaFinishingEditor';
 
 interface Props {
+  selectedBranchId?: string;
   branches: Branch[];
   finishingEnabled: boolean;
   publishingEnabled: boolean;
@@ -21,7 +22,7 @@ const localDateTime = (date: Date) => {
 
 const defaultSchedule = () => localDateTime(new Date(Date.now() + 60 * 60_000));
 
-const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, publishingEnabled, addToast }) => {
+const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, publishingEnabled, addToast, selectedBranchId }) => {
   const [items, setItems] = useState<MediaGenerationLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -63,10 +64,11 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
   }, [items, load]);
 
   const branchItems = useMemo(() => items.filter(item => {
+    if (selectedBranchId) return item.project?.branch_id === selectedBranchId;
     if (branchFilter === 'all') return true;
     if (branchFilter === 'personal') return !item.project?.branch_id;
     return item.project?.branch_id === branchFilter;
-  }), [branchFilter, items]);
+  }), [branchFilter, items, selectedBranchId]);
 
   const statusCounts = useMemo(() => ({
     all: branchItems.length,
@@ -121,7 +123,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
 
   const openPublishing = (item: MediaGenerationLibraryItem) => {
     setPublishItem(item);
-    setBranchId(item.project?.branch_id || activeBranches[0]?.id || '');
+    setBranchId(selectedBranchId || item.project?.branch_id || activeBranches[0]?.id || '');
     setCaption(item.job.prompt.slice(0, 2200));
     setScheduledFor(defaultSchedule());
     setPublishKey(crypto.randomUUID());
@@ -133,7 +135,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
       setWorkingId(publishItem.output_id);
       await scheduleMediaGenerationOutput({
         output_id: publishItem.output_id,
-        branch_id: branchId,
+        branch_id: selectedBranchId || branchId,
         platform,
         caption: caption.trim(),
         scheduled_for: new Date(scheduledFor).toISOString(),
@@ -174,7 +176,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
         <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap gap-2">{(['all', 'needs_approval', 'approved', 'publishing'] as LibraryFilter[]).map(value => <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${filter === value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-500'}`}>{value.replace('_', ' ')} <span className={filter === value ? 'text-indigo-200' : 'text-slate-400'}>{statusCounts[value]}</span></button>)}</div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500"><Filter className="h-4 w-4 text-indigo-600" /><span className="sr-only">Filter by branch</span><select aria-label="Filter by branch" value={branchFilter} onChange={event => setBranchFilter(event.target.value)} className="min-w-44 bg-transparent text-xs font-bold text-slate-700 outline-none"><option value="all">All branches</option><option value="personal">Personal / unassigned</option>{activeBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+            {!selectedBranchId && (<label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500"><Filter className="h-4 w-4 text-indigo-600" /><span className="sr-only">Filter by branch</span><select aria-label="Filter by branch" value={branchFilter} onChange={event => setBranchFilter(event.target.value)} className="min-w-44 bg-transparent text-xs font-bold text-slate-700 outline-none"><option value="all">All branches</option><option value="personal">Personal / unassigned</option>{activeBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>)}
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500"><ArrowUpDown className="h-4 w-4 text-indigo-600" /><span className="sr-only">Sort media</span><select aria-label="Sort media" value={sort} onChange={event => setSort(event.target.value as LibrarySort)} className="min-w-36 bg-transparent text-xs font-bold text-slate-700 outline-none"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="branch">Branch A–Z</option><option value="cost">Highest cost</option></select></label>
           </div>
         </div>
@@ -217,7 +219,7 @@ const GeneratedMediaLibrary: React.FC<Props> = ({ branches, finishingEnabled, pu
         <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
           <div className="flex items-center gap-3"><div className="rounded-2xl bg-indigo-50 p-3"><CalendarClock className="h-5 w-5 text-indigo-600" /></div><div><h3 className="text-lg font-black text-slate-900">Send to Post Scheduler</h3><p className="text-xs text-slate-500">The existing Trellis publishing worker will post this video.</p></div></div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Brand<select value={branchId} onChange={event => setBranchId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700">{activeBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+            {!selectedBranchId && (<label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Brand<select value={branchId} onChange={event => setBranchId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700">{activeBranches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>)}
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Destination<select value={platform} onChange={event => setPlatform(event.target.value as 'instagram' | 'tiktok')} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700"><option value="instagram">Instagram Reel</option><option value="tiktok">TikTok video</option></select></label>
           </div>
           <label className="mt-3 block text-[10px] font-black uppercase tracking-wider text-slate-400">Caption<textarea rows={4} maxLength={2200} value={caption} onChange={event => setCaption(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 p-3 text-sm leading-6 text-slate-700" /></label>

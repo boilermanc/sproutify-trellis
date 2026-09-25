@@ -29,26 +29,21 @@ test('empty overview offers a brief action instead of zero cards or developer se
   assert.match(emptyOverview, /Open Brand Brief/);
   assert.doesNotMatch(emptyOverview, /Canonical topics|Metric snapshots|MarkdownPanel|create-project/);
   assert.match(page, /\]\.filter\(item => item\.value > 0\)\.map/);
-  assert.match(page, /project\.topicClusters\.trim\(\) && <section/);
-  assert.match(page, /project\.openQuestions\.trim\(\) && <section/);
+  assert.match(page, /project\.topicClusters\.trim\(\) && <details/);
+  assert.match(page, /project\.openQuestions\.trim\(\) && <details/);
   assert.match(page, /tab === 'guide'[\s\S]*?<details[\s\S]*?Developer setup: versioned content partitions/);
 });
 
 test('header branch selection controls the content project and guards dirty edits', () => {
   const page = read('pages/ContentIntelligence.tsx');
   const layout = read('components/Layout.tsx');
-  assert.match(page, /const \[projectId, setProjectIdState\] = useState\(''\)/);
-  assert.match(page, /branchContext\.setActiveBranchSlugs\(\[\]\)/);
-  assert.match(page, /const selectedProjectId = branchContext\.activeBranchSlugs\.length === 1/);
-  assert.match(page, /Choose a branch to begin/);
-  assert.match(page, /Use the branch switcher in the top header/);
-  assert.match(layout, /\? 'Select branch'/);
-  assert.match(page, /if \(selectedProjectId !== projectId\)/);
-  assert.match(page, /if \(!confirmBriefNavigation\(\)\) \{[\s\S]*branchContext\.setActiveBranchSlugs\(previousBranchSlugs\.current\)/);
-  assert.match(page, /setProjectIdState\(selectedProjectId\)/);
+  const app = read('App.tsx');
+  assert.match(page, /const projectId = selectedBranchSlug/);
+  assert.match(app, /studioView\?\.branchRequired && !selectedStudioBranchSlug/);
+  assert.match(app, /studioDirty.current && !window.confirm/);
   assert.match(page, /onDirtyChange=\{setBriefDirty\}/);
   assert.doesNotMatch(page, /aria-label="Content project"/);
-  assert.match(layout, /const singleBranchView = activeView === 'content-intelligence' \|\| activeView === 'motion-posts'/);
+  assert.match(layout, /Boolean\(studioView\?\.branchRequired\)/);
   assert.match(layout, /singleBranchView \? \[branch\.slug\]/);
   assert.match(layout, /!singleBranchView && <div className="flex items-center space-x-2">/);
 });
@@ -56,7 +51,7 @@ test('header branch selection controls the content project and guards dirty edit
 test('brief view excludes unrelated canonical warnings and developer footer', () => {
   const page = read('pages/ContentIntelligence.tsx');
   assert.match(page, /tab !== 'brief' && project\.loadErrors\.length > 0/);
-  assert.match(page, /tab !== 'brief' && !\(tab === 'overview' && !hasRecords\) && <footer/);
+  assert.match(page, /tab === 'guide' && <footer/);
   assert.match(page, /tab === 'brief' && <div key=\{project\.projectId\}><OpportunityBriefPanel/);
 });
 

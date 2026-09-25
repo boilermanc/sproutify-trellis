@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ViewState, User, Brand, Profile, BranchContext, ApiKeyConfig, SpokeConnection } from '../types';
 import { Article } from '../src/data/helpContent';
 import { PAGE_INFO } from '../src/data/pageInfo';
+import { CONTENT_STUDIO_VIEWS } from '../services/contentStudioViews';
 import SageChat from './SageChat';
 import ContextAwareHelp from './ContextAwareHelp';
 import PageInfoTooltip from './PageInfoTooltip';
@@ -96,7 +97,9 @@ const NAV_GROUPS = [
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, spokeConnections = [], onOpenHelpArticle, onOpenHelpCenter }) => {
-  const singleBranchView = activeView === 'content-intelligence' || activeView === 'motion-posts';
+  const studioView = CONTENT_STUDIO_VIEWS[activeView];
+  const singleBranchView = Boolean(studioView?.branchRequired);
+  const showBranchPicker = !studioView || studioView.branchRequired;
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const branchPickerRef = useRef<HTMLDivElement>(null);
@@ -315,8 +318,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
           </div>
           <div className="flex items-center space-x-2 lg:space-x-4 shrink-0">
              {/* Branch Scope Picker */}
-             <div className="relative" ref={branchPickerRef}>
+             {showBranchPicker && <div className="relative" ref={branchPickerRef}>
                <button
+                 id="studio-branch-picker"
+                 aria-label={singleBranchView ? 'Choose branch' : 'Branch scope'}
+                 aria-expanded={isBranchPickerOpen}
                  onClick={() => setIsBranchPickerOpen(!isBranchPickerOpen)}
                  className="flex min-h-11 items-center gap-1.5 border border-trellis-line bg-white px-2.5 text-xs font-semibold text-trellis-ink transition-colors hover:border-slate-400 sm:gap-2 sm:px-3 sm:text-sm lg:px-4"
                >
@@ -370,6 +376,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                        return (
                          <button
                            key={branch.id}
+                           aria-pressed={isActive}
                            onClick={() => {
                              const newSlugs = singleBranchView ? [branch.slug] : isActive
                                ? branchContext.activeBranchSlugs.filter(s => s !== branch.slug)
@@ -413,7 +420,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                    </div>
                  </div>
                )}
-             </div>
+             </div>}
 
              <button
                onClick={() => onViewChange('support-hub')}

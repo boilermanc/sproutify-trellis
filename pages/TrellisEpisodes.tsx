@@ -19,6 +19,7 @@ import TitledThumbnailComposer from '../components/TitledThumbnailComposer';
 import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
 
 interface Props {
+  selectedBranchSlug: string;
   branches: Branch[];
   branchSocialAccounts: BranchSocialAccountsMap;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -149,7 +150,7 @@ function isPublicationStuck(pub: EpisodePublication): boolean {
   return isPublicationInFlight(pub) && age !== null && age >= STUCK_PUBLICATION_MINUTES;
 }
 
-const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addToast, userId, geminiApiKey }) => {
+const TrellisEpisodes: React.FC<Props> = ({ selectedBranchSlug, branches, branchSocialAccounts, addToast, userId, geminiApiKey }) => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [selected, setSelected] = useState<Episode | null>(null);
   const [assets, setAssets] = useState<EpisodeAsset[]>([]);
@@ -168,19 +169,19 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
   const [artworkAlcoholPolicy, setArtworkAlcoholPolicy] = useState<'allow' | 'exclude'>('allow');
   const [videoMotion, setVideoMotion] = useState<'ken_burns' | 'none'>('ken_burns');
 
-  const [branch, setBranch] = useState(branches[0]?.slug || '');
+  const branch = selectedBranchSlug;
+  const [creatingNew, setCreatingNew] = useState(false);
   const [title, setTitle] = useState('');
   const [showName, setShowName] = useState('');
   const [theme, setTheme] = useState('');
   const [linkChoice, setLinkChoice] = useState('');
 
-  useEffect(() => { if (!branch && branches[0]) setBranch(branches[0].slug); }, [branches, branch]);
 
   const loadEpisodes = useCallback(async () => {
-    try { setLoading(true); setEpisodes(await getEpisodes(undefined, 50)); }
+    try { setLoading(true); setEpisodes(await getEpisodes(selectedBranchSlug, 50)); }
     catch (e) { addToast(`Failed to load episodes: ${msg(e)}`, 'error'); }
     finally { setLoading(false); }
-  }, [addToast]);
+  }, [addToast, selectedBranchSlug]);
   useEffect(() => { loadEpisodes(); }, [loadEpisodes]);
 
   const loadDetail = useCallback(async (ep: Episode) => {
@@ -193,7 +194,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
   }, []);
 
   const select = useCallback(async (ep: Episode) => {
-    setSelected(ep); setAssets([]); setMetadata(null); setPubs([]); setYoutubeMetrics([]); setLinkedSession(null); setMasterUrl(null);
+    setCreatingNew(false); setSelected(ep); setAssets([]); setMetadata(null); setPubs([]); setYoutubeMetrics([]); setLinkedSession(null); setMasterUrl(null);
     try {
       const sessions = await getSessions(ep.branch || undefined, 50);
       setSessionsList(sessions.filter(s => s.status !== 'archived'));
@@ -364,7 +365,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
     setBusy('create');
     try {
       const ep = await createEpisode({ branch, title: title.trim(), show_name: showName || undefined, theme: theme || undefined } as CreateEpisodeConfig, userId);
-      setEpisodes(prev => [ep, ...prev]); setTitle(''); await select(ep);
+      setEpisodes(prev => [ep, ...prev]); setCreatingNew(false); setTitle(''); await select(ep);
       addToast(`Episode "${ep.title}" created`, 'success');
     } catch (e) { addToast(msg(e), 'error'); } finally { setBusy(''); }
   };
@@ -381,13 +382,9 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
           </div>
         </div>
 
-        <div className={`${card} space-y-4`}>
+        <button type="button" onClick={() => { setSelected(null); setCreatingNew(current => !current); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white">{creatingNew ? "Close new episode" : "New episode"}</button>
+        {creatingNew && <div className={`${card} space-y-4`}>
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Plus size={14} /> New Episode</h3>
-          <div><label className={labelCls}>Branch</label>
-            <select className={inputCls} value={branch} onChange={e => setBranch(e.target.value)}>
-              {branches.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
-            </select>
-          </div>
           <div><label className={labelCls}>Episode Title</label>
             <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="Late Night Jazz for Vinyl Lovers" />
           </div>
@@ -401,7 +398,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
             className="w-full py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">
             {busy === 'create' ? <Loader2 size={16} className="animate-spin" /> : <Clapperboard size={16} />} Create Episode
           </button>
-        </div>
+        </div>}
 
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
@@ -449,7 +446,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
       {/* Right: pipeline */}
       <div className="lg:col-span-2">
         {!selected ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center bg-white border border-slate-200">
+          <div className="flex flex-col items-center justify-center py-10 px-6 text-center bg-white border border-slate-200">
             <Clapperboard size={44} className="text-slate-300 mb-3" />
             <p className="text-sm font-bold text-slate-600">Select or create an episode</p>
             <p className="text-xs text-slate-400 mt-1 max-w-sm">An episode runs the full pipeline: music → master → artwork → video → metadata → publish. Music is the first asset; everything else attaches here.</p>
@@ -502,7 +499,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
             </div>
 
             {/* Phase 2: Master */}
-            <div className={card}>
+            {(selected.session_id || masterUrl) && <div className={card}>
               <h4 className={phaseHead}><Music size={15} className="text-blue-500" /> Master Audio</h4>
               {masterUrl ? (
                 <div className="mt-3 space-y-2">
@@ -513,10 +510,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                   </div>
                 </div>
               ) : <p className="text-xs text-slate-400 mt-3">No master yet — stitch approved tracks in the linked session first.</p>}
-            </div>
+            </div>}
 
             {/* Phase 3: Artwork */}
-            <div className={card}>
+            {(masterUrl || cover || thumbnail) && <div className={card}>
               <h4 className={phaseHead}><ImageIcon size={15} className="text-violet-500" /> Artwork</h4>
 
               {/* Art style picker — drives the generator's look + scene setting */}
@@ -599,10 +596,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                   onSaved={() => loadDetail(selected)}
                 />
               )}
-            </div>
+            </div>}
 
             {/* Phase 4: Video */}
-            <div className={card}>
+            {((masterUrl && cover?.url) || video) && <div className={card}>
               <h4 className={phaseHead}><Film size={15} className="text-indigo-500" /> Video</h4>
 
               {/* Motion: Ken Burns (slow zoom) or a plain static image */}
@@ -679,10 +676,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                   })()}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Phase 5: Metadata */}
-            <div className={card}>
+            {(video?.status === "ready" || metadata) && <div className={card}>
               <h4 className={phaseHead}><FileText size={15} className="text-cyan-500" /> Metadata</h4>
               <button type="button" disabled={!!busy} onClick={() => run('meta', () => generateMetadata(selected, linkedSession, geminiApiKey || '').then(() => {}))}
                 className="mt-3 px-4 py-2 bg-cyan-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-cyan-700 transition disabled:opacity-40">
@@ -701,10 +698,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                   </button>
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Phase 6: Publish */}
-            <div className={card}>
+            {(metadata?.status === "approved" || pubs.length > 0) && <div className={card}>
               <h4 className={phaseHead}><Send size={15} className="text-emerald-500" /> Publish</h4>
               <div className="mt-3">
                 <YouTubeAccountSelector branchSlug={selected.branch} branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={!!busy} />
@@ -804,10 +801,10 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* YouTube Analytics */}
-            <div className={card}>
+            {youtubeLivePublication && <div className={card}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h4 className={phaseHead}><BarChart3 size={15} className="text-red-500" /> YouTube Analytics</h4>
@@ -826,7 +823,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
               ) : !latestYoutubeMetric ? (
                 <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-bold text-slate-500">No analytics rows yet.</p>
-                  <p className="mt-1 text-[11px] font-medium text-slate-400">Next step is the scheduled YouTube sync job. Once it writes to <b>trellis_youtube_daily_metrics</b>, this panel will fill in automatically.</p>
+                  <p className="mt-1 text-[11px] font-medium text-slate-400">YouTube results will appear after the next analytics update.</p>
                 </div>
               ) : (
                 <div className="mt-3 space-y-3">
@@ -862,7 +859,7 @@ const TrellisEpisodes: React.FC<Props> = ({ branches, branchSocialAccounts, addT
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         )}
       </div>

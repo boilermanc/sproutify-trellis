@@ -1,3 +1,4 @@
+import { markStudioDraftChanged } from '../services/contentStudioDraft';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Music, Loader2, RefreshCw, Archive, AlertCircle, CheckCircle2, XCircle, Wand2,
@@ -13,6 +14,7 @@ import {
 } from '../services/sessionService';
 
 interface TrellisStudioProps {
+  selectedBranchSlug: string;
   branches: Array<{ slug: string; name: string }>;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   userId?: string | null;
@@ -139,7 +141,7 @@ function getRenderWorkerInfo(render?: MusicRender | null): WorkerInfo | null {
   return worker && typeof worker === 'object' ? worker as WorkerInfo : null;
 }
 
-const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userId, geminiApiKey, onNavigate }) => {
+const TrellisStudio: React.FC<TrellisStudioProps> = ({ selectedBranchSlug, branches, addToast, userId, geminiApiKey, onNavigate }) => {
   const [sessions, setSessions] = useState<MusicSession[]>([]);
   const [selected, setSelected] = useState<MusicSession | null>(null);
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
@@ -152,7 +154,8 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const [addTrackCount, setAddTrackCount] = useState(6);
 
   // Create form
-  const [branch, setBranch] = useState(branches[0]?.slug || '');
+  const branch = selectedBranchSlug;
+  const [creatingNew, setCreatingNew] = useState(false);
   const [title, setTitle] = useState('');
   const [genre, setGenre] = useState('');
   const [mood, setMood] = useState('');
@@ -161,7 +164,6 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const [trackCount, setTrackCount] = useState<number | ''>(5);
   const [avgTrackSeconds, setAvgTrackSeconds] = useState(180);
 
-  useEffect(() => { if (!branch && branches[0]) setBranch(branches[0].slug); }, [branches, branch]);
 
   const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
   const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
@@ -177,10 +179,10 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   const selectedVocalSummary = summarizeTrackVocals(tracks);
 
   const loadSessions = useCallback(async () => {
-    try { setLoading(true); setSessions(await getSessions(undefined, 50)); }
+    try { setLoading(true); setSessions(await getSessions(selectedBranchSlug, 50)); }
     catch (e) { addToast(`Failed to load sessions: ${e instanceof Error ? e.message : 'error'}`, 'error'); }
     finally { setLoading(false); }
-  }, [addToast]);
+  }, [addToast, selectedBranchSlug]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
@@ -192,7 +194,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   }, [addToast]);
 
   const selectSession = useCallback(async (s: MusicSession) => {
-    setSelected(s); setTracks([]); setRenders([]);
+    setCreatingNew(false); setSelected(s); setTracks([]); setRenders([]);
     await loadDetail(s);
   }, [loadDetail]);
 
@@ -267,6 +269,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
   };
 
   const applyPreset = (p: typeof SESSION_PRESETS[number]) => {
+    markStudioDraftChanged();
     setTitle(p.name); setGenre(p.genre); setMood(p.mood); setVocalStyles([p.vocal_style]);
     const minutes = Math.round(p.target_duration_seconds / 60);
     const count = Math.max(1, Math.round(p.target_duration_seconds / p.avg_track_length_seconds));
@@ -290,7 +293,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
         track_count: plannedTrackCount,
       };
       const { session, tracks: planned } = await createSessionWithPlan(config, geminiApiKey || '', userId);
-      setSessions(prev => [session, ...prev]);
+      setSessions(prev => [session, ...prev]); setCreatingNew(false);
       setSelected(session); setTracks(planned); setRenders([]);
       addToast(`Session "${session.title}" planned — ${planned.length} tracks`, 'success');
       setTitle('');
@@ -498,9 +501,11 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
           </div>
         </div>
 
+        <button type="button" onClick={() => { setSelected(null); setCreatingNew(current => !current); }} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white">{creatingNew ? "Close new session" : "New session"}</button>
+        {creatingNew && <>
         {/* Create form */}
         <div className="bg-white p-6 border border-slate-200 space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Plus size={14} /> New Session</h3>
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Plus size={14} /> New Session</h3><p className="text-sm text-slate-500">1. Choose a starting sound. 2. Name your session. 3. Create a plan to review before generating audio.</p>
           <div className="flex flex-wrap gap-2">
             {SESSION_PRESETS.map(p => (
               <button key={p.id} type="button" onClick={() => applyPreset(p)}
@@ -509,15 +514,10 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
               </button>
             ))}
           </div>
-          <div><label className={labelCls}>Branch</label>
-            <select className={inputCls} value={branch} onChange={e => setBranch(e.target.value)}>
-              {branches.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
-            </select>
-          </div>
           <div><label className={labelCls}>Session Title</label>
             <input className={inputCls} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Rekkrd After Dark — Midnight Jazz Vol. 1" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <details><summary className="cursor-pointer text-sm font-bold text-emerald-700">Customize sound and length</summary><div className="mt-3 grid grid-cols-2 gap-3">
             <div><label className={labelCls}>Genre</label>
               <select className={inputCls} value={genre} onChange={e => setGenre(e.target.value)}>
                 <option value="">Any</option>{MUSIC_GENRES.map(g => <option key={g} value={g}>{g}</option>)}
@@ -573,7 +573,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
                 </p>
               )}
             </div>
-          </div>
+          </div></details>
           <button type="button" onClick={handleCreate} disabled={creating || !branch || !title.trim() || requestedTrackLengthTooLong}
             className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">
             {creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
@@ -581,6 +581,7 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
           </button>
         </div>
 
+        </>}
         {/* Session list */}
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
@@ -629,9 +630,9 @@ const TrellisStudio: React.FC<TrellisStudioProps> = ({ branches, addToast, userI
       {/* ── Right: session detail ── */}
       <div className="lg:col-span-2">
         {!selected ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center bg-white border border-slate-200">
+          <div className="flex flex-col items-center justify-center py-10 px-6 text-center bg-white border border-slate-200">
             <ListMusic size={44} className="text-slate-300 mb-3" />
-            <p className="text-sm font-bold text-slate-600">Select or create a session</p>
+            <p className="text-sm font-bold text-slate-600">Start with a session</p><p className="mt-2 text-sm text-slate-500">Choose New session to begin, or open saved work from the list.</p>
             <p className="text-xs text-slate-400 mt-1 max-w-xs">Plan a set of tracks, generate them, approve the keepers, and stitch them into one master.</p>
           </div>
         ) : (

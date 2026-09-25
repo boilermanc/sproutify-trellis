@@ -32,6 +32,7 @@ import {
 
 interface RedditAdsProps {
   branchContext?: BranchContext;
+  selectedBranchSlug: string;
   apiKeys: ApiKeyConfig;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   onNavigate: (view: ViewState) => void;
@@ -288,8 +289,8 @@ function formatDate(value: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToast, onNavigate }) => {
-  const defaultBranch = branchContext?.activeBranchSlugs[0] || branchContext?.allBranches[0]?.slug || '';
+const RedditGrowth: React.FC<RedditAdsProps> = ({ selectedBranchSlug, branchContext, apiKeys, addToast, onNavigate }) => {
+  const defaultBranch = selectedBranchSlug;
   const defaultWebsite = branchContext?.allBranches.find(branch => branch.slug === defaultBranch)?.website_url || '';
   const [campaigns, setCampaigns] = useState<RedditAdCampaign[]>(loadCampaigns);
   const [strategies, setStrategies] = useState<RedditAdStrategy[]>(loadStrategies);
@@ -303,11 +304,8 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
   const [inlineCreativeDirectionIds, setInlineCreativeDirectionIds] = useState<Record<string, string>>({});
   const [expandedCreative, setExpandedCreative] = useState<ExpandedCreative | null>(null);
 
-  const visibleCampaigns = useMemo(() => {
-    if (!branchContext || branchContext.isAllSelected) return campaigns;
-    const active = new Set(branchContext.activeBranchSlugs);
-    return campaigns.filter(campaign => active.has(campaign.branchSlug));
-  }, [campaigns, branchContext]);
+  const visibleCampaigns = useMemo(() => campaigns.filter(campaign => campaign.branchSlug === selectedBranchSlug), [campaigns, selectedBranchSlug]);
+  const visibleStrategies = strategies.filter(strategy => strategy.branchSlug === selectedBranchSlug);
 
   const reviewCampaigns = useMemo(
     () => visibleCampaigns.filter(campaign => ['pending_review', 'approved', 'rejected', 'exported'].includes(campaign.status)),
@@ -712,7 +710,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      {visibleCampaigns.length > 0 && activeTab !== 'strategy' && <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {metricCards.map(metric => (
           <div key={metric.label} className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm">
             <metric.icon size={17} className={`${metric.color} mb-3`} />
@@ -720,7 +718,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{metric.label}</p>
           </div>
         ))}
-      </div>
+      </div>}
 
       <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
         <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
@@ -745,15 +743,14 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
       </div>
 
       {activeTab === 'strategy' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className={`grid grid-cols-1 gap-8 ${visibleStrategies.length > 0 ? 'xl:grid-cols-3' : ''}`}>
           <div className="xl:col-span-2 space-y-8">
             <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
               <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100">
                 <BrainCircuit className="text-orange-500" size={22} />
-                <div><h2 className="text-lg font-black text-slate-800">Research & Strategy</h2><p className="text-xs text-slate-400">Give Trellis evidence, then review the recommendation before any campaign exists</p></div>
+                <div><h2 className="text-lg font-black text-slate-800">1. Describe your offer</h2><p className="text-xs text-slate-400">Add your offer and product details, generate a strategy, then review it before creating an ad.</p></div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <label><span className="form-label">Brand Branch</span><select value={strategyForm.branchSlug} onChange={event => { const slug = event.target.value; const website = branchContext?.allBranches.find(branch => branch.slug === slug)?.website_url || ''; setStrategyForm(previous => ({ ...previous, branchSlug: slug, websiteUrl: website, landingPageUrl: website })); }} className="form-input"><option value="">Select branch</option>{branchContext?.allBranches.map(branch => <option key={branch.slug} value={branch.slug}>{branch.name}</option>)}</select></label>
                 <label><span className="form-label">Website or Candidate Landing Page</span><div className="relative"><Globe2 size={14} className="absolute left-4 top-3.5 text-slate-400" /><input value={strategyForm.websiteUrl} onChange={event => setStrategyForm(previous => ({ ...previous, websiteUrl: event.target.value }))} placeholder="https://rekkrd.com" className="form-input pl-10" /></div></label>
                 <label className="md:col-span-2"><span className="form-label">Product or Offer to Evaluate</span><input value={strategyForm.productName} onChange={event => setStrategyForm(previous => ({ ...previous, productName: event.target.value }))} placeholder="Free trial, subscription, price alerts, or a specific product" className="form-input" /></label>
                 <label className="md:col-span-2"><span className="form-label">Product and Website Evidence</span><textarea rows={7} value={strategyForm.productEvidence} onChange={event => setStrategyForm(previous => ({ ...previous, productEvidence: event.target.value }))} placeholder="Paste product-page copy, pricing, features, customer problem, constraints, and anything Trellis must treat as fact." className="form-input resize-none" /><span className="text-[10px] text-slate-400 mt-2 block">A URL identifies the destination; pasted evidence prevents the model from pretending it inspected content it cannot see.</span></label>
@@ -766,7 +763,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
 
             {(strategyForm.status === 'generated' || strategyForm.status === 'approved') && (
               <section className="bg-white p-8 lg:p-10 rounded-[3rem] border border-slate-200 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-8 pb-6 border-b border-slate-100"><div><h2 className="text-lg font-black text-slate-800">Recommended First Test</h2><p className="text-xs text-slate-400">Editable recommendation · facts and assumptions remain separate</p></div><span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${strategyForm.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>{strategyForm.status}</span></div>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-8 pb-6 border-b border-slate-100"><div><h2 className="text-lg font-black text-slate-800">2. Review your strategy</h2><p className="text-xs text-slate-400">Editable recommendation · facts and assumptions remain separate</p></div><span className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${strategyForm.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>{strategyForm.status}</span></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <label className="md:col-span-2"><span className="form-label">Offer</span><input value={strategyForm.offerName} onChange={event => setStrategyForm(previous => ({ ...previous, offerName: event.target.value, status: 'generated' }))} className="form-input" /></label>
                   <label className="md:col-span-2"><span className="form-label">Why This Test</span><textarea rows={4} value={strategyForm.rationale} onChange={event => setStrategyForm(previous => ({ ...previous, rationale: event.target.value, status: 'generated' }))} className="form-input resize-none" /></label>
@@ -788,10 +785,10 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
             )}
           </div>
 
-          <aside className="space-y-6">
+          {visibleStrategies.length > 0 && <aside className="space-y-6">
             <div className="bg-slate-900 p-7 rounded-[2.5rem] text-white"><h3 className="text-sm font-black uppercase tracking-widest mb-4">Safety Gate</h3><div className="space-y-3 text-xs text-slate-300"><p>AI recommendations remain editable drafts.</p><p>Assumptions must be verified before approval.</p><p>Creating a campaign does not deploy it.</p><p>Billing and launch remain outside this step.</p></div></div>
-            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-200 shadow-sm"><h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Saved Strategies</h3>{strategies.length === 0 ? <p className="text-xs text-slate-400">No strategy records yet.</p> : <div className="space-y-2">{strategies.slice(0, 6).map(strategy => <button key={strategy.id} type="button" onClick={() => setStrategyForm(strategy)} className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-orange-300"><p className="text-xs font-black text-slate-700 truncate">{strategy.offerName || strategy.productName || 'Untitled strategy'}</p><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">{branchName(strategy.branchSlug)} · {strategy.status}</p></button>)}</div>}</div>
-          </aside>
+            <div className="bg-white p-7 rounded-[2.5rem] border border-slate-200 shadow-sm"><h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4">Saved Strategies</h3>{visibleStrategies.length === 0 ? <p className="text-xs text-slate-400">No strategy records yet.</p> : <div className="space-y-2">{visibleStrategies.slice(0, 6).map(strategy => <button key={strategy.id} type="button" onClick={() => setStrategyForm(strategy)} className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-orange-300"><p className="text-xs font-black text-slate-700 truncate">{strategy.offerName || strategy.productName || 'Untitled strategy'}</p><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">{branchName(strategy.branchSlug)} · {strategy.status}</p></button>)}</div>}</div>
+          </aside>}
         </div>
       )}
 
@@ -800,7 +797,7 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
           <div className="p-8 border-b border-slate-100 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-black text-slate-800">Paid Campaigns</h2>
-              <p className="text-xs text-slate-400 mt-1">{branchContext && !branchContext.isAllSelected ? `Filtered to ${branchContext.activeBranchSlugs.length} selected branches` : 'All branch campaigns'}</p>
+              <p className="text-xs text-slate-400 mt-1">{branchName(selectedBranchSlug)}</p>
             </div>
             <button type="button" onClick={startNew} className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-700 border border-orange-200 rounded-xl text-[10px] font-black uppercase tracking-widest"><Plus size={13} /> New Campaign</button>
           </div>
@@ -854,7 +851,6 @@ const RedditGrowth: React.FC<RedditAdsProps> = ({ branchContext, apiKeys, addToa
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <label className="md:col-span-2"><span className="form-label">Campaign Name</span><input value={form.name} onChange={event => setForm(previous => ({ ...previous, name: event.target.value }))} placeholder="Fall container garden launch" className="form-input" /></label>
-                <label><span className="form-label">Brand Branch</span><select value={form.branchSlug} onChange={event => setForm(previous => ({ ...previous, branchSlug: event.target.value }))} className="form-input"><option value="">Select branch</option>{branchContext?.allBranches.map(branch => <option key={branch.slug} value={branch.slug}>{branch.name}</option>)}</select></label>
                 <label><span className="form-label">Objective</span><select value={form.objective} onChange={event => setForm(previous => ({ ...previous, objective: event.target.value as RedditAdObjective }))} className="form-input">{Object.entries(OBJECTIVE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><span className="text-[10px] text-slate-400 mt-1 block">{OBJECTIVE_HELP[form.objective]}</span></label>
                 <label><span className="form-label">Daily Budget (USD)</span><div className="relative"><DollarSign size={14} className="absolute left-4 top-3.5 text-slate-400" /><input type="number" min="1" step="1" value={form.dailyBudgetUsd} onChange={event => setForm(previous => ({ ...previous, dailyBudgetUsd: Number(event.target.value) }))} className="form-input pl-10" /></div></label>
                 <label><span className="form-label">Conversion Pixel ID {form.objective === 'conversions' ? '(Required)' : '(Optional)'}</span><input value={form.conversionPixelId || ''} onChange={event => setForm(previous => ({ ...previous, conversionPixelId: event.target.value }))} placeholder="Reddit pixel ID" className="form-input" /></label>
