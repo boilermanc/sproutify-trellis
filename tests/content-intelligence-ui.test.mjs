@@ -34,19 +34,22 @@ test('empty overview offers a brief action instead of zero cards or developer se
   assert.match(page, /tab === 'guide'[\s\S]*?<details[\s\S]*?Developer setup: versioned content partitions/);
 });
 
-test('project switching preserves the selected tab and every parent navigation path guards dirty edits', () => {
+test('header branch selection controls the content project and guards dirty edits', () => {
   const page = read('pages/ContentIntelligence.tsx');
-  assert.match(page, /const confirmBriefNavigation = \(\) => !briefDirty \|\| window\.confirm\(/);
-  const tabHandler = page.match(/const setTab = \(next: Tab\) => \{([\s\S]*?)\n  \};/)?.[1];
-  const projectHandler = page.match(/const setProjectId = \(next: string\) => \{([\s\S]*?)\n  \};/)?.[1];
-  assert.ok(tabHandler && projectHandler, 'both navigation handlers must exist');
-  assert.match(tabHandler, /if \(next === tab \|\| !confirmBriefNavigation\(\)\) return;\s*setBriefDirty\(false\);\s*setTabState\(next\);/);
-  assert.match(projectHandler, /if \(next === projectId \|\| !confirmBriefNavigation\(\)\) return;\s*setBriefDirty\(false\);\s*setProjectIdState\(next\);/);
-  assert.doesNotMatch(projectHandler, /setTab/, 'changing brand must not reset the active task to Overview');
-  assert.equal([...page.matchAll(/setTabState\(/g)].length, 1, 'raw tab setter may only run inside the guarded handler');
-  assert.equal([...page.matchAll(/setProjectIdState\(/g)].length, 1, 'raw project setter may only run inside the guarded handler');
-  assert.match(page, /aria-label="Content project"[^>]*onChange=\{event => setProjectId\(event\.target\.value\)\}/);
+  const layout = read('components/Layout.tsx');
+  assert.match(page, /const \[projectId, setProjectIdState\] = useState\(''\)/);
+  assert.match(page, /branchContext\.setActiveBranchSlugs\(\[\]\)/);
+  assert.match(page, /const selectedProjectId = branchContext\.activeBranchSlugs\.length === 1/);
+  assert.match(page, /Choose a branch to begin/);
+  assert.match(page, /Use the branch switcher in the top header/);
+  assert.match(layout, /\? 'Select branch'/);
+  assert.match(page, /if \(selectedProjectId !== projectId\)/);
+  assert.match(page, /if \(!confirmBriefNavigation\(\)\) \{[\s\S]*branchContext\.setActiveBranchSlugs\(previousBranchSlugs\.current\)/);
+  assert.match(page, /setProjectIdState\(selectedProjectId\)/);
   assert.match(page, /onDirtyChange=\{setBriefDirty\}/);
+  assert.doesNotMatch(page, /aria-label="Content project"/);
+  assert.match(layout, /activeView === 'content-intelligence' \? \[branch\.slug\]/);
+  assert.match(layout, /activeView !== 'content-intelligence' && <div className="flex items-center space-x-2">/);
 });
 
 test('brief view excludes unrelated canonical warnings and developer footer', () => {

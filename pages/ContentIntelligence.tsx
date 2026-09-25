@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FC } from 'react';
+import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import {
   Activity,
   BadgeCheck,
@@ -6,6 +6,7 @@ import {
   Beaker,
   BookOpen,
   BrainCircuit,
+  GitBranch,
   Check,
   ChevronDown,
   ChevronUp,
@@ -517,8 +518,16 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     });
     return [...projects.values()];
   }, [branchContext.allBranches]);
-  const initialProject = configured.find(project => branchContext.activeBranchSlugs.includes(project.projectId)) || configured[0];
-  const [projectId, setProjectIdState] = useState(initialProject?.projectId || '');
+  const selectedProjectId = branchContext.activeBranchSlugs.length === 1
+    ? branchContext.activeBranchSlugs.find(slug => configured.some(project => project.projectId === slug)) || ''
+    : '';
+  const [projectId, setProjectIdState] = useState('');
+  const [scopeReady, setScopeReady] = useState(false);
+  const previousBranchSlugs = useRef<string[]>([]);
+  useEffect(() => {
+    branchContext.setActiveBranchSlugs([]);
+    setScopeReady(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTabState] = useState<Tab>('overview');
   const [briefDirty, setBriefDirty] = useState(false);
   const confirmBriefNavigation = () => !briefDirty || window.confirm('Discard unsaved brand brief edits and leave this view?');
@@ -527,11 +536,18 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     setBriefDirty(false);
     setTabState(next);
   };
-  const setProjectId = (next: string) => {
-    if (next === projectId || !confirmBriefNavigation()) return;
-    setBriefDirty(false);
-    setProjectIdState(next);
-  };
+  useEffect(() => {
+    if (!scopeReady) return;
+    if (selectedProjectId !== projectId) {
+      if (!confirmBriefNavigation()) {
+        branchContext.setActiveBranchSlugs(previousBranchSlugs.current);
+        return;
+      }
+      setBriefDirty(false);
+      setProjectIdState(selectedProjectId);
+    }
+    previousBranchSlugs.current = branchContext.activeBranchSlugs;
+  }, [scopeReady, selectedProjectId, branchContext.activeBranchSlugs]); // eslint-disable-line react-hooks/exhaustive-deps
   const [approvedPosts, setApprovedPosts] = useState<ContentPost[]>([]);
   const [approvedTopics, setApprovedTopics] = useState<ContentTopic[]>([]);
   const [importedPerformance, setImportedPerformance] = useState<ContentPerformanceEvent[]>([]);
@@ -541,7 +557,7 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
   const [approvedLearnings, setApprovedLearnings] = useState<ContentLearningPromotion[]>([]);
   const [learningsLoading, setLearningsLoading] = useState(false);
   const [hubExperiments, setHubExperiments] = useState<HubContentExperiment[]>([]);
-  const project = configured.find(item => item.projectId === projectId) || configured[0];
+  const project = configured.find(item => item.projectId === projectId);
 
   useEffect(() => {
     let current = true;
@@ -586,6 +602,10 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
     setPerformanceLoading(true);
     setPerformanceError(null);
     setImportedPerformance([]);
+    if (!projectId) {
+      setPerformanceLoading(false);
+      return () => { current = false; };
+    }
     fetchImportedContentPerformance(posts, experiments)
       .then(events => { if (current) setImportedPerformance(events); })
       .catch(caught => {
@@ -631,12 +651,20 @@ export default function ContentIntelligence({ branchContext, addToast }: Props) 
   const runningCount = experiments.filter(experiment => experiment.status === 'running').length;
   const hasRecords = topics.length + posts.length + experiments.length + performance.length > 0;
 
-  if (!project) return <div className="p-6 lg:p-10"><EmptyState icon={BrainCircuit} title="No content partitions configured" detail="Add a project strategy and knowledge partition under .trellis, then rebuild the app." /></div>;
+  if (!project) return (
+    <div className="p-4 lg:p-6">
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 inline-flex rounded-xl bg-emerald-50 p-3 text-emerald-700"><GitBranch size={22} /></div>
+        <h1 className="text-xl font-bold text-slate-900">Choose a branch to begin</h1>
+        <p className="mt-2 max-w-xl text-sm text-slate-600">Use the branch switcher in the top header to choose which branch's content intelligence to view.</p>
+      </section>
+    </div>
+  );
 
   return (
     <div className="space-y-4 p-4 lg:p-6">
       <header className="rounded-2xl border border-slate-800 bg-slate-900 px-4 pt-4 text-white">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><BrainCircuit size={22} className="text-emerald-300" /><h1 className="text-xl font-bold">Content intelligence</h1></div><label className="flex min-w-48 items-center gap-2 text-xs font-bold text-slate-300">Project<select aria-label="Content project" value={project.projectId} onChange={event => setProjectId(event.target.value)} className="min-h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm font-bold text-white outline-none"><option className="text-slate-900" value={project.projectId}>{projectName}</option>{configured.filter(item => item.projectId !== project.projectId).map(item => <option className="text-slate-900" key={item.projectId} value={item.projectId}>{branchLabels.get(item.projectId) || labelFromSlug(item.projectId)}</option>)}</select></label></div>
+        <div className="flex items-center gap-3"><BrainCircuit size={22} className="text-emerald-300" /><h1 className="text-xl font-bold">Content intelligence</h1></div>
         <nav aria-label="Content intelligence sections" className="mt-3 flex flex-wrap items-center gap-1 border-t border-white/10 pt-1">{TABS.filter(item => PRIMARY_TABS.includes(item.id)).map(item => <button type="button" key={item.id} aria-current={tab === item.id ? 'page' : undefined} onClick={() => setTab(item.id)} className={`inline-flex min-h-11 items-center gap-2 border-b-2 px-3 py-2 text-xs font-bold transition ${tab === item.id ? 'border-emerald-400 bg-white/10 text-white' : 'border-transparent text-slate-300 hover:bg-white/5 hover:text-white'}`}><item.icon size={14} />{item.label}</button>)}<select aria-label="More content tools" value={PRIMARY_TABS.includes(tab) ? '' : tab} onChange={event => { if (event.target.value) setTab(event.target.value as Tab); }} className="my-1 min-h-10 max-w-full rounded-lg border border-white/10 bg-slate-800 px-2 text-xs font-bold text-slate-200"><option value="">More tools…</option>{TABS.filter(item => !PRIMARY_TABS.includes(item.id)).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></nav>
       </header>
 

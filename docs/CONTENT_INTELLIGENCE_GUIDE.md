@@ -51,7 +51,7 @@ Every topic, asset, experiment, performance event, and learning belongs to one p
 - Nothing is automatically copied from one branch to another.
 - A new branch works after its own Content Intelligence partition is created.
 
-Always check the **Project** selector at the top of the page before doing anything. If a branch is not in the selector, it still needs its initial project partition. See [Adding another branch](#adding-another-branch).
+Choose a branch with the selector in the app header before doing anything. Content Intelligence shows one branch at a time. If a branch is missing, it still needs its initial project partition. See [Adding another branch](#adding-another-branch).
 
 ## What each tab does
 
@@ -97,7 +97,7 @@ That human gate is intentional. Trellis organizes evidence; it does not pretend 
 
 ### Step 1: Select the project
 
-Open **Content Studio → Content Intelligence** and choose the branch in the **Project** selector.
+Open **Content Studio → Content Intelligence** and choose the branch in the app header.
 
 Before continuing, ask: “If this becomes a reusable lesson, which brand should own it?” That is the project you should select.
 

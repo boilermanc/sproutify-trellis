@@ -321,13 +321,21 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                >
                  <GitBranch size={16} className="text-emerald-600 shrink-0" />
                  <span className="hidden sm:inline">
-                   {branchContext.isAllSelected
+                   {activeView === 'content-intelligence' && branchContext.activeBranchSlugs.length === 1
+                     ? branchContext.allBranches.find(branch => branch.slug === branchContext.activeBranchSlugs[0])?.name
+                     : activeView === 'content-intelligence'
+                     ? 'Select branch'
+                     : branchContext.isAllSelected
                      ? `All Branches (${branchContext.allBranches.length})`
                      : `${branchContext.activeBranchSlugs.length} of ${branchContext.allBranches.length} Branches`
                    }
                  </span>
                  <span className="sm:hidden">
-                   {branchContext.isAllSelected
+                   {activeView === 'content-intelligence' && branchContext.activeBranchSlugs.length === 1
+                     ? branchContext.allBranches.find(branch => branch.slug === branchContext.activeBranchSlugs[0])?.name
+                     : activeView === 'content-intelligence'
+                     ? 'Select branch'
+                     : branchContext.isAllSelected
                      ? `All (${branchContext.allBranches.length})`
                      : `${branchContext.activeBranchSlugs.length}/${branchContext.allBranches.length}`
                    }
@@ -339,7 +347,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                  <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden border border-trellis-line bg-white shadow-[var(--trellis-shadow-float)]">
                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                      <span className="tr-label">Branch scope</span>
-                     <div className="flex items-center space-x-2">
+                     {activeView !== 'content-intelligence' && <div className="flex items-center space-x-2">
                        <button
                          onClick={() => branchContext.setActiveBranchSlugs(branchContext.allBranches.map(b => b.slug))}
                          className="text-[10px] font-bold text-emerald-600 hover:underline"
@@ -353,7 +361,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                        >
                          None
                        </button>
-                     </div>
+                     </div>}
                    </div>
                    <div className="p-2 max-h-64 overflow-y-auto">
                      {branchContext.allBranches.map(branch => {
@@ -362,7 +370,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                          <button
                            key={branch.id}
                            onClick={() => {
-                             const newSlugs = isActive
+                             const newSlugs = activeView === 'content-intelligence' ? [branch.slug] : isActive
                                ? branchContext.activeBranchSlugs.filter(s => s !== branch.slug)
                                : [...branchContext.activeBranchSlugs, branch.slug];
                              branchContext.setActiveBranchSlugs(newSlugs);
@@ -431,7 +439,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
           </div>
         </header>
 
-        <div className="p-3 sm:p-4 lg:p-8">
+        <div className={activeView === 'content-intelligence' ? 'p-2 sm:p-3 lg:p-3' : 'p-3 sm:p-4 lg:p-8'}>
           {children}
         </div>
 
