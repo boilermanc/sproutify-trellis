@@ -77,3 +77,20 @@ test('timed text creates an immutable Motion Post derivative rendered by the exi
   assert.match(editor, /mediaFontIdForFamily\(branch\?\.font_family\)/);
   assert.match(editor, /The original Motion Post is unchanged/);
 });
+
+test('Motion Posts uses one header branch and guides a branch-specific draft', () => {
+  const app = read('App.tsx');
+  const layout = read('components/Layout.tsx');
+  const page = read('pages/MotionPosts.tsx');
+  assert.match(app, /<MotionPosts branches=\{branches\} branchContext=\{branchContext\}/);
+  assert.match(layout, /const singleBranchView = activeView === 'content-intelligence' \|\| activeView === 'motion-posts'/);
+  assert.match(page, /branchContext\.setActiveBranchSlugs\(\[\]\)/);
+  assert.match(page, /Choose a branch to begin/);
+  assert.doesNotMatch(page, /<label[^>]*>Branch<select/);
+  assert.match(page, /const branchId = selectedBranch\?\.id \|\| ''/);
+  assert.match(page, /Switch branches and clear this Motion Post draft/);
+  assert.match(page, /branchJobs = jobs\.filter/);
+  for (const step of ['Upload image', 'Write the post', 'Review settings', 'Animate']) {
+    assert.match(page, new RegExp(step));
+  }
+});

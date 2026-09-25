@@ -96,6 +96,7 @@ const NAV_GROUPS = [
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, user, brand, profiles = [], onLogout, branchContext, apiKeys, spokeConnections = [], onOpenHelpArticle, onOpenHelpCenter }) => {
+  const singleBranchView = activeView === 'content-intelligence' || activeView === 'motion-posts';
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const branchPickerRef = useRef<HTMLDivElement>(null);
@@ -321,9 +322,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                >
                  <GitBranch size={16} className="text-emerald-600 shrink-0" />
                  <span className="hidden sm:inline">
-                   {activeView === 'content-intelligence' && branchContext.activeBranchSlugs.length === 1
+                   {singleBranchView && branchContext.activeBranchSlugs.length === 1
                      ? branchContext.allBranches.find(branch => branch.slug === branchContext.activeBranchSlugs[0])?.name
-                     : activeView === 'content-intelligence'
+                     : singleBranchView
                      ? 'Select branch'
                      : branchContext.isAllSelected
                      ? `All Branches (${branchContext.allBranches.length})`
@@ -331,9 +332,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                    }
                  </span>
                  <span className="sm:hidden">
-                   {activeView === 'content-intelligence' && branchContext.activeBranchSlugs.length === 1
+                   {singleBranchView && branchContext.activeBranchSlugs.length === 1
                      ? branchContext.allBranches.find(branch => branch.slug === branchContext.activeBranchSlugs[0])?.name
-                     : activeView === 'content-intelligence'
+                     : singleBranchView
                      ? 'Select branch'
                      : branchContext.isAllSelected
                      ? `All (${branchContext.allBranches.length})`
@@ -346,8 +347,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                {isBranchPickerOpen && (
                  <div className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden border border-trellis-line bg-white shadow-[var(--trellis-shadow-float)]">
                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                     <span className="tr-label">Branch scope</span>
-                     {activeView !== 'content-intelligence' && <div className="flex items-center space-x-2">
+                     <span className="tr-label">{singleBranchView ? 'Choose a branch' : 'Branch scope'}</span>
+                     {!singleBranchView && <div className="flex items-center space-x-2">
                        <button
                          onClick={() => branchContext.setActiveBranchSlugs(branchContext.allBranches.map(b => b.slug))}
                          className="text-[10px] font-bold text-emerald-600 hover:underline"
@@ -370,10 +371,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                          <button
                            key={branch.id}
                            onClick={() => {
-                             const newSlugs = activeView === 'content-intelligence' ? [branch.slug] : isActive
+                             const newSlugs = singleBranchView ? [branch.slug] : isActive
                                ? branchContext.activeBranchSlugs.filter(s => s !== branch.slug)
                                : [...branchContext.activeBranchSlugs, branch.slug];
                              branchContext.setActiveBranchSlugs(newSlugs);
+                             if (singleBranchView) setIsBranchPickerOpen(false);
                            }}
                            className={`flex min-h-11 w-full items-center gap-3 border px-3 py-2.5 transition-colors ${
                              isActive ? 'bg-emerald-50 border border-emerald-200' : 'hover:bg-slate-50 border border-transparent'
@@ -406,7 +408,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                        onClick={() => setIsBranchPickerOpen(false)}
                        className="min-h-11 w-full font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-700 transition-colors hover:bg-emerald-50"
                      >
-                       Apply Scope
+                       {singleBranchView ? 'Done' : 'Apply Scope'}
                      </button>
                    </div>
                  </div>

@@ -48,8 +48,9 @@ test('header branch selection controls the content project and guards dirty edit
   assert.match(page, /setProjectIdState\(selectedProjectId\)/);
   assert.match(page, /onDirtyChange=\{setBriefDirty\}/);
   assert.doesNotMatch(page, /aria-label="Content project"/);
-  assert.match(layout, /activeView === 'content-intelligence' \? \[branch\.slug\]/);
-  assert.match(layout, /activeView !== 'content-intelligence' && <div className="flex items-center space-x-2">/);
+  assert.match(layout, /const singleBranchView = activeView === 'content-intelligence' \|\| activeView === 'motion-posts'/);
+  assert.match(layout, /singleBranchView \? \[branch\.slug\]/);
+  assert.match(layout, /!singleBranchView && <div className="flex items-center space-x-2">/);
 });
 
 test('brief view excludes unrelated canonical warnings and developer footer', () => {
