@@ -667,7 +667,7 @@ const AppContent: React.FC = () => {
   return (
     <Layout activeView={activeView} onViewChange={(v) => { setSettingsInitialTab(undefined); if (v === 'campaign-builder') setCampaignDraftId(null); setActiveView(v); }} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} spokeConnections={spokeConnections} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
       {studioView?.branchRequired && !selectedStudioBranchSlug
-        ? <ContentStudioStart title={studioView.title} nextAction={studioView.nextAction} branchesAvailable={allBranches.length > 0} />
+        ? <ContentStudioStart view={activeView} title={studioView.title} nextAction={studioView.nextAction} branchesAvailable={allBranches.length > 0} />
         : <div key={studioView ? `${activeView}:${selectedStudioBranchSlug}` : 'main-view'} onChangeCapture={event => {
           if (!studioView) return;
           const target = event.target as HTMLInputElement;
