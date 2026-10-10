@@ -17,6 +17,9 @@ test('video entry point creates a frame and has no route to a video provider',()
 test('edited script is preserved, requires meaningful content, and is never silently shortened',()=>{
  const preserved=run(frame,'Validate Video Request',{'Webhook':{body}})[0].json;
  assert.equal(preserved.script,body.script);assert.equal(preserved.duration,10);
+ const items={'Webhook':{body},'Validate Video Request':preserved};
+ const insert=Object.fromEntries(node(frame,'Upsert Job Record').parameters.fieldsUi.fieldValues.map(f=>[f.fieldId,f.fieldValue.startsWith('={{')?new Function('$','$json','return '+f.fieldValue.slice(3,-2).trim())(name=>({item:{json:items[name]}}),preserved):f.fieldValue]));
+ assert.equal(insert.id,body.job_id);assert.equal(insert.branch,body.branch);assert.equal(insert.script,body.script);assert.equal(insert.duration_seconds,10);
  assert.throws(()=>run(frame,'Validate Video Request',{'Webhook':{body:{...body,script:' '}}}));
  assert.throws(()=>run(frame,'Validate Video Request',{'Webhook':{body:{...body,script:'word '.repeat(30)}}}));
  assert.equal(run(frame,'Validate Video Request',{'Webhook':{body:{...body,video_duration:30}}})[0].json.duration,10);
