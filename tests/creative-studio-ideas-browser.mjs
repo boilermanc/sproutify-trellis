@@ -27,9 +27,9 @@ const jobsFor = slug => [
   { id: 'foreign', branch: slug === 'orchard' ? 'audio' : 'orchard', status: 'completed', created_at: '2026-10-10T12:00:00Z', request_payload: { message: 'FOREIGN HISTORY' } },
   { id: 'backdrop', branch: slug, status: 'completed', created_at: '2026-10-10T12:00:00Z', request_payload: { message: 'CARD BACKGROUND', purpose: 'card_background' } },
 ];
-const ideasFor = slug => ({ ideas: ['video', 'static', 'carousel'].map(format => ({
-  title: `${slug} ${format} idea`, format, hook: `${slug} ${format} hook`,
-  brief: `Create a ${format} about ${slug}'s saved purpose.`, rationale: `Explore a ${format} angle for ${slug}'s audience.`,
+const ideasFor = (slug, format) => ({ ideas: [1, 2, 3].map(index => ({
+  title: `${slug} ${format} idea ${index}`, format, hook: `${slug} ${format} hook ${index}`,
+  brief: `Create a ${format} about ${slug}'s saved purpose, angle ${index}.`, rationale: `Explore a ${format} angle for ${slug}'s audience.`,
 })) });
 
 try {
@@ -45,6 +45,9 @@ try {
   let mode = 'normal';
   let releaseOld;
   let aiCalls = 0;
+  let submittedVideo;
+  let submittedRender;
+  let videoJob;
   const contexts = [];
   const unexpected = [];
   await page.route('**/*', async route => {
@@ -59,10 +62,19 @@ try {
       assert.ok(context.recent.every(item => item.title.startsWith(context.branch)));
       assert.ok(!prompt.includes('FOREIGN HISTORY'));
       assert.ok(!prompt.includes('CARD BACKGROUND'));
-      if (mode === 'delayed' && context.branch === 'orchard') await new Promise(resolve => { releaseOld = resolve; });
+      if (mode === 'delayed' && context.branch === 'orchard' && context.format === 'video') await new Promise(resolve => { releaseOld = resolve; });
       if (mode === 'failure') return route.fulfill({ status: 400, json: { error: { code: 400, message: 'Fixture failure', status: 'INVALID_ARGUMENT' } } });
-      const text = mode === 'malformed' ? '{"ideas":[]}' : JSON.stringify(ideasFor(context.branch));
+      const text = mode === 'malformed' ? '{"ideas":[]}' : JSON.stringify(ideasFor(context.branch, mode === 'wrong-format' ? 'static' : context.format));
       return route.fulfill({ json: { candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }] } }).catch(() => {});
+    }
+    if (url.hostname === 'n8n.sproutify.app') {
+      const payload=route.request().postDataJSON();
+      if(url.pathname.endsWith('/trellis-video-ad-generate')) {
+        submittedVideo=payload;
+        videoJob={...jobsFor('orchard')[0],id:payload.job_id,format:'video',status:'awaiting_approval',progress:50,publish_status:null,script:payload.script,frame_url:'https://images.example/frame.png',duration_seconds:payload.video_duration,request_payload:payload};
+        return route.fulfill({json:{accepted:true}});
+      }
+      if(url.pathname.endsWith('/trellis-video-ad-render')) {submittedRender=payload;return route.fulfill({json:{accepted:true}});}
     }
     if (url.origin !== base) {
       if (url.pathname.endsWith('/rest/v1/brand_identities')) {
@@ -71,9 +83,18 @@ try {
         return route.fulfill({ json: brandFor(slug) });
       }
       if (url.pathname.endsWith('/rest/v1/video_ad_jobs')) {
+        if(route.request().method()==='PATCH'){
+          const patch=route.request().postDataJSON();
+          assert.equal(url.searchParams.get('status'),'eq.awaiting_approval');
+          assert.equal(url.searchParams.get('frame_url'),'eq.'+videoJob.frame_url);
+          assert.equal(url.searchParams.get('script'),'eq.'+videoJob.script);
+          videoJob={...videoJob,...patch};
+          return route.fulfill({json:{id:videoJob.id,frame_url:videoJob.frame_url,frame_approved_at:videoJob.frame_approved_at}});
+        }
+        if(videoJob&&url.searchParams.has('id'))return route.fulfill({json:videoJob});
         if (mode === 'history-failure') return route.fulfill({ status: 403, json: { message: 'Fixture unavailable' } });
         const slug = (url.searchParams.get('branch') || 'eq.orchard').replace('eq.', '');
-        return route.fulfill({ json: mode === 'empty' ? [] : jobsFor(slug) });
+        return route.fulfill({ json: mode === 'empty' ? [] : [...(videoJob?[videoJob]:[]),...jobsFor(slug)] });
       }
       if (url.pathname.includes('/rest/v1/') && route.request().method() === 'GET') return route.fulfill({ json: [] });
       unexpected.push(`${route.request().method()} ${url.origin}${url.pathname}`);
@@ -122,7 +143,7 @@ try {
   await page.screenshot({ path: join(tmpdir(), 'creative-studio-ideas-mobile.png'), fullPage: true });
 
   const callsBeforeUse = aiCalls;
-  await panel.getByRole('button', { name: 'Use this idea: orchard video idea', exact: true }).click();
+  await panel.getByRole('button', { name: 'Use this idea: orchard video idea 1', exact: true }).click();
   assert.match(await page.getByLabel('Video focus', { exact: true }).inputValue(), /orchard video hook/);
   assert.equal(await page.getByLabel('Target Audience', { exact: true }).inputValue(), 'orchard audience');
   assert.equal(await page.getByLabel('Tone', { exact: true }).inputValue(), 'orchard voice');
@@ -132,26 +153,40 @@ try {
   await page.getByLabel('Video focus', { exact: true }).fill('Keep my edits');
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   page.once('dialog', dialog => dialog.dismiss());
-  await panel.getByRole('button', { name: 'Use this idea: orchard static idea', exact: true }).click();
+  await panel.getByRole('button', { name: 'Use this idea: orchard video idea 2', exact: true }).click();
   assert.equal(await panel.isVisible(), true, 'cancel replacement stays on ideas');
   await page.getByRole('button', { name: /Video AI actor/ }).click();
   assert.equal(await page.getByLabel('Video focus', { exact: true }).inputValue(), 'Keep my edits');
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   page.once('dialog', dialog => dialog.accept());
-  await panel.getByRole('button', { name: 'Use this idea: orchard static idea', exact: true }).click();
-  assert.match(await page.getByLabel('Message / Offer', { exact: true }).inputValue(), /orchard static hook/);
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
-  page.once('dialog', dialog => dialog.accept());
-  await panel.getByRole('button', { name: 'Use this idea: orchard carousel idea', exact: true }).click();
-  assert.match(await page.getByLabel('Topic', { exact: true }).inputValue(), /orchard carousel hook/);
-  assert.equal(aiCalls, callsBeforeUse, 'wizard navigation reuses the same suggestions');
-  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await panel.getByRole('button', { name: 'Use this idea: orchard video idea 2', exact: true }).click();
+  assert.match(await page.getByLabel('Video focus', { exact: true }).inputValue(), /orchard video hook 2/);
+  await page.getByText('Creating: Video', { exact: true }).waitFor();
+  assert.equal(aiCalls, callsBeforeUse, 'wizard navigation reuses suggestions for the selected format');
+  for (const [format, picker, label, field] of [
+    ['static', /Static Image Single/, 'Image', 'Message / Offer'],
+    ['carousel', /Carousel 3/, 'Carousel', 'Topic'],
+  ]) {
+    await page.getByRole('button', { name: 'Change format', exact: true }).click();
+    await page.getByRole('button', { name: picker }).click();
+    await page.getByText('Creating: ' + label, { exact: true }).waitFor();
+    await panel.getByRole('button', { name: 'Use this idea: orchard ' + format + ' idea 1', exact: true }).waitFor();
+    assert.equal(await panel.getByRole('article').count(), 3);
+    assert.equal(contexts.at(-1).format, format);
+    for (const article of await panel.getByRole('article').all()) assert.match(await article.innerText(), new RegExp(format === 'static' ? 'Static image' : 'Carousel'));
+    page.once('dialog', dialog => dialog.accept());
+    await panel.getByRole('button', { name: 'Use this idea: orchard ' + format + ' idea 1', exact: true }).click();
+    assert.match(await page.getByLabel(field, { exact: true }).inputValue(), new RegExp('orchard ' + format + ' hook'));
+    await page.getByText('Creating: ' + label, { exact: true }).waitFor();
+    await page.screenshot({ path: join(tmpdir(), 'creative-format-' + format + '.png'), fullPage: true });
+  }
+  const beforeRefresh = aiCalls;
   await panel.getByRole('button', { name: 'Refresh ideas', exact: true }).click();
   await panel.getByRole('button', { name: /^Use this idea:/ }).first().waitFor();
-  assert.equal(aiCalls, callsBeforeUse + 1);
+  assert.equal(aiCalls, beforeRefresh + 1);
 
   await page.getByRole('button', { name: 'Switch to audio', exact: true }).click();
-  await panel.getByRole('button', { name: 'Use this idea: audio video idea', exact: true }).waitFor();
+  await panel.getByRole('button', { name: 'Use this idea: audio video idea 1', exact: true }).waitFor();
   assert.equal(await panel.getByText(/orchard recent/).count(), 0);
   assert.equal(contexts.at(-1).audience, 'audio audience');
   await panel.getByRole('button', { name: 'Open creative: audio recent 0', exact: true }).click();
@@ -162,11 +197,21 @@ try {
   await page.goto(base + '/__creative_ideas_fixture__');
   await pendingRequest;
   await page.getByRole('button', { name: 'Switch to audio', exact: true }).click();
-  await panel.getByRole('button', { name: 'Use this idea: audio video idea', exact: true }).waitFor();
+  await panel.getByRole('button', { name: 'Use this idea: audio video idea 1', exact: true }).waitFor();
   assert.ok(releaseOld); releaseOld();
   assert.equal(await panel.getByRole('button', { name: /Use this idea: orchard/ }).count(), 0);
 
-  for (const fallbackMode of ['failure', 'malformed', 'no-key', 'empty']) {
+  mode = 'delayed';
+  const oldFormatRequest = page.waitForRequest(request => request.url().includes('generativelanguage.googleapis.com'));
+  await page.goto(base + '/__creative_ideas_fixture__');
+  await oldFormatRequest;
+  await page.getByRole('button', { name: /Static Image Single/ }).click();
+  await panel.getByRole('button', { name: 'Use this idea: orchard static idea 1', exact: true }).waitFor();
+  releaseOld();
+  await page.getByText('Creating: Image', { exact: true }).waitFor();
+  assert.equal(await panel.getByRole('button', { name: /Use this idea: orchard video/ }).count(), 0);
+
+  for (const fallbackMode of ['failure', 'malformed', 'wrong-format', 'no-key', 'empty']) {
     await open(fallbackMode);
     assert.equal(await panel.getByRole('article').count(), 3);
     await panel.getByRole('button', { name: 'Use this idea: Meet Fixture Orchard', exact: true }).click();
@@ -179,8 +224,24 @@ try {
   mode = 'normal';
   await panel.getByRole('button', { name: 'Retry history', exact: true }).click();
   await panel.getByRole('button', { name: 'Open creative: orchard recent 0', exact: true }).waitFor();
-  await panel.getByRole('button', { name: 'Use this idea: orchard video idea', exact: true }).waitFor();
+  await panel.getByRole('button', { name: 'Use this idea: orchard video idea 1', exact: true }).waitFor();
   assert.equal(contexts.at(-1).historyAvailable, true);
+  await open('no-key');
+  await panel.getByRole('button',{name:'Use this idea: Meet Fixture Orchard',exact:true}).click();
+  await page.getByRole('button',{name:'Next',exact:true}).click();
+  await page.getByLabel('Video duration',{exact:true}).selectOption('10');
+  await page.getByRole('button',{name:'Next',exact:true}).click();
+  const edited='Meet our brand. Explore something new today.';
+  await page.getByLabel('Spoken video script',{exact:true}).fill(edited);
+  await page.getByRole('button',{name:'Create Frame for Approval',exact:true}).click();
+  await page.getByRole('button',{name:'Approve & Render',exact:true}).first().waitFor({timeout:30000});
+  assert.equal(submittedVideo.script,edited);assert.equal(submittedVideo.video_duration,10);
+  assert.equal(submittedRender,undefined,'No video is requested before frame approval');
+  const rendered=page.waitForResponse(response=>response.url().endsWith('/trellis-video-ad-render'));
+  await page.getByRole('button',{name:'Approve & Render',exact:true}).first().click();
+  await rendered;
+  assert.equal(submittedRender.job_id,submittedVideo.job_id);assert.equal(submittedRender.frame_url,videoJob.frame_url);assert.equal(submittedRender.frame_approved_at,videoJob.frame_approved_at);
+  assert.equal(videoJob.script,edited,'Approval preserves the edited script');
   assert.deepEqual(errors, []);
   assert.deepEqual(unexpected, [], 'no live generation, database mutation or publishing');
   console.log('PASS: three generated ideas; scoped history/statuses; all format handoffs; draft replacement/cancellation; refresh; no repeated generation on Back; brand switch and stale response isolation; failure/malformed/no-key/empty fallbacks; history retry; mobile; no browser exceptions or live writes.');

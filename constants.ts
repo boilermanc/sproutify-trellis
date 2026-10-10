@@ -2872,6 +2872,9 @@ ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS request_payload JSONB;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS revision_of UUID;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS revision_notes TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS video_ad_jobs_archived_branch_idx
+  ON public.video_ad_jobs (branch, archived_at DESC) WHERE archived_at IS NOT NULL;
 
 ALTER TABLE video_ad_jobs DROP CONSTRAINT IF EXISTS video_ad_jobs_status_check;
 ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_status_check
@@ -3337,7 +3340,7 @@ export const VIDEO_SETTINGS = ['Studio', 'Outdoor', 'Kitchen', 'Garden', 'Office
 export const VIDEO_LIGHTING = ['Natural', 'Studio', 'Golden hour', 'Dramatic', 'Soft & warm'] as const;
 export const VIDEO_MOODS = ['Energetic', 'Calm', 'Luxurious', 'Fun', 'Inspirational', 'Cozy'] as const;
 
-export const DURATION_OPTIONS: (15 | 30 | 60)[] = [15, 30, 60];
+export const DURATION_OPTIONS: (5 | 10)[] = [5, 10];
 
 export const VIDEO_AD_COST_PER_VARIANT = 0.12;
 

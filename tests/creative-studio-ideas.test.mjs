@@ -15,7 +15,7 @@ const brand = { branch_id: 'alpha', status: 'active', mission: 'Teach practical 
 const job = (id, overrides = {}) => ({ id, branch: 'alpha', status: 'completed', format: 'static', created_at: '2026-10-01T00:00:00Z', request_payload: { message: id }, ...overrides });
 
 test('recent history is branch-scoped, newest first, bounded, and excludes Card Studio backgrounds', () => {
-  const jobs = [job('old'), job('foreign', { branch: 'beta' }), job('background', { request_payload: { purpose: 'card_background' } }), job('new', { created_at: '2026-10-03T00:00:00Z' })];
+  const jobs = [job('old'), job('foreign', { branch: 'beta' }), job('archived', { archived_at: '2026-10-10T00:00:00Z' }), job('background', { request_payload: { purpose: 'card_background' } }), job('new', { created_at: '2026-10-03T00:00:00Z' })];
   const original = structuredClone(jobs);
   assert.deepEqual(service.recentCreativeJobs(jobs, 'alpha').map(item => item.id), ['new', 'old']);
   assert.deepEqual(jobs, original);
@@ -66,15 +66,19 @@ test('missing history is explicitly unknown and cannot leak stale jobs into sugg
 
 test('three usable starter ideas work for arbitrary brands, including missing DNA', () => {
   for (const name of ['Rekkrd', 'ATL Urban Farms', 'A Brand Added Tomorrow']) {
-    const context = service.buildCreativeIdeaContext({ ...branch, name }, null, []);
-    const ideas = service.starterCreativeIdeas(context);
-    assert.equal(ideas.length, 3);
-    assert.deepEqual(ideas.map(idea => idea.format), ['video', 'static', 'carousel']);
-    assert.ok(ideas.every(idea => idea.brief.includes(name) && idea.hook && idea.rationale));
+    for (const format of ['video', 'static', 'carousel']) {
+      const context = service.buildCreativeIdeaContext({ ...branch, name }, null, [], true, format);
+      const ideas = service.starterCreativeIdeas(context);
+      assert.equal(ideas.length, 3);
+      assert.deepEqual(ideas.map(idea => idea.format), [format, format, format]);
+      assert.ok(ideas.every(idea => idea.brief.includes({ video: 'short video', static: 'single image', carousel: 'carousel' }[format])));
+      assert.match(service.buildCreativeIdeasPrompt(context), new RegExp('ALL for the selected format: ' + format));
+      assert.ok(ideas.every(idea => idea.brief.includes(name) && idea.hook && idea.rationale));
+    }
   }
 });
 
-const generated = () => ({ ideas: ['video', 'static', 'carousel'].map(format => ({ title: `${format} direction`, hook: `A ${format} hook`, brief: `Create a ${format} about confirmed facts.`, rationale: 'An idea to test.', format })) });
+const generated = (format = 'video') => ({ ideas: [1, 2, 3].map(index => ({ title: `${format} direction ${index}`, hook: `A ${format} hook ${index}`, brief: `Create a ${format} about confirmed fact ${index}.`, rationale: 'An idea to test.', format })) });
 
 test('validates exactly three distinct, bounded ideas and supported formats', () => {
   assert.equal(service.parseCreativeIdeas(JSON.stringify(generated())).length, 3);
@@ -87,7 +91,7 @@ test('validates exactly three distinct, bounded ideas and supported formats', ()
     idea => { idea.title = 'long title '.repeat(12); },
   ]) { const output = generated(); edit(output.ideas[0]); invalid.push(output); }
   const duplicates = generated(); duplicates.ideas[1].brief = duplicates.ideas[0].brief; invalid.push(duplicates);
-  const formats = generated(); formats.ideas[1].format = 'video'; invalid.push(formats);
+  const formats = generated(); formats.ideas[1].format = 'static'; invalid.push(formats);
   for (const output of invalid) assert.throws(() => service.parseCreativeIdeas(JSON.stringify(output)));
   assert.throws(() => service.parseCreativeIdeas('not json'));
 });
@@ -95,4 +99,12 @@ test('validates exactly three distinct, bounded ideas and supported formats', ()
 test('sanitizes model output before it can populate a brief', () => {
   const output = generated(); output.ideas[0].brief = 'Do not repeat 4111 1111 1111 1111.';
   assert.match(service.parseCreativeIdeas(JSON.stringify(output))[0].brief, /\[REDACTED_CC\]/);
+});
+
+test('accepts only the selected format for all three generated ideas', () => {
+  for (const format of ['video', 'static', 'carousel']) {
+    const output = JSON.stringify(generated(format));
+    assert.ok(service.parseCreativeIdeas(output, format).every(idea => idea.format === format));
+    assert.throws(() => service.parseCreativeIdeas(output, format === 'video' ? 'static' : 'video'));
+  }
 });

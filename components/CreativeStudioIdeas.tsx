@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Clock, Image as ImageIcon, Loader2, RefreshCw, Sparkles } from 'lucide-react';
-import type { BrandIdentity, BranchInfo, CreativeStudioIdea, VideoAdJob } from '../types';
+import type { BrandIdentity, BranchInfo, CreativeStudioIdea, VideoAdJob, VideoAdFormat } from '../types';
 import {
   buildCreativeIdeaContext, creativeHistoryStatus, creativeHistoryTitle,
   generateCreativeIdeas, recentCreativeJobs, starterCreativeIdeas,
 } from '../services/creativeStudioIdeas';
 
 interface Props {
+  format: VideoAdFormat;
   branch: BranchInfo;
   brand: BrandIdentity | null;
   brandLoading: boolean;
@@ -31,9 +32,9 @@ const createdDate = (value: string): string => {
 };
 
 const CreativeStudioIdeas: React.FC<Props> = (props) => {
-  const { branch, brand, brandLoading, brandFailed, jobs, historyLoading, historyFailed, apiKey, onUseIdea, onOpenCreative, onRetryHistory } = props;
+  const { format, branch, brand, brandLoading, brandFailed, jobs, historyLoading, historyFailed, apiKey, onUseIdea, onOpenCreative, onRetryHistory } = props;
   const recent = useMemo(() => recentCreativeJobs(jobs, branch.slug), [jobs, branch.slug]);
-  const context = useMemo(() => buildCreativeIdeaContext(branch, brand, jobs, !historyFailed), [branch, brand, jobs, historyFailed]);
+  const context = useMemo(() => buildCreativeIdeaContext(branch, brand, jobs, !historyFailed, format), [branch, brand, jobs, historyFailed, format]);
   // The parent keeps this component mounted while navigating the wizard. Polling
   // updates the history, but must not spend another AI request or replace ideas.
   // Refresh explicitly takes a fresh snapshot; no API keys or ideas are persisted.
@@ -67,7 +68,7 @@ const CreativeStudioIdeas: React.FC<Props> = (props) => {
       if (!controller.signal.aborted) setGenerating(false);
     });
     return () => controller.abort();
-  }, [ready, branch.slug, apiKey, refresh]);
+  }, [ready, branch.slug, format, apiKey, refresh]);
 
   return (
     <section aria-label="Creative starting points" className="space-y-5">
@@ -97,7 +98,7 @@ const CreativeStudioIdeas: React.FC<Props> = (props) => {
       <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="flex items-center gap-2 text-lg font-black text-slate-800"><Sparkles size={18} className="text-emerald-600" /> Three ideas for {branch.name}</h3>
+            <h3 className="flex items-center gap-2 text-lg font-black text-slate-800"><Sparkles size={18} className="text-emerald-600" /> Three {format === 'static' ? 'image' : format} ideas for {branch.name}</h3>
             <p className="text-sm text-slate-600 mt-1">Pick a direction to fill your brief. You can edit it before creating anything.</p>
           </div>
           <button type="button" disabled={!ready || generating || !apiKey} onClick={() => setRefresh(value => value + 1)} className="inline-flex items-center gap-2 border border-emerald-200 bg-white rounded-lg px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed">

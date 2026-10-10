@@ -1,9 +1,9 @@
 {
-  "name": "Trellis Video Ad Render v1",
+  "name": "Trellis Video Ad Render v2",
   "nodes": [
     {
       "parameters": {
-        "content": "## Trellis Video Ad \u2014 RENDER (v1)\n\nFires ONLY from the Approve button.\n\n**In:** POST /webhook/trellis-video-ad-render\n```\n{ job_id }\n```\n\nEverything else is read from the job row. The client does not get to pass a prompt, a frame or a duration - the approved row is the source of truth.\n\n**Gate:** refuses unless status is `awaiting_approval` AND `frame_url` is set.",
+        "content": "## Approved frame → video with audio\nOnly renders a saved, approved frame. Uses the saved edited script verbatim in the dialogue/voiceover prompt. Kling 2.6 Pro image-to-video with native audio. No separate ElevenLabs voice selection. Clip duration: 5 or 10 seconds.",
         "height": 420,
         "width": 460,
         "color": 4
@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "content": "### Kling: image-to-video\n`v2.6/pro/image-to-video`\n\n- `image_url` = the APPROVED frame\n- `generate_audio: false` - the music/VO is ours, Kling's synthetic speech is what caused the odd timing\n- `negative_prompt` - suppresses the entrance, the dissolve and the dead-air smile\n\nThe prompt describes MOTION ONLY. The frame already carries the scene.",
+        "content": "## Approved frame → video with audio\nOnly renders a saved, approved frame. Uses the saved edited script verbatim in the dialogue/voiceover prompt. Kling 2.6 Pro image-to-video with native audio. No separate ElevenLabs voice selection. Clip duration: 5 or 10 seconds.",
         "height": 300,
         "width": 460,
         "color": 7
@@ -75,7 +75,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const job = $('Read Job').all()[0];\nif (!job) { throw new Error('Job not found: ' + $('Webhook').item.json.body.job_id); }\nconst j = job.json;\n\n// ---- APPROVAL GATE ----\nif (!j.frame_url) {\n  throw new Error('Refusing to render: job has no frame_url.');\n}\nif (j.status !== 'awaiting_approval' && j.status !== 'rendering') {\n  throw new Error('Refusing to render: job status is \"' + j.status + '\", expected \"awaiting_approval\".');\n}\n\nconst pipeline = j.pipeline || 'talking_head';\nconst dur = (Number(j.duration_seconds) || 5) <= 5 ? 5 : 10;\nconst script = (j.script || '').trim();\n\n// ---- MOTION-ONLY PROMPT ----\n// The frame already establishes subject, setting, wardrobe, lighting, composition.\n// Kling's ONLY job is controlled motion FROM that frame. Describe nothing else.\nconst lock = 'Use the provided image as the exact opening frame. Preserve the subject identity, facial structure, hairstyle, skin tone, wardrobe, body proportions, background, furniture, lighting direction and colour palette exactly as they appear. Do not re-stage the scene.';\n\nconst camera = 'Locked composition with an extremely slow five-percent camera push-in. Realistic film grain, restrained natural motion.';\n\nconst motion = pipeline === 'full_scene'\n  ? 'Subtle ambient life only: slow drifting dust in the light, a gentle shift in the highlights, minimal parallax. The product remains static and in sharp focus in the centre third.'\n  : 'The person is already in position and begins speaking immediately at frame one, with no pause, no entrance, no settling and no held smile before the first word. Natural lip movement and light conversational head motion in time with the words: \"' + script + '\". Weight stays on the same foot. Eyes remain on the camera.';\n\nconst negative = 'no scene change, no cut, no dissolve, no fade in, no fade from black, no character entering or exiting frame, no new people, no new objects, no camera orbit, no whip pan, no zoom out, no wardrobe change, no background transformation, no morphing, no facial distortion, no extra limbs, no deformed hands, no text, no captions, no subtitles, no watermark, no logo, no split screen, no idle pause before speaking, no exaggerated gestures';\n\nconst prompt = lock + ' ' + motion + ' ' + camera;\n\nreturn [{ json: {\n  prompt,\n  negative_prompt: negative,\n  image_url: j.frame_url,\n  duration: String(dur),\n  aspect_ratio: j.aspect_ratio || '9:16',\n  job_id: j.id,\n  prior_cost: Number(j.cost_estimate || 0),\n} }];"
+        "jsCode": "const job = $('Read Job').all()[0];\nif (!job) { throw new Error('Job not found: ' + $('Webhook').item.json.body.job_id); }\nconst j = job.json;\n\n// ---- APPROVAL GATE ----\nif (!j.frame_url) {\n  throw new Error('Refusing to render: job has no frame_url.');\n}\nif (j.status !== 'rendering' || !j.frame_approved_at || j.archived_at || j.video_url || Number(j.progress) !== 50) {\n  throw new Error('Refusing to render: job status is \"' + j.status + '\", expected \"awaiting_approval\".');\n}\n\nconst body = $('Webhook').item.json.body || {};\nif (body.frame_url !== j.frame_url || body.frame_approved_at !== j.frame_approved_at) throw new Error('The approved frame changed. Refresh and approve again.');\nif (!j.script || !j.script.trim()) throw new Error('An edited script is required.');\nconst pipeline = j.pipeline || 'talking_head';\nconst dur = (Number(j.duration_seconds) || 5) <= 5 ? 5 : 10;\nconst script = (j.script || '').trim();\n\n// ---- MOTION-ONLY PROMPT ----\n// The frame already establishes subject, setting, wardrobe, lighting, composition.\n// Kling's ONLY job is controlled motion FROM that frame. Describe nothing else.\nconst lock = 'Use the provided image as the exact opening frame. Preserve the subject identity, facial structure, hairstyle, skin tone, wardrobe, body proportions, background, furniture, lighting direction and colour palette exactly as they appear. Do not re-stage the scene.';\n\nconst camera = 'Locked composition with an extremely slow five-percent camera push-in. Realistic film grain, restrained natural motion.';\n\nconst motion = pipeline === 'full_scene'\n  ? 'Subtle ambient life only: slow drifting dust in the light, a gentle shift in the highlights, minimal parallax. The product remains static and in sharp focus in the centre third.'\n  : 'The person is already in position and begins speaking immediately at frame one, with no pause, no entrance, no settling and no held smile before the first word. Natural lip movement and light conversational head motion in time with the words: \"' + script + '\". Weight stays on the same foot. Eyes remain on the camera.';\n\nconst negative = 'no scene change, no cut, no dissolve, no fade in, no fade from black, no character entering or exiting frame, no new people, no new objects, no camera orbit, no whip pan, no zoom out, no wardrobe change, no background transformation, no morphing, no facial distortion, no extra limbs, no deformed hands, no text, no captions, no subtitles, no watermark, no logo, no split screen, no idle pause before speaking, no exaggerated gestures';\n\nconst speech = pipeline === 'full_scene' ? 'A clear offscreen narrator speaks exactly these words: ' + JSON.stringify(script) + '. No added words.' : 'Generate clear synchronized speech using exactly the supplied dialogue, with no added words.';\nconst prompt = lock + ' ' + motion + ' ' + camera + ' ' + speech + ' Include natural ambient sound at low volume beneath the speech.';\n\nreturn [{ json: {\n  prompt,\n  negative_prompt: negative,\n  image_url: j.frame_url,\n  duration: String(dur),\n  aspect_ratio: j.aspect_ratio || '9:16',\n  job_id: j.id,\n  prior_cost: Number(j.cost_estimate || 0),\n} }];"
       },
       "id": "build-motion-prompt",
       "name": "Build Motion Prompt",
@@ -85,7 +85,7 @@
         340,
         0
       ],
-      "onError": "continueErrorOutput",
+      "onError": "stopWorkflow",
       "notes": "Hard approval gate lives here. Throws if the frame is missing or the job was never approved."
     },
     {
@@ -93,7 +93,7 @@
         "operation": "update",
         "tableId": "video_ad_jobs",
         "filterType": "string",
-        "filterString": "=id=eq.{{ $json.job_id }}",
+        "filterString": "=id=eq.{{ $json.job_id }}&status=eq.rendering&progress=eq.50",
         "fieldsUi": {
           "fieldValues": [
             {
@@ -143,7 +143,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ prompt: $('Build Motion Prompt').item.json.prompt, negative_prompt: $('Build Motion Prompt').item.json.negative_prompt, image_url: $('Build Motion Prompt').item.json.image_url, duration: $('Build Motion Prompt').item.json.duration, generate_audio: false }) }}",
+        "jsonBody": "={{ JSON.stringify({ prompt: $('Build Motion Prompt').item.json.prompt, negative_prompt: $('Build Motion Prompt').item.json.negative_prompt, start_image_url: $('Build Motion Prompt').item.json.image_url, duration: $('Build Motion Prompt').item.json.duration, generate_audio: true }) }}",
         "options": {
           "timeout": 30000
         }
@@ -163,7 +163,7 @@
         }
       },
       "onError": "continueErrorOutput",
-      "notes": "image-to-video, NOT text-to-video.\nNo aspect_ratio - it is inherited from the frame.\ngenerate_audio:false - we supply our own audio."
+      "notes": "Kling 2.6 Pro image-to-video uses start_image_url for the approved frame. Aspect ratio is inherited from that frame. Native audio is enabled; dialogue or narration comes from the saved edited script."
     },
     {
       "parameters": {
@@ -416,7 +416,7 @@
         "operation": "update",
         "tableId": "video_ad_jobs",
         "filterType": "string",
-        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}",
+        "filterString": "=id=eq.{{ $('Webhook').item.json.body.job_id }}&status=eq.rendering",
         "fieldsUi": {
           "fieldValues": [
             {
@@ -478,13 +478,6 @@
         [
           {
             "node": "Update: Rendering",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Mark Failed",
             "type": "main",
             "index": 0
           }

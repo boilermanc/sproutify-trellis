@@ -1413,6 +1413,7 @@ export interface CreativeStudioIdea {
 }
 
 export interface CreativeStudioIdeaContext {
+  format: VideoAdFormat;
   branch: string;
   name: string;
   summary: string;
@@ -1433,13 +1434,14 @@ export interface VideoAdConfig {
   actor_style: string;
   actor_gender: 'male' | 'female';
   voice_style: string;
-  video_duration: 15 | 30 | 60;
+  video_duration: 5 | 10;
   pipeline: 'talking_head' | 'full_scene';
   platform: 'general' | 'tiktok' | 'instagram_reels' | 'youtube_shorts';
 }
 
 export interface VideoAdJob {
   id: string;
+  archived_at?: string | null;
   campaign_id: string | null;
   branch: string;
   script: string | null;

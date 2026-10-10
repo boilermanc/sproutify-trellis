@@ -13,6 +13,8 @@ export function useVideoAdPoller(
   const lastKnownRef = useRef<Map<string, VideoAdJob>>(new Map());
   const onStatusChangeRef = useRef(onStatusChange);
   onStatusChangeRef.current = onStatusChange;
+  const currentIdsRef = useRef(new Set(jobIds));
+  currentIdsRef.current = new Set(enabled ? jobIds : []);
 
   const [activeCount, setActiveCount] = useState(0);
 
@@ -34,6 +36,9 @@ export function useVideoAdPoller(
       if (result.status !== 'fulfilled' || !result.value) continue;
 
       const job = result.value;
+      // A pending response must not reintroduce a job removed while polling
+      // (for example, a creative archived from its review state).
+      if (!currentIdsRef.current.has(job.id)) continue;
       const prev = map.get(job.id);
 
       // Progress is reported inside a status too, so a progress-only change
@@ -53,6 +58,9 @@ export function useVideoAdPoller(
   }, [jobIds]);
 
   useEffect(() => {
+    for (const id of lastKnownRef.current.keys()) {
+      if (!currentIdsRef.current.has(id)) lastKnownRef.current.delete(id);
+    }
     if (!enabled || jobIds.length === 0) {
       setActiveCount(0);
       return;

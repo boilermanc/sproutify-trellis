@@ -1,6 +1,7 @@
 import { VideoAdConfig, VideoAdJob, TextOverlayConfig } from '../types';
 import { VIDEO_AD_WEBHOOK, STATIC_AD_WEBHOOK, CAROUSEL_AD_WEBHOOK, VIDEO_AD_RENDER_WEBHOOK } from '../constants';
 import { supabase } from '../lib/supabase';
+import { sanitizePII } from './aiService';
 
 // ─── Video Ad Lab Service ──────────────────────────────────────────
 // Job submission goes to n8n via webhook (fire-and-forget).
@@ -21,6 +22,10 @@ import { supabase } from '../lib/supabase';
 export async function submitVideoAdJob(
   config: VideoAdConfig & { script?: string; aspect_ratio?: string; setting?: string },
 ): Promise<{ job_id: string }> {
+  if (!config.script?.trim()) throw new Error('Write or generate your script before creating the frame.');
+  if (![5, 10].includes(config.video_duration)) throw new Error('Choose a 5- or 10-second clip.');
+  const maxWords = Math.floor((config.video_duration - 1) * 2.2);
+  if (config.script.trim().split(/\s+/u).length > maxWords) throw new Error(`Shorten your script to ${maxWords} words. Your words will not be truncated.`);
   const job_id = crypto.randomUUID();
 
   // Fire-and-forget — don't await. n8n receives and processes the
@@ -41,7 +46,7 @@ export async function submitVideoAdJob(
       video_duration: config.video_duration,
       pipeline: config.pipeline,
       platform: config.platform,
-      script: config.script,
+      script: sanitizePII(config.script),
       aspect_ratio: config.aspect_ratio,
       setting: config.setting,
     }),
@@ -101,6 +106,7 @@ export async function pollVideoAdJob(
 export async function getVideoAdJobs(
   branch?: string,
   limit: number = 50,
+  includeArchived = false,
 ): Promise<VideoAdJob[]> {
   let query = supabase
     .from('video_ad_jobs')
@@ -118,7 +124,38 @@ export async function getVideoAdJobs(
     throw new Error(`Failed to list video ad jobs: ${error.message}`);
   }
 
-  return ((data as VideoAdJob[]) ?? []).map(normalizeJob);
+  return ((data as VideoAdJob[]) ?? []).map(normalizeJob).filter(job => includeArchived || !job.archived_at);
+}
+
+export function canArchiveCreative(job: VideoAdJob): boolean {
+  return !job.archived_at
+    && ['completed', 'failed', 'cancelled', 'awaiting_approval', 'published'].includes(job.status)
+    && !['scheduled', 'publishing', 'queued'].includes(job.publish_status || '');
+}
+
+// Preserve the job, assets, and original status. Match the state the user saw
+// so a concurrently scheduled/rendering job cannot be archived by a stale UI.
+export async function setCreativeArchived(job: VideoAdJob, branch: string, archived: boolean): Promise<string | null> {
+  if (job.branch !== branch) throw new Error('This creative belongs to another branch.');
+  if (archived && !canArchiveCreative(job)) throw new Error('Wait for generation to finish or cancel its schedule before archiving.');
+  if (!archived && !job.archived_at) throw new Error('This creative is not archived. Refresh the library.');
+  const archivedAt = archived ? new Date().toISOString() : null;
+  let query = supabase.from('video_ad_jobs')
+    .update({ archived_at: archivedAt })
+    .eq('id', job.id)
+    .eq('branch', branch)
+    .eq('status', job.status);
+  query = job.archived_at ? query.eq('archived_at', job.archived_at) : query.is('archived_at', null);
+  query = job.publish_status == null ? query.is('publish_status', null) : query.eq('publish_status', job.publish_status);
+  const { data, error } = await query.select('id, archived_at').maybeSingle();
+  if (error) {
+    if (error.code === '42703' || error.code === 'PGRST204') {
+      throw new Error('Archiving is not enabled on this database yet. Apply the Creative Studio archive migration first.');
+    }
+    throw new Error('Could not save this archive change. Refresh the library and try again.');
+  }
+  if (!data) throw new Error('This creative changed or you do not have access. Refresh the library before trying again.');
+  return data.archived_at;
 }
 
 // ─── 4. cancelVideoAdJob ─────────────────────────────────────────
@@ -286,20 +323,31 @@ export async function approveJob(jobId: string): Promise<void> {
 // ready to animate): flip status to 'rendering' on Hub Supabase, then
 // fire-and-forget the render webhook so n8n picks up the job and finishes
 // the video pipeline.
-export async function approveAndRenderVideo(jobId: string): Promise<void> {
-  const { error } = await supabase
+export async function approveAndRenderVideo(job: VideoAdJob): Promise<void> {
+  if (job.status !== 'awaiting_approval' || !job.frame_url || job.archived_at || !job.script?.trim()) {
+    throw new Error('A saved frame and script must be ready for approval. Refresh the creative.');
+  }
+  const frame_approved_at = new Date().toISOString();
+  const { data, error } = await supabase
     .from('video_ad_jobs')
-    .update({ status: 'rendering' })
-    .eq('id', jobId);
+    .update({ status: 'rendering', progress: 50, frame_approved_at })
+    .eq('id', job.id)
+    .eq('branch', job.branch)
+    .eq('status', 'awaiting_approval')
+    .eq('frame_url', job.frame_url)
+    .eq('script', job.script)
+    .select('id, frame_approved_at, frame_url')
+    .maybeSingle();
 
   if (error) {
-    throw new Error(`Failed to approve video ad job ${jobId}: ${error.message}`);
+    throw new Error(`Failed to approve video ad job ${job.id}: ${error.message}`);
   }
+  if (!data) throw new Error('This creative changed or was already approved. Refresh before trying again.');
 
   fetch(VIDEO_AD_RENDER_WEBHOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ job_id: jobId }),
+    body: JSON.stringify({ job_id: job.id, frame_url: data.frame_url, frame_approved_at: data.frame_approved_at }),
   }).catch(() => {
     // Expected — Cloudflare 524 timeout or CORS block on the response.
     // The request still reaches n8n and the job will appear in Supabase.

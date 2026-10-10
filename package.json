@@ -17,6 +17,7 @@
     "test:content-studio-browser": "node tests/content-studio-browser.mjs && node tests/content-studio-social-browser.mjs && node tests/content-studio-production-browser.mjs && node tests/content-studio-visual-browser.mjs",
     "test:creative-ideas": "node --test tests/creative-studio-ideas.test.mjs",
     "test:creative-ideas-browser": "node tests/creative-studio-ideas-browser.mjs",
+    "test:creative-archive-browser": "node tests/creative-studio-archive-browser.mjs",
     "test:motion-posts": "node --test tests/motion-posts-contract.test.mjs",
     "test:transcriptions": "node --test tests/transcription-studio-contract.test.mjs",
     "test:promo-proof": "node --test tests/promo-proof-contract.test.mjs",
