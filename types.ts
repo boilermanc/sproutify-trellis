@@ -1403,6 +1403,27 @@ export type VideoAdStatus = 'queued' | 'generating_script' | 'generating_frame' 
 
 export type VideoAdFormat = 'video' | 'static' | 'carousel';
 
+export interface CreativeStudioIdea {
+  id: string;
+  title: string;
+  hook: string;
+  brief: string;
+  rationale: string;
+  format: VideoAdFormat;
+}
+
+export interface CreativeStudioIdeaContext {
+  branch: string;
+  name: string;
+  summary: string;
+  audience: string;
+  voice: string;
+  website: string;
+  hooks: string[];
+  historyAvailable: boolean;
+  recent: { title: string; format: VideoAdFormat; status: string; createdAt: string; brief: string }[];
+}
+
 export interface VideoAdConfig {
   branch: string;
   product_description: string;

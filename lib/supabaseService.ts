@@ -619,17 +619,21 @@ function buildPostPermalink(source: string, postId: string | null): string | nul
 
 /**
  * Fetch all published social posts from marketing_events (event_type='social_publish'),
- * newest first. Returns a clean, normalized shape. Never throws — returns [] on error.
+ * newest first. Optional branch scope is applied before the limit. Defaults to []
+ * on failure; context consumers can opt into errors to distinguish missing history.
  */
-export async function getPublishedPosts(): Promise<PublishedPost[]> {
+export async function getPublishedPosts(options?: { branchId: string; limit?: number; throwOnError?: boolean }): Promise<PublishedPost[]> {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('marketing_events')
       .select('*')
       .eq('event_type', 'social_publish')
       .order('created_at', { ascending: false });
+    if (options) query = query.eq('payload->>branch_id', options.branchId).limit(options.limit ?? 12);
+    const { data, error } = await query;
 
     if (error) {
+      if (options?.throwOnError) throw error;
       console.error('Error fetching published posts:', error);
       return [];
     }
@@ -658,6 +662,7 @@ export async function getPublishedPosts(): Promise<PublishedPost[]> {
       } as PublishedPost;
     });
   } catch (err) {
+    if (options?.throwOnError) throw err;
     console.error('Error fetching published posts:', err);
     return [];
   }

@@ -46,7 +46,19 @@ try {
   assert.deepEqual(errors, [], name + ' should render without runtime errors');
   assert.equal(await page.locator('select option').filter({ hasText: 'Other Branch' }).count(), 0, name + ' has no competing branch selector');
  }
- await open('SocialHub', '1. Describe your post');
+ await open('SocialHub', '1. What would you like to share?');
+ const notes = page.getByRole('textbox', { name: 'Your notes', exact: true });
+ await notes.fill('Keep my existing notes.');
+ await page.getByRole('button', { name: /Share a useful tip/ }).click();
+ assert.match(await notes.inputValue(), /^Keep my existing notes\.[\s\S]*Share a practical tip/);
+ assert.equal(await notes.evaluate(element => element === document.activeElement), true);
+ await page.getByText('Help me shape it', { exact: true }).click();
+ assert.equal(await page.getByText('Who are you talking to, and what would help or interest them?', { exact: true }).isVisible(), true);
+ await page.setViewportSize({ width: 390, height: 844 });
+ assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Social Hub fits mobile width');
+ if (process.env.STUDIO_SCREENSHOT_DIR) await page.screenshot({ path: process.env.STUDIO_SCREENSHOT_DIR + '/social-hub-mobile.png', fullPage: true });
+ await page.setViewportSize({ width: 1280, height: 900 });
+ if (process.env.STUDIO_SCREENSHOT_DIR) await page.screenshot({ path: process.env.STUDIO_SCREENSHOT_DIR + '/social-hub-desktop.png', fullPage: true });
  assert.equal(await page.getByRole('heading', { name: 'Intent Watcher' }).count(), 0);
  assert.equal(await page.getByPlaceholder('Optional: tell Sage what this creative is about so it can write better metadata').isVisible(), false);
  await page.getByText('Use an image or video you already have', { exact: true }).click();

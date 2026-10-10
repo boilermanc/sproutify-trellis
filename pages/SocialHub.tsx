@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import SocialIdeaChat from '../components/SocialIdeaChat';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig, NewScheduledPost } from '../types';
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -270,7 +271,12 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
     return sorted;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportPosts, reportSearch, reportPlatformFilter, reportSortKey, reportSortDir, branches]);
-  const [baseContent, setBaseContent] = useState('');
+  const [notesByBranch, setNotesByBranch] = useState<Record<string, string>>({});
+  const baseContent = notesByBranch[selectedBranchSlug] || '';
+  const setBaseContent = (value: React.SetStateAction<string>) => setNotesByBranch(current => ({
+    ...current,
+    [selectedBranchSlug]: typeof value === 'function' ? value(current[selectedBranchSlug] || '') : value,
+  }));
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeDrafts, setActiveDrafts] = useState<DraftPost[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<'idle' | 'reviewing'>('idle');
@@ -1352,8 +1358,52 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
               {workflowStatus === 'idle' ? (
                 <div className={`bg-white p-6 sm:p-10 border border-slate-200 relative ${isGenerating ? 'opacity-40' : ''}`}>
                   {isGenerating && <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm z-20"><Loader2 className="animate-spin text-emerald-600" size={48} /></div>}
-                  <h3 className="text-2xl font-black text-slate-800 flex items-center mb-10 pb-6 border-b border-slate-100"><Layers size={32} className="mr-4 text-emerald-600" />1. Describe your post</h3>
-                  <textarea className="w-full bg-slate-50 border border-slate-200 p-5 sm:p-6 text-base sm:text-lg font-medium outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all min-h-[220px] mb-8" placeholder="Describe your concept..." value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
+                  <h3 className="text-2xl font-black text-slate-800 flex items-center mb-3"><Layers size={32} className="mr-4 text-emerald-600 shrink-0" />1. What would you like to share?</h3>
+                  <p className="text-sm text-slate-600 mb-6">Start with an idea or a few rough notes. Sage will turn them into drafts for your chosen platforms. You’ll review the copy before scheduling or publishing.</p>
+                  {branches?.filter(branch => branch.slug === selectedBranchSlug).map(brand => (
+                    <SocialIdeaChat key={brand.id} brand={brand} apiKeys={apiKeys} notes={baseContent} onUseBrief={brief => {
+                      setBaseContent(current => current.trim() ? `${current}\n\n${brief}` : brief);
+                      addToast?.('Sage’s brief was added to your notes. Review it, then create drafts.', 'success');
+                      document.getElementById('social-post-notes')?.focus();
+                    }} />
+                  ))}
+                  <section aria-label="Post ideas" className="mb-6">
+                    <p className="text-sm font-bold text-slate-800 mb-3">Need a starting point? Pick an idea.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        { title: 'Share a useful tip', detail: 'Teach your audience one small thing.', prompt: 'Share a practical tip about [topic] for [audience]. Explain one simple step they can try today and invite them to share their experience.' },
+                        { title: 'Show behind the scenes', detail: 'Tell the story behind your work.', prompt: 'Take our audience behind the scenes of [what we are working on]. Highlight [a real detail about the process or people] and why it matters.' },
+                        { title: 'Start a conversation', detail: 'Ask something your community can answer.', prompt: 'Ask our community about [topic or challenge]. Add context about why we are asking and invite them to reply with their own experiences.' },
+                        { title: 'Share something new', detail: 'Introduce a product, event, or update.', prompt: 'Introduce [product, event, or update] to [audience]. Explain [the benefit], include [confirmed details or dates], and invite people to [next action or link].' },
+                      ].map(idea => (
+                        <button type="button" key={idea.title} disabled={isGenerating} onClick={() => {
+                          setBaseContent(current => current.trim() ? `${current}\n\n${idea.prompt}` : idea.prompt);
+                          document.getElementById('social-post-notes')?.focus();
+                        }} className="text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 focus-visible:outline-emerald-600 transition">
+                          <span className="block text-sm font-bold text-slate-800">{idea.title}</span>
+                          <span className="block text-xs text-slate-500 mt-1">{idea.detail}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                  <details className="mb-5 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
+                    <summary className="cursor-pointer font-bold">Help me shape it</summary>
+                    <p className="mt-3">Imagine telling a teammate what’s happening. Answer these in the notes below:</p>
+                    <ol className="list-decimal pl-5 mt-2 space-y-2">
+                      <li>Who are you talking to, and what would help or interest them?</li>
+                      <li>What’s the one thing you want them to know? Include real details.</li>
+                      <li>What should they do next — reply, visit a link, sign up, or try something?</li>
+                    </ol>
+                    <p className="mt-3">A sentence or two is enough. Replace any [bracketed hints] from an idea with your details.</p>
+                  </details>
+                  <label htmlFor="social-post-notes" className="block text-sm font-bold text-slate-800 mb-2">Your notes</label>
+                  <textarea id="social-post-notes" aria-describedby="social-notes-help" className="w-full bg-slate-50 border border-slate-200 p-5 sm:p-6 text-base sm:text-lg font-medium outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all min-h-[160px]" placeholder="What’s happening, who is it for, and what should they do next?" value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
+                  <p id="social-notes-help" className="text-xs text-slate-500 mt-2 mb-5">No finished caption needed. Add any dates, links, or facts Sage should use.</p>
+                  <div className="flex flex-wrap items-center gap-3 mb-8 text-sm">
+                    <span className="text-slate-500">Looking for what you did last?</span>
+                    <button type="button" onClick={() => setActiveTab('reports')} className="min-h-11 font-bold text-emerald-700 hover:underline inline-flex items-center gap-2"><History size={16} />View published posts</button>
+                    <button type="button" onClick={() => setActiveTab('pipeline')} className="min-h-11 font-bold text-emerald-700 hover:underline">See planned posts</button>
+                  </div>
                   <details className="mb-8 p-5 rounded-[2rem] border-2 border-dashed border-emerald-200 bg-emerald-50/40">
                     <summary className="cursor-pointer text-sm font-bold text-emerald-800 mb-3">Use an image or video you already have</summary>
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-3">

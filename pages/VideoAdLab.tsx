@@ -1,7 +1,9 @@
 import { markStudioDraftChanged } from '../services/contentStudioDraft';
+import { fetchBrandByBranch } from '../brandRepository';
+import { sanitizePII } from '../services/aiService';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig, TextOverlayLayer } from '../types';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, BrandIdentity, BranchInfo, CreativeStudioIdea, TextOverlayConfig, TextOverlayLayer } from '../types';
 import { GoogleGenAI } from '@google/genai';
 import { formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
 import {
@@ -19,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import TextOverlayEditor from '../components/TextOverlayEditor';
 import MetaAdExportModal from '../components/MetaAdExportModal';
+import CreativeStudioIdeas from '../components/CreativeStudioIdeas';
 import { compositeOverlay, defaultOverlayForHeadline } from '../utils/imageComposite';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
@@ -258,10 +261,34 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Form fields (shared across formats where sensible) ──
   const branch = selectedBranchSlug;
-  const [productDescription, setProductDescription] = useState('');
-  const [targetSegment, setTargetSegment] = useState('');
-  const [tone, setTone] = useState<string>(TONE_PRESETS[0]);
-  const [cta, setCta] = useState('');
+  const selectedBrandInfo = useMemo<BranchInfo>(() => branchContext?.allBranches.find(item => item.slug === branch) || {
+    id: branch, slug: branch, name: formatBranchName(branch), type: 'internal', is_active: true, primary_color: '#059669',
+  }, [branchContext?.allBranches, branch]);
+  const [brandData, setBrandData] = useState<{ slug: string; identity: BrandIdentity | null; failed: boolean } | null>(null);
+  const savedBrand = brandData?.slug === branch ? brandData.identity : null;
+  const brandLoading = brandData?.slug !== branch;
+  useEffect(() => {
+    let cancelled = false;
+    fetchBrandByBranch(branch).then(identity => {
+      if (!cancelled) setBrandData({ slug: branch, identity, failed: false });
+    }).catch(() => {
+      if (!cancelled) setBrandData({ slug: branch, identity: null, failed: true });
+    });
+    return () => { cancelled = true; };
+  }, [branch]);
+  // Null means use the saved brand default. An empty string is an intentional
+  // edit, so a late Brand DNA response must never replace what the user typed.
+  const [productOverride, setProductDescription] = useState<string | null>(null);
+  const [audienceOverride, setTargetSegment] = useState<string | null>(null);
+  const [toneOverride, setTone] = useState<string | null>(null);
+  const [ctaOverride, setCta] = useState<string | null>(null);
+  const brandSummary = savedBrand?.mission || savedBrand?.site_preview_description || savedBrand?.tagline || '';
+  const brandIntroduction = brandSummary ? `Introduce ${branchName(branch)}: ${brandSummary}` : '';
+  const productDescription = productOverride ?? brandIntroduction;
+  const targetSegment = audienceOverride ?? savedBrand?.target_audience ?? '';
+  const tone = toneOverride ?? (savedBrand?.voice || TONE_PRESETS[0]);
+  const brandWebsite = savedBrand?.website_url || branchContext?.allBranches.find(b => b.slug === branch)?.website_url;
+  const cta = ctaOverride ?? (brandWebsite ? `Visit ${brandWebsite} to learn more` : '');
   const [pipeline, setPipeline] = useState<'talking_head' | 'full_scene'>('full_scene');
   const [actorGender, setActorGender] = useState<'male' | 'female'>('female');
   const [actorStyle, setActorStyle] = useState<string>(ACTOR_STYLES[1]);
@@ -327,6 +354,8 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Job state ──
   const [jobs, setJobs] = useState<VideoAdJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Baseline statuses loaded from Supabase before polling starts. The poller
@@ -575,11 +604,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         // Match the Dashboard queue's window so a review card never counts
         // jobs that Creative Studio then fails to load.
         const fetched = await getVideoAdJobs(selectedBranchSlug, 100);
+        if (cancelled) return;
         knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
         setJobs(fetched);
         setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
@@ -601,10 +632,15 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
           }
         }
       } catch (err: any) {
+        if (cancelled) return;
+        setHistoryFailed(true);
         console.error('[VideoAdLab] Failed to load jobs:', err);
         addToast(`Failed to load video jobs: ${err.message}`, 'error');
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   // ── Load templates when branch changes (Hub) ──
@@ -641,19 +677,23 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // ── Refresh handler ──
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    setHistoryLoading(true);
     try {
       const fetched = await getVideoAdJobs(selectedBranchSlug, 100);
+      setHistoryFailed(false);
       knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
       setJobs(fetched);
       setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
       addToast('Video library refreshed', 'info');
     } catch (err: any) {
+      setHistoryFailed(true);
       console.error('[VideoAdLab] Failed to refresh jobs:', err);
       addToast(`Failed to refresh: ${err.message}`, 'error');
     } finally {
       setIsRefreshing(false);
+      setHistoryLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, selectedBranchSlug]);
 
   // A job requested by Card Studio purely as an editorial card's backdrop.
   // Card Studio consumes its frame_url directly the moment it exists — there
@@ -732,17 +772,40 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // Clear the form and start over from the format picker.
   const startAnother = () => {
     setTrackedJobId(null);
-    setProductDescription('');
-    setCta('');
+    setProductDescription(null);
+    setCta(null);
+    setTone(null);
     setGeneratedScript('');
     setStaticMessage('');
     setCarouselTopic('');
-    setTargetSegment('');
+    setTargetSegment(null);
     setStyleNotes('');
     setRefImageUrl('');
     setStaticBatchMode(false);
     setStaticBatchText('');
     setStep(0);
+  };
+
+  const useCreativeIdea = (idea: CreativeStudioIdea) => {
+    const hasEdits = productOverride !== null || audienceOverride !== null || toneOverride !== null || ctaOverride !== null ||
+      !!(staticMessage || carouselTopic || generatedScript || staticBatchText || refImageUrl || customVisualNotes || styleNotes);
+    if (hasEdits && !window.confirm('Replace your current creative brief with this idea? Your unsaved text and reference image will be cleared.')) return;
+    startAnother();
+    setSelectedTemplateId(null);
+    setSaveAsTemplate(false);
+    setNewTemplateName('');
+    setCustomVisualNotes('');
+    const ideaCta = brandWebsite ? `Visit ${brandWebsite} to learn more` : `Learn more about ${branchName(branch)}`;
+    const brief = `Suggested hook: ${idea.hook}\n\n${idea.brief}`;
+    setFormat(idea.format);
+    setProductDescription(brief);
+    setStaticMessage(`${brief}\n\nCall to action: ${ideaCta}`);
+    setCarouselTopic(`${brief}\n\nCall to action: ${ideaCta}`);
+    setCta(ideaCta);
+    setStep(1);
+    markStudioDraftChanged();
+    addToast('Idea loaded. Review your brief before creating the ad.', 'success');
+    requestAnimationFrame(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
   // ── Pagination ──
@@ -787,6 +850,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
 PRODUCT: ${productDescription}
 BRAND: ${branchName(branch)}
+BRAND BACKGROUND: ${brandSummary}
 TARGET AUDIENCE: ${targetSegment || 'general audience'}
 TONE: ${tone}
 CTA: ${cta || 'Visit our website'}
@@ -803,9 +867,9 @@ STRICT RULES:
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: prompt,
+        contents: sanitizePII(prompt),
       });
-      setGeneratedScript(response.text || '');
+      setGeneratedScript(sanitizePII(response.text || ''));
     } catch (err: any) {
       addToast(`Script generation failed: ${err.message}`, 'error');
     } finally {
@@ -1314,11 +1378,30 @@ STRICT RULES:
         })}
       </div>
 
+      {/* Keep suggestions mounted across wizard steps so Back does not generate again. */}
+      <div hidden={step !== 0}>
+        <CreativeStudioIdeas
+          key={branch}
+          branch={selectedBrandInfo}
+          brand={savedBrand}
+          brandLoading={brandLoading}
+          brandFailed={!!brandData?.failed}
+          jobs={scopedJobs}
+          historyLoading={historyLoading}
+          historyFailed={historyFailed}
+          apiKey={geminiApiKey}
+          onUseIdea={useCreativeIdea}
+          onOpenCreative={job => { setFormat(job.format || 'video'); openInReviewPanel(job); }}
+          onRetryHistory={handleRefresh}
+          addToast={addToast}
+        />
+      </div>
+
       {/* ── Step 0: Format picker ── */}
       {step === 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
           <h3 className="text-lg font-black text-slate-800 mb-1">What kind of ad?</h3>
-          <p className="text-xs text-slate-400 mb-6">Pick a format — this drives what you'll configure next.</p>
+          <p className="text-xs text-slate-500 mb-6">Or start with your own idea. Choose a format to write your brief.</p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {FORMAT_OPTIONS.map(opt => {
@@ -1350,8 +1433,13 @@ STRICT RULES:
       {/* ── Step 1: Message / Topic (format-specific) ── */}
       {step === 1 && format === 'video' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-          <h3 className="text-lg font-black text-slate-800 mb-1">What's your message?</h3>
-          <p className="text-xs text-slate-400 mb-6">Tell us about your product and who you're talking to.</p>
+          <h3 className="text-lg font-black text-slate-800 mb-1">What should this video focus on?</h3>
+          <p className="text-sm text-slate-500 mb-6">Start with a brand introduction, or focus on a specific feature, offer, or announcement. Review the details below, then choose Next.</p>
+
+          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4 mb-6" role="status">
+            <p className="text-sm font-bold text-emerald-900">{brandLoading ? 'Loading saved Brand DNA…' : savedBrand ? `${branchName(branch)} Brand DNA loaded` : brandData?.failed ? 'Brand DNA could not be loaded' : 'No active Brand DNA found'}</p>
+            <p className="text-xs text-emerald-800 mt-1">{savedBrand ? 'Saved brand details provide your starting point. You can edit any field for this video without changing the brand.' : brandLoading ? 'You can start typing while we load your brand details.' : 'You can fill in this brief manually, or check the selected branch in Brand DNA.'}</p>
+          </div>
 
           <div className="space-y-5">
             {/* Branch */}
@@ -1363,37 +1451,44 @@ STRICT RULES:
 
             {/* Product Description */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Product Description</label>
+              <label htmlFor="creative-video-focus" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Video focus</label>
               <textarea
+                id="creative-video-focus"
                 value={productDescription}
                 onChange={e => setProductDescription(e.target.value)}
                 rows={3}
-                placeholder="Describe what you're promoting..."
+                placeholder="What should viewers learn about this brand, feature, or offer?"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
               />
-              <p className="text-xs text-slate-400 mt-1">Describe what you're promoting — be specific about features and benefits.</p>
+              <p className="text-xs text-slate-500 mt-1">A general introduction is a good first video. For a specific promotion, add the feature, benefit, or offer you want to highlight.</p>
+              {brandIntroduction && (
+                <button type="button" onClick={() => { markStudioDraftChanged(); setProductDescription(brandIntroduction); }} className="mt-2 text-xs font-bold text-emerald-700 underline">Use brand introduction</button>
+              )}
             </div>
 
             {/* Target Audience */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Target Audience</label>
+              <label htmlFor="creative-video-audience" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Target Audience</label>
               <input
+                id="creative-video-audience"
                 value={targetSegment}
                 onChange={e => setTargetSegment(e.target.value)}
-                placeholder="e.g. health-conscious millennials, new gardeners"
+                placeholder="Who should this video reach?"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
               />
-              <p className="text-xs text-slate-400 mt-1">Who should this resonate with? e.g. health-conscious millennials, new gardeners</p>
+              <p className="text-xs text-slate-500 mt-1">{savedBrand?.target_audience ? 'Starts with your saved audience. Narrow it here if this video is for a specific group.' : 'Add an audience for this video, or leave blank for a general audience.'}</p>
             </div>
 
             {/* Tone */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Tone</label>
+              <label htmlFor="creative-video-tone" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Tone</label>
               <select
+                id="creative-video-tone"
                 value={tone}
                 onChange={e => setTone(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
               >
+                {!TONE_PRESETS.includes(tone) && <option value={tone}>{tone}</option>}
                 {TONE_PRESETS.map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
@@ -1403,8 +1498,9 @@ STRICT RULES:
 
             {/* CTA */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Call to Action</label>
+              <label htmlFor="creative-video-cta" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Call to Action</label>
               <input
+                id="creative-video-cta"
                 value={cta}
                 onChange={e => setCta(e.target.value)}
                 placeholder="e.g. Visit oursite.com to learn more"
@@ -1511,8 +1607,9 @@ STRICT RULES:
               </div>
             ) : (
               <div>
-                <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
+                <label htmlFor="creative-static-message" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
                 <textarea
+                  id="creative-static-message"
                   value={staticMessage}
                   onChange={e => setStaticMessage(e.target.value)}
                   rows={3}
@@ -1750,8 +1847,9 @@ STRICT RULES:
 
             {/* Topic */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Topic</label>
+              <label htmlFor="creative-carousel-topic" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Topic</label>
               <textarea
+                id="creative-carousel-topic"
                 value={carouselTopic}
                 onChange={e => setCarouselTopic(e.target.value)}
                 rows={3}
