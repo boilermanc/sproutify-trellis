@@ -6,12 +6,13 @@ const base = process.env.STUDIO_TEST_URL || 'http://127.0.0.1:3015';
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+  page.setDefaultTimeout(60000);
   const errors = [];
   const prompts = [];
   let historyMode = 'ready';
   let aiMode = 'ready';
   let release;
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== base) {
@@ -40,11 +41,16 @@ try {
       const r = await import('/node_modules/.vite/deps/react.js'); const React = r.default || r;
       const d = await import('/node_modules/.vite/deps/react-dom_client.js'); const { createRoot } = d.default || d;
       const { default: Chat } = await import('/components/SocialIdeaChat.tsx'); await import('/index.css');
+      const { useSavedSocialIdea } = await import('/hooks/useSavedSocialIdea.ts');
       function App() {
-        const [id, setId] = React.useState('garden'); const [notes, setNotes] = React.useState('Keep my notes.');
+        const [id, setId] = React.useState('garden'); const [show, setShow] = React.useState(true);
+        const [notes, setNotes] = useSavedSocialIdea(id, 'notes');
         return React.createElement('main', { style: { padding: 20 } },
           React.createElement('button', { onClick: () => setId('music') }, 'Switch brand'),
-          React.createElement(Chat, { key: id, brand: { id, name: id === 'garden' ? 'Fixture Garden' : 'Fixture Music', tone: 'friendly', description: 'A community brand' }, apiKeys: { active_llm: 'gemini', gemini_api_key: 'fixture-only' }, notes, onUseBrief: text => setNotes(n => n + '\\n' + text) }),
+          React.createElement('button', { onClick: () => setId('garden') }, 'Return to garden'),
+          React.createElement('button', { onClick: () => setShow(s => !s) }, 'Toggle chat view'),
+          show && React.createElement(Chat, { key: id, brand: { id, name: id === 'garden' ? 'Fixture Garden' : 'Fixture Music', tone: 'friendly', description: 'A community brand' }, apiKeys: { active_llm: 'gemini', gemini_api_key: 'fixture-only' }, notes, onUseBrief: text => setNotes(n => n + '\\n' + text) }),
+          React.createElement('textarea', { 'aria-label': 'Post notes', value: notes, onChange: e => setNotes(e.target.value) }),
           React.createElement('p', { id: 'notes' }, notes));
       }
       createRoot(document.getElementById('root')).render(React.createElement(App));
@@ -52,6 +58,7 @@ try {
     return route.continue();
   });
   await page.goto(base + '/__idea_chat__');
+  await page.getByLabel('Post notes').fill('Keep my notes.');
   await page.getByText('Using 1 recently recorded posts in Trellis.').waitFor();
   await page.getByRole('button', { name: 'Suggest what to post next' }).click();
   await page.getByRole('log').getByText('Try a seedling care tip. Who should it help?').waitFor();
@@ -71,6 +78,19 @@ try {
   await page.getByLabel('Review your post brief').fill('Teach beginners how to care for seedlings.');
   await page.getByRole('button', { name: 'Add brief to my notes' }).click();
   assert.equal(await page.locator('#notes').textContent(), 'Keep my notes.\nTeach beginners how to care for seedlings.');
+  await page.getByLabel('Your message to Sage').fill('Unfinished thought for tomorrow');
+  const savedConversation = await page.getByRole('log').innerText();
+  await page.getByRole('button', { name: 'Toggle chat view' }).click();
+  await page.getByRole('button', { name: 'Toggle chat view' }).click();
+  assert.equal(await page.getByRole('log').innerText(), savedConversation);
+  assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'Unfinished thought for tomorrow');
+  await page.reload();
+  assert.equal(await page.getByRole('log').innerText(), savedConversation);
+  assert.equal(await page.getByLabel('Review your post brief').inputValue(), 'Teach beginners how to care for seedlings.');
+  assert.equal(await page.getByLabel('Post notes').inputValue(), 'Keep my notes.\nTeach beginners how to care for seedlings.');
+  assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'Unfinished thought for tomorrow');
+  assert.ok(!(await page.evaluate(() => JSON.stringify(localStorage))).includes('123-45-6789'));
+  await page.getByText('Using 1 recently recorded posts in Trellis.').waitFor();
   aiMode = 'error';
   await page.getByLabel('Your message to Sage').fill('Please refine this');
   await page.getByRole('button', { name: 'Send to Sage' }).click();
@@ -84,6 +104,17 @@ try {
   await page.getByText('Fixture Music', { exact: true }).waitFor();
   assert.equal(await page.getByRole('log').innerText(), '');
   assert.equal(await page.getByLabel('Review your post brief').count(), 0);
+  assert.equal(await page.getByLabel('Post notes').inputValue(), '');
+  await page.getByLabel('Post notes').fill('Music notes stay separate');
+  await page.getByLabel('Your message to Sage').fill('A music idea');
+  await page.getByRole('button', { name: 'Return to garden' }).click();
+  assert.equal(await page.getByRole('log').innerText(), savedConversation);
+  assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'Please refine this');
+  assert.equal(await page.getByLabel('Review your post brief').inputValue(), 'Teach beginners how to care for seedlings.');
+  assert.equal(await page.getByLabel('Post notes').inputValue(), 'Keep my notes.\nTeach beginners how to care for seedlings.');
+  await page.getByRole('button', { name: 'Switch brand' }).click();
+  assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'A music idea');
+  assert.equal(await page.getByLabel('Post notes').inputValue(), 'Music notes stay separate');
   historyMode = 'error';
   await page.reload();
   await page.getByRole('button', { name: 'Retry recent posts' }).waitFor();
@@ -93,6 +124,20 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   if (process.env.STUDIO_SCREENSHOT_DIR) await page.screenshot({ path: process.env.STUDIO_SCREENSHOT_DIR + '/sage-chat-mobile.png', fullPage: true });
+  await page.evaluate(() => localStorage.setItem('trellis_social_idea_v1:garden:messages', '{invalid'));
+  await page.reload();
+  await page.getByText('Your chat could not be saved or restored.', { exact: false }).waitFor();
+  assert.equal(await page.getByRole('log').innerText(), '');
+  await page.evaluate(() => {
+    const write = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith('trellis_social_idea_v1:')) throw new DOMException('Fixture quota exceeded', 'QuotaExceededError');
+      return write.call(this, key, value);
+    };
+  });
+  await page.getByLabel('Your message to Sage').fill('Keep this even if saving fails');
+  assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'Keep this even if saving fails');
+  await page.getByText('Your chat could not be saved or restored.', { exact: false }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('PASS brand context, scoped history, multi-turn chat, sanitization, editable brief handoff, AI failure, branch-switch race, history failure/retry/empty, mobile layout');
+  console.log('PASS chat/brief/notes/unfinished-message restoration after navigation and reload; brand isolation; failed storage; brand context, scoped history, multi-turn chat, sanitization, brief handoff, AI failure, branch-switch race, history retry, mobile');
 } finally { await browser.close(); }

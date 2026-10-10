@@ -3,6 +3,7 @@ import { MessageSquare, Loader2 } from 'lucide-react';
 import { ApiKeyConfig, Branch } from '../types';
 import { getPublishedPosts, PublishedPost } from '../lib/supabaseService';
 import { generateText, sanitizePII } from '../services/aiService';
+import { useSavedSocialIdea } from '../hooks/useSavedSocialIdea';
 
 interface Props {
   brand: Branch;
@@ -12,16 +13,17 @@ interface Props {
 }
 
 // The parent keys this component by brand: history and in-flight responses cannot
-// carry over to another brand. Conversations stay in memory, not localStorage.
+// carry over to another brand. Saved fields restore when returning to this brand.
 const SocialIdeaChat: React.FC<Props> = ({ brand, apiKeys, notes, onUseBrief }) => {
-  const [messages, setMessages] = useState<{ role: 'user' | 'sage'; text: string }[]>([]);
-  const [input, setInput] = useState('');
+  const workspaceBrand = brand.slug || brand.id;
+  const [messages, setMessages, messagesSaveFailed] = useSavedSocialIdea(workspaceBrand, 'messages');
+  const [input, setInput, inputSaveFailed] = useSavedSocialIdea(workspaceBrand, 'input');
   const [posts, setPosts] = useState<PublishedPost[]>([]);
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [brief, setBrief] = useState('');
+  const [brief, setBrief, briefSaveFailed] = useSavedSocialIdea(workspaceBrand, 'brief');
   const alive = useRef(true);
   const request = useRef(0);
   const locked = useRef(false);
@@ -78,7 +80,7 @@ const SocialIdeaChat: React.FC<Props> = ({ brand, apiKeys, notes, onUseBrief }) 
       const reply = sanitizePII(result.text.trim());
       setMessages([...next, { role: 'sage', text: reply }]);
       setInput('');
-      setBrief(makeBrief ? reply : '');
+      if (makeBrief) setBrief(reply);
     } catch {
       if (alive.current && id === request.current) setError('Sage couldn’t respond. Your message is still here; please try again. Check your AI provider in Settings if this continues.');
     } finally {
@@ -90,6 +92,7 @@ const SocialIdeaChat: React.FC<Props> = ({ brand, apiKeys, notes, onUseBrief }) 
   return <section aria-label="Sage idea chat" className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 sm:p-6">
     <h4 className="flex items-center gap-2 text-lg font-bold text-slate-900"><MessageSquare size={20} className="text-emerald-600" />Work through an idea with Sage</h4>
     <p className="text-sm text-slate-600 mt-2">Let’s find the next post for <strong>{brand.name}</strong>. Tell me what’s on your mind, or ask for suggestions.</p>
+    <p role="status" className={`text-xs mt-2 ${messagesSaveFailed || inputSaveFailed || briefSaveFailed ? 'text-rose-700' : 'text-emerald-700'}`}>{messagesSaveFailed || inputSaveFailed || briefSaveFailed ? 'Your chat could not be saved or restored. Keep this page open and copy your work before leaving.' : 'Chat and idea automatically saved for this brand in this browser.'}</p>
     <p role="status" className="text-xs text-slate-500 mt-2">{historyState === 'loading' ? 'Loading recent posts…' : historyState === 'error' ? 'Recent posts are unavailable. Sage can still help using your brand details.' : posts.length ? `Using ${posts.length} recently recorded posts in Trellis.` : 'No published posts recorded in Trellis for this brand yet. Sage will start with your brand details.'}</p>
     {historyState === 'error' && <button type="button" disabled={busy} onClick={() => setReload(value => value + 1)} className="min-h-11 text-sm font-bold text-emerald-700">Retry recent posts</button>}
     {posts.length > 0 && <details className="mt-3 text-xs text-slate-600"><summary className="cursor-pointer font-bold">Posts Sage is using</summary><ul className="mt-2 space-y-2 max-h-40 overflow-auto">{posts.map(post => <li key={post.id} className="border-t border-emerald-100 pt-2"><strong>{post.source} · {new Date(post.published_at || post.created_at).toLocaleDateString()}</strong><p className="whitespace-pre-wrap break-words">{post.caption.slice(0, 240) || '(No caption recorded)'}</p></li>)}</ul><p className="mt-2">Posts published outside Trellis may not appear here. Performance metrics are not included.</p></details>}

@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import SocialIdeaChat from '../components/SocialIdeaChat';
+import { useSavedSocialIdea } from '../hooks/useSavedSocialIdea';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig, NewScheduledPost } from '../types';
 import { Article } from '../src/data/helpContent';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -271,12 +272,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
     return sorted;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportPosts, reportSearch, reportPlatformFilter, reportSortKey, reportSortDir, branches]);
-  const [notesByBranch, setNotesByBranch] = useState<Record<string, string>>({});
-  const baseContent = notesByBranch[selectedBranchSlug] || '';
-  const setBaseContent = (value: React.SetStateAction<string>) => setNotesByBranch(current => ({
-    ...current,
-    [selectedBranchSlug]: typeof value === 'function' ? value(current[selectedBranchSlug] || '') : value,
-  }));
+  const [baseContent, setBaseContent, notesSaveFailed] = useSavedSocialIdea(selectedBranchSlug, 'notes');
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeDrafts, setActiveDrafts] = useState<DraftPost[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<'idle' | 'reviewing'>('idle');
@@ -1397,6 +1393,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
                     <p className="mt-3">A sentence or two is enough. Replace any [bracketed hints] from an idea with your details.</p>
                   </details>
                   <label htmlFor="social-post-notes" className="block text-sm font-bold text-slate-800 mb-2">Your notes</label>
+                  <p role="status" className={`text-xs mb-2 ${notesSaveFailed ? 'text-rose-700' : 'text-emerald-700'}`}>{notesSaveFailed ? 'Your notes could not be saved or restored. Copy them before leaving this page.' : 'Notes automatically saved for this brand in this browser.'}</p>
                   <textarea id="social-post-notes" aria-describedby="social-notes-help" className="w-full bg-slate-50 border border-slate-200 p-5 sm:p-6 text-base sm:text-lg font-medium outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all min-h-[160px]" placeholder="What’s happening, who is it for, and what should they do next?" value={baseContent} onChange={(e) => setBaseContent(e.target.value)} />
                   <p id="social-notes-help" className="text-xs text-slate-500 mt-2 mb-5">No finished caption needed. Add any dates, links, or facts Sage should use.</p>
                   <div className="flex flex-wrap items-center gap-3 mb-8 text-sm">

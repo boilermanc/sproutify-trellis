@@ -2823,6 +2823,13 @@ export interface ProspectingListFilters {
   limit?: number;
 }
 
+export interface SocialIdeaWorkspace {
+  messages: { role: 'user' | 'sage'; text: string }[];
+  input: string;
+  brief: string;
+  notes: string;
+}
+
 export interface ProspectingExportOptions {
   prospectIds?: string[];
   territoryId?: string;

@@ -59,6 +59,16 @@ try {
  if (process.env.STUDIO_SCREENSHOT_DIR) await page.screenshot({ path: process.env.STUDIO_SCREENSHOT_DIR + '/social-hub-mobile.png', fullPage: true });
  await page.setViewportSize({ width: 1280, height: 900 });
  if (process.env.STUDIO_SCREENSHOT_DIR) await page.screenshot({ path: process.env.STUDIO_SCREENSHOT_DIR + '/social-hub-desktop.png', fullPage: true });
+ const savedNotes = await notes.inputValue();
+ await page.getByLabel('Your message to Sage').fill('An idea to finish later');
+ await page.getByRole('button', { name: 'Social inbox', exact: true }).click();
+ await page.getByRole('button', { name: 'Create a post', exact: true }).click();
+ assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'An idea to finish later');
+ assert.equal(await notes.inputValue(), savedNotes);
+ await page.reload();
+ await page.getByRole('heading', { name: '1. What would you like to share?', exact: true }).waitFor();
+ assert.equal(await page.getByRole('textbox', { name: 'Your notes', exact: true }).inputValue(), savedNotes);
+ assert.equal(await page.getByLabel('Your message to Sage').inputValue(), 'An idea to finish later');
  assert.equal(await page.getByRole('heading', { name: 'Intent Watcher' }).count(), 0);
  assert.equal(await page.getByPlaceholder('Optional: tell Sage what this creative is about so it can write better metadata').isVisible(), false);
  await page.getByText('Use an image or video you already have', { exact: true }).click();
