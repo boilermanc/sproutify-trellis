@@ -44,6 +44,7 @@ const NAV_GROUPS = [
     id: 'audience', label: 'Audience', defaultOpen: true, items: [
       { id: 'profiles', label: 'Profiles', icon: Users },
       { id: 'leads', label: 'Leads', icon: UserPlus },
+      { id: 'sweetwater-leads', label: 'Sweetwater Leads', icon: Mail },
       { id: 'prospecting', label: 'SpectIQ Prospecting', icon: SearchCheck },
       { id: 'segments', label: 'Segments', icon: Layers },
       { id: 'intelligence', label: 'Intelligence', icon: BarChart3 },

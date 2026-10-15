@@ -6,6 +6,7 @@ import { CONTENT_STUDIO_VIEWS } from './services/contentStudioViews';
 import Dashboard from './pages/Dashboard';
 import Profiles from './pages/Profiles';
 import Leads from './pages/Leads';
+import SweetwaterLeads from './pages/SweetwaterLeads';
 import Prospecting from './pages/Prospecting';
 import EmailPreviewer from './pages/EmailPreviewer';
 import DevTools from './pages/DevTools';
@@ -71,7 +72,7 @@ type AuthView = 'login' | 'reset-password';
 const AppContent: React.FC = () => {
   const { user, loading, isPasswordRecovery, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
-  const [activeView, setActiveViewState] = useState<ViewState>('dashboard');
+  const [activeView, setActiveViewState] = useState<ViewState>(() => new URLSearchParams(window.location.search).get('view') === 'sweetwater-leads' ? 'sweetwater-leads' : 'dashboard');
   const [campaignDraftId, setCampaignDraftId] = useState<string | null>(null);
   const [focusedCampaignId, setFocusedCampaignId] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team' | undefined>(undefined);
@@ -84,6 +85,8 @@ const AppContent: React.FC = () => {
   const [activeBranchSlugs, setActiveBranchSlugs] = useState<string[]>([]);
   const [studioScope, setStudioScope] = useState<{ view: ViewState; slug: string }>({ view: 'dashboard', slug: '' });
   const studioDirty = useRef(false);
+  const inquiryDirty = useRef(false);
+  const onInquiryDirtyChange = useCallback((dirty: boolean) => { inquiryDirty.current = dirty; }, []);
   const studioView = CONTENT_STUDIO_VIEWS[activeView];
   const selectedStudioBranchSlug = studioScope.view === activeView
     && allBranches.some(branch => branch.slug === studioScope.slug)
@@ -96,6 +99,8 @@ const AppContent: React.FC = () => {
 
   const setActiveView = (view: ViewState) => {
     if (view === activeView) return;
+    if (inquiryDirty.current && !window.confirm('Discard unsaved follow-up changes?')) return;
+    inquiryDirty.current = false;
     if (studioView && studioDirty.current && !window.confirm('Leave this workspace? Save your draft first if you want to keep it.')) return;
     studioDirty.current = false;
     setActiveViewState(view);
@@ -544,6 +549,7 @@ const AppContent: React.FC = () => {
       case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} onOpenCampaignDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'leads': return <Leads branchContext={branchContext} addToast={addToast} />;
+      case 'sweetwater-leads': return <SweetwaterLeads onDirtyChange={onInquiryDirtyChange} />;
       case 'prospecting': return <Prospecting addToast={addToast} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setCampaignDraftId(null); setActiveView('campaign-builder'); }} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
