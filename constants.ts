@@ -1,6 +1,7 @@
 
 import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
 import SWEETWATER_INQUIRY_SQL_SCHEMA from './supabase/migrations/20261015182234_sweetwater_inquiry_capture.sql?raw';
+import SWEETWATER_CONTACT_SQL_SCHEMA from './supabase/migrations/20261015190330_sweetwater_website_contact.sql?raw';
 import PROMO_STUDIO_SQL_SCHEMA from './supabase/migrations/20260825162352_add_promo_studio_foundation.sql?raw';
 import PROMO_BRANCH_SOURCES_SQL_SCHEMA from './supabase/migrations/20260825175823_add_promo_branch_sources.sql?raw';
 import PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA from './supabase/migrations/20260825191617_add_promo_claim_approval_gate.sql?raw';
@@ -3006,6 +3007,7 @@ ${DASHBOARD_ACTION_STATES_SQL_SCHEMA}
 ${KEYWORD_EXPLORER_SQL_SCHEMA}
 ${OPPORTUNITY_BRIEF_SQL_SCHEMA}
 ${SWEETWATER_INQUIRY_SQL_SCHEMA}
+${SWEETWATER_CONTACT_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

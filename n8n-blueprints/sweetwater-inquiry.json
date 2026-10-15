@@ -1,0 +1,122 @@
+{
+  "name": "Sweetwater Inquiry Capture",
+  "active": false,
+  "nodes": [
+    {
+      "id": "sweetwater-inquiry-webhook",
+      "name": "Sweetwater Inquiry Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sweetwater-inquiry",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "e53f29b8-49ab-48b8-a5eb-6200f6dfe522"
+    },
+    {
+      "id": "validate-inquiry",
+      "name": "Validate Inquiry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nif (!body || typeof body !== 'object' || Array.isArray(body) || JSON.stringify(body).length > 100000) throw new Error('Invalid inquiry');\nif (!['intro_contact_request','interest_registration'].includes(body.event)) throw new Error('Invalid event');\nif (!['ai-help','app-idea','greenhouse-interest','legacy-card'].includes(body.intent)) throw new Error('Invalid intent');\nif (body.website) throw new Error('Invalid inquiry');\nconst scrub = value => String(value).replace(/\\b\\d{3}-\\d{2}-\\d{4}\\b/g,'[redacted]').replace(/\\b(?:\\d[ -]*?){13,19}\\b/g,'[redacted]').replace(/\\b(?:sk-|sb_secret_)[a-zA-Z0-9_-]{16,}\\b/g,'[redacted]');\nconst context = {};\nfor (const [key,value] of Object.entries(body.context || {})) {\n  if (!['business','task','result','idea','audience','problem','firstVersion','summary'].includes(key) || typeof value !== 'string' || value.length>1000) throw new Error('Invalid context');\n  context[key] = scrub(value);\n}\nif (body.messages && (!Array.isArray(body.messages) || body.messages.length>60)) throw new Error('Invalid conversation');\nconst messages=(body.messages || []).map(turn=>{\n  if (!turn || !['user','assistant'].includes(turn.role) || typeof turn.content!=='string' || turn.content.length>4000) throw new Error('Invalid conversation');\n  return {role:turn.role,content:scrub(turn.content)};\n});\nreturn [{json:{p_payload:{requestId:body.requestId,event:body.event,intent:body.intent,source:body.source || 'direct',contactMethod:body.contactMethod,contact:{name:body.contact?.name,email:body.contact?.email || null,phone:body.contact?.phone || null},context,messages,business:typeof body.business==='string'?scrub(body.business):undefined,task:typeof body.task==='string'?scrub(body.task):undefined,consent:body.consent,testMode:body.testMode===true}}}];\n"
+      }
+    },
+    {
+      "id": "save-inquiry",
+      "name": "Save Inquiry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/capture_sweetwater_inquiry",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "id": "confirm-saved-inquiry",
+      "name": "Confirm Saved Inquiry",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {accepted:$json.accepted === true,requestId:$json.requestId} }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Sweetwater Inquiry Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Save Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Confirm Saved Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "tags": []
+}
