@@ -21,6 +21,27 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xhH6r_RnjW_UmSuqCUI_OQ
 
 ## Content intelligence workflow
 
+### Edit existing footage in Clip Studio
+
+Select a branch, open Clip Studio, and choose **Edit a video**. Import a local MP4,
+M4V, MOV or WebM (up to 250 MB; the browser must support its codecs). Set a start
+and end time, preview that range, optionally add a headline, and choose whether
+to keep the original audio. Export MP4, review the resulting video, and download
+it plus the separate post caption for manual upload.
+
+This local editor preserves the source framing, limits edits to three minutes,
+and exports in real time. Keep its tab visible during export. MP4 encoding must
+be supported by the browser; unsupported browsers show an explanation rather
+than downloading a mislabeled WebM. The source is unchanged. Files, edits and
+exports are session-only and are not saved in the cloud clip library. Leaving
+the editor or changing branch clears them. No publishing or scheduling occurs.
+
+Validation: `node --test tests/local-video-edit.test.mjs`, `npx tsc --noEmit`,
+and `npm run build`. With Vite running, the isolated editor is available at
+`/tests/fixtures/clip-video-editor.html` for real-file import/export checks without
+database or AI calls. Test trim boundaries, sound, cancel, unsupported codecs,
+invalid ranges, and the exported MP4 itself before release.
+
 ### Social Hub idea chat
 
 Select a brand and open Social Hub → Create a post. Use **Suggest what to post next** or message Sage with an idea. Sage uses that brand’s description, tone, keywords, default call to action, and up to 12 recent publishing records from Trellis. Expand **Posts Sage is using** to inspect the context. Native-platform posts not recorded in Trellis and engagement metrics are not included; failed or empty history is explicitly labeled.

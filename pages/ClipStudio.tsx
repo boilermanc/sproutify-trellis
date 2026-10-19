@@ -21,6 +21,7 @@ import {
   generateClipMusic, pollClipMusic, clearClipMusic,
 } from '../services/clipService';
 import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
+import ClipVideoEditor from '../components/ClipVideoEditor';
 
 interface Props {
   selectedBranchSlug: string;
@@ -71,7 +72,7 @@ const TRIAGE_META: Record<ClipTriage, { label: string; cls: string }> = {
 };
 
 const ClipStudio: React.FC<Props> = ({ selectedBranchSlug, branches, branchSocialAccounts, addToast, userId, geminiApiKey }) => {
-  const [mode, setMode] = useState<'library' | 'create' | 'project'>('library');
+  const [mode, setMode] = useState<'library' | 'create' | 'project' | 'video'>('library');
   const [projects, setProjects] = useState<ClipProject[]>([]);
   const [selected, setSelected] = useState<ClipProject | null>(null);
   const [sources, setSources] = useState<ClipSource[]>([]);
@@ -318,6 +319,8 @@ const ClipStudio: React.FC<Props> = ({ selectedBranchSlug, branches, branchSocia
       </div>
     </div>
   );
+
+  if (mode === 'video') return <div key={selectedBranchSlug}><ClipVideoEditor branchName={branches.find(b => b.slug === selectedBranchSlug)?.name || selectedBranchSlug} onBack={() => setMode('library')} addToast={addToast}/></div>;
 
   if (mode === 'create') {
     return (
@@ -1020,6 +1023,7 @@ const ClipStudio: React.FC<Props> = ({ selectedBranchSlug, branches, branchSocia
                 className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition ${(id === 'archive') === showArchived ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'}`}>{label}</button>
             ))}
           </div>
+          <button type="button" onClick={() => setMode('video')} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-2"><Video size={14}/> Edit a video</button>
           <button type="button" onClick={() => setMode('create')}
             className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 hover:bg-emerald-700 transition">
             <Plus size={14} /> Create a Short
