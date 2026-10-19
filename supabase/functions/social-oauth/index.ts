@@ -198,6 +198,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformOAuthConfig> = {
     tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
     defaultScopes: [
       "user.info.basic",
+      "video.list",
       "video.publish",
       "video.upload",
     ],
@@ -819,7 +820,8 @@ async function fetchPlatformMetadata(
       const openId = tokenData?.open_id ?? null;
       try {
         const meRes = await fetch(
-          "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name,avatar_url,username",
+          // Keep this lookup within the user.info.basic grant (username needs user.info.profile).
+          "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name,avatar_url",
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
         const meData = await meRes.json();

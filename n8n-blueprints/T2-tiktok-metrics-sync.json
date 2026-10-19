@@ -1,0 +1,16 @@
+{
+  "name": "Trellis: TikTok Read-Only Metrics",
+  "active": false,
+  "nodes": [
+    { "id": "schedule", "name": "Every Six Hours", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0], "parameters": { "rule": { "interval": [{ "field": "hours", "hoursInterval": 6 }] } } },
+    { "id": "manual", "name": "Manual Read Test", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 200], "parameters": {} },
+    { "id": "sync", "name": "Read TikTok Metrics", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [260, 0], "parameters": { "method": "POST", "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/tiktok-metrics", "authentication": "predefinedCredentialType", "nodeCredentialType": "supabaseApi", "sendBody": true, "specifyBody": "json", "jsonBody": "{\"action\":\"sync_all\"}", "options": { "timeout": 300000 } }, "credentials": { "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" } }, "notes": "Server credential only. Calls the fixed read-only metrics function; never routes to a publishing webhook." },
+    { "id": "check", "name": "Check Branch Results", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [520, 0], "parameters": { "jsCode": "const result = $input.first().json; if (result.success !== true) throw new Error('TikTok metrics sync incomplete. Check branch connections and video.list permission.'); return [{json: result}];" } }
+  ],
+  "connections": {
+    "Every Six Hours": { "main": [[{ "node": "Read TikTok Metrics", "type": "main", "index": 0 }]] },
+    "Manual Read Test": { "main": [[{ "node": "Read TikTok Metrics", "type": "main", "index": 0 }]] },
+    "Read TikTok Metrics": { "main": [[{ "node": "Check Branch Results", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveExecutionProgress": false, "saveManualExecutions": false }
+}

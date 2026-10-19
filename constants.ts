@@ -1,5 +1,6 @@
 
 import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
+import TIKTOK_METRICS_SQL_SCHEMA from './supabase/migrations/20261019175229_tiktok_readonly_metrics.sql?raw';
 import SWEETWATER_INQUIRY_SQL_SCHEMA from './supabase/migrations/20261015182234_sweetwater_inquiry_capture.sql?raw';
 import SWEETWATER_CONTACT_SQL_SCHEMA from './supabase/migrations/20261015190330_sweetwater_website_contact.sql?raw';
 import PROMO_STUDIO_SQL_SCHEMA from './supabase/migrations/20260825162352_add_promo_studio_foundation.sql?raw';
@@ -3008,6 +3009,7 @@ ${KEYWORD_EXPLORER_SQL_SCHEMA}
 ${OPPORTUNITY_BRIEF_SQL_SCHEMA}
 ${SWEETWATER_INQUIRY_SQL_SCHEMA}
 ${SWEETWATER_CONTACT_SQL_SCHEMA}
+${TIKTOK_METRICS_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

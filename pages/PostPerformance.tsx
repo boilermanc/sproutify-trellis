@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import TikTokMetricsPanel from '../components/TikTokMetricsPanel';
 import {
   Award, RefreshCw, Loader2, Sparkles, ImageOff, ArrowUpDown, Info, Bookmark, Share2, Eye,
   Check, ChevronDown,
@@ -355,6 +356,7 @@ Keep it under 300 words.`;
 
   return (
     <div className="p-6 lg:p-10 space-y-6">
+      <div key={selectedBranchSlug}><TikTokMetricsPanel branchId={branchContext?.allBranches.find(b => b.slug === selectedBranchSlug)?.id || ''} branchName={branchContext?.allBranches.find(b => b.slug === selectedBranchSlug)?.name || ''} addToast={addToast} /></div>
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
