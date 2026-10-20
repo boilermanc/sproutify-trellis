@@ -359,16 +359,16 @@ const getXSteps = (supabaseUrl: string): WizardStep[] => [
           <ExtLink href="https://developer.x.com/en/portal/dashboard">Open X Developer Portal</ExtLink>
         </div>
         <Step n={2}>
-          If prompted, apply for <strong>Free</strong> or <strong>Basic</strong> access.
-          For Trellis, <strong>Basic ($100/mo)</strong> is recommended for publishing capabilities.
-          Free tier is read-only.
+          X uses pay-per-use API credits. Check the current pricing and set a spending
+          limit in the Developer Console before enabling collection.
         </Step>
         <Step n={3}>
           Describe your use case when asked. Mention it's for <strong>"Automated social media management and content scheduling for a marketing platform."</strong>
         </Step>
         <Callout type="warning">
-          X's approval process can take a few hours to a few days depending on the tier.
-          Free tier is usually instant. Basic/Pro tiers may require manual review.
+          For the shared @boilermanc tracking account, use <strong>Social Hub → X tracking</strong>.
+          That connection covers every project and has its own callback and read permissions.
+          This older branch wizard is separate from shared tracking.
         </Callout>
       </div>
     ),

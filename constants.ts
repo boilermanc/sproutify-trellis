@@ -1,3 +1,4 @@
+import SHARED_X_SQL_SCHEMA from './supabase/migrations/20261020140327_shared_x_tracking.sql?raw';
 
 import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
 import TIKTOK_METRICS_SQL_SCHEMA from './supabase/migrations/20261019175229_tiktok_readonly_metrics.sql?raw';
@@ -3010,6 +3011,7 @@ ${OPPORTUNITY_BRIEF_SQL_SCHEMA}
 ${SWEETWATER_INQUIRY_SQL_SCHEMA}
 ${SWEETWATER_CONTACT_SQL_SCHEMA}
 ${TIKTOK_METRICS_SQL_SCHEMA}
+${SHARED_X_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

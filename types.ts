@@ -71,6 +71,32 @@ export interface BranchContext {
   isAllSelected: boolean;
 }
 
+export interface XTrackedPost {
+  id: string;
+  post_id: string;
+  is_own: boolean;
+  is_mention: boolean;
+  text: string;
+  published_at: string;
+  project_tags: string[];
+  mention_status: 'new' | 'done';
+  metrics: Record<string, number | null>;
+  last_synced_at: string;
+  last_error: string | null;
+}
+export interface XDailySnapshot {
+  snapshot_date: string;
+  captured_at: string;
+  metrics: Record<string, number | null>;
+}
+export interface XTrackingResult {
+  account: { handle: string; connected: boolean; connected_at: string | null; last_synced_at: string | null; last_error: string | null };
+  posts: XTrackedPost[];
+  projects: { id: string; name: string }[];
+  total: number;
+  page: number;
+}
+
 export interface Integration {
   id: string;
   name: string;

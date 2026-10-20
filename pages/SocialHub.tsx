@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import SocialIdeaChat from '../components/SocialIdeaChat';
+import XTrackingPanel from '../components/XTrackingPanel';
 import { useSavedSocialIdea } from '../hooks/useSavedSocialIdea';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig, NewScheduledPost } from '../types';
 import { Article } from '../src/data/helpContent';
@@ -188,7 +189,7 @@ const generateWithFallback = async <T,>(
 };
 
 const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, setEvents, branchContext, branches, branchSocialAccounts, socialSignals: allSocialSignals, setSocialSignals, tickets, setTickets, scheduledPosts, setScheduledPosts, deployedCampaigns, addToast, apiKeys, onOpenArticle, onNavigate }) => {
-  const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline' | 'reports'>('lab');
+  const [activeTab, setActiveTab] = useState<'lab' | 'queue' | 'pipeline' | 'reports' | 'x'>('lab');
 
   // ─── Reports tab: published posts from marketing_events ─────────────
   const [reportPosts, setReportPosts] = useState<PublishedPost[]>([]);
@@ -1346,7 +1347,9 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
         <button onClick={() => setActiveTab('reports')} className={`flex min-h-11 items-center shrink-0 space-x-2 sm:space-x-3 px-5 sm:px-8 py-3 text-xs font-bold transition-all border-b-2 ${activeTab === 'reports' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}><BarChart3 size={18} /><span>Reports</span></button>
       </div>
 
-      <div className={`grid grid-cols-1 gap-8 ${activeTab !== 'lab' ? 'lg:grid-cols-3' : ''}`}>
+      <button onClick={() => setActiveTab('x')} aria-pressed={activeTab === 'x'} className={`min-h-11 px-5 py-3 text-sm font-bold border rounded-xl ${activeTab === 'x' ? 'bg-emerald-50 border-emerald-600 text-emerald-800' : 'bg-white border-slate-200'}`}>X tracking · @boilermanc</button>
+      {activeTab === 'x' && <XTrackingPanel addToast={addToast}/>}
+      <div className={`${activeTab === 'x' ? 'hidden' : 'grid'} grid-cols-1 gap-8 ${activeTab !== 'lab' ? 'lg:grid-cols-3' : ''}`}>
         <div className="lg:col-span-2 min-h-[700px]">
           {/* ═══════════════ LAB TAB ═══════════════ */}
           {activeTab === 'lab' && (
@@ -2375,7 +2378,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
         </div>
 
         {/* Sidebar */}
-        {activeTab !== 'lab' && <div className="space-y-8">
+        {activeTab !== 'lab' && activeTab !== 'x' && <div className="space-y-8">
           {/* Intent Watcher */}
           <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center mb-10"><Target size={22} className="mr-4 text-pink-500" />Intent Watcher</h3>

@@ -860,18 +860,18 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
               </div>
 
-              {/* X / Twitter Placeholder */}
-              <div className="border border-slate-200 p-6 flex items-center justify-between opacity-50">
+              {/* Shared X tracking is managed independently of branch credentials. */}
+              <div className="border border-slate-200 p-6 flex flex-wrap gap-3 items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center">
                     <span className="text-white font-black text-lg">&#120143;</span>
                   </div>
                   <div>
-                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">X / Twitter</h4>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Twitter API v2</p>
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">X · @boilermanc</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Manage posts, mentions and project tags in Social Hub → X tracking.</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-full">Coming Soon</span>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-full">Shared account</span>
               </div>
 
               {/* LinkedIn Placeholder */}

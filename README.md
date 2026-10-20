@@ -21,6 +21,13 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xhH6r_RnjW_UmSuqCUI_OQ
 
 ## Content intelligence workflow
 
+### Shared X tracking
+
+Open **Social Hub → X tracking · @boilermanc** for shared posts, mentions,
+daily public metrics, and multiple project tags. This account spans all projects
+and is available to owners/admins. See the [shared X tracking guide](docs/SHARED_X_TRACKING.md)
+for the migration, OAuth setup, inactive n8n schedule, limits, and local verification.
+
 ### Edit existing footage in Clip Studio
 
 Select a branch, open Clip Studio, and choose **Edit a video**. Import a local MP4,
