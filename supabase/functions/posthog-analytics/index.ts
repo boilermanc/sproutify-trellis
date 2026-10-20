@@ -150,10 +150,14 @@ Deno.serve(async (req: Request) => {
     if (lifecycle.coverage?.paid) {
       // Find first payment over ALL tracked history before applying the report
       // window. A renewal in this window must not turn an older payer into new.
+      // Home never exports receipts before tracking began. A timestamp predicate
+      // lets PostHog prune older partitions without discarding earlier renewals.
+      const trackingStartSeconds = Math.floor(Date.parse(homeTrackingStart!) / 1000);
       const paidResult = await runPosthogQuery(connection.host_url, connection.project_id, apiKey,
         `SELECT count() AS paid FROM (
            SELECT distinct_id, min(timestamp) AS first_paid_at FROM events
-           WHERE event IN (${sqlList(PAID_EVENTS)}) AND properties.event_source = 'verified_server'
+           WHERE timestamp >= toDateTime(${trackingStartSeconds})
+             AND event IN (${sqlList(PAID_EVENTS)}) AND properties.event_source = 'verified_server'
            GROUP BY distinct_id
          ) WHERE first_paid_at >= now() - INTERVAL ${windowDays} DAY`,
         "Trellis first verified Home payments");
