@@ -187,6 +187,8 @@ export interface PostHogConnection {
 }
 
 export interface PostHogAnalyticsSummary {
+  coverage?: { signup: boolean; paid: boolean; ordered_funnel: boolean; note: string; started_at?: string; activity_split?: boolean };
+  paid_conversions?: number | null;
   window_days: 7 | 30 | 90;
   active_users: { daily: number; weekly: number; monthly: number };
   sessions: number;

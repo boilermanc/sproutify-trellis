@@ -30,6 +30,24 @@ const report = (connection, days = 30) => ({
   },
 });
 
+test('missing signup instrumentation is reported as unavailable rather than zero', async () => {
+  const h = harness({
+    fetch: (connection, days) => {
+      const result = report(connection, days);
+      result.data.lifecycle_funnel.signed_up = 0;
+      result.data.coverage = {
+        signup: false, paid: false, ordered_funnel: false,
+        note: 'Verified payment events are not instrumented.',
+      };
+      return result;
+    },
+  });
+  const answer = await h.ask('Show Rekkrd product analytics');
+  assert.match(answer.text, /Signed up unavailable/);
+  assert.match(answer.text, /Verified payment events are not instrumented/);
+  assert.doesNotMatch(answer.text, /Signed up 0/);
+});
+
 function harness({ list = connections, fetch = report, options = {} } = {}) {
   const calls = [];
   let lists = 0;

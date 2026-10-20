@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
 
   const qualifiedEventId = qualifyPosthogEventId(connection.project_id, body.event_id || body.uuid);
   if (!qualifiedEventId) return json({ error: "A valid PostHog event UUID is required" }, 400);
-  const canonicalType = canonicalEventType(eventName);
+  const canonicalType = canonicalEventType(eventName, connection.branches?.slug);
   const branchUserId = String(body.branch_user_id || body.distinct_id || "").trim().slice(0, 200) || null;
   const sourceSite = connection.branches?.slug || String(connection.branch_id);
   // Rejoice deliberately has no email-based PostHog/Trellis identity path.

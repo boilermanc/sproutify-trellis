@@ -57,7 +57,9 @@ function formatReport(connection, result, windowDays, topic) {
   }
   if (topic === 'summary' || topic === 'lifecycle') {
     const lifecycle = data.lifecycle_funnel;
-    lines.push(`Lifecycle event users (${windowDays} days): ${lifecycle?.labels?.signed_up || 'Signed up'} ${count(lifecycle?.signed_up)}; ${lifecycle?.labels?.onboarded || 'Onboarded'} ${count(lifecycle?.onboarded)}; ${lifecycle?.labels?.activated || 'Activated'} ${count(lifecycle?.activated)}.`);
+    lines.push(`Lifecycle event users (${windowDays} days): ${lifecycle?.labels?.signed_up || 'Signed up'} ${data.coverage?.signup === false ? 'unavailable' : count(lifecycle?.signed_up)}; ${lifecycle?.labels?.onboarded || 'Onboarded'} ${count(lifecycle?.onboarded)}; ${lifecycle?.labels?.activated || 'Activated'} ${count(lifecycle?.activated)}.`);
+    if (data.coverage?.note) lines.push(data.coverage.note);
+    if (data.coverage) lines.push(`First paid conversions (tracked new accounts): ${data.coverage.paid && data.paid_conversions != null ? count(data.paid_conversions) : 'unavailable'}.`);
     if (connection.branch_slug === 'rekkrd') lines.push('Rekkrd does not yet emit a separate onboarding-completion event; that stage cannot establish onboarding success or failure.');
   }
   if (topic === 'summary' || topic === 'retention') {

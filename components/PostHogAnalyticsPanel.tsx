@@ -7,9 +7,11 @@ interface Props {
   branches: BranchInfo[];
   branchContext?: BranchContext;
   onDataChange?: (results: PostHogAnalyticsResult[]) => void;
+  loadConnections?: typeof fetchPosthogConnections;
+  loadAnalytics?: typeof fetchPosthogAnalytics;
 }
 
-const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDataChange }) => {
+const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDataChange, loadConnections = fetchPosthogConnections, loadAnalytics = fetchPosthogAnalytics }) => {
   const [connections, setConnections] = useState<PostHogConnection[]>([]);
   const [results, setResults] = useState<PostHogAnalyticsResult[]>([]);
   const [windowDays, setWindowDays] = useState<7 | 30 | 90>(30);
@@ -17,7 +19,7 @@ const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDat
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPosthogConnections().then(setConnections).catch(err => setError(err instanceof Error ? err.message : 'Could not load PostHog connections'));
+    loadConnections().then(setConnections).catch(err => setError(err instanceof Error ? err.message : 'Could not load PostHog connections'));
   }, []);
 
   const scopedConnections = useMemo(() => {
@@ -36,7 +38,7 @@ const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDat
     }
     setLoading(true);
     setError(null);
-    const settled = await Promise.allSettled(scopedConnections.map(connection => fetchPosthogAnalytics(connection.id, windowDays, force)));
+    const settled = await Promise.allSettled(scopedConnections.map(connection => loadAnalytics(connection.id, windowDays, force)));
     const loaded = settled.filter((item): item is PromiseFulfilledResult<PostHogAnalyticsResult> => item.status === 'fulfilled').map(item => item.value);
     const failures = settled.filter((item): item is PromiseRejectedResult => item.status === 'rejected');
     setResults(loaded);
@@ -83,9 +85,9 @@ const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDat
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {[
               ['DAU (branch sum)', totals.dau, Activity], ['WAU (branch sum)', totals.wau, Users], ['MAU (branch sum)', totals.mau, Users],
-              [`Sessions ${windowDays}D`, totals.sessions, Clock3], ['New users', totals.newUsers, Route], ['Returning', totals.returning, Repeat2],
+              [`Sessions ${windowDays}D`, totals.sessions, Clock3], ['New users', results.some(r => r.data.coverage?.signup === false || r.data.coverage?.activity_split === false) ? 'Unavailable' : totals.newUsers, Route], ['Returning', results.some(r => r.data.coverage?.signup === false || r.data.coverage?.activity_split === false) ? 'Unavailable' : totals.returning, Repeat2],
             ].map(([label, value, Icon]) => (
-              <div key={String(label)} className="rounded-2xl bg-slate-50 p-4"><Icon size={14} className="mb-2 text-violet-500" /><p className="text-xl font-black text-slate-800">{Number(value).toLocaleString()}</p><p className="mt-1 text-[8px] font-black uppercase tracking-widest text-slate-400">{String(label)}</p></div>
+              <div key={String(label)} className="rounded-2xl bg-slate-50 p-4"><Icon size={14} className="mb-2 text-violet-500" /><p className="text-xl font-black text-slate-800">{typeof value === 'number' ? value.toLocaleString() : String(value)}</p><p className="mt-1 text-[8px] font-black uppercase tracking-widest text-slate-400">{String(label)}</p></div>
             ))}
           </div>
 
@@ -100,14 +102,16 @@ const PostHogAnalyticsPanel: React.FC<Props> = ({ branches, branchContext, onDat
                     <div><p className="font-black text-slate-800">{result.branch_name || result.branch_id}</p><p className="mt-1 text-[9px] text-slate-400">Fetched {new Date(result.fetched_at).toLocaleString()} · {result.cached ? 'hourly cache' : 'live query'}</p></div>
                     {result.stale && <span className="rounded-full bg-amber-100 px-2 py-1 text-[8px] font-black uppercase text-amber-700">Stale fallback</span>}
                   </div>
+                  {data.coverage?.note && <p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{data.coverage.note}</p>}
+                  {data.coverage && <div className="rounded-xl bg-emerald-50 p-3"><p className="text-lg font-black text-emerald-800">{data.coverage.paid ? data.paid_conversions ?? '—' : '—'}</p><p className="text-xs text-emerald-700">First paid conversions · tracked new accounts</p></div>}
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.signed_up}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.signed_up || 'Signed up'}</p></div>
+                    <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.coverage?.signup === false ? '—' : data.lifecycle_funnel.signed_up}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.signed_up || 'Signed up'}</p></div>
                     <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.onboarded}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.onboarded || 'Onboarded'}</p></div>
                     <div className="rounded-xl bg-violet-50 p-3 text-center"><p className="text-lg font-black text-violet-800">{data.lifecycle_funnel.activated}</p><p className="text-[8px] font-black uppercase text-violet-500">{data.lifecycle_funnel.labels?.activated || 'Activated'}</p></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{data.lifecycle_funnel.conversion_labels?.signup_to_onboarding || 'Signup → onboarding'}</p><p className="mt-1 text-lg font-black text-slate-800">{data.lifecycle_funnel.signup_to_onboarding_pct.toFixed(1)}%</p></div>
-                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{data.lifecycle_funnel.conversion_labels?.onboarding_to_activation || 'Onboarding → activation'}</p><p className="mt-1 text-lg font-black text-slate-800">{data.lifecycle_funnel.onboarding_to_activation_pct.toFixed(1)}%</p></div>
+                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{data.lifecycle_funnel.conversion_labels?.signup_to_onboarding || 'Signup → onboarding'}</p><p className="mt-1 text-lg font-black text-slate-800">{data.coverage?.ordered_funnel === false ? '—' : `${data.lifecycle_funnel.signup_to_onboarding_pct.toFixed(1)}%`}</p></div>
+                    <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{data.lifecycle_funnel.conversion_labels?.onboarding_to_activation || 'Onboarding → activation'}</p><p className="mt-1 text-lg font-black text-slate-800">{data.coverage?.ordered_funnel === false ? '—' : `${data.lifecycle_funnel.onboarding_to_activation_pct.toFixed(1)}%`}</p></div>
                     <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">7-day retention</p><p className="mt-1 text-lg font-black text-emerald-700">{data.retention.day_7_pct.toFixed(1)}%</p></div>
                     <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">30-day retention</p><p className="mt-1 text-lg font-black text-emerald-700">{data.retention.day_30_pct.toFixed(1)}%</p></div>
                   </div>

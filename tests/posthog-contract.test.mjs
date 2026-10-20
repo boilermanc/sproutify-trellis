@@ -21,6 +21,39 @@ test('maps lifecycle events and normalizes custom milestones', () => {
   assert.equal(canonicalEventType('lesson_completed'), 'product_feature_milestone');
 });
 
+test('Home uses shipped event names without inventing signup or paid evidence', () => {
+  const home = posthogLifecycleForBranch('sproutify-home');
+  assert.deepEqual(home.signup_events, ['home signup confirmed']);
+  assert.deepEqual(home.onboarding_events, ['onboarding completed']);
+  assert.deepEqual(home.activation_events, ['tower added']);
+  assert.equal(home.coverage.signup, false);
+  assert.equal(home.coverage.paid, false);
+  assert.equal(home.coverage.ordered_funnel, false);
+  assert.equal(canonicalEventType('onboarding completed', 'sproutify-home'), 'product_onboarding_completed');
+  assert.equal(canonicalEventType('tower added', 'sproutify-home'), 'product_activated');
+  assert.equal(canonicalEventType('tower added', 'rekkrd'), 'product_feature_milestone');
+  const defaults = getPosthogBranchDefaults('sproutify-home');
+  assert.ok(defaults.allowed_events.includes('community post shared'));
+  assert.ok(!defaults.allowed_events.includes('$identify'));
+  assert.ok(!defaults.allowed_events.includes('purchase_started'));
+  assert.deepEqual(sanitizePosthogProperties({
+    app_platform: 'web', port_count: 24, email: 'private@example.com',
+    caption: 'private', url: 'https://example.com/private',
+  }, defaults.allowed_properties), { app_platform: 'web', port_count: 24 });
+});
+
+test('Home counts become available only with verified export coverage', () => {
+  const start = '2026-10-20T13:00:00Z';
+  const home = posthogLifecycleForBranch('sproutify-home', start);
+  assert.equal(home.coverage.signup, true);
+  assert.equal(home.coverage.paid, true);
+  assert.equal(home.coverage.started_at, start);
+  assert.equal(home.coverage.ordered_funnel, false);
+  assert.deepEqual(home.paid_events, ['home payment confirmed']);
+  assert.equal(posthogLifecycleForBranch('sproutify-home', 'invalid').coverage.paid, false);
+  assert.equal(canonicalEventType('home signup confirmed', 'sproutify-home'), 'product_signup');
+});
+
 test('Rekkrd signup and first record count as lifecycle events in reports and ingestion', () => {
   assert.equal(canonicalEventType('signup_completed'), 'product_signup');
   assert.ok(posthogEventsForType('product_signup').includes('signup_completed'));

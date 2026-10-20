@@ -33,6 +33,17 @@ export const DEFAULT_POSTHOG_PROPERTIES = [
 ];
 
 export function getPosthogBranchDefaults(branchSlug) {
+  if (branchSlug === 'sproutify-home') {
+    return {
+      allowed_events: [
+        'home signup confirmed', 'home payment confirmed',
+        'onboarding completed', 'tower added', 'tower reading logged', 'crop added',
+        'crop care event logged', 'harvest recorded', 'inventory item added',
+        'sage message answered', 'sage plan generated', 'sage plan saved', 'community post shared',
+      ],
+      allowed_properties: ['app', 'app_surface', 'app_platform', 'port_count', 'quantity', 'has_tower'],
+    };
+  }
   if (branchSlug === 'rejoice') {
     return {
       allowed_events: [...REJOICE_CANONICAL_EVENTS],
@@ -59,7 +70,30 @@ export function posthogEventsForType(eventType) {
   return Object.keys(EVENT_MAP).filter(event => EVENT_MAP[event] === eventType);
 }
 
-export function posthogLifecycleForBranch(branchSlug) {
+export function posthogLifecycleForBranch(branchSlug, homeTrackingStart) {
+  if (branchSlug === 'sproutify-home') {
+    const ready = typeof homeTrackingStart === 'string' && Number.isFinite(Date.parse(homeTrackingStart));
+    return {
+      // No signup event exists in Home yet. Never substitute identify/login or
+      // onboarding for account registration, nor entitlement state for payment.
+      signup_events: ['home signup confirmed'],
+      paid_events: ['home payment confirmed'],
+      onboarding_events: ['onboarding completed'],
+      activation_events: ['tower added'],
+      labels: { signed_up: 'Signed up', onboarded: 'Onboarded', activated: 'Added a tower' },
+      conversion_labels: {
+        signup_to_onboarding: 'Signup conversion unavailable',
+        onboarding_to_activation: 'Independent activity counts',
+      },
+      coverage: {
+        signup: ready, paid: ready, ordered_funnel: false,
+        started_at: ready ? homeTrackingStart : undefined,
+        note: ready
+          ? `Confirmed signups and first paid conversions cover accounts created since ${homeTrackingStart}. Earlier customer payment history is excluded. Counts are independent, not funnel conversion rates. Paid conversions are gross customer acquisitions, not net revenue after refunds.`
+          : 'Home signup and payment export has not reported a successful sync in the last 24 hours. Counts are unavailable until the source is verified.',
+      },
+    };
+  }
   // Rejoice runs canonical and deployed proxy signals in parallel during its
   // reconciliation window. These are independent stage counts, not an ordered funnel.
   const rejoice = branchSlug === 'rejoice';
@@ -81,7 +115,12 @@ export function posthogLifecycleForBranch(branchSlug) {
 
 const SENSITIVE_KEYS = /(journal|prayer|mood|emotion|faith|belief|message|content|text|note|url|path|email|name|phone|address|token|secret)/i;
 
-export function canonicalEventType(eventName) {
+export function canonicalEventType(eventName, branchSlug) {
+  if (branchSlug === 'sproutify-home') {
+    if (eventName === 'home signup confirmed') return 'product_signup';
+    if (eventName === 'onboarding completed') return 'product_onboarding_completed';
+    if (eventName === 'tower added') return 'product_activated';
+  }
   return EVENT_MAP[eventName] || 'product_feature_milestone';
 }
 
