@@ -1,0 +1,16 @@
+{
+  "name": "Home: Verified Analytics Sync",
+  "active": false,
+  "nodes": [
+    { "id": "schedule", "name": "Every 15 Minutes", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0], "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] } } },
+    { "id": "manual", "name": "Manual Analytics Test", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 200], "parameters": {} },
+    { "id": "sync", "name": "Sync Verified Home Events", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [260, 0], "parameters": { "method": "POST", "url": "https://xzckfyipgrgpwnydddev.supabase.co/functions/v1/sync-home-analytics", "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth", "options": { "timeout": 120000 } }, "notes": "Select the Home Analytics Sync header credential: Authorization: Bearer <HOME_ANALYTICS_SYNC_SECRET>. Store the value only in n8n credentials. Exports confirmed signup/payment events to Home PostHog; never publishes social posts." },
+    { "id": "check", "name": "Check Export Backlog", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [520, 0], "parameters": { "jsCode": "const result = $input.first().json; if (result.pending === true) throw new Error('Home analytics export has a remaining backlog; next scheduled run will continue.'); return [{json: result}];" } }
+  ],
+  "connections": {
+    "Every 15 Minutes": { "main": [[{ "node": "Sync Verified Home Events", "type": "main", "index": 0 }]] },
+    "Manual Analytics Test": { "main": [[{ "node": "Sync Verified Home Events", "type": "main", "index": 0 }]] },
+    "Sync Verified Home Events": { "main": [[{ "node": "Check Export Backlog", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveExecutionProgress": false, "saveManualExecutions": false }
+}

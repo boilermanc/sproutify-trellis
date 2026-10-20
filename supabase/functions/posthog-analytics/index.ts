@@ -79,15 +79,17 @@ Deno.serve(async (req: Request) => {
   try {
     const apiKey = await decryptSecret(connection.api_key_ciphertext);
     let homeTrackingStart: string | undefined;
+    let homePaymentReady = false;
     if (connection.branches?.slug === 'sproutify-home') {
       const coverage = await runPosthogQuery(connection.host_url, connection.project_id, apiKey,
-        `SELECT properties.tracking_started_at FROM events
+        `SELECT properties.tracking_started_at, properties.payment_tracking_ready FROM events
          WHERE event = 'home analytics synced' AND timestamp >= now() - INTERVAL 24 HOUR
          ORDER BY timestamp DESC LIMIT 1`, "Trellis Home conversion export coverage");
       const value = coverage.results?.[0]?.[0];
+      homePaymentReady = coverage.results?.[0]?.[1] === true;
       if (typeof value === 'string' && Number.isFinite(Date.parse(value))) homeTrackingStart = value;
     }
-    const lifecycle = posthogLifecycleForBranch(connection.branches?.slug, homeTrackingStart);
+    const lifecycle = posthogLifecycleForBranch(connection.branches?.slug, homeTrackingStart, homePaymentReady);
     const SIGNUP_EVENTS = lifecycle.signup_events;
     const ONBOARDING_EVENTS = lifecycle.onboarding_events;
     const ACTIVATION_EVENTS = lifecycle.activation_events;

@@ -70,7 +70,7 @@ export function posthogEventsForType(eventType) {
   return Object.keys(EVENT_MAP).filter(event => EVENT_MAP[event] === eventType);
 }
 
-export function posthogLifecycleForBranch(branchSlug, homeTrackingStart) {
+export function posthogLifecycleForBranch(branchSlug, homeTrackingStart, homePaymentReady = false) {
   if (branchSlug === 'sproutify-home') {
     const ready = typeof homeTrackingStart === 'string' && Number.isFinite(Date.parse(homeTrackingStart));
     return {
@@ -86,9 +86,11 @@ export function posthogLifecycleForBranch(branchSlug, homeTrackingStart) {
         onboarding_to_activation: 'Independent activity counts',
       },
       coverage: {
-        signup: ready, paid: ready, ordered_funnel: false,
+        signup: ready, paid: ready && homePaymentReady, ordered_funnel: false,
         started_at: ready ? homeTrackingStart : undefined,
-        note: ready
+        note: ready && !homePaymentReady
+          ? 'Confirmed signup tracking is active. Paid conversions remain unavailable until all billing sources are verified.'
+          : ready
           ? `Confirmed signups and first paid conversions cover accounts created since ${homeTrackingStart}. Earlier customer payment history is excluded. Counts are independent, not funnel conversion rates. Paid conversions are gross customer acquisitions, not net revenue after refunds.`
           : 'Home signup and payment export has not reported a successful sync in the last 24 hours. Counts are unavailable until the source is verified.',
       },

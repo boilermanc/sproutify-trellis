@@ -44,7 +44,8 @@ test('Home uses shipped event names without inventing signup or paid evidence', 
 
 test('Home counts become available only with verified export coverage', () => {
   const start = '2026-10-20T13:00:00Z';
-  const home = posthogLifecycleForBranch('sproutify-home', start);
+  const home = posthogLifecycleForBranch('sproutify-home', start, true);
+  assert.equal(posthogLifecycleForBranch('sproutify-home', start).coverage.paid, false);
   assert.equal(home.coverage.signup, true);
   assert.equal(home.coverage.paid, true);
   assert.equal(home.coverage.started_at, start);

@@ -1,25 +1,26 @@
-# Home analytics reconciliation — 2026-10-20
+# Home analytics release — 2026-10-20
 
-Prepared locally; not deployed. Automatic TikTok publishing remains off.
+Frontend and analytics functions deployed. Automatic TikTok publishing remains off.
 
-## Evidence and correction
+## Measurement contract
 
-Home PostHog project 614240 uses spaced milestones (`onboarding completed`, `tower added`, etc.). Home identifies users but previously emitted neither confirmed signup nor verified payment events. Neither `$identify` nor mutable subscription/trial flags establishes a new account or first payment.
+Home PostHog project 614240 uses spaced milestone names. Trellis maps those names, confirmed server signup events and verified payment receipts. Neither identify/login nor mutable subscription flags proves signup or payment. Source ledger and outbox live in Home, not the Hub; the authoritative source release guide is sproutify_home_admin/docs/HOME_CONVERSION_TRACKING.md.
 
-Trellis now maps the actual Home milestones and uses a separate paid metric. It hides signup/payment counts until a successful Home export marker exists within 24 hours. Old snapshots without coverage metadata are rejected. Independent activity counts are not displayed as ordered conversion rates. New/returning totals remain unavailable while signup coverage does not span the whole selected report window.
+Signup coverage begins with accounts created since 2026-10-20T13:41:25.782758Z. Paid coverage additionally requires payment_tracking_ready in the latest source heartbeat. Counts stay unavailable while billing prerequisites are incomplete. Source freshness expires after 24 hours, with an hourly report cache. First-payment queries group across all exported history before filtering the report window, excluding renewals. Gross paid acquisitions are not net revenue or refund-adjusted subscribers.
 
-## Source implementation
+## Production verification
 
-The user approved including Home's pending billing upgrade. Source changes are in `sproutify_home_admin`. Its authoritative release guide is `docs/HOME_CONVERSION_TRACKING.md`; it specifies the three migration prerequisites, handler/worker deployments, secure configuration, schedule and recovery.
+- Trellis release 614e11c deployed successfully; live build-info matched. Home's three prerequisite migrations and Stripe/analytics functions deployed.
+- Home event/property allowlists updated only for connection bd478460-238f-4f98-b98e-18cf1e4e0f93. Rejoice/Rekkrd configuration was preserved.
+- Live worker returned 401 without authentication and 200 sent:0 with its dedicated credential. PostHog source heartbeat was observed by the live report. No synthetic signup/payment was created.
+- Live Home report read the corrected milestones: 2 onboarded and 2 tower users in the checked 30-day window. Counts can change.
+- Paid reporting stays unavailable pending RevenueCat server key/deployment and Stripe invoice.payment_succeeded delivery verification. The existing RevenueCat handler remains live.
+- n8n Home: Verified Analytics Sync, xGExdfXvObRjPtLAnFUDz, has a 15-minute schedule imported but remains inactive. The operator deferred dedicated credential entry. Finish that step, test, and publish only this analytics workflow.
+- TikTok publisher remains unpublished. Existing TikTok metrics/token-refresh workflows are unchanged.
+- Home dependency audit CI reported vulnerabilities; deployment and billing regression checks passed separately. Do not describe overall CI as clean.
 
-Confirmed accounts and positive production payment receipts use a durable outbox with stable event UUIDs. Raw receipts remain in Home. The export contains account UUID, event, original timestamp, and fixed categorical metadata only. No names, emails, amounts, or raw billing payloads enter Trellis.
+## Limits and recovery
 
-Trellis queries the first payment across all exported history before filtering to the report window. This excludes renewals from first conversions and handles late receipts. The metric covers accounts created after tracking starts. Existing customers need verified historical receipts before they can be included. It reports gross first paid acquisitions, not net revenue or refund-adjusted active subscribers. The source heartbeat and payment events do not inflate active-user or retention counts.
+Traffic changes near a TikTok post are correlation, not proof of attribution. The TikTok profile currently has no clickable Website field. Existing customers require verified historical receipt backfill before first-payment reporting can include them.
 
-## Release and validation
-
-Deployment, production migrations, secure worker configuration and scheduling remain pending explicit release approval. Commit/push has not been performed. Update only Home's connection allowlists using `getPosthogBranchDefaults`; defaults alone do not rewrite saved connections. Preserve Rejoice/Rekkrd.
-
-Local validation: Home backend tests, actual migration execution with PGlite, Trellis contract/Sage tests, TypeScript and synthetic browser report. The browser fixture uses no live service calls and its counts are not real. Live provider flow, source freshness and production report reconciliation must be verified after release. No fake production signup/payment events were sent.
-
-TikTok attribution still needs acquisition evidence. A rise in visits or conversions near a post is correlation, not proof of attribution; the TikTok profile currently has no clickable Website field.
+To pause exports, deactivate only the new analytics workflow. Restore saved webhook/function bundles if needed; retain additive tables and collected receipts. No destructive rollback is required. Automatic publishing remains disabled throughout.
