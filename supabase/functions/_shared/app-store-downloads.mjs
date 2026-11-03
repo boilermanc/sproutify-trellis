@@ -1,6 +1,7 @@
 export const REKKRD_APPLE_ID = '6795955100';
 export const HOME_APPLE_ID = '6478242429';
-export const SUPPORTED_APPLE_IDS = [REKKRD_APPLE_ID, HOME_APPLE_ID];
+export const REJOICE_APPLE_ID = '6754806358';
+export const SUPPORTED_APPLE_IDS = [REKKRD_APPLE_ID, HOME_APPLE_ID, REJOICE_APPLE_ID];
 export const DOWNLOAD_REPORT = 'App Downloads Standard';
 export const isDownloadReport = name => name === DOWNLOAD_REPORT || name === 'App Store Downloads Standard';
 export function processingWindowStart(lastSyncedAt, hasCanonicalData, now = Date.now()) {

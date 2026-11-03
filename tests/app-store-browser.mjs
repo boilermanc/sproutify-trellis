@@ -23,9 +23,21 @@ try {
  await page.getByRole('button',{name:'Sync Sproutify Home',exact:true}).click();
  await page.getByText('Synced home-fixture',{exact:true}).waitFor();
  await page.getByRole('heading',{name:'Daily downloads'}).waitFor();
+ await page.getByLabel('App Store app').selectOption('6754806358');
+ await page.getByRole('heading',{name:'Rejoice · App Store',exact:true}).waitFor();
+ assert.equal(await page.getByRole('cell',{name:'100',exact:true}).count(),1);
+ assert.equal(await page.getByRole('cell',{name:'10',exact:true}).count(),0);
+ assert.equal(await page.getByRole('cell',{name:'1',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Sync Rejoice',exact:true}).click();
+ await page.getByText('Synced rejoice-fixture',{exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Daily downloads'}).waitFor();
  if(process.env.APP_STORE_SCREENSHOT) await page.screenshot({path:process.env.APP_STORE_SCREENSHOT,fullPage:true});
  await page.setViewportSize({width:390,height:844});
  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+ await page.getByLabel('Fixture branch').selectOption('rejoice');
+ await page.getByRole('heading',{name:'Rejoice · App Store',exact:true}).waitFor();
+ await page.getByRole('cell',{name:'100',exact:true}).waitFor();
+ assert.equal(await page.getByLabel('App Store app').count(),0);
  await page.getByLabel('Fixture branch').selectOption('home');
  await page.getByRole('heading',{name:'Sproutify Home · App Store',exact:true}).waitFor();
  assert.equal(await page.getByLabel('App Store app').count(),0);
@@ -42,5 +54,5 @@ try {
  await page.getByRole('button',{name:'Sync Sproutify Home',exact:true}).waitFor();
  assert.equal(await page.getByText('Old app sync failed',{exact:false}).count(),0);
  assert.deepEqual(errors,[]);
- console.log('PASS App Store browser: separate Rekkrd/Home data, app/branch selection, scoped sync, stale sync isolation, period and error states, mobile layout; no page errors.');
+ console.log('PASS App Store browser: separate Rekkrd/Home/Rejoice data, app/branch selection, scoped sync, stale sync isolation, period and error states, mobile layout; no page errors.');
 } finally {await browser.close();}

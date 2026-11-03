@@ -154,7 +154,7 @@ export async function handle(req: Request) {
   const op = String(body.op || "status");
   if (body.apple_app_id && !SUPPORTED_APPLE_IDS.includes(body.apple_app_id)) {
     return json(
-      { error: "Only Rekkrd and Sproutify Home App Store downloads are supported." },
+      { error: "Only Rekkrd, Sproutify Home and Rejoice App Store downloads are supported." },
       400,
     );
   }

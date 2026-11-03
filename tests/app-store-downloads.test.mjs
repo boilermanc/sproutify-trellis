@@ -66,5 +66,15 @@ test('Home and Rekkrd download rows remain partitioned by Apple app ID', async (
   assert.equal(home['Territory:GB:First-Time Downloads'], 3);
   assert.equal(home['Territory:US:First-Time Downloads'], undefined);
   assert.equal(aggregateDownloads(rows).get('2026-11-01')['First-Time Downloads'], 7);
-  assert.deepEqual(SUPPORTED_APPLE_IDS, [REKKRD_APPLE_ID, HOME_APPLE_ID]);
+  assert.deepEqual(SUPPORTED_APPLE_IDS, [REKKRD_APPLE_ID, HOME_APPLE_ID, '6754806358']);
+});
+
+test('Rejoice imports exclude Home, Rekkrd and other apps', async () => {
+  const { REJOICE_APPLE_ID } = await import('../supabase/functions/_shared/app-store-downloads.mjs');
+  const rows = parseDownloadTsv([header, row('First-time download', 9), row('First-time download', 20, 'US', '2026-11-01', '6478242429'), row('First-time download', 4, 'US', '2026-11-01', REJOICE_APPLE_ID), row('Redownload', 2, 'CA', '2026-11-01', REJOICE_APPLE_ID)].join('\n'));
+  const metrics = aggregateDownloads(rows, REJOICE_APPLE_ID).get('2026-11-01');
+  assert.equal(metrics['First-Time Downloads'], 4);
+  assert.equal(metrics.Redownloads, 2);
+  assert.equal(metrics['Total Downloads'], 6);
+  assert.equal(metrics['Territory:CA:Redownloads'], 2);
 });
