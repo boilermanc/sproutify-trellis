@@ -47,3 +47,12 @@ test('accepts the category capitalization supplied by live Apple reports', () =>
   assert.equal(values.Redownloads, 1);
   assert.equal(values.Updates, 3);
 });
+
+test('incremental processing retains a correction overlap and bootstraps legacy data', async () => {
+  const { processingWindowStart } = await import('../supabase/functions/_shared/app-store-downloads.mjs');
+  const now = Date.parse('2026-11-03T14:00:00Z');
+  assert.equal(processingWindowStart('2026-11-03T09:00:00Z', true, now), '2026-10-31');
+  assert.equal(processingWindowStart('2026-11-03T09:00:00Z', false, now), '2026-07-31');
+  assert.equal(processingWindowStart('invalid', true, now), '2026-07-31');
+  assert.equal(processingWindowStart('2026-11-10', true, now), '2026-07-31');
+});

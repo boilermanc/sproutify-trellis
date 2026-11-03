@@ -13,6 +13,7 @@ import {
   DOWNLOAD_REPORT,
   isDownloadReport,
   parseDownloadTsv,
+  processingWindowStart,
   REKKRD_APPLE_ID,
   selectLatestDownloadDates,
 } from "../_shared/app-store-downloads.mjs";
@@ -51,10 +52,11 @@ async function syncApp(
     Boolean,
   );
   const completed: any[] = [];
-  // The dashboard supports up to 90 days. Processing dates are not event dates;
-  // keep five extra days for late data and inspect all pages in this horizon.
-  const processingSince = new Date(Date.now() - 95 * 86400000).toISOString()
-    .slice(0, 10);
+  const { data: existing, error: existingError } = await db.from("app_store_metric_snapshots")
+    .select("metrics").eq("app_id", app.id).eq("report_name", DOWNLOAD_REPORT).limit(100);
+  if (existingError) throw new Error("Could not load Apple import watermark.");
+  const processingSince = processingWindowStart(app.last_synced_at,
+    (existing || []).some((row: any) => typeof row.metrics?.["First-Time Downloads"] === "number"));
 
   for (const requestId of requestIds) {
     const reports = await applePages(
@@ -246,8 +248,8 @@ export async function handle(req: Request) {
       const result = await syncApp(app, token);
       const syncedAt = new Date().toISOString();
       const { error: statusError } = await db.from("app_store_apps").update({
-        status: result.imported ? "active" : "pending",
-        last_synced_at: result.imported ? syncedAt : app.last_synced_at,
+        status: result.imported || app.last_synced_at ? "active" : "pending",
+        last_synced_at: result.reports ? syncedAt : app.last_synced_at,
         last_error: null,
         updated_at: syncedAt,
       }).eq("id", app.id);

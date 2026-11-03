@@ -1,6 +1,15 @@
 export const REKKRD_APPLE_ID = '6795955100';
 export const DOWNLOAD_REPORT = 'App Downloads Standard';
 export const isDownloadReport = name => name === DOWNLOAD_REPORT || name === 'App Store Downloads Standard';
+export function processingWindowStart(lastSyncedAt, hasCanonicalData, now = Date.now()) {
+  const synced = Date.parse(lastSyncedAt || '');
+  // New processing dates carry Apple's corrections for older event dates.
+  // Only use the watermark after the new collector has saved canonical data.
+  const start = hasCanonicalData && Number.isFinite(synced) && synced <= now
+    ? Math.max(now - 95 * 86400000, synced - 3 * 86400000)
+    : now - 95 * 86400000;
+  return new Date(start).toISOString().slice(0, 10);
+}
 const TYPES = { 'first-time download': 'First-Time Downloads', redownload: 'Redownloads', 'manual update': 'Manual Updates', 'auto-update': 'Auto Updates', restore: 'Restores' };
 
 // Standard reports contain only tab-separated dimensions and counts. Reject a
