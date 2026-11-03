@@ -15,6 +15,7 @@ import {
   parseDownloadTsv,
   processingWindowStart,
   REKKRD_APPLE_ID,
+  SUPPORTED_APPLE_IDS,
   selectLatestDownloadDates,
 } from "../_shared/app-store-downloads.mjs";
 import { ORG_ID } from "../_shared/posthog.ts";
@@ -151,9 +152,9 @@ export async function handle(req: Request) {
     return json({ error: "JSON object required" }, 400);
   }
   const op = String(body.op || "status");
-  if (body.apple_app_id && body.apple_app_id !== REKKRD_APPLE_ID) {
+  if (body.apple_app_id && !SUPPORTED_APPLE_IDS.includes(body.apple_app_id)) {
     return json(
-      { error: "Only Rekkrd App Store downloads are supported." },
+      { error: "Only Rekkrd and Sproutify Home App Store downloads are supported." },
       400,
     );
   }
@@ -178,7 +179,7 @@ export async function handle(req: Request) {
       ? body.branch_ids.map(String).filter(Boolean)
       : [];
     let appsQuery = db.from("app_store_apps").select("*,branches(name,slug)")
-      .eq("organization_id", ORG_ID).eq("apple_app_id", REKKRD_APPLE_ID).neq(
+      .eq("organization_id", ORG_ID).in("apple_app_id", SUPPORTED_APPLE_IDS).neq(
         "status",
         "disconnected",
       ).order("name");
@@ -186,7 +187,7 @@ export async function handle(req: Request) {
     const { data: apps, error: appsError } = await appsQuery;
     if (appsError) {
       return json(
-        { error: "Could not load Rekkrd App Store connection." },
+        { error: "Could not load App Store connection." },
         500,
       );
     }
@@ -206,7 +207,7 @@ export async function handle(req: Request) {
           "metric_date",
         );
       if (error) {
-        return json({ error: "Could not load Rekkrd download counts." }, 500);
+        return json({ error: "Could not load App Store download counts." }, 500);
       }
       snapshots = data || [];
     }
@@ -217,20 +218,22 @@ export async function handle(req: Request) {
   let query = db.from("app_store_apps").select("*").eq(
     "organization_id",
     ORG_ID,
-  ).eq("apple_app_id", REKKRD_APPLE_ID).neq("status", "disconnected").order(
+  ).in("apple_app_id", SUPPORTED_APPLE_IDS).neq("status", "disconnected").order(
     "name",
   );
   if (body.app_id && !/^[0-9a-f-]{36}$/i.test(String(body.app_id))) {
     return json({ error: "Invalid app connection ID." }, 400);
   }
   if (body.app_id) query = query.eq("id", String(body.app_id));
+  if (body.apple_app_id) query = query.eq("apple_app_id", body.apple_app_id);
+  if (!body.app_id && !body.apple_app_id) query = query.eq("apple_app_id", REKKRD_APPLE_ID);
   const { data: apps, error: appsError } = await query;
   if (appsError) {
-    return json({ error: "Could not load Rekkrd App Store connection." }, 500);
+    return json({ error: "Could not load App Store connection." }, 500);
   }
   if (!apps?.length) {
     return json({
-      error: "No matching Rekkrd App Store connection is configured.",
+      error: "No matching supported App Store connection is configured.",
     }, 404);
   }
   let token: string;

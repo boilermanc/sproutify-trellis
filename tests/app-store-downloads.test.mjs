@@ -56,3 +56,15 @@ test('incremental processing retains a correction overlap and bootstraps legacy 
   assert.equal(processingWindowStart('invalid', true, now), '2026-07-31');
   assert.equal(processingWindowStart('2026-11-10', true, now), '2026-07-31');
 });
+
+test('Home and Rekkrd download rows remain partitioned by Apple app ID', async () => {
+  const { HOME_APPLE_ID, SUPPORTED_APPLE_IDS } = await import('../supabase/functions/_shared/app-store-downloads.mjs');
+  const rows = parseDownloadTsv([header, row('First-time download', 7), row('First-time download', 3, 'GB', '2026-11-01', HOME_APPLE_ID), row('Redownload', 2, 'US', '2026-11-01', HOME_APPLE_ID)].join('\n'));
+  const home = aggregateDownloads(rows, HOME_APPLE_ID).get('2026-11-01');
+  assert.equal(home['First-Time Downloads'], 3);
+  assert.equal(home.Redownloads, 2);
+  assert.equal(home['Territory:GB:First-Time Downloads'], 3);
+  assert.equal(home['Territory:US:First-Time Downloads'], undefined);
+  assert.equal(aggregateDownloads(rows).get('2026-11-01')['First-Time Downloads'], 7);
+  assert.deepEqual(SUPPORTED_APPLE_IDS, [REKKRD_APPLE_ID, HOME_APPLE_ID]);
+});
