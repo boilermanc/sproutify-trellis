@@ -24,8 +24,12 @@ export async function fetchAppStoreAnalytics(
   return data as AppStoreAnalyticsResult;
 }
 
-export async function syncAppStoreAnalytics(): Promise<void> {
-  const { data, error } = await supabase.functions.invoke('app-store-analytics', { body: { op: 'sync' } });
+export async function syncAppStoreAnalytics(appId: string): Promise<void> {
+  if (!appId.trim()) throw new Error('Choose the connected Rekkrd app before syncing');
+  const { data, error } = await supabase.functions.invoke('app-store-analytics', { body: { op: 'sync', app_id: appId } });
   if (error) throw new Error(await errorMessage(error, 'App Store analytics sync failed'));
   if (data?.error) throw new Error(data.error);
+  if (!Array.isArray(data?.results) || !data.results.length) throw new Error('No Rekkrd app was available to sync');
+  const failed = data?.results?.find((result: { ok: boolean }) => !result.ok);
+  if (failed) throw new Error(failed.error || 'Rekkrd download sync failed');
 }

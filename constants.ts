@@ -19,6 +19,7 @@ import SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA from './supabase/migrations/202609112
 import SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA from './supabase/migrations/20260911233823_add_spectiq_prospect_research.sql?raw';
 import SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA from './supabase/migrations/20260912005803_add_spectiq_research_snapshot_contract.sql?raw';
 import APP_STORE_ANALYTICS_SQL_SCHEMA from './supabase/migrations/20260912124945_app_store_analytics.sql?raw';
+import APP_STORE_DOWNLOAD_SNAPSHOTS_SQL from './supabase/migrations/20261103135704_rekkrd_download_snapshot_storage.sql?raw';
 import CONTENT_TREND_RADAR_SQL_SCHEMA from './supabase/migrations/20260912160554_content_trend_radar.sql?raw';
 import TRANSCRIPTION_STUDIO_SQL_SCHEMA from './supabase/migrations/20260915170335_transcription_studio.sql?raw';
 import HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA from './supabase/migrations/20260915171954_hyperframes_transcription_contract.sql?raw';
@@ -3002,6 +3003,7 @@ ${SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA}
 ${SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA}
 ${SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA}
 ${APP_STORE_ANALYTICS_SQL_SCHEMA}
+${APP_STORE_DOWNLOAD_SNAPSHOTS_SQL}
 ${CONTENT_TREND_RADAR_SQL_SCHEMA}
 ${TRANSCRIPTION_STUDIO_SQL_SCHEMA}
 ${HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA}

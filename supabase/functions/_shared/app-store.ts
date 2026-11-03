@@ -50,6 +50,8 @@ export async function appleToken(): Promise<string> {
 
 export async function appleJson(pathOrUrl: string, token: string): Promise<any> {
   const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${API}${pathOrUrl}`;
+  const target = new URL(url);
+  if (target.origin !== 'https://api.appstoreconnect.apple.com' || !target.pathname.startsWith('/v1/')) throw new Error('Invalid Apple API page URL.');
   const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -67,6 +69,7 @@ export async function applePages(path: string, token: string, maxPages = 20): Pr
     if (Array.isArray(payload.data)) rows.push(...payload.data);
     next = payload?.links?.next || null;
   }
+  if (next) throw new Error('Apple report pagination exceeded the safe limit; no partial import was saved.');
   return rows;
 }
 
