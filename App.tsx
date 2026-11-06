@@ -62,6 +62,7 @@ import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
 import FeatureErrorBoundary from './components/FeatureErrorBoundary';
 
 const ContentIntelligence = React.lazy(() => import('./pages/ContentIntelligence'));
+const ProjectRooms = React.lazy(() => import('./pages/ProjectRooms'));
 
 const PERSISTENCE_KEY = 'trellis_v1_store';
 // UUID for the main Sproutify organization - must match the organization_id in tenant_secrets table
@@ -72,7 +73,7 @@ type AuthView = 'login' | 'reset-password';
 const AppContent: React.FC = () => {
   const { user, loading, isPasswordRecovery, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
-  const [activeView, setActiveViewState] = useState<ViewState>(() => new URLSearchParams(window.location.search).get('view') === 'sweetwater-leads' ? 'sweetwater-leads' : 'dashboard');
+  const [activeView, setActiveViewState] = useState<ViewState>(() => { const view = new URLSearchParams(window.location.search).get('view'); return view === 'project-rooms' || view === 'sweetwater-leads' ? view : 'dashboard'; });
   const [campaignDraftId, setCampaignDraftId] = useState<string | null>(null);
   const [focusedCampaignId, setFocusedCampaignId] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team' | undefined>(undefined);
@@ -558,6 +559,7 @@ const AppContent: React.FC = () => {
       case 'video-ad-lab': return <VideoAdLab selectedBranchSlug={selectedStudioBranchSlug} profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
       case 'media-generation': return <MediaGeneration selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} />;
       case 'motion-posts': return <MotionPosts selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchContext={branchContext} addToast={addToast} />;
+      case 'project-rooms': return <FeatureErrorBoundary featureName="Project rooms" onExit={() => setActiveView('dashboard')}><React.Suspense fallback={<div className="p-8">Loading project rooms…</div>}><ProjectRooms addToast={addToast}/></React.Suspense></FeatureErrorBoundary>;
       case 'promo-studio': return <PromoStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} />;
       case 'trellis-studio': return <TrellisStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
       case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
