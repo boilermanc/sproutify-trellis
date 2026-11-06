@@ -1,3 +1,4 @@
+import PROJECT_ROOMS_SQL_SCHEMA from './supabase/migrations/20261106032348_project_rooms.sql?raw';
 import SHARED_X_SQL_SCHEMA from './supabase/migrations/20261020140327_shared_x_tracking.sql?raw';
 
 import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
@@ -3018,6 +3019,7 @@ ${SWEETWATER_INQUIRY_SQL_SCHEMA}
 ${SWEETWATER_CONTACT_SQL_SCHEMA}
 ${TIKTOK_METRICS_SQL_SCHEMA}
 ${SHARED_X_SQL_SCHEMA}
+${PROJECT_ROOMS_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {

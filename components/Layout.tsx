@@ -35,6 +35,7 @@ interface LayoutProps {
 const NAV_SECTIONS_KEY = 'trellis_nav_sections';
 
 const PINNED = [
+  { id: 'project-rooms', label: 'Project Rooms', icon: Users },
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
 ];

@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:project-rooms": "node --test tests/project-room.test.mjs",
     "dev": "vite",
     "build": "vite build",
     "test:leads": "node --test tests/lead-parser.test.mjs tests/lead-timeline.test.mjs tests/lead-activity.test.mjs tests/lead-email.test.mjs tests/lead-sequence.test.mjs tests/lead-quote.test.mjs tests/lead-followups.test.mjs tests/lead-board.test.mjs tests/lead-metrics.test.mjs tests/lead-csv.test.mjs tests/lead-bulk.test.mjs tests/lead-unsubscribe-lost.test.mjs",
