@@ -1,4 +1,4 @@
-import { CardConceptWithRef } from './creativeDirectorService';
+import type { CardConceptWithRef } from './creativeDirectorService';
 
 export type BrandCreativeChannel = 'instagram' | 'reddit';
 

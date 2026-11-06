@@ -71,17 +71,17 @@ export const BRIEF_RECIPES: Record<string, BriefRecipe> = {
   rekkrd: {
     brandVoice: 'Low-lit and unhurried, like liner notes read aloud at closing time. Confident without hype. Speaks to people who listen on purpose. Understatement over exclamation.',
     situations: [
-      'the last hour of the night when the room finally goes quiet',
+      'choosing one record from the shelf for the last listen of the night',
       'rain on the window while a record spins',
-      'driving home at 2am with the radio off',
+      'rediscovering a forgotten record while browsing your collection',
       "the first listen of an album you already know you'll wear out",
       'the B-side nobody skips',
-      'closing the bar alone with the good bottle',
+      'filing a new record beside the albums you return to most',
       'the needle drop before anyone speaks',
     ],
     axes: [
-      { name: 'time of night', instruction: 'Set each headline at a different time of night.', variants: ['last call', 'the drive home', '2am kitchen', 'first grey light'] },
-      { name: 'listening ritual', instruction: 'Build each headline around a different listening ritual.', variants: ['needle drop', 'headphones in the dark', 'one speaker in the kitchen', 'the repeat button'] },
+      { name: 'record ritual', instruction: 'Set each headline at a different moment of playing a physical record.', variants: ['choosing a sleeve', 'brushing the vinyl', 'lowering the needle', 'flipping to side B'] },
+      { name: 'collection ritual', instruction: 'Build each headline around a different physical record collecting ritual.', variants: ['browsing the crate', 'filing a new record', 'reading liner notes', 'logging a spin'] },
       { name: "who's there", instruction: 'Change who shares or haunts the listening moment.', variants: ['alone', 'one other person', 'a full room gone quiet', 'the memory of someone'] },
       { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a toast', 'a confession', 'a liner note', 'a question', 'a plain statement'] },
       { name: 'what the room looks like', instruction: 'Anchor each headline in a different concrete room detail.', variants: ['neon through blinds', 'a half-finished drink', 'coats on chairs', "the amp's single red light"] },

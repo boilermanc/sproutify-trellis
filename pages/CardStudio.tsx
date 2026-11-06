@@ -1,4 +1,6 @@
 import { markStudioDraftChanged } from '../services/contentStudioDraft';
+import { fetchBrandByBranch } from '../brandRepository';
+import { cardBrandFacts } from '../services/cardBriefContext';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, Wand2, RefreshCw, Trash2, CheckCircle2, Loader2, Download,
@@ -261,12 +263,25 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   const [count, setCount] = useState(3);
   const [scripturePolicy, setScripturePolicy] = useState<ScripturePolicy>('mix');
   const [creativeDirectionId, setCreativeDirectionId] = useState('variety');
+  const briefRequestScope = useRef('');
+  briefRequestScope.current = `${selectedBranchSlug}:${creativeDirectionId}`;
   // Null until resolved. A brand with no spoke connection has no Bible source,
   // so verse cards can't render and scripture must be forced off.
   const [hasBibleSource, setHasBibleSource] = useState<boolean | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSuggestingBrief, setIsSuggestingBrief] = useState(false);
   const [cards, setCards] = useState<ConceptCardState[]>([]);
+  const [groupClosed, setGroupClosed] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    setGroupClosed(false);
+  }, [selectedBranch?.id]);
+
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.scrollIntoView({ block: 'start' });
+  }, [groupClosed]);
   // Timestamp of the restored draft this batch came from, if any — drives
   // the "these are restored drafts, not fresh output" banner. Cleared on a
   // fresh Generate, a branch switch, or an explicit Clear.
@@ -481,17 +496,22 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         : getBrandCreativeDirection(selectedBranch.slug, creativeDirectionId);
 
     setIsSuggestingBrief(true);
+    const requestScope = briefRequestScope.current;
     try {
+      const identity = await fetchBrandByBranch(selectedBranch.slug);
       const suggestion = await generateCardBrief({
         apiKey: geminiKey,
         brandSlug: selectedBranch.slug,
         brandName: selectedBranch.name,
+        creativeDirectionId,
+        brandFacts: cardBrandFacts(selectedBranch.slug, identity),
         creativeDirection: selectedDirection
           ? `${selectedDirection.label} — ${selectedDirection.description}`
           : 'Standard Card Studio — Use the brand voice with the full card template range.',
         conceptCount: count,
         scriptureMode: selectedBranch.slug === 'rejoice' ? scripturePolicy : undefined,
       });
+      if (briefRequestScope.current !== requestScope) return;
       if (suggestion.trim()) markStudioDraftChanged();
       setBrief(suggestion);
       setActivePreset(null);
@@ -537,10 +557,10 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
     setDraftRestoredAt(null);
     try {
       console.log('[CardStudio] Calling Gemini…');
-      const selectedDirection = creativeDirectionId === 'variety' || creativeDirectionId === 'standard'
+      const selectedDirection = creativeDirectionId === 'variety' || creativeDirectionId === 'standard' || creativeDirectionId === 'features'
         ? undefined
         : getBrandCreativeDirection(selectedBranch.slug, creativeDirectionId);
-      const requestedDirections = creativeDirectionId === 'standard'
+      const requestedDirections = creativeDirectionId === 'standard' || creativeDirectionId === 'features'
         ? []
         : selectedDirection ? [selectedDirection] : brandCreativeDirections;
       const directedBrief = requestedDirections.length > 0
@@ -577,7 +597,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         cardStyle: directedCardStyle,
       });
       const concepts = generatedConcepts.map((concept, index) => {
-        const direction = selectedDirection || getBrandCreativeDirectionForIndex(selectedBranch.slug, index);
+        const direction = creativeDirectionId === 'standard' || creativeDirectionId === 'features'
+          ? undefined : selectedDirection || getBrandCreativeDirectionForIndex(selectedBranch.slug, index);
         return direction ? applyBrandCreativeDirection(concept, direction) : concept;
       });
 
@@ -915,6 +936,17 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
   };
 
   const reviewingCount = useMemo(() => cards.filter((c) => c.status === 'reviewing').length, [cards]);
+  const isGroupBusy = isGenerating || isSuggestingBrief || cards.some((card) =>
+    card.isRendering || card.isRegenerating || card.isApproving || card.isUploadingBackground || card.isGeneratingBackground,
+  );
+
+  const handleNewGroup = () => {
+    if (reviewingCount > 0 && !window.confirm(`Start a new group? This replaces ${reviewingCount} unfinished card${reviewingCount === 1 ? '' : 's'}. Cards already sent to the scheduler will stay there.`)) return;
+    handleClearDraft();
+    setBrief('');
+    setActivePreset(null);
+    setGroupClosed(false);
+  };
 
   const draftRestoredLabel = useMemo(() => {
     if (!draftRestoredAt) return null;
@@ -941,12 +973,36 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           <Sparkles className="w-6 h-6 text-white" />
         </div>
         <div>
-          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Card Studio</h1>
+          <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-black text-slate-800 uppercase tracking-tight">Card Studio</h1>
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
             Loose brief in, finished designed-post concepts out — reviewed by you, rendered, and queued
           </p>
         </div>
       </div>
+
+      {groupClosed ? (
+        <section aria-label="Group summary" className="bg-white rounded-2xl border border-emerald-200 p-6 space-y-4">
+          <h2 className="text-lg font-black text-slate-800">Ready for your next group?</h2>
+          <p className="text-sm text-slate-600">
+            {cards.length - reviewingCount} card{cards.length - reviewingCount === 1 ? '' : 's'} sent to the scheduler.
+            {reviewingCount > 0
+              ? ` ${reviewingCount} unfinished card${reviewingCount === 1 ? '' : 's'} kept here for you to resume.`
+              : ' This group is finished.'}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button type="button" onClick={handleNewGroup} className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold">Start a new group</button>
+            <button type="button" onClick={() => setGroupClosed(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold">{reviewingCount > 0 ? 'Resume group' : 'Review finished group'}</button>
+          </div>
+        </section>
+      ) : <>
+      {cards.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+          <p className="text-sm text-slate-600">Finished for now? Unfinished cards stay available to resume.</p>
+          <button type="button" disabled={isGroupBusy} onClick={() => setGroupClosed(true)} className="shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-40">
+            <CheckCircle2 className="w-4 h-4" /> Done with this group
+          </button>
+        </div>
+      )}
 
       {/* Restored draft banner */}
       {draftRestoredAt && cards.length > 0 && (
@@ -973,16 +1029,18 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
         <details className="rounded-xl border border-slate-200 p-3"><summary className="cursor-pointer text-sm font-bold text-slate-600">Adjust style and number of concepts</summary><div className="mt-3 flex flex-col lg:flex-row gap-4">
 
 
-          {brandCreativeDirections.length > 0 && (
+          {selectedBranch && (
             <div className="flex flex-col gap-1 lg:w-64">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Brand creative direction</span>
               <select
+                aria-label="Brand creative direction"
                 value={creativeDirectionId}
                 onChange={(e) => setCreativeDirectionId(e.target.value)}
                 className="text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
               >
                 <option value="standard">Standard Card Studio</option>
-                <option value="variety">Variety pack</option>
+                <option value="features">{selectedBranch.name} features</option>
+                {brandCreativeDirections.length > 0 && <option value="variety">Variety pack</option>}
                 {brandCreativeDirections.map(direction => (
                   <option key={direction.id} value={direction.id}>{direction.label}</option>
                 ))}
@@ -990,6 +1048,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
               <span className="text-[10px] text-slate-400">
                 {creativeDirectionId === 'standard'
                   ? 'Keeps the full template range, including verified scripture cards.'
+                  : creativeDirectionId === 'features'
+                    ? 'Suggest briefs about this brand’s documented features and offerings. Saved Brand DNA supplies the context; Rekkrd also uses checked product-site details.'
                   : creativeDirectionId === 'variety'
                     ? 'Cycles through the shared brand directions.'
                     : getBrandCreativeDirection(selectedBranch?.slug || '', creativeDirectionId)?.description}
@@ -1327,6 +1387,8 @@ const CardStudio: React.FC<CardStudioProps> = ({ apiKeys, branchContext, addToas
           </div>
         )}
       </div>
+
+      </>}
 
       {/* "Use existing" background picker — recent completed/awaiting-approval
           static or carousel creative for this brand, from Creative Studio. */}

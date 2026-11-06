@@ -84,6 +84,30 @@ chat/brief handoff, brand isolation and mobile layout.
 
 ## Content intelligence workflow
 
+### Card Studio groups and suggested briefs
+
+Use **Done with this group** to close the working gallery into a summary. Resume
+keeps the same cards and edits; starting a new group asks before replacing any
+unfinished cards. Already scheduled cards stay scheduled. Completion waits until
+active rendering, generation, uploads, and approvals finish.
+
+Under **Adjust style and number of concepts**, choose a creative direction before
+**Suggest brief**. Named directions supply the subject of the brief; Variety pack
+uses only the current brand's directions. Every brand also has a **[Brand] features**
+option, grounded in its active Brand DNA mission, site description, and marketing
+hooks. Missing details produce an error instead of a fabricated feature brief.
+Review saved Brand DNA for accuracy; it is not a live website scan. Rekkrd uses a
+small product-site feature list checked on 2026-11-06 in
+`services/cardBriefContext.ts`, avoiding its older valuation-only saved positioning.
+Feature mode retains the brand's allowed templates rather than forcing a lifestyle photo.
+
+Checks: `node --test tests/card-brief-context.test.mjs tests/card-brief-generator.test.mjs`
+and `node tests/card-studio-browser.mjs` with Vite running. Set `STUDIO_TEST_URL`
+and `PLAYWRIGHT_MODULE` as in the other browser tests. The browser test intercepts
+external requests and checks group completion, draft preservation, mobile layout,
+direction-aware prompt payloads, feature mode, and brand isolation without live AI
+calls or database writes.
+
 ### Shared X tracking
 
 Open **Social Hub → X tracking · @boilermanc** for shared posts, mentions,
