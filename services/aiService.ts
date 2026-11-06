@@ -89,7 +89,9 @@ export async function generateCardBrief(params: GenerateCardBriefParams): Promis
   if (featureMode && !params.brandFacts?.length) throw new Error('Add product features or offerings to this brand’s active Brand DNA before suggesting a feature brief.');
   const recipe: BriefRecipe = {
     ...baseRecipe,
-    situations: direction.situations.length ? direction.situations : baseRecipe.situations,
+    situations: featureMode
+      ? params.brandFacts!.map(fact => `a customer using ${fact}`)
+      : direction.situations.length ? direction.situations : baseRecipe.situations,
     // A direction sets the subject. Variation changes the copy angle, never the subject.
     axes: direction.situations.length ? [{ name: 'customer angle', instruction: 'Vary the angle while staying within the selected direction and documented brand facts.', variants: ['a practical question', 'an everyday use', 'a discovery', 'a small ritual', 'a useful reminder', 'a next step'] }] : baseRecipe.axes,
     footerGuidance: featureMode ? 'Invite the reader to explore the named feature or offering. No unsupported promises.' : baseRecipe.footerGuidance,

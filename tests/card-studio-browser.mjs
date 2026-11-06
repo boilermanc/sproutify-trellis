@@ -72,6 +72,7 @@ try {
   await page.getByRole('button', { name: 'Suggest brief', exact: true }).click();
   await page.getByRole('button', { name: 'Suggest brief', exact: true }).waitFor();
   assert.match(prompts.at(-1).contents, /Spins: log records/);
+  assert.match(prompts.at(-1).contents, /Selected situation: a customer using (Spins|Collection valuation|Stakkd|Camera scanning|Wantlist|Listening Room|Playlist Studio):/);
   await page.getByLabel('Preview brand').selectOption('rejoice');
   await page.getByLabel('Brand creative direction').selectOption('joy-worth-noticing');
   await page.getByRole('button', { name: 'Suggest brief', exact: true }).click();
