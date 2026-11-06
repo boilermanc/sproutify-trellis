@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import { supabase } from '../lib/supabase';
 
 // ─── Meta (Facebook/Instagram) Ads Manager export ─────────────────────
@@ -111,7 +112,7 @@ export async function generateMetaAdCopy(opts: {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: opts.apiKey });
+    const ai = createBackendGemini();
 
     const prompt = `You are a direct-response copywriter writing a Facebook/Instagram ad in Meta Ads Manager.
 

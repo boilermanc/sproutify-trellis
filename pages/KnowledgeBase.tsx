@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { FAQ, KnowledgeDoc, ApiKeyConfig } from '../types';
 import { Article } from '../src/data/helpContent';
 import CustomerSitesTag from '../components/CustomerSitesTag';
-import { GoogleGenAI } from "@google/genai";
+import { createBackendGemini } from '../services/aiBackend';
 import { 
   BookOpen, Plus, Search, Filter, Globe, 
   ShieldCheck, Zap, Sparkles, RefreshCw, 
@@ -65,7 +65,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ apiKeys, onOpenArticle })
     try {
       const geminiKey = apiKeys?.gemini_api_key;
       if (!geminiKey) { setIsAuditing(false); return; }
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const ai = createBackendGemini();
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Analyze this knowledge base summary: ${MOCK_DOCS.length} docs, ${MOCK_FAQS.length} FAQs. Top categories: troubleshooting, onboarding.

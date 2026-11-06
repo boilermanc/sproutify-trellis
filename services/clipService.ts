@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import {
   ClipProject, ClipSource, ClipGeneration, ClipScriptBeat, ClipProjectStatus,
   CreateClipConfig, ClipBrollBeat, ClipBeatType, ClipTriage, ClipRenderJob,
@@ -168,7 +168,7 @@ export async function generateScript(
   if (!sources.length) throw new Error('This project has no sources');
 
   const brand = await resolveClipBrand(project.branch);
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const ai = createBackendGemini();
   const resp = await ai.models.generateContent({
     model: SCRIPT_MODEL,
     contents: buildPrompt(project, sources, brand, feedback, prior),
@@ -373,7 +373,7 @@ function coerceBeatParams(
 export async function generateBrollPlan(project: ClipProject, generation: ClipGeneration, geminiApiKey: string): Promise<ClipBrollBeat[]> {
   if (!geminiApiKey) throw new Error('Gemini API key missing — add it in Settings');
   const brand = await resolveClipBrand(project.branch);
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const ai = createBackendGemini();
   const resp = await ai.models.generateContent({
     model: SCRIPT_MODEL,
     contents: brollPrompt(project, generation, brand),
@@ -514,7 +514,7 @@ function coerceScene(raw: unknown, brand: ClipBrand, scriptText: string): ClipSc
 }
 
 async function generateScene(project: ClipProject, prompt: string, geminiApiKey: string, pick: (j: Record<string, unknown>) => unknown): Promise<unknown> {
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const ai = createBackendGemini();
   const resp = await ai.models.generateContent({
     model: SCRIPT_MODEL, contents: prompt,
     config: { responseMimeType: 'application/json', temperature: 0.95 }, // high — we want design variety
@@ -615,7 +615,7 @@ export async function regenerateBeat(project: ClipProject, beat: ClipBrollBeat, 
     return { ...beat, template_params: params, triage: 'undecided' };
   }
 
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const ai = createBackendGemini();
   const resp = await ai.models.generateContent({
     model: SCRIPT_MODEL,
     contents: singleBeatPrompt(project, beat, brand),
@@ -739,7 +739,7 @@ export async function generateClipMetadata(project: ClipProject, generation: Cli
   };
   if (!geminiApiKey) return fallback;
   try {
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+    const ai = createBackendGemini();
     const prompt = `Write YouTube Shorts publishing metadata for a short titled "${project.title}". Hook: "${project.hook_line || ''}". Script summary: ${generation ? generation.script.map(b => b.text).join(' ').slice(0, 2000) : 'n/a'}.
 Return ONLY raw JSON, no markdown:
 {"title":"punchy title under 90 chars","description":"2-4 sentence description ending with a follow CTA","tags":["10-15 search tags"],"hashtags":["#Shorts plus 3-5 more"]}`;

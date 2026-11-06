@@ -15,9 +15,72 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xhH6r_RnjW_UmSuqCUI_OQ
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Configure the public Supabase connection in `.env.local`. Store AI keys only on the backend; see **Server-side AI** below.
 3. Run the app:
    `npm run dev`
+
+## Server-side AI
+
+Gemini, OpenAI and Anthropic text requests (including Sage, social copy, brand
+analysis and studio planning) use the authenticated `ai-generate` Edge Function.
+The function checks a valid session and active `trellis_users` membership before
+using the fixed Trellis organization's keys. Browser requests contain prompts and
+generation options only; provider errors and keys are never returned.
+
+`tenant-secrets` returns an empty string or `__configured_server_side__` in the
+three legacy AI key fields. This is a status marker used by existing availability
+checks, not a usable credential. Active members receive only AI status and the
+active provider; owners/admins retain access to the other integration settings.
+AI replacement keys can be entered by an admin in Settings → Secrets. A blank
+field or unchanged marker preserves the saved key; saving does not reveal it.
+Newly typed keys are cleared from the form after a successful save. Removing a
+key requires a separate backend administrative operation; blanking the form does
+not revoke it. Other integration credentials are outside this migration's scope.
+
+Server environment variables `GEMINI_API_KEY`, `OPENAI_API_KEY`, and
+`ANTHROPIC_API_KEY` take precedence over the corresponding `tenant_secrets`
+columns. A key in local `.env.local` does **not** configure the hosted function.
+If an environment key is set, rotate it there rather than entering a replacement
+in Settings. Never copy keys into chat, tracked files, frontend code or `VITE_*`.
+
+Model selection is controlled on the server via `GEMINI_TEXT_MODEL`,
+`OPENAI_TEXT_MODEL`, and `ANTHROPIC_TEXT_MODEL`. Defaults are
+`gemini-3.5-flash-lite`, `gpt-4o-mini`, and `claude-haiku-4-5`. Legacy studio model
+hints do not override server selection. Structured JSON and the brand analysis
+Google Search fallback are preserved; arbitrary tools, file URLs and HTTP options
+are not forwarded. Provider access and billing must be checked during rollout.
+
+Release preparation: verify Switchboard selects Trellis hub
+`horvjqqifgrzxesuxtfm`; obtain deployment approval before remote changes. In a
+coordinated maintenance window, deploy `ai-generate` and the updated
+`tenant-secrets` with gateway JWT verification enabled, then release the matching
+frontend build. Old frontend builds cannot use the redacted keys. Use the
+Switchboard wrapper for all Supabase CLI operations. No schema migration is
+required: the hub already has RLS enabled on `tenant_secrets` with no `anon` or
+`authenticated` grants (verified 2026-11-06).
+
+After deployment, configure the keys securely, test one request per provider,
+verify an unauthenticated request is rejected, and inspect the settings response
+and browser network traffic for absence of provider credentials. Rotate any keys
+previously delivered to browsers through the old settings response. If rollout
+fails, keep AI temporarily unavailable and repair the backend; do not restore the
+old endpoint that returned plaintext keys.
+
+Local checks (no live provider calls):
+
+```sh
+node --test tests/ai-backend.test.mjs tests/card-direction-copy.test.mjs tests/creative-studio-ideas.test.mjs
+npx tsc --noEmit
+deno check supabase/functions/ai-generate/index.ts supabase/functions/tenant-secrets/index.ts
+npm run build
+```
+
+With Vite on port 3015 and Playwright available, run
+`node tests/ai-settings-browser.mjs` and `node tests/social-idea-chat-browser.mjs`.
+Set `STUDIO_TEST_URL` to the exact preview origin and `PLAYWRIGHT_MODULE` if
+Playwright is installed outside this project. These fixtures intercept external
+requests and cover key status, save failure/retry, cleared replacement keys,
+chat/brief handoff, brand isolation and mobile layout.
 
 ## Content intelligence workflow
 

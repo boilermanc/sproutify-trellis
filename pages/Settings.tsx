@@ -13,13 +13,14 @@ import {
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
 import ConnectionsManager from '../ConnectionsManager';
+import { AI_CONFIGURED } from '../services/aiBackend';
 import TeamPanel from './TeamPanel';
 import PostHogConnectionsPanel from '../components/PostHogConnectionsPanel';
 import { testManusConnection, ManusTestResult } from '../services/manusService';
 
 interface SettingsProps {
   apiKeys: ApiKeyConfig;
-  onUpdateApiKeys: (keys: ApiKeyConfig) => void;
+  onUpdateApiKeys: (keys: ApiKeyConfig) => Promise<boolean>;
   spokeConnections: SpokeConnection[];
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branches: Branch[];
@@ -36,7 +37,7 @@ interface SettingsProps {
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
   { id: 'gemini', name: 'Google Gemini', icon: Sparkles, color: 'text-blue-500' },
-  { id: 'openai', name: 'OpenAI GPT-4o', icon: Zap, color: 'text-emerald-500' },
+  { id: 'openai', name: 'OpenAI', icon: Zap, color: 'text-emerald-500' },
   { id: 'anthropic', name: 'Anthropic Claude', icon: Cpu, color: 'text-amber-500' },
 ];
 
@@ -66,6 +67,7 @@ const Settings: React.FC<SettingsProps> = ({
   }, [initialTab]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [integrations, setIntegrations] = useState<Integration[]>(MOCK_INTEGRATIONS);
@@ -82,14 +84,25 @@ const Settings: React.FC<SettingsProps> = ({
   const [manusTesting, setManusTesting] = useState(false);
   const [manusTestResult, setManusTestResult] = useState<ManusTestResult | null>(null);
 
-  const handleSave = () => {
+  useEffect(() => { setLocalApiKeys(apiKeys); }, [apiKeys]);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => {
-      onUpdateApiKeys(localApiKeys);
-      setIsSaving(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    }, 1500);
+    setSaveSuccess(false);
+    setSaveError(false);
+    try {
+      const success = await onUpdateApiKeys(localApiKeys);
+      if (success) {
+        setLocalApiKeys(previous => ({ ...previous,
+          gemini_api_key: previous.gemini_api_key ? AI_CONFIGURED : '',
+          openai_api_key: previous.openai_api_key ? AI_CONFIGURED : '',
+          anthropic_api_key: previous.anthropic_api_key ? AI_CONFIGURED : '',
+        }));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else { setSaveError(true); }
+    } catch { setSaveError(true); }
+    finally { setIsSaving(false); }
   };
 
   const handleMetaSave = () => {
@@ -477,25 +490,30 @@ const Settings: React.FC<SettingsProps> = ({
                       </button>
                     ))}
                   </div>
+                  <p className="text-sm text-slate-500 mb-4">AI keys stay on the server after saving and cannot be revealed here. Leave a field blank to keep its saved key.</p>
                   <div className="space-y-4">
                     {[
                       { id: 'gemini_api_key', label: 'Gemini API Key', provider: 'gemini', icon: Sparkles, color: 'text-blue-500' },
                       { id: 'openai_api_key', label: 'OpenAI API Key', provider: 'openai', icon: Zap, color: 'text-emerald-500' },
                       { id: 'anthropic_api_key', label: 'Anthropic API Key', provider: 'anthropic', icon: Cpu, color: 'text-amber-500' },
                     ].map(cfg => (
-                      <div key={cfg.id} className={`relative transition-opacity ${localApiKeys.active_llm === cfg.provider ? 'opacity-100' : 'opacity-40'}`}>
+                      <div key={cfg.id} className="relative">
                          <label className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase mb-2 ml-1">
                            <cfg.icon size={14} className={cfg.color} />
                            {cfg.label} {localApiKeys.active_llm === cfg.provider && <span className="text-emerald-500">(Active)</span>}
+                           {(apiKeys as any)[cfg.id] === AI_CONFIGURED && <span className="text-emerald-700">Saved</span>}
                          </label>
                          <input
                             type={visibleKeys[cfg.id] ? 'text' : 'password'}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500"
-                            value={(localApiKeys as any)[cfg.id]}
+                            value={(localApiKeys as any)[cfg.id] === AI_CONFIGURED ? '' : (localApiKeys as any)[cfg.id]}
+                            aria-label={cfg.label}
+                            disabled={isSaving}
+                            autoComplete="new-password"
                             onChange={(e) => setLocalApiKeys({ ...localApiKeys, [cfg.id]: e.target.value })}
-                            placeholder={`Enter your ${cfg.label}...`}
+                            placeholder={(apiKeys as any)[cfg.id] === AI_CONFIGURED ? 'Configured securely — enter a replacement only' : `Enter your ${cfg.label}...`}
                          />
-                         <button onClick={() => setVisibleKeys(prev => ({...prev, [cfg.id]: !prev[cfg.id]}))} className="absolute right-4 top-10 text-slate-400 hover:text-slate-900 transition-colors">
+                         <button aria-label={`${visibleKeys[cfg.id] ? 'Hide' : 'Show'} new ${cfg.label}`} onClick={() => setVisibleKeys(prev => ({...prev, [cfg.id]: !prev[cfg.id]}))} className="absolute right-4 top-10 text-slate-400 hover:text-slate-900 transition-colors">
                            {visibleKeys[cfg.id] ? <EyeOff size={16} /> : <Eye size={16} />}
                          </button>
                       </div>
@@ -895,6 +913,8 @@ const Settings: React.FC<SettingsProps> = ({
 
         {activeTab !== 'integrations' && activeTab !== 'spokes' && activeTab !== 'social' && activeTab !== 'team' && (
           <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end items-center space-x-4">
+            {saveError && <p role="alert" className="text-sm text-red-600">Could not save. Your changes are still here; try again.</p>}
+            {saveSuccess && <p role="status" className="text-sm text-emerald-700">Configuration saved.</p>}
             <button
               onClick={handleSave}
               disabled={isSaving}

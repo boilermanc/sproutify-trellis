@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import { z } from 'zod';
 import type { BrandIdentity, BranchInfo, CreativeStudioIdea, CreativeStudioIdeaContext, VideoAdJob, VideoAdFormat } from '../types';
 import { sanitizePII } from './aiService';
@@ -127,7 +128,7 @@ export async function generateCreativeIdeas(
   apiKey: string, context: CreativeStudioIdeaContext, signal?: AbortSignal,
 ): Promise<CreativeStudioIdea[]> {
   if (!apiKey) throw new Error('Gemini is not configured.');
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = createBackendGemini();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: sanitizePII(buildCreativeIdeasPrompt(context)),

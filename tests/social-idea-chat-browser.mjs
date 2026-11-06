@@ -7,6 +7,8 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   page.setDefaultTimeout(60000);
+  page.on('console', msg => { if (msg.type() === 'error') console.error('Browser:', msg.text()); });
+  page.on('requestfailed', req => console.error('Request failed:', new URL(req.url()).pathname, req.failure()?.errorText));
   const errors = [];
   const prompts = [];
   let historyMode = 'ready';
@@ -16,11 +18,11 @@ try {
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== base) {
-      if (url.hostname === 'generativelanguage.googleapis.com') {
+      if (url.pathname.endsWith('/functions/v1/ai-generate')) {
         prompts.push(JSON.parse(route.request().postData()));
         if (aiMode === 'error') return route.fulfill({ status: 500, body: '{}' });
         if (aiMode === 'delay') await new Promise(resolve => { release = resolve; });
-        return route.fulfill({ json: { candidates: [{ content: { parts: [{ text: 'Try a seedling care tip. Who should it help?' }] } }] } });
+        return route.fulfill({ json: { text: 'Try a seedling care tip. Who should it help?', provider: 'gemini' } });
       }
       if (url.pathname.endsWith('/rest/v1/marketing_events')) {
         assert.equal(url.searchParams.get('limit'), '12');
@@ -34,35 +36,14 @@ try {
       }
       return route.abort();
     }
-    if (url.pathname === '/__idea_chat__') return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><body><div id="root"></div><script type="module">
-      import RefreshRuntime from '/@react-refresh'; RefreshRuntime.injectIntoGlobalHook(window);
-      window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type; window.__vite_plugin_react_preamble_installed__ = true;
-      await import('/@vite/client');
-      const r = await import('/node_modules/.vite/deps/react.js'); const React = r.default || r;
-      const d = await import('/node_modules/.vite/deps/react-dom_client.js'); const { createRoot } = d.default || d;
-      const { default: Chat } = await import('/components/SocialIdeaChat.tsx'); await import('/index.css');
-      const { useSavedSocialIdea } = await import('/hooks/useSavedSocialIdea.ts');
-      function App() {
-        const [id, setId] = React.useState('garden'); const [show, setShow] = React.useState(true);
-        const [notes, setNotes] = useSavedSocialIdea(id, 'notes');
-        return React.createElement('main', { style: { padding: 20 } },
-          React.createElement('button', { onClick: () => setId('music') }, 'Switch brand'),
-          React.createElement('button', { onClick: () => setId('garden') }, 'Return to garden'),
-          React.createElement('button', { onClick: () => setShow(s => !s) }, 'Toggle chat view'),
-          show && React.createElement(Chat, { key: id, brand: { id, name: id === 'garden' ? 'Fixture Garden' : 'Fixture Music', tone: 'friendly', description: 'A community brand' }, apiKeys: { active_llm: 'gemini', gemini_api_key: 'fixture-only' }, notes, onUseBrief: text => setNotes(n => n + '\\n' + text) }),
-          React.createElement('textarea', { 'aria-label': 'Post notes', value: notes, onChange: e => setNotes(e.target.value) }),
-          React.createElement('p', { id: 'notes' }, notes));
-      }
-      createRoot(document.getElementById('root')).render(React.createElement(App));
-    </script></body></html>` });
     return route.continue();
   });
-  await page.goto(base + '/__idea_chat__');
+  await page.goto(base + '/tests/fixtures/social-idea-chat.html');
   await page.getByLabel('Post notes').fill('Keep my notes.');
   await page.getByText('Using 1 recently recorded posts in Trellis.').waitFor();
   await page.getByRole('button', { name: 'Suggest what to post next' }).click();
   await page.getByRole('log').getByText('Try a seedling care tip. Who should it help?').waitFor();
-  let context = JSON.parse(prompts[0].contents.at(-1).parts[0].text);
+  let context = JSON.parse(prompts[0].prompt);
   assert.equal(context.brand.name, 'Fixture Garden');
   assert.equal(context.recentPosts.length, 1);
   assert.equal(context.recentPosts[0].caption, 'Seedling launch last week');
@@ -71,7 +52,7 @@ try {
   await page.getByRole('button', { name: 'Send to Sage' }).click();
   await page.getByRole('button', { name: 'Prepare a post brief' }).waitFor();
   await page.waitForFunction(() => !document.querySelector('#sage-social-message').disabled);
-  context = JSON.parse(prompts[1].contents.at(-1).parts[0].text);
+  context = JSON.parse(prompts[1].prompt);
   assert.equal(context.conversation.length, 3);
   assert.ok(!JSON.stringify(prompts[1]).includes('123-45-6789'));
   await page.getByRole('button', { name: 'Prepare a post brief' }).click();

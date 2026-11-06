@@ -1,5 +1,5 @@
 import { Profile, ChatMessage, LlmProvider, Ticket, ApiKeyConfig, ComplianceResult } from "../types";
-import { GoogleGenAI } from '@google/genai';
+import { createBackendGemini, invokeAI } from './aiBackend';
 import { BRIEF_RECIPES, type BriefAxis, type BriefRecipe } from '../constants';
 
 // ============================================================================
@@ -19,129 +19,13 @@ interface GenerateResult {
   error?: string;
 }
 
-// gemini-1.5-flash was retired by Google; use the current flash model (same one the Social Hub Lab uses).
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-
-async function generateWithGeminiRest(apiKey: string, options: GenerateOptions): Promise<string> {
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        ...(options.systemPrompt ? [{ role: 'user', parts: [{ text: options.systemPrompt }] }] : []),
-        { role: 'user', parts: [{ text: options.prompt }] }
-      ],
-      generationConfig: {
-        maxOutputTokens: options.maxTokens || 1024,
-        temperature: options.temperature || 0.7,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${error}`);
-  }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-async function generateWithOpenAI(apiKey: string, options: GenerateOptions): Promise<string> {
-  const messages = [];
-  if (options.systemPrompt) {
-    messages.push({ role: 'system', content: options.systemPrompt });
-  }
-  messages.push({ role: 'user', content: options.prompt });
-
-  const response = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages,
-      max_tokens: options.maxTokens || 1024,
-      temperature: options.temperature || 0.7,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-async function generateWithAnthropic(apiKey: string, options: GenerateOptions): Promise<string> {
-  const response = await fetch(ANTHROPIC_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: options.maxTokens || 1024,
-      system: options.systemPrompt,
-      messages: [{ role: 'user', content: options.prompt }],
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Anthropic API error: ${error}`);
-  }
-
-  const data = await response.json();
-  return data.content?.[0]?.text || '';
-}
-
 export async function generateText(apiKeys: ApiKeyConfig, options: GenerateOptions): Promise<GenerateResult> {
   const provider = apiKeys.active_llm;
-
-  // Sanitize all user-facing prompt content before sending to LLM
-  const sanitizedOptions: GenerateOptions = {
-    ...options,
+  try { return await invokeAI({ action: 'text', provider, ...options,
     prompt: sanitizePII(options.prompt),
-  };
-
-  try {
-    let text: string;
-
-    switch (provider) {
-      case 'gemini':
-        if (!apiKeys.gemini_api_key) throw new Error('Gemini API key not configured');
-        text = await generateWithGeminiRest(apiKeys.gemini_api_key, sanitizedOptions);
-        break;
-      case 'openai':
-        if (!apiKeys.openai_api_key) throw new Error('OpenAI API key not configured');
-        text = await generateWithOpenAI(apiKeys.openai_api_key, sanitizedOptions);
-        break;
-      case 'anthropic':
-        if (!apiKeys.anthropic_api_key) throw new Error('Anthropic API key not configured');
-        text = await generateWithAnthropic(apiKeys.anthropic_api_key, sanitizedOptions);
-        break;
-      default:
-        throw new Error(`Unknown LLM provider: ${provider}`);
-    }
-
-    return { text, provider };
-  } catch (error) {
-    return {
-      text: '',
-      provider,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-  }
+    systemPrompt: options.systemPrompt ? sanitizePII(options.systemPrompt) : undefined,
+  }); }
+  catch (error) { return { text: '', provider, error: error instanceof Error ? error.message : 'AI request failed.' }; }
 }
 
 interface GenerateCardBriefParams {
@@ -229,7 +113,7 @@ Rules: The situation must stay specific — never generalize it into a category.
       : '',
   ].filter(Boolean).join('\n');
 
-  const ai = new GoogleGenAI({ apiKey: params.apiKey });
+  const ai = createBackendGemini();
   const response = await ai.models.generateContent({
     model: 'gemini-flash-latest',
     contents: sanitizePII(userMessage),

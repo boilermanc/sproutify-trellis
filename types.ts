@@ -384,6 +384,7 @@ export interface N8nWebhooks {
 
 export interface ApiKeyConfig {
   active_llm: LlmProvider;
+  /** Server configuration markers; plaintext is accepted only in the Settings save form. */
   gemini_api_key: string;
   openai_api_key: string;
   anthropic_api_key: string;

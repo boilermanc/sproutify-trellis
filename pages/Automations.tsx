@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { createBackendGemini } from '../services/aiBackend';
 import {
   Workflow, Play, Clock, CheckCircle2, GitBranch, ArrowRight,
   Mail, Instagram, Sparkles, MessageSquare, Share2, Slack,
@@ -82,7 +82,7 @@ const Automations: React.FC<AutomationsProps> = ({ apiKeys, onOpenArticle }) => 
     try {
       const geminiKey = apiKeys?.gemini_api_key;
       if (!geminiKey) { setIsGenerating(false); return; }
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const ai = createBackendGemini();
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: "Suggest an automation flow for 'Recovering Abandoned Carts for Garden Tools'. Provide exactly 4 steps. Just the step names.",

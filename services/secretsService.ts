@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { ApiKeyConfig } from '../types';
+import { AI_CONFIGURED } from './aiBackend';
 
 // Secrets are read and written through the `tenant-secrets` Edge Function,
 // NOT by querying tenant_secrets directly. That table holds every third-party
@@ -12,7 +13,7 @@ import { ApiKeyConfig } from '../types';
 // ignored — the function pins the org server-side so a caller cannot ask for
 // another org's secrets.
 
-const DEFAULT_SECRETS: ApiKeyConfig = {
+export const DEFAULT_SECRETS: ApiKeyConfig = {
   active_llm: 'gemini',
   gemini_api_key: '',
   openai_api_key: '',
@@ -46,7 +47,11 @@ export async function fetchSecrets(_organizationId?: string): Promise<ApiKeyConf
     }
 
     // Merge over defaults so a column added later can't leave a field undefined.
-    return { ...DEFAULT_SECRETS, ...data.secrets };
+    const safe = { ...DEFAULT_SECRETS, ...data.secrets };
+    for (const field of ['gemini_api_key', 'openai_api_key', 'anthropic_api_key'] as const) {
+      safe[field] = safe[field] ? AI_CONFIGURED : '';
+    }
+    return safe;
   } catch (err) {
     console.warn('[secrets] fetch threw, using defaults:', err);
     return DEFAULT_SECRETS;

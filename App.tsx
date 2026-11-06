@@ -629,12 +629,13 @@ const AppContent: React.FC = () => {
         <Settings
           apiKeys={apiKeys}
           onUpdateApiKeys={async (keys) => {
-            setApiKeys(keys);
             const success = await saveSecrets(SPROUTIFY_ORG_ID, keys);
+            if (success) setApiKeys(await fetchSecrets(SPROUTIFY_ORG_ID));
             addToast(
               success ? 'Secrets committed to vault.' : 'Failed to save secrets.',
               success ? 'success' : 'error'
             );
+            return success;
           }}
           spokeConnections={spokeConnections}
           onSpokeConnectionsChange={setSpokeConnections}

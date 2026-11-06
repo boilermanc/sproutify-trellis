@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication,
   CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession, YouTubeDailyMetric, EpisodeChapter,
@@ -318,7 +318,7 @@ export async function generateMetadata(episode: Episode, session: MusicSession |
   let title = cleanEpisodeTitle, description = '', tags: string[] = [], hashtags: string[] = [];
   if (geminiApiKey) {
     try {
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const ai = createBackendGemini();
       const prompt = `Write YouTube publishing metadata for a ${cleanGenre} ${cleanMood} session titled "${cleanEpisodeTitle}"${cleanShowName ? ` for the show "${cleanShowName}"` : ''}. Theme: ${cleanTheme || 'n/a'}.
 Keep the title readable and do not repeat the show name twice.
 Avoid smoking references and avoid the words smoky, romantic, sensual, and intimate.

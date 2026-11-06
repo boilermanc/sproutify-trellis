@@ -23,6 +23,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { AI_FIELDS, aiStatus, aiKeyUpdate } from "../_shared/ai-contract.mjs";
+
 const HUB_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -50,9 +52,7 @@ function toConfig(row: Record<string, any> | null) {
   const r = row || {};
   return {
     active_llm: r.active_llm || "gemini",
-    gemini_api_key: r.gemini_api_key || "",
-    openai_api_key: r.openai_api_key || "",
-    anthropic_api_key: r.anthropic_api_key || "",
+    ...aiStatus(r, (name: string) => Deno.env.get(name) || ''),
     xai_api_key: r.xai_api_key || "",
     n8n_webhooks: {
       chat: r.n8n_webhook_chat || "",
@@ -101,14 +101,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Not authenticated" }, 401);
   }
 
-  // Credentials are materially more sensitive than ordinary Trellis data.
-  // A valid session alone is not enough: only active owners/admins may read or
-  // change the organization-wide provider keys.
+  // All active members may read AI configuration status; only owners/admins
+  // may manage credentials or read the other integration settings.
   const db = createClient(HUB_URL, SERVICE_KEY);
   const { data: secretManager } = await db.from("trellis_users").select("role,status")
-    .eq("auth_user_id", userData.user.id).eq("status", "active")
-    .in("role", ["owner", "admin"]).maybeSingle();
-  if (!secretManager) return json({ error: "Owner or admin access required" }, 403);
+    .eq("auth_user_id", userData.user.id).eq("status", "active").maybeSingle();
+  if (!secretManager) return json({ error: "Active Trellis membership required" }, 403);
+  const isAdmin = ["owner", "admin"].includes(secretManager.role);
 
   let body: any;
   try {
@@ -127,14 +126,18 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (error) {
-      console.error("tenant-secrets get failed:", error.message);
+      console.error("tenant-secrets get failed");
       return json({ error: "Could not read secrets" }, 500);
     }
     // No row yet is a legitimate first-run state, not an error.
-    return json({ secrets: toConfig(data) });
+    return json({ secrets: isAdmin ? toConfig(data) : {
+      active_llm: data?.active_llm || 'gemini',
+      ...aiStatus(data, (name: string) => Deno.env.get(name) || ''),
+    } });
   }
 
   if (op === "save") {
+    if (!isAdmin) return json({ error: 'Owner or admin access required' }, 403);
     const incoming = body?.secrets;
     if (!incoming || typeof incoming !== "object") {
       return json({ error: "secrets object is required" }, 400);
@@ -152,7 +155,12 @@ Deno.serve(async (req: Request) => {
       updated_at: new Date().toISOString(),
     };
     for (const col of WRITABLE) {
-      if (flat[col] !== undefined) payload[col] = flat[col];
+      if (AI_FIELDS.includes(col)) {
+        try {
+          const replacement = aiKeyUpdate(flat[col]);
+          if (replacement !== undefined) payload[col] = replacement;
+        } catch { return json({ error: 'Invalid AI key.' }, 400); }
+      } else if (flat[col] !== undefined) payload[col] = flat[col];
     }
 
     const { error } = await db
@@ -160,7 +168,7 @@ Deno.serve(async (req: Request) => {
       .upsert(payload, { onConflict: "organization_id" });
 
     if (error) {
-      console.error("tenant-secrets save failed:", error.message);
+      console.error("tenant-secrets save failed");
       return json({ error: "Could not save secrets" }, 500);
     }
     // Never echo the values back -- the caller already has what it sent.

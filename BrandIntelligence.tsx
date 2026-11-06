@@ -1,3 +1,4 @@
+import { createBackendGemini } from './services/aiBackend';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrandIdentity, BrandAnalysisState, GeneratedBrandAsset, BranchContext, EmailTemplate } from './types';
 import { MOCK_BRAND_IDENTITIES } from './constants';
@@ -829,9 +830,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       };
 
       if (messagingUrl.trim()) {
-        const ai = new (await import('@google/genai')).GoogleGenAI({
-          apiKey: geminiApiKey
-        });
+        const ai = createBackendGemini();
 
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',

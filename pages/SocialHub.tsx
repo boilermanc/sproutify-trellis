@@ -5,7 +5,8 @@ import XTrackingPanel from '../components/XTrackingPanel';
 import { useSavedSocialIdea } from '../hooks/useSavedSocialIdea';
 import { DraftPost, SocialActivity, Profile, MarketingEvent, BranchContext, Branch, BranchSocialAccountsMap, SocialPlatform, Ticket, IntentType, CalendarEvent, CampaignChannel, ComplianceResult, DeployedCampaign, ApprovalStatus, ApiKeyConfig, NewScheduledPost } from '../types';
 import { Article } from '../src/data/helpContent';
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from '@google/genai';
+import { createBackendGemini } from '../services/aiBackend';
 import { SOCIAL_PLATFORM_META, PLATFORM_ICONS, PLATFORM_COLORS, getSocialUrl } from '../utils';
 import { updateSignalStatus, linkProfileToSocial, publishToSocial, publishToFacebook, publishToTikTok, checkConnections } from '../services/socialService';
 import { createScheduledPosts } from '../services/scheduledPostService';
@@ -685,7 +686,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
 
       const geminiKey = apiKeys?.gemini_api_key;
       if (!geminiKey) { addToast?.('Gemini API key not configured. Set it in Settings.', 'error'); setIsGenerating(false); return; }
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const ai = createBackendGemini();
 
       // Fan out: one draft per selected brand (or a single generic draft if none selected)
       const targetBranches = selectedBranches.length > 0 ? selectedBranches : [null];
@@ -888,7 +889,7 @@ const SocialHub: React.FC<SocialHubProps> = ({ selectedBranchSlug, profiles, set
     if (!geminiKey) { addToast?.('Gemini API key not configured. Set it in Settings.', 'error'); return; }
     const mediaType = draft.media_type || (getDraftMediaUrls(draft).length > 1 ? 'carousel' : 'image');
     const branch = getBranchForDraft(draft);
-    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    const ai = createBackendGemini();
     setIsGenerating(true);
     try {
       const { result } = await generateWithFallback(model => ai.models.generateContent({

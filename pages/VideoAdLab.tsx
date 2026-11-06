@@ -5,7 +5,7 @@ import { creativeHistoryTitle } from '../services/creativeStudioIdeas';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, BrandIdentity, BranchInfo, CreativeStudioIdea, TextOverlayConfig, TextOverlayLayer } from '../types';
-import { GoogleGenAI } from '@google/genai';
+import { createBackendGemini } from '../services/aiBackend';
 import { formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
 import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
@@ -879,7 +879,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     setIsGeneratingScript(true);
     try {
       if (!geminiApiKey) { addToast('No Gemini API key configured. Add one in Settings.', 'error'); return; }
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const ai = createBackendGemini();
       const wl = Math.floor((duration - 1) * 2.2);
       const prompt = `You are a video ad scriptwriter for Sproutify. Write a spoken-word script for a ${pipeline === 'talking_head' ? 'talking-head' : 'full scene'} video ad.
 

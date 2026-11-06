@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import { BrandCardStyle, CardBullet, CardConcept, CardMessage, CardPalette, CardTemplate } from '../types';
 import { sanitizePII } from './aiService';
 import { USFM_BOOKS, VerseReference } from './bibleService';
@@ -837,7 +838,7 @@ export async function generateCardConcepts(opts: {
   const count = Math.max(1, Math.min(6, Math.round(opts.count) || 3));
 
   try {
-    const ai = new GoogleGenAI({ apiKey: opts.apiKey });
+    const ai = createBackendGemini();
     const prompt = buildDirectorPrompt({ ...opts, count });
 
     // WHY NO responseSchema: the head/tail runaway logging caught the model
