@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import ProjectRoomIntake from "../components/ProjectRoomIntake";
+import CompanyAssessment from "../components/CompanyAssessment";
+import RoomDocumentReview from "../components/RoomDocumentReview";
 import {
   ArrowRight,
   Check,
@@ -25,12 +28,6 @@ const roles: { id: RoomRole; name: string; detail: string }[] = [
   { id: "review", name: "Manus reviewer", detail: "Compare & investigate" },
   { id: "chief", name: "Chief of staff", detail: "Living brief & next pass" },
 ];
-const templates = {
-  client:
-    "Research a client opportunity.\n\nBusiness name and public website:\nWhat the client wants:\nWhat we already know:\nDeliverable: a sourced opportunity brief, practical proposal, and questions for the client.\nConstraints and things to verify:",
-  product:
-    "Work through a product specification.\n\nProduct: Pera\nProblem and intended users:\nKnown requirements:\nDifficult constraints and tradeoffs:\nDecisions already made:\nDeliverable: a living specification with acceptance criteria, proposed decisions, and unresolved questions.",
-};
 const button =
   "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed";
 const input =
@@ -71,11 +68,7 @@ export default function ProjectRooms({
   const [room, setRoom] = useState<ProjectRoom | null>(null);
   const selectedId = useRef("");
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<"client" | "product">("client");
-  const [brief, setBrief] = useState(templates.client);
-  const [maxRounds, setMaxRounds] = useState(3);
-  const [callBudget, setCallBudget] = useState(15);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -272,111 +265,13 @@ export default function ProjectRooms({
         </aside>
         <main className="min-w-0 space-y-5">
           {creating || !room ? (
-            <form
-              className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 md:p-8"
-              onSubmit={(e) => {
-                e.preventDefault();
-                perform("create", {
-                  title,
-                  kind,
-                  brief,
-                  max_rounds: maxRounds,
-                  call_budget: callBudget,
-                });
-              }}
-            >
-              <h2 className="text-xl font-bold text-slate-900">
-                What are we working through?
-              </h2>
-              <div className="flex gap-3">
-                {(["client", "product"] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    className={`${button} ${kind === k ? "!border-emerald-600 !bg-emerald-50" : ""}`}
-                    onClick={() => {
-                      setKind(k);
-                      if (Object.values(templates).includes(brief))
-                        setBrief(templates[k]);
-                    }}
-                  >
-                    {k === "client"
-                      ? "Client research"
-                      : "Product specification"}
-                  </button>
-                ))}
-              </div>
-              <label className="block space-y-2 text-sm font-semibold">
-                Room title
-                <input
-                  className={input}
-                  required
-                  maxLength={140}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Painter opportunity / Pera requirements"
-                />
-              </label>
-              <label className="block space-y-2 text-sm font-semibold">
-                Shared project brief
-                <textarea
-                  className={`${input} min-h-64 font-normal leading-6`}
-                  required
-                  minLength={20}
-                  maxLength={24000}
-                  value={brief}
-                  onChange={(e) => setBrief(e.target.value)}
-                />
-              </label>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm font-semibold">
-                  Maximum rounds
-                  <input
-                    className={input}
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={maxRounds}
-                    onChange={(e) => setMaxRounds(Number(e.target.value))}
-                  />
-                </label>
-                <label className="space-y-2 text-sm font-semibold">
-                  Provider request budget
-                  <input
-                    className={input}
-                    type="number"
-                    min={1}
-                    max={25}
-                    value={callBudget}
-                    onChange={(e) => setCallBudget(Number(e.target.value))}
-                  />
-                </label>
-              </div>
-              <p className="text-xs leading-5 text-slate-500">
-                Each full round uses up to five generation requests. This bounds
-                requests, not dollar or Manus credit spend. Manus can run for up
-                to three hours before Trellis stops waiting. Uncertain requests
-                are never automatically retried.
-              </p>
-              {missing.length > 0 && (
-                <p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
-                  Missing connections:{" "}
-                  {missing
-                    .map((id) => roles.find((r) => r.id === id)?.name)
-                    .join(", ")}
-                  . The room pauses at those handoffs. Import responses or
-                  connect them in Settings.
-                </p>
+            <ProjectRoomIntake
+              busy={busy}
+              missingConnections={missing.map(
+                (id) => roles.find((role) => role.id === id)?.name || id,
               )}
-              <button
-                className={`${button} !bg-emerald-700 !text-white`}
-                disabled={busy}
-              >
-                {busy && <Loader2 size={15} className="animate-spin" />}Create
-                private room
-                <ArrowRight size={16} />
-              </button>
-            </form>
+              onCreate={(value) => perform("create", value)}
+            />
           ) : (
             <>
               <section className="rounded-3xl border border-slate-200 bg-white p-6">
@@ -509,7 +404,11 @@ export default function ProjectRooms({
                 <section className="rounded-3xl border border-slate-200 bg-white p-6">
                   <h3 className="mb-4 text-lg font-bold">Living brief</h3>
                   {room.state.summary ? (
-                    <DocumentText text={room.state.summary} />
+                    room.kind === "client" ? (
+                      <CompanyAssessment room={room} />
+                    ) : (
+                      <DocumentText text={room.state.summary} />
+                    )
                   ) : (
                     <p className="text-sm text-slate-500">
                       The chief of staff will assemble this after research and
@@ -644,6 +543,13 @@ export default function ProjectRooms({
                   ))}
                 </section>
               )}
+              <React.Fragment key={`${room.id}-${room.version}`}>
+                <RoomDocumentReview
+                  room={room}
+                  busy={disabled}
+                  onSave={(documents) => perform("documents", { documents })}
+                />
+              </React.Fragment>
               {room.status !== "cancelled" && (
                 <section className="rounded-3xl border border-slate-200 bg-white p-6">
                   <h3 className="flex items-center gap-2 font-bold">

@@ -2,6 +2,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import ProjectRooms from "../../pages/ProjectRooms";
+import { assessmentFixture } from "./company-assessment.mjs";
 import {
   createRoom,
   nextRound,
@@ -10,7 +11,11 @@ import {
   exportRoom,
 } from "../../supabase/functions/_shared/project-room.mjs";
 import "../../index.css";
-let room: any = null;
+import { validateDocuments } from "../../supabase/functions/_shared/project-room-intake.mjs";
+let room: any =
+  new URL(location.href).searchParams.get("scenario") === "report"
+    ? assessmentFixture()
+    : null;
 const original = window.fetch;
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
@@ -44,6 +49,8 @@ window.fetch = async (input, init) => {
         if (b.action === "cancel") room.status = "cancelled";
         if (b.action === "note")
           room.state.notes.push({ text: b.text, at: new Date().toISOString() });
+        if (b.action === "documents")
+          room.state.documents = validateDocuments(b.documents);
         if (b.action === "import") {
           importOutput(room, b.role, b.text, "fixture-user");
           if (room.status !== "awaiting_user") room.status = "paused";

@@ -1,5 +1,6 @@
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import type { RoomDocument } from "./projectRoomDocuments";
 export type RoomRole = "research" | "openai" | "anthropic" | "review" | "chief";
 export interface ProjectRoom {
   id: string;
@@ -11,6 +12,8 @@ export interface ProjectRoom {
   error?: string;
   busy?: boolean;
   state: {
+    intake?: Record<string, string>;
+    documents?: RoomDocument[];
     max_rounds: number;
     call_budget: number;
     calls_used: number;
@@ -23,6 +26,7 @@ export interface ProjectRoom {
       outputs: Record<string, { text: string; source: string; model?: string }>;
       tasks: Record<string, { id: string }>;
       in_flight?: string[];
+      documents?: RoomDocument[];
     }[];
     decisions: { id: string; text: string; status: string; round: number }[];
     questions: string[];

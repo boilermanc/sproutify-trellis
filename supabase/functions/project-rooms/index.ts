@@ -14,6 +14,7 @@ import {
   exportRoom,
 } from "../_shared/project-room.mjs";
 import { generate, createManus, pollManus } from "./providers.ts";
+import { validateDocuments } from "../_shared/project-room-intake.mjs";
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 const CORS = {
@@ -353,6 +354,16 @@ Deno.serve(async (req) => {
       event(
         room,
         `User ${room.status} the room. Already dispatched provider work may still finish externally.`,
+      );
+    } else if (body.action === "documents") {
+      if (!["draft", "awaiting_user"].includes(room.status))
+        throw new Error(
+          "Documents can be changed before research starts or after a round finishes.",
+        );
+      room.state.documents = validateDocuments(body.documents);
+      event(
+        room,
+        "User saved extracted document text for the next round. Originals and page images are not included.",
       );
     } else if (body.action === "note") {
       const text = sanitizePII(body.text, 6000).trim();

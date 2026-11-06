@@ -4,6 +4,20 @@ Entry: `https://trellis.sproutify.app/?view=project-rooms`, or **Project Rooms**
 
 ## Working scope
 
+Setup begins with an explicit **Company review** or **Product specification** choice; neither is preselected. Company intake asks for company name, public URL, the decision being informed, market, reader, pertinent information, scope and questions. Spec intake asks for the product, problem, users/journeys, requirements, constraints, integrations, already-made user decisions, acceptance criteria and open tradeoffs. A review step shows the assembled packet and budgets before creating a private draft. Creation never starts provider work automatically.
+
+Company synthesis follows the StyleBAR assessment's general structure: recommendation first, strengths, prioritized evidence/inference findings, improvements to existing systems, optional separately scoped work, discovery, practical next steps/decision, and sources/limits. The company report view and downloadable standalone HTML use navy/blue editorial styling with restrained orange accents; HTML supports browser Print → Save as PDF. This is not automatic PDF generation or a guaranteed eight-page replica. The content adapts to the project and does not copy StyleBAR-specific findings. Existing older summaries still render without inventing missing sections.
+
+### Supporting document text
+
+Users may add up to five PDF, TXT or MD files (5 MB each; PDFs up to 40 pages). PDF.js 6.5.438 extracts the PDF text layer locally in a worker; TXT/MD must be UTF-8. Extraction has a 20-second timeout and an 18,000-character per-file / 48,000-character combined limit. Partial excerpts are marked and previewed. Empty/image-only, protected or unreadable PDFs fail clearly. OCR, DOCX, images, page layout analysis and embedded attachments are not supported.
+
+**Only extracted text is uploaded and persisted**, inside the existing owner-private room state after explicit per-document sharing consent. Original binary files stay in the browser and cannot be downloaded later from Trellis. The server validates filenames, type metadata, quotas, consent and fingerprints, and scrubs high-risk identifiers before persistence. Client extraction is user-supplied evidence, not independently attested file authenticity. Existing authentication and database access controls are unchanged; no public bucket or signed document URLs were added.
+
+Documents can change only in a draft or after a round finishes. Each round retains an immutable snapshot of the document text so independent reviewers receive the same version. All role handoffs contain the extracted text, provenance, truncation and explicit limits; document contents cannot grant tools, access or approvals. The UI says **Included in round N handoff packet**, not that every page was read or every claim verified. Actual provider comprehension is not guaranteed. Live document-provider verification must distinguish real calls from the synthetic local fixture.
+
+Benchmark inspection: Library `libfile_1fd8cc6efcb08191a98ead31abec878b` resolved the eight-page StyleBAR PDF and returned readable page text for all eight pages. The supported local materialization helper failed on Windows Python because `os.setxattr` is unavailable; no final local PDF was installed or falsely reported readable. Page-image pointers were returned by Library, but local PDF render/visual verification remains blocked. The report's design follows the user's stated palette and the readable reference structure. No benchmark PDF or private benchmark content is committed.
+
 An active Trellis owner/admin/operator can create an owner-private client-research or product-specification room. A room stores the original brief, user direction, every round's research/reviews, source text, the living brief, open questions, proposed decisions, human decisions, request counters and activity history. Export downloads the complete Markdown record. Data survives tabs closing and deployments.
 
 The chief-of-staff workflow is deliberately bounded: Manus research → OpenAI and Claude independently in parallel → Manus comparison and targeted verification → Gemini chief synthesis. The chief can request a focused next pass, ask for user judgment, or leave a deliverable for review. Its JSON cannot approve decisions. Approval/rejection is a separate authenticated user action and survives later rounds. All generated handoffs are readable Markdown; state has a versioned JSON schema.
@@ -25,12 +39,12 @@ Saved connections in Settings are reused on the server. Optional Edge Function m
 - Only explicit stopped/completed Manus states with no running background jobs are accepted. Unknown states keep polling. After three hours Trellis stops waiting and asks for review. No arbitrary attachment URLs are downloaded; attachment-only results must be imported manually. Inline assistant text is the supported POC format; message pagination beyond the newest 100 events is not implemented.
 - Prompts, imported text and generated text pass through the room PII/token scrubber before persistence/provider use. This is a basic pattern scrubber, not a guarantee that arbitrary sensitive project material is safe to share.
 - The UI displays Markdown as safe text/headings. Full Markdown records and source URLs are preserved in export. No HTML from agents is executed.
-- Rooms are private to their creator. Multi-user membership, attachments/RAG, arbitrary role planning, direct per-agent chat, token billing, streaming, notifications and automatic external publishing are outside this POC.
+- Rooms are private to their creator. Multi-user membership, original-file storage/RAG, arbitrary role planning, direct per-agent chat, token billing, streaming, notifications and automatic external publishing are outside this POC.
 - Existing Trellis `tenant-secrets` and browser AI adapters still expose saved keys to signed-in users elsewhere in the app. This feature neither uses that response nor expands it; replacing the legacy secret-loading flow remains separate security work. Do not describe the entire app as secret-isolated.
 
 ## Verification
 
-`node --test tests/project-room.test.mjs` exercises multi-pass progression, decision preservation, reviewer isolation, import ordering, input scrubbing and budget enforcement.
+`npm run test:project-rooms` exercises multi-pass progression, decision preservation, reviewer isolation, import ordering, input scrubbing, budgets, path-specific intake, document limits/consent, immutable document packets, and safe editorial report exports.
 
 `deno test --allow-env supabase/functions/project-rooms/providers.test.ts` tests mocked provider transports, connector clearing, private task creation, waiting/background states, assistant-only results and safe errors.
 

@@ -71,6 +71,7 @@
         "npm:@vitejs/plugin-react@5",
         "npm:autoprefixer@10.4.20",
         "npm:lucide-react@0.562",
+        "npm:pdfjs-dist@6.5.438",
         "npm:postcss@8.4.49",
         "npm:react-dom@^19.2.3",
         "npm:react-email-editor@^1.7.11",
