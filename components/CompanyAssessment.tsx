@@ -5,7 +5,6 @@ import {
   assessmentSections,
   inlineTokens,
   markdownBlocks,
-  formattedAssessment,
 } from "../services/companyAssessment.mjs";
 function Inline({ text }: { text: string }) {
   return (
@@ -36,17 +35,24 @@ function Inline({ text }: { text: string }) {
 }
 export default function CompanyAssessment({ room }: { room: ProjectRoom }) {
   const sections = assessmentSections(room.state.summary);
-  function download() {
-    const url = URL.createObjectURL(
-      new Blob([formattedAssessment(room)], {
-        type: "text/html;charset=utf-8",
-      }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${room.title.replace(/[^a-z0-9]/gi, "-")}-assessment.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const [downloading, setDownloading] = React.useState(false);
+  const [downloadError, setDownloadError] = React.useState(false);
+  async function download() {
+    setDownloading(true);
+    setDownloadError(false);
+    try {
+      const { assessmentDocx } = await import("../services/companyAssessmentDocx.mjs");
+      const url = URL.createObjectURL(await assessmentDocx(room));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${room.title.replace(/[^a-z0-9]/gi, "-")}-assessment.docx`;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      setDownloadError(true);
+    } finally {
+      setDownloading(false);
+    }
   }
   return (
     <article className="overflow-hidden rounded-2xl border border-blue-100 bg-white text-[#263b52]">
@@ -65,14 +71,20 @@ export default function CompanyAssessment({ room }: { room: ProjectRoom }) {
         <button
           className="mt-5 inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-900"
           onClick={download}
+          disabled={downloading}
+          type="button"
         >
           <Download size={14} />
-          Download formatted review
+          {downloading ? "Preparing Word document…" : "Download Word document"}
         </button>
         <p className="mt-2 text-xs text-slate-500">
-          Opens as an HTML document. Use the browser’s Print → Save as PDF for a
-          shareable copy.
+          Editable in Microsoft Word and other apps that support DOCX.
         </p>
+        {downloadError && (
+          <p role="alert" className="mt-2 text-xs text-red-700">
+            The Word document could not be generated. Try downloading again.
+          </p>
+        )}
       </header>
       <div className="mx-6 mb-4 border-l-2 border-blue-300 bg-blue-50 p-4 text-xs leading-6 text-slate-600 md:mx-10">
         Working assessment, not a quotation or approved scope. Sources,

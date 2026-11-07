@@ -1,25 +1,54 @@
-import { sanitizePII, SAFETY } from "../_shared/project-room.mjs";
+import { SAFETY, sanitizePII } from "../_shared/project-room.mjs";
+
+export class ProviderFailure extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly httpStatus?: number,
+  ) {
+    super(message);
+  }
+}
+
+const claudeStopReasons = new Set([
+  "max_tokens",
+  "stop_sequence",
+  "tool_use",
+  "pause_turn",
+  "refusal",
+  "model_context_window_exceeded",
+]);
 
 // Fixed endpoints, no user-supplied URLs, no tools or connectors for text models.
-async function request(url: string, init: RequestInit, label: string) {
+async function request(
+  url: string,
+  init: RequestInit,
+  label: string,
+  timeoutMs = 65_000,
+) {
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(65000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok)
-    throw new Error(
+  if (!response.ok) {
+    throw new ProviderFailure(
       `${label} returned HTTP ${response.status}. Check the saved connection; no automatic retry was made.`,
+      "provider_http_error",
+      response.status,
     );
+  }
   const payload = await response.json();
-  if (payload.ok === false)
+  if (payload.ok === false) {
     throw new Error(
       `${label} rejected the request. Check the connection in Manus/Settings.`,
     );
+  }
   return payload;
 }
 export async function generate(role: string, prompt: string, secrets: any) {
   let text = "";
   let model = "";
+  let usage: { input_tokens: number; output_tokens: number } | undefined;
   if (role === "openai") {
     model = Deno.env.get("PROJECT_ROOM_OPENAI_MODEL") || "gpt-6.1-sol";
     const data = await request(
@@ -40,8 +69,9 @@ export async function generate(role: string, prompt: string, secrets: any) {
       },
       "OpenAI",
     );
-    if (data.status !== "completed")
+    if (data.status !== "completed") {
       throw new Error("OpenAI output was incomplete; stopped for review.");
+    }
     text = (data.output || [])
       .flatMap((o: any) => o.content || [])
       .filter((c: any) => c.type === "output_text")
@@ -62,22 +92,44 @@ export async function generate(role: string, prompt: string, secrets: any) {
           model,
           system: SAFETY,
           messages: [{ role: "user", content: prompt }],
-          max_tokens: 5000,
+          max_tokens: 12_000,
         }),
       },
       "Claude",
+      120_000,
     );
-    if (data.stop_reason !== "end_turn")
-      throw new Error("Claude output was incomplete; stopped for review.");
+    if (typeof data.model === "string" && /^claude-[a-z0-9-]+$/.test(data.model)) {
+      model = data.model;
+    }
+    if (Number.isSafeInteger(data.usage?.input_tokens) &&
+      data.usage.input_tokens >= 0 &&
+      Number.isSafeInteger(data.usage?.output_tokens) &&
+      data.usage.output_tokens >= 0) {
+      usage = {
+        input_tokens: data.usage.input_tokens,
+        output_tokens: data.usage.output_tokens,
+      };
+    }
+    if (data.stop_reason !== "end_turn") {
+      const reason = claudeStopReasons.has(data.stop_reason)
+        ? data.stop_reason
+        : "unknown";
+      throw new ProviderFailure(
+        `Claude output was incomplete (${reason}); stopped for review.`,
+        `claude_${reason}`,
+      );
+    }
     text = (data.content || [])
       .filter((c: any) => c.type === "text")
       .map((c: any) => c.text)
       .join("\n");
   } else {
-    model =
-      Deno.env.get("PROJECT_ROOM_CHIEF_MODEL") || "gemini-3-flash-preview";
+    model = Deno.env.get("PROJECT_ROOM_CHIEF_MODEL") ||
+      "gemini-3-flash-preview";
     const data = await request(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${
+        encodeURIComponent(model)
+      }:generateContent`,
       {
         method: "POST",
         headers: {
@@ -94,8 +146,9 @@ export async function generate(role: string, prompt: string, secrets: any) {
       },
       "Chief of staff",
     );
-    if (data.candidates?.[0]?.finishReason !== "STOP")
+    if (data.candidates?.[0]?.finishReason !== "STOP") {
       throw new Error("Chief output was incomplete; stopped for review.");
+    }
     text = (data.candidates?.[0]?.content?.parts || [])
       .map((p: any) => p.text || "")
       .join("");
@@ -105,6 +158,7 @@ export async function generate(role: string, prompt: string, secrets: any) {
     text: sanitizePII(text),
     source: "api",
     model,
+    ...(usage ? { usage } : {}),
     at: new Date().toISOString(),
   };
 }

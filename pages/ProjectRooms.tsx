@@ -1,6 +1,18 @@
+import "./ProjectRooms.css";
+import ProjectRoomWorkspace, {
+  roomNextStep,
+  roomStatusText,
+} from "../components/ProjectRoomWorkspace";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ProjectRoomIntake from "../components/ProjectRoomIntake";
+import {
+  ClientDetails,
+  ClientSearch,
+  ManualMeetingNotes,
+  RoomSharing,
+} from "../components/ProjectRoomClients";
 import CompanyAssessment from "../components/CompanyAssessment";
+import { projectRoomTokenCost } from "../services/projectRoomTokenCost.mjs";
 import RoomDocumentReview from "../components/RoomDocumentReview";
 import {
   ArrowRight,
@@ -9,16 +21,14 @@ import {
   Download,
   Loader2,
   MessageSquare,
-  Plus,
   RefreshCw,
-  ShieldCheck,
   Square,
-  Users,
   X,
 } from "lucide-react";
 import {
   callRoom,
   type ProjectRoom,
+  type RoomClient,
   type RoomRole,
 } from "../services/projectRoomService";
 const roles: { id: RoomRole; name: string; detail: string }[] = [
@@ -36,22 +46,41 @@ const badge = (status: string) =>
   ["running", "approved"].includes(status)
     ? "bg-emerald-100 text-emerald-800"
     : ["blocked", "rejected"].includes(status)
-      ? "bg-amber-100 text-amber-900"
-      : "bg-slate-100 text-slate-600";
+    ? "bg-amber-100 text-amber-900"
+    : "bg-slate-100 text-slate-600";
+
+function RoomTokenCost({ room }: { room: ProjectRoom }) {
+  const { microdollars, priced } = projectRoomTokenCost(room.state.rounds);
+  const estimate = (microdollars / 1_000_000).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 4,
+  });
+  return (
+    <p className="mt-2 text-xs text-slate-600">
+      {priced
+        ? `Recorded token cost estimate ${estimate}`
+        : "No priced token usage recorded yet"}
+      {" Â· Includes only saved results with supported pricing"}
+    </p>
+  );
+}
 // Text only: imported Markdown never becomes executable HTML.
 function DocumentText({ text }: { text: string }) {
   return (
     <div className="space-y-2 text-sm leading-7 text-slate-700">
       {text.split("\n").map((line, i) =>
-        /^#{1,4} /.test(line) ? (
-          <h3 key={i} className="pt-3 text-base font-bold text-slate-900">
-            {line.replace(/^#+ /, "")}
-          </h3>
-        ) : (
-          <p className="min-h-2 whitespace-pre-wrap break-words" key={i}>
-            {line}
-          </p>
-        ),
+        /^#{1,4} /.test(line)
+          ? (
+            <h3 key={i} className="pt-3 text-base font-bold text-slate-900">
+              {line.replace(/^#+ /, "")}
+            </h3>
+          )
+          : (
+            <p className="min-h-2 whitespace-pre-wrap break-words" key={i}>
+              {line}
+            </p>
+          )
       )}
     </div>
   );
@@ -62,12 +91,21 @@ export default function ProjectRooms({
   addToast: (text: string, type?: "success" | "error" | "info") => void;
 }) {
   const [rooms, setRooms] = useState<
-    Pick<ProjectRoom, "id" | "title" | "kind" | "status">[]
+    Pick<ProjectRoom, "id" | "title" | "kind" | "status" | "client_id">[]
   >([]);
+  const [clients, setClients] = useState<RoomClient[]>([]);
+  const [page, setPage] = useState<
+    "today" | "companies" | "room" | "add" | "call"
+  >("today");
+  const [roomView, setRoomView] = useState<
+    "overview" | "notes" | "files" | "research"
+  >("overview");
+  const [listLoading, setListLoading] = useState(true);
+  const [wordBusy, setWordBusy] = useState(false);
+  const [linkClientId, setLinkClientId] = useState("");
   const [connections, setConnections] = useState<Record<string, boolean>>({});
   const [room, setRoom] = useState<ProjectRoom | null>(null);
   const selectedId = useRef("");
-  const [creating, setCreating] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -82,38 +120,52 @@ export default function ProjectRooms({
   const refreshList = useCallback(async () => {
     const result = await callRoom<{
       rooms: typeof rooms;
+      clients?: RoomClient[];
       connections: Record<string, boolean>;
     }>("list");
     setRooms(result.rooms);
+    setClients(result.clients || []);
     setConnections(result.connections);
+    setListLoading(false);
   }, []);
   const selectRoom = useCallback(async (id: string) => {
+    if (selectedId.current !== id) setRoom(null);
     selectedId.current = id;
+    setPage("room");
     setError("");
     setImportText("");
     setHandoff("");
     const result = await callRoom("get", { id });
     if (selectedId.current === id) {
       setRoom(result.room);
-      setCreating(false);
     }
   }, []);
   useEffect(() => {
-    refreshList().catch((e) => setError(e.message));
+    refreshList().catch((e) => {
+      setError(e.message);
+      setListLoading(false);
+    });
   }, [refreshList]);
   useEffect(() => {
-    if (!room || room.status !== "running") return;
+    if (!room) return;
     const timer = window.setInterval(() => {
       const id = selectedId.current;
       callRoom("get", { id })
         .then((result) => {
-          if (selectedId.current === id) setRoom(result.room);
+          if (selectedId.current === id) {
+            setRoom((previous) =>
+              previous?.id === id && previous.version > result.room.version
+                ? previous
+                : result.room
+            );
+          }
         })
         .catch((e) => setError(e.message));
-    }, 8000);
+    }, room.status === "running" ? 8000 : 15000);
     return () => window.clearInterval(timer);
   }, [room?.id, room?.status]);
   async function perform(action: string, args: Record<string, unknown> = {}) {
+    const actingRoomId = room?.id;
     setBusy(true);
     setError("");
     try {
@@ -122,14 +174,22 @@ export default function ProjectRooms({
         version: room?.version,
         ...args,
       });
-      selectedId.current = result.room.id;
-      setRoom(result.room);
-      setCreating(false);
+      if (action === "create" || selectedId.current === actingRoomId) {
+        selectedId.current = result.room.id;
+        setRoom((previous) =>
+          previous?.id === result.room.id &&
+            previous.version > result.room.version
+            ? previous
+            : result.room
+        );
+        if (action === "create") {
+          setPage("room");
+          setRoomView("overview");
+        }
+      }
       await refreshList();
       addToast(
-        action === "create"
-          ? "Private project room created."
-          : "Project room updated.",
+        action === "create" ? "Project room saved." : "Project room updated.",
         "success",
       );
       return true;
@@ -151,7 +211,9 @@ export default function ProjectRooms({
       );
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${room?.title.replace(/[^a-z0-9]/gi, "-") || "project-room"}.md`;
+      a.download = `${
+        room?.title.replace(/[^a-z0-9]/gi, "-") || "project-room"
+      }.md`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -163,122 +225,283 @@ export default function ProjectRooms({
   const missing = ["research", "openai", "anthropic", "chief"].filter(
     (role) => !connections[role],
   );
+
+  const roomClient = clients.find((c) => c.id === room?.client_id);
+  const reportError = (message: string) => {
+    setError(message);
+    addToast(message, "error");
+  };
+  const companySaved = async () => {
+    await refreshList();
+    addToast("Company saved.", "success");
+  };
+  function openRoom(id: string, view: typeof roomView = "overview") {
+    setRoomView(view);
+    selectRoom(id).catch((e) => reportError(e.message));
+  }
+  function go(next: typeof page) {
+    setPage(next);
+    setError("");
+    if (next !== "room") {
+      selectedId.current = "";
+      setRoom(null);
+    }
+  }
+  function addCompany() {
+    setLinkClientId("");
+    setPage("add");
+    setError("");
+  }
+  async function downloadWord() {
+    if (!room || !room.state.summary) return;
+    setWordBusy(true);
+    try {
+      const { assessmentDocx } = await import(
+        "../services/companyAssessmentDocx.mjs"
+      );
+      const url = URL.createObjectURL(await assessmentDocx(room));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${
+        room.title.replace(/[^a-z0-9]/gi, "-")
+      }-assessment.docx`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      reportError("The Word download did not finish. Please try again.");
+    } finally {
+      setWordBusy(false);
+    }
+  }
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6 p-4 md:p-8">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[.18em] text-emerald-700">
-            Trellis / Proof of concept
-          </p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">
-            Project rooms
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            A research team, a shared brief, and a chief of staff to keep the
-            difficult questions moving.
-          </p>
-        </div>
-        <button
-          className={button}
-          onClick={() => {
-            setCreating(true);
-            setError("");
-          }}
-        >
-          <Plus size={16} />
-          New room
-        </button>
-      </header>
-      {error && (
-        <div
-          role="alert"
-          className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
-        >
-          {error}
-          <button
-            className="ml-3 underline"
-            onClick={() => refreshList().catch((e) => setError(e.message))}
-          >
-            Retry connection
-          </button>
-        </div>
-      )}
-      <div className="grid gap-6 lg:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-3">
-            <h2 className="px-2 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-              Your private rooms
-            </h2>
-            {!rooms.length && (
-              <p className="p-2 text-sm text-slate-500">
-                Create a room for a client or a product question.
-              </p>
-            )}
-            {rooms.map((r) => (
-              <button
-                key={r.id}
-                className={`my-1 w-full rounded-xl p-3 text-left ${room?.id === r.id && !creating ? "bg-emerald-50" : "hover:bg-slate-50"}`}
-                onClick={() =>
-                  selectRoom(r.id).catch((e) => setError(e.message))
-                }
-              >
-                <span className="block text-sm font-bold text-slate-900">
-                  {r.title}
-                </span>
-                <span className="mt-1 block text-xs capitalize text-slate-500">
-                  {r.kind} · {r.status.replaceAll("_", " ")}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center gap-2 text-sm font-bold">
-              <Users size={16} />
-              The team
-            </div>
-            <div className="mt-3 space-y-3">
-              {roles.map((role) => (
-                <div
-                  key={role.id}
-                  className="flex items-center justify-between gap-2 text-xs"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-800">{role.name}</p>
-                    <p className="text-slate-500">{role.detail}</p>
-                  </div>
-                  <span
-                    className={`rounded-full px-2 py-1 ${connections[role.id === "review" ? "research" : role.id] ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}
-                  >
-                    {connections[role.id === "review" ? "research" : role.id]
-                      ? "Connected"
-                      : "Import"}
-                  </span>
-                </div>
+    <ProjectRoomWorkspace
+      page={page}
+      setPage={go}
+      roomView={roomView}
+      setRoomView={setRoomView}
+      room={room}
+      rooms={rooms}
+      clients={clients}
+      loading={listLoading}
+      error={error}
+      retry={() => refreshList().catch((e) => reportError(e.message))}
+      openRoom={openRoom}
+      addCompany={addCompany}
+    >
+      {page === "add" && (
+        <>
+          <label className="pr-panel pr-field">
+            Company for this briefing<select
+              className={input}
+              value={linkClientId}
+              onChange={(e) => setLinkClientId(e.target.value)}
+            >
+              <option value="">Add a new prospect when I save</option>
+              {clients.filter((c) => !c.archived_at).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} â€” use existing company
+                </option>
               ))}
+            </select>
+            <span>
+              Choose an existing company to keep its briefings together. Product
+              rooms do not create prospects.
+            </span>
+          </label>
+          <ProjectRoomIntake
+            busy={busy}
+            missingConnections={missing.map((id) =>
+              roles.find((role) => role.id === id)?.name || id
+            )}
+            onCreate={(value) =>
+              perform("create", {
+                ...value,
+                ...(value.kind === "client" && linkClientId
+                  ? { client_id: linkClientId }
+                  : {}),
+              })}
+          />
+        </>
+      )}
+      {page === "room" && room && (
+        <>
+          {roomView === "overview" && (
+            <div className="pr-columns">
+              <div className="pr-stack">
+                <section className="pr-next-step">
+                  <span>Next step</span>
+                  <h2>{roomNextStep(room.status)}</h2>
+                  <p>{room.title} Â· {roomStatusText(room.status)}</p>
+                  <button
+                    className="pr-button pr-primary"
+                    onClick={() => setRoomView("research")}
+                  >
+                    Open research<ArrowRight size={16} />
+                  </button>
+                </section>
+                <ClientSearch
+                  clientId={room.client_id || undefined}
+                  onOpen={(id) => openRoom(id)}
+                  expanded
+                />
+                <section className="pr-panel">
+                  <h2>Questions to discuss</h2>
+                  {room.state.questions.length
+                    ? (
+                      <ul className="pr-question-list">
+                        {room.state.questions.map((q, i) => (
+                          <li key={i}>{q}</li>
+                        ))}
+                      </ul>
+                    )
+                    : (
+                      <p className="pr-muted">
+                        No open research questions yet.
+                      </p>
+                    )}
+                </section>
+              </div>
+              <div className="pr-stack">
+                {roomClient && (
+                  <ClientDetails
+                    client={roomClient}
+                    onSaved={companySaved}
+                    onError={reportError}
+                  />
+                )}
+                <div className="pr-sharing">
+                  <RoomSharing
+                    room={room}
+                    onChanged={async () => {
+                      if (selectedId.current === room.id) {
+                        await selectRoom(room.id);
+                      }
+                      addToast("Room access updated.", "success");
+                    }}
+                    onError={reportError}
+                  />
+                </div>
+                <section className="pr-panel">
+                  <h2>What happened</h2>
+                  {room.state.events.length
+                    ? (
+                      <ol className="pr-activity">
+                        {[...room.state.events].reverse().slice(0, 5).map((
+                          e,
+                          i,
+                        ) => (
+                          <li key={i}>
+                            <p>{e.text}</p>
+                            <time>{new Date(e.at).toLocaleString()}</time>
+                          </li>
+                        ))}
+                      </ol>
+                    )
+                    : (
+                      <p className="pr-muted">New activity will appear here.</p>
+                    )}
+                  <RoomTokenCost room={room} />
+                </section>
+              </div>
             </div>
-          </div>
-          <p className="flex gap-2 px-2 text-xs leading-5 text-slate-500">
-            <ShieldCheck size={30} />
-            Rooms are private to their creator. Providers receive the room
-            packet. Only include information you may share with them.
-          </p>
-        </aside>
-        <main className="min-w-0 space-y-5">
-          {creating || !room ? (
-            <ProjectRoomIntake
-              busy={busy}
-              missingConnections={missing.map(
-                (id) => roles.find((role) => role.id === id)?.name || id,
-              )}
-              onCreate={(value) => perform("create", value)}
-            />
-          ) : (
-            <>
+          )}
+          {roomView === "notes" && (
+            <div className="pr-stack">
+              <ManualMeetingNotes
+                room={room}
+                onSaved={(meeting) => perform("import_meeting", { meeting })}
+                expanded
+              />
+              <section className="pr-panel">
+                <h2>Team notes</h2>
+                {room.state.notes.length
+                  ? [...room.state.notes].reverse().map((n, i) => (
+                    <article className="pr-team-note" key={i}>
+                      <p>{n.text}</p>
+                      <time>{new Date(n.at).toLocaleString()}</time>
+                    </article>
+                  ))
+                  : (
+                    <p className="pr-muted">
+                      No team notes yet. Add context in Research to guide the
+                      next round.
+                    </p>
+                  )}
+              </section>
+            </div>
+          )}
+          {roomView === "files" && (
+            <div className="pr-stack">
+              <section className="pr-panel">
+                <h2>Company report</h2>
+                <p className="pr-muted">
+                  Download an editable Word document or the complete room
+                  record.
+                </p>
+                <div className="pr-actions">
+                  {room.kind === "client" && (
+                    <button
+                      className="pr-button pr-primary"
+                      disabled={wordBusy || !room.state.summary}
+                      onClick={downloadWord}
+                    >
+                      <Download size={16} />
+                      {wordBusy
+                        ? "Preparing Word documentâ€¦"
+                        : "Download Word document"}
+                    </button>
+                  )}
+                  <button className="pr-button" onClick={download}>
+                    Download full room record
+                  </button>
+                </div>
+                {!room.state.summary && (
+                  <p className="pr-muted pr-small">
+                    The Word report will be ready after the research summary is
+                    saved.
+                  </p>
+                )}
+              </section>
+              <React.Fragment key={`${room.id}-${room.version}`}>
+                <RoomDocumentReview
+                  room={room}
+                  busy={disabled}
+                  onSave={(documents) => perform("documents", { documents })}
+                />
+              </React.Fragment>
+            </div>
+          )}
+          {roomView === "research" && (
+            <div className="pr-stack pr-research">
+              <details className="pr-panel">
+                <summary>Research team &amp; connections</summary>
+                <div className="pr-provider-list">
+                  {roles.map((role) => (
+                    <div key={role.id}>
+                      <strong>{role.name}</strong>
+                      <span>{role.detail}</span>
+                      <span className="pr-tag">
+                        {connections[
+                            role.id === "review" ? "research" : role.id
+                          ]
+                          ? "Connected"
+                          : "Import response"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="pr-muted pr-small">
+                  AI providers receive the room packet. Only include information
+                  you may share with them.
+                </p>
+              </details>{" "}
               <section className="rounded-3xl border border-slate-200 bg-white p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${badge(room.status)}`}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        badge(room.status)
+                      }`}
                     >
                       {room.status.replaceAll("_", " ")}
                     </span>
@@ -286,20 +509,20 @@ export default function ProjectRooms({
                       {room.title}
                     </h2>
                     <p className="mt-2 text-xs text-slate-500">
-                      Round {round?.number || 0} / {room.state.max_rounds} ·
-                      Requests {room.state.calls_used} /{" "}
-                      {room.state.call_budget} ·{" "}
+                      Round {round?.number || 0} / {room.state.max_rounds}{" "}
+                      Â· Requests {room.state.calls_used} /{" "}
+                      {room.state.call_budget} Â·{" "}
                       {round?.stage || "Ready to begin"}
-                      {room.busy ? " · Provider step running" : ""}
+                      {room.busy ? " Â· Provider step running" : ""}
                     </p>
+                    <RoomTokenCost room={room} />
                   </div>
                   <div className="flex gap-2">
                     <button
                       aria-label="Refresh room"
                       className={button}
                       onClick={() =>
-                        selectRoom(room.id).catch((e) => setError(e.message))
-                      }
+                        selectRoom(room.id).catch((e) => setError(e.message))}
                     >
                       <RefreshCw size={16} />
                     </button>
@@ -333,15 +556,15 @@ export default function ProjectRooms({
                   {room.status === "awaiting_user" &&
                     room.state.rounds.length < room.state.max_rounds &&
                     room.state.calls_used < room.state.call_budget && (
-                      <button
-                        disabled={disabled}
-                        className={button}
-                        onClick={() => perform("next_round")}
-                      >
-                        Start another pass
-                        <ArrowRight size={16} />
-                      </button>
-                    )}
+                    <button
+                      disabled={disabled}
+                      className={button}
+                      onClick={() => perform("next_round")}
+                    >
+                      Start another pass
+                      <ArrowRight size={16} />
+                    </button>
+                  )}
                   {room.status === "running" && (
                     <button
                       disabled={busy}
@@ -390,7 +613,9 @@ export default function ProjectRooms({
                 {(["brief", "conversation", "decisions"] as const).map((t) => (
                   <button
                     key={t}
-                    className={`${button} capitalize ${tab === t ? "!border-emerald-700 !text-emerald-800" : ""}`}
+                    className={`${button} capitalize ${
+                      tab === t ? "!border-emerald-700 !text-emerald-800" : ""
+                    }`}
                     onClick={() => setTab(t)}
                   >
                     {t === "brief" ? "Living brief" : t}
@@ -403,17 +628,21 @@ export default function ProjectRooms({
               {tab === "brief" && (
                 <section className="rounded-3xl border border-slate-200 bg-white p-6">
                   <h3 className="mb-4 text-lg font-bold">Living brief</h3>
-                  {room.state.summary ? (
-                    room.kind === "client" ? (
-                      <CompanyAssessment room={room} />
-                    ) : (
-                      <DocumentText text={room.state.summary} />
+                  {room.state.summary
+                    ? (
+                      room.kind === "client"
+                        ? <CompanyAssessment room={room} />
+                        : <DocumentText text={room.state.summary} />
                     )
-                  ) : (
-                    <p className="text-sm text-slate-500">
-                      The chief of staff will assemble this after research and
-                      independent reviews.
-                    </p>
+                    : (
+                      <p className="text-sm text-slate-500">
+                        The chief of staff will assemble this after research and
+                        independent reviews.
+                      </p>
+                    )}
+                  {room.kind === "client" && (
+                    <div key={room.id}>
+                    </div>
                   )}
                   <details className="mt-5 border-t pt-4">
                     <summary className="cursor-pointer text-sm font-semibold">
@@ -445,7 +674,7 @@ export default function ProjectRooms({
                       className="rounded-3xl border border-slate-200 bg-white p-6"
                     >
                       <h3 className="font-bold">
-                        Round {r.number} · {r.stage}
+                        Round {r.number} Â· {r.stage}
                       </h3>
                       <p className="mt-2 text-sm text-slate-500">{r.focus}</p>
                       <div className="mt-4 space-y-3">
@@ -458,10 +687,14 @@ export default function ProjectRooms({
                               {role.name}
                               <span className="ml-2 font-normal text-slate-500">
                                 {r.outputs[role.id]
-                                  ? `${r.outputs[role.id].source === "imported" ? "Imported by you" : r.outputs[role.id].model || "API"} · complete`
+                                  ? `${
+                                    r.outputs[role.id].source === "imported"
+                                      ? "Imported by you"
+                                      : r.outputs[role.id].model || "API"
+                                  } Â· complete`
                                   : r.tasks[role.id]
-                                    ? "Working in Manus"
-                                    : "Waiting"}
+                                  ? "Working in Manus"
+                                  : "Waiting"}
                               </span>
                             </summary>
                             {r.outputs[role.id] && (
@@ -472,7 +705,9 @@ export default function ProjectRooms({
                             {r.tasks[role.id] && (
                               <a
                                 className="mt-3 block text-sm text-emerald-700 underline"
-                                href={`https://manus.im/app/${encodeURIComponent(r.tasks[role.id].id)}`}
+                                href={`https://manus.im/app/${
+                                  encodeURIComponent(r.tasks[role.id].id)
+                                }`}
                                 target="_blank"
                                 rel="noreferrer"
                               >
@@ -506,7 +741,9 @@ export default function ProjectRooms({
                   {room.state.decisions.map((d) => (
                     <div key={d.id} className="mt-4 rounded-xl border p-4">
                       <span
-                        className={`rounded-full px-2 py-1 text-xs ${badge(d.status)}`}
+                        className={`rounded-full px-2 py-1 text-xs ${
+                          badge(d.status)
+                        }`}
                       >
                         {d.status}
                       </span>
@@ -519,8 +756,7 @@ export default function ProjectRooms({
                             perform("decision", {
                               decision_id: d.id,
                               status: "approved",
-                            })
-                          }
+                            })}
                         >
                           <Check size={15} />
                           Approve
@@ -532,8 +768,7 @@ export default function ProjectRooms({
                             perform("decision", {
                               decision_id: d.id,
                               status: "rejected",
-                            })
-                          }
+                            })}
                         >
                           <X size={15} />
                           Reject
@@ -543,13 +778,6 @@ export default function ProjectRooms({
                   ))}
                 </section>
               )}
-              <React.Fragment key={`${room.id}-${room.version}`}>
-                <RoomDocumentReview
-                  room={room}
-                  busy={disabled}
-                  onSave={(documents) => perform("documents", { documents })}
-                />
-              </React.Fragment>
               {room.status !== "cancelled" && (
                 <section className="rounded-3xl border border-slate-200 bg-white p-6">
                   <h3 className="flex items-center gap-2 font-bold">
@@ -566,7 +794,7 @@ export default function ProjectRooms({
                     maxLength={6000}
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder="We have already decided… Please investigate…"
+                    placeholder="We have already decidedâ€¦ Please investigateâ€¦"
                   />
                   <button
                     disabled={disabled || !note.trim()}
@@ -590,96 +818,93 @@ export default function ProjectRooms({
               {round &&
                 round.stage !== "done" &&
                 room.status !== "cancelled" && (
-                  <details className="rounded-3xl border border-slate-200 bg-white p-6">
-                    <summary className="cursor-pointer font-bold">
-                      Handoffs & manual recovery
-                    </summary>
-                    <p className="my-3 text-xs leading-5 text-slate-500">
-                      If a connection is missing or a provider stopped, show its
-                      role instructions and import the actual response.
-                      Importing pauses the room until you resume it.
-                    </p>
-                    <select
-                      aria-label="Handoff role"
-                      className={input}
-                      value={importRole}
-                      onChange={(e) => {
-                        setImportRole(e.target.value as RoomRole);
-                        setHandoff("");
-                      }}
-                    >
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className={`${button} my-3`}
-                      onClick={async () => {
-                        try {
-                          const result = await callRoom<{ markdown: string }>(
-                            "handoff",
-                            { id: room.id, role: importRole },
-                          );
-                          setHandoff(result.markdown);
-                        } catch (e) {
-                          setError((e as Error).message);
-                        }
-                      }}
-                    >
-                      Show handoff instructions
-                    </button>
-                    {handoff && (
-                      <textarea
-                        aria-label="Handoff instructions"
-                        readOnly
-                        className={`${input} mb-3 min-h-48 font-mono text-xs`}
-                        value={handoff}
-                      />
-                    )}
-                    <textarea
-                      aria-label="Imported agent response"
-                      className={`${input} min-h-40`}
-                      value={importText}
-                      maxLength={24000}
-                      onChange={(e) => setImportText(e.target.value)}
-                      placeholder={
-                        importRole === "chief"
-                          ? "Paste chief JSON: summary, questions, proposals, next_handoff, next_action"
-                          : "Paste the complete Markdown response"
+                <details className="rounded-3xl border border-slate-200 bg-white p-6">
+                  <summary className="cursor-pointer font-bold">
+                    Handoffs & manual recovery
+                  </summary>
+                  <p className="my-3 text-xs leading-5 text-slate-500">
+                    If a connection is missing or a provider stopped, show its
+                    role instructions and import the actual response. Importing
+                    pauses the room until you resume it.
+                  </p>
+                  <select
+                    aria-label="Handoff role"
+                    className={input}
+                    value={importRole}
+                    onChange={(e) => {
+                      setImportRole(e.target.value as RoomRole);
+                      setHandoff("");
+                    }}
+                  >
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className={`${button} my-3`}
+                    onClick={async () => {
+                      try {
+                        const result = await callRoom<{ markdown: string }>(
+                          "handoff",
+                          { id: room.id, role: importRole },
+                        );
+                        setHandoff(result.markdown);
+                      } catch (e) {
+                        setError((e as Error).message);
                       }
+                    }}
+                  >
+                    Show handoff instructions
+                  </button>
+                  {handoff && (
+                    <textarea
+                      aria-label="Handoff instructions"
+                      readOnly
+                      className={`${input} mb-3 min-h-48 font-mono text-xs`}
+                      value={handoff}
                     />
-                    <label className="my-3 flex items-start gap-2 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={confirmed}
-                        onChange={(e) => setConfirmed(e.target.checked)}
-                      />
-                      I reviewed this response and any external task has
-                      finished. This is imported output, not an API-verified
-                      result.
-                    </label>
-                    <button
-                      className={button}
-                      disabled={disabled || !confirmed || !importText.trim()}
-                      onClick={async () => {
-                        if (
-                          await perform("import", {
-                            role: importRole,
-                            text: importText,
-                            confirm_external_finished: confirmed,
-                          })
-                        ) {
-                          setImportText("");
-                          setConfirmed(false);
-                        }
-                      }}
-                    >
-                      Import response
-                    </button>
-                  </details>
-                )}
+                  )}
+                  <textarea
+                    aria-label="Imported agent response"
+                    className={`${input} min-h-40`}
+                    value={importText}
+                    maxLength={24000}
+                    onChange={(e) => setImportText(e.target.value)}
+                    placeholder={importRole === "chief"
+                      ? "Paste chief JSON: summary, questions, proposals, next_handoff, next_action"
+                      : "Paste the complete Markdown response"}
+                  />
+                  <label className="my-3 flex items-start gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={confirmed}
+                      onChange={(e) => setConfirmed(e.target.checked)}
+                    />
+                    I reviewed this response and any external task has finished.
+                    This is imported output, not an API-verified result.
+                  </label>
+                  <button
+                    className={button}
+                    disabled={disabled || !confirmed || !importText.trim()}
+                    onClick={async () => {
+                      if (
+                        await perform("import", {
+                          role: importRole,
+                          text: importText,
+                          confirm_external_finished: confirmed,
+                        })
+                      ) {
+                        setImportText("");
+                        setConfirmed(false);
+                      }
+                    }}
+                  >
+                    Import response
+                  </button>
+                </details>
+              )}
               <details className="rounded-2xl border border-slate-200 bg-white p-5">
                 <summary className="cursor-pointer text-sm font-bold">
                   Activity & limits
@@ -701,10 +926,10 @@ export default function ProjectRooms({
                   ))}
                 </ol>
               </details>
-            </>
+            </div>
           )}
-        </main>
-      </div>
-    </div>
+        </>
+      )}
+    </ProjectRoomWorkspace>
   );
 }

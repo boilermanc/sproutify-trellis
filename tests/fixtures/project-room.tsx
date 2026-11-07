@@ -17,6 +17,9 @@ let room: any =
     ? assessmentFixture()
     : null;
 const original = window.fetch;
+const client: any = {id: "fixture-client", name: "Example Company", status: "prospect", version: 1, archived_at: null, follow_up_date: null};
+const members: any[] = [{user_id: "clint", name: "Clint", role: "owner"}];
+if (room) { room.client_id = client.id; room.member_role = "owner"; }
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url.includes("/functions/v1/project-rooms")) {
@@ -26,6 +29,7 @@ window.fetch = async (input, init) => {
       if (b.action === "list")
         result = {
           rooms: room ? [room] : [],
+          clients: room ? [client] : [],
           connections: {
             research: true,
             openai: false,
@@ -34,8 +38,22 @@ window.fetch = async (input, init) => {
           },
         };
       else if (b.action === "create") {
-        room = { ...createRoom(b), id: crypto.randomUUID(), version: 1 };
+        room = { ...createRoom(b), id: crypto.randomUUID(), version: 1, member_role: "owner", ...(b.kind === "client" ? {client_id: client.id} : {}) };
+        if (b.kind === "client" && !b.client_id) client.name = b.intake.name;
         result = { room };
+      } else if (b.action === "client_update") {
+        if (b.client_version !== client.version) throw new Error("Company changed. Refresh and try again.");
+        Object.assign(client, {status: b.status, archived_at: b.archived ? new Date().toISOString() : null, follow_up_date: b.follow_up_date, follow_up_note: b.follow_up_note, archive_reason: b.archive_reason, version: client.version + 1});
+        result = {client};
+      } else if (b.action === "members") {
+        result = {members, operators: [{user_id: "clint", name: "Clint"}, {user_id: "sheree", name: "Sheree"}]};
+      } else if (b.action === "share" || b.action === "unshare") {
+        if (b.version !== room.version) throw new Error("Room changed. Refresh and try again.");
+        if (b.action === "share") members.push({user_id: b.user_id, name: "Sheree", role: "member"});
+        else members.splice(members.findIndex(m => m.user_id === b.user_id), 1);
+        room.version++; result = {room};
+      } else if (b.action === "search_client_data") {
+        result = {results: [{room_id: room.id, room_title: room.title, source: "Company notes", snippet: "Discuss website improvements at the next meeting."}]};
       } else if (b.action === "handoff")
         result = { markdown: handoff(room, b.role) };
       else if (b.action === "export") result = { markdown: exportRoom(room) };
@@ -47,6 +65,7 @@ window.fetch = async (input, init) => {
         if (b.action === "pause") room.status = "paused";
         if (b.action === "resume") room.status = "running";
         if (b.action === "cancel") room.status = "cancelled";
+        if (b.action === "import_meeting") room.state.meetings = [...(room.state.meetings || []), b.meeting];
         if (b.action === "note")
           room.state.notes.push({ text: b.text, at: new Date().toISOString() });
         if (b.action === "documents")

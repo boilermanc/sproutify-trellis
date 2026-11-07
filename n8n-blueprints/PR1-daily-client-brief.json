@@ -1,0 +1,158 @@
+{
+  "name": "Trellis: Daily Shared Client Brief",
+  "active": false,
+  "settings": {
+    "timezone": "America/New_York",
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "nodes": [
+    {
+      "name": "Daily at 5 AM Eastern",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 5 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Read shared room context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/project-room-bridge",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"action\":\"context\"}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "name": "Prepare daily report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Deterministic source summaries. No model calls, inferred commitments, or task execution.\nconst escape = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst short = (value, max) => { const text = String(value ?? '').replace(/\\s+/g, ' ').trim(); return escape(text.length > max ? `${text.slice(0, max)}…` : text); };\nconst dayPattern = /^\\d{4}-\\d{2}-\\d{2}$/;\n\nfunction buildDailyRoomReport(context, day, { calendarConnected = false, meetingsConnected = false } = {}) {\n  if (!dayPattern.test(day)) throw new Error('Provide the report date as YYYY-MM-DD in the reporting timezone.');\n  const lines = [`*Trellis daily report — ${day}*`];\n  if (!calendarConnected) lines.push('Calendar meeting preparation: not connected to this report.');\n  if (!meetingsConnected) lines.push('ChatGPT Meetings: disconnected; manually saved notes are included.');\n  if (context.restricted_count) lines.push(`${context.restricted_count} configured room(s) excluded by recipient access.`);\n  const priority = room => (room.client?.follow_up_date && room.client.follow_up_date <= day ? 4 : 0) +\n    (room.status === 'blocked' ? 2 : 0) + ((room.decisions || []).some(d => d.status === 'proposed') ? 1 : 0);\n  const rooms = [...(context.rooms || [])].sort((a, b) => priority(b) - priority(a));\n  if (!rooms.length) lines.push('No shared rooms are available in the configured report scope.');\n  const included = [];\n  for (const room of rooms) {\n    const parts = [`\\n*${short(room.title, 100)}* (${short(room.status, 40)})`, `Room: ${short(room.id, 36)}`];\n    const client = room.client;\n    if (client?.follow_up_date && client.follow_up_date <= day) {\n      parts.push(`Follow up ${client.follow_up_date < day ? 'overdue' : 'today'}: ${short(client.follow_up_date, 10)}${client.archived_at ? ' — archived prospect' : ''}`);\n      if (client.follow_up_note) parts.push(short(client.follow_up_note, 240));\n    }\n    if (room.summary) parts.push(`Latest summary: ${short(room.summary, 320)}`);\n    const meeting = [...(room.meetings || [])].sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)))[0];\n    if (meeting) parts.push(`Meeting note: ${short(meeting.title, 100)} (${short(meeting.started_at, 35)}) — ${short(meeting.summary, 220)}`);\n    const note = (room.notes || []).at(-1);\n    if (note) parts.push(`Team note${note.at ? ` (${short(note.at, 35)})` : ''}: ${short(note.text, 220)}`);\n    for (const decision of (room.decisions || []).filter(d => d.status === 'proposed').slice(0, 3)) parts.push(`Decision needed: ${short(decision.text, 200)}`);\n    for (const question of (room.questions || []).slice(0, 3)) parts.push(`Open question: ${short(question, 180)}`);\n    if (room.status === 'blocked') parts.push('Action needed: open the room and review the blocked step.');\n    const part = parts.join('\\n');\n    if ([...lines, ...included, part].join('\\n').length > 3400) break;\n    included.push(part);\n  }\n  lines.push(...included);\n  if (included.length < rooms.length) lines.push(`\\n${rooms.length - included.length} more room(s) omitted for message length. Open Trellis for the complete list.`);\n  lines.push('\\nOwners and deadlines are only those recorded in source notes. Review suggestions before acting.');\n  return lines.join('\\n');\n}\n\n// The caller must explicitly confirm the event-to-room mapping and audience access.\nfunction buildMeetingPreparation(room, meeting) {\n  if (meeting.room_id !== room.id) throw new Error('Confirm which room belongs to this calendar meeting.');\n  const lines = [\n    `*Meeting preparation: ${short(meeting.title, 160)}*`,\n    `When: ${short(meeting.starts_at, 100)}`,\n    `Client: ${short(room.client?.name || room.title, 160)} — room ${short(room.id, 36)}`,\n    `Latest saved context: ${short(room.summary || room.brief || 'No briefing saved.', 1500)}`,\n    '\\n*Decisions to review*',\n    ...(room.decisions?.length ? room.decisions.slice(-8).map(d => `• ${short(d.text, 300)} (${short(d.status || 'status unknown', 40)})`) : ['None recorded.']),\n    '\\n*Questions to discuss*',\n    ...(room.questions?.length ? room.questions.slice(-8).map(q => `• ${short(q, 300)}`) : ['No open questions recorded.']),\n    '\\n*Previous meeting evidence*',\n    ...(room.meetings?.length ? room.meetings.slice(-3).map(m => `• ${short(m.title, 160)} — ${short(m.started_at, 50)}\\n${short(m.summary, 900)}${m.source_url ? `\\nSource: ${escape(m.source_url)}` : ''}`) : ['No meeting notes saved.']),\n    '\\n*Suggested agenda*',\n    '1. Confirm the objective and changes since the last discussion.',\n    '2. Review recorded decisions and resolve open questions.',\n    '3. Confirm next steps, owners and dates with the client.',\n    'This agenda is a suggestion. Unrecorded owners, deadlines and commitments remain unknown.',\n  ];\n  const text = lines.join('\\n');\n  return text.length > 11000 ? `${text.slice(0, 10800)}\\n[Report shortened; open the room for full sources.]` : text;\n}\n\nconst context = $input.first().json;\nif (!Array.isArray(context.rooms)) throw new Error('Trellis returned no valid room context');\nconst date = $now.setZone('America/New_York').toFormat('yyyy-MM-dd');\nconst sent = $getWorkflowStaticData('global');\nif (sent.lastSentDate === date) return [];\nconst text = buildDailyRoomReport(context, date);\nreturn [{json:{date,text}}];"
+      }
+    },
+    {
+      "name": "Send to chief-channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({channel:\"C0C0UUF8P2T\",text:$json.text,parse:\"none\",link_names:false,unfurl_links:false,unfurl_media:false}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "name": "Confirm delivery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nif (result.ok !== true || !result.ts || result.channel !== 'C0C0UUF8P2T') throw new Error('Daily brief delivery was not confirmed. Inspect Slack before retrying.');\nconst sent = $getWorkflowStaticData('global');\nsent.lastSentDate = $('Prepare daily report').first().json.date;\nsent.messageTimestamp = result.ts;\nreturn [{json:{delivered:true,date:sent.lastSentDate,channel:result.channel,messageTimestamp:result.ts}}];"
+      }
+    },
+    {
+      "name": "Setup before publishing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ],
+      "parameters": {
+        "width": 960,
+        "height": 260,
+        "content": "## Prepared, not active\nSelect dedicated Header Auth (x-project-room-key) for context, and the existing Slack OAuth connection for delivery. No secrets belong in this workflow JSON. Deploy shared rooms and the scoped read-only bridge first. Configure only rooms explicitly approved for this channel and both recipients. Verify a manual test appears in #chief-channel, then publish with release approval.\n\nDaily at 5 AM Eastern. ChatGPT Meetings and automatic calendar matching are disconnected. This reports saved room evidence. Execution payload saving is disabled. Automatic retries are off: after uncertain Slack delivery, inspect the channel before replay. Static date guard prevents later successful scheduled duplicates, not concurrent executions or manual tests. Configure an n8n error workflow for operational failures."
+      }
+    }
+  ],
+  "connections": {
+    "Daily at 5 AM Eastern": {
+      "main": [
+        [
+          {
+            "node": "Read shared room context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read shared room context": {
+      "main": [
+        [
+          {
+            "node": "Prepare daily report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare daily report": {
+      "main": [
+        [
+          {
+            "node": "Send to chief-channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to chief-channel": {
+      "main": [
+        [
+          {
+            "node": "Confirm delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

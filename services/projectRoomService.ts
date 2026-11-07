@@ -2,7 +2,34 @@ import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import type { RoomDocument } from "./projectRoomDocuments";
 export type RoomRole = "research" | "openai" | "anthropic" | "review" | "chief";
+export interface RoomClient {
+  id: string; name: string; website?: string; status: "prospect" | "customer";
+  archived_at?: string | null; archive_reason?: string | null;
+  follow_up_date?: string | null; follow_up_note?: string | null; version: number;
+}
+export interface RoomMember { user_id: string; role: "owner" | "member"; name?: string; email?: string }
+export interface RoomOperator { user_id: string; name?: string; email?: string }
+export type AeoSurface = "chatgpt" | "perplexity" | "google_ai_overviews";
+export type AeoOutcome = "mentioned" | "not_mentioned" | "no_answer";
+export interface AeoObservation {
+  surface: AeoSurface;
+  question: number;
+  outcome: AeoOutcome;
+  observed_on: string;
+  competitors: string;
+  citations: string[];
+  context: string;
+  recorded_at: string;
+}
+export interface AeoBaseline {
+  category: string;
+  questions: string[];
+  observations: AeoObservation[];
+}
 export interface ProjectRoom {
+  client_id?: string | null;
+  member_role?: "owner" | "member";
+  members?: RoomMember[];
   id: string;
   title: string;
   kind: "client" | "product";
@@ -12,6 +39,8 @@ export interface ProjectRoom {
   error?: string;
   busy?: boolean;
   state: {
+    aeo?: AeoBaseline;
+    meetings?: { source: string; source_id: string; title: string; started_at: string; summary: string }[];
     intake?: Record<string, string>;
     documents?: RoomDocument[];
     max_rounds: number;
@@ -23,10 +52,16 @@ export interface ProjectRoom {
       number: number;
       stage: string;
       focus: string;
-      outputs: Record<string, { text: string; source: string; model?: string }>;
+      outputs: Record<string, {
+        text: string;
+        source: string;
+        model?: string;
+        usage?: { input_tokens: number; output_tokens: number };
+      }>;
       tasks: Record<string, { id: string }>;
       in_flight?: string[];
       documents?: RoomDocument[];
+      aeo?: AeoBaseline;
     }[];
     decisions: { id: string; text: string; status: string; round: number }[];
     questions: string[];

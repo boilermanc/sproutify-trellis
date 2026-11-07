@@ -4,25 +4,25 @@ Entry: `https://trellis.sproutify.app/?view=project-rooms`, or **Project Rooms**
 
 ## Working scope
 
-Setup begins with an explicit **Company review** or **Product specification** choice; neither is preselected. Company intake asks for company name, public URL, the decision being informed, market, reader, pertinent information, scope and questions. Spec intake asks for the product, problem, users/journeys, requirements, constraints, integrations, already-made user decisions, acceptance criteria and open tradeoffs. A review step shows the assembled packet and budgets before creating a private draft. Creation never starts provider work automatically.
+Setup begins with an explicit **Company review** or **Product specification** choice; neither is preselected. Company intake asks for company name, public URL, the decision being informed, market, reader, pertinent information, scope and questions. Spec intake asks for the product, problem, users/journeys, requirements, constraints, integrations, already-made user decisions, acceptance criteria and open tradeoffs. A review step shows the assembled packet and budgets before creating a draft shared only with selected teammates. Creation never starts provider work automatically.
 
-Company synthesis follows the StyleBAR assessment's general structure: recommendation first, strengths, prioritized evidence/inference findings, improvements to existing systems, optional separately scoped work, discovery, practical next steps/decision, and sources/limits. The company report view and downloadable standalone HTML use navy/blue editorial styling with restrained orange accents; HTML supports browser Print → Save as PDF. This is not automatic PDF generation or a guaranteed eight-page replica. The content adapts to the project and does not copy StyleBAR-specific findings. Existing older summaries still render without inventing missing sections.
+Company synthesis follows the StyleBAR assessment's general structure with a recommendation first, strengths, prioritized findings, improvements, optional work, discovery, next steps, and sources. The company report view uses navy and blue styling with restrained orange accents. Download Word document exports an editable DOCX with headings, tables, source links, questions, and the decision log. The content adapts to the project, including older summaries with fewer sections.
 
 ### Supporting document text
 
 Users may add up to five PDF, TXT or MD files (5 MB each; PDFs up to 40 pages). PDF.js 6.5.438 extracts the PDF text layer locally in a worker; TXT/MD must be UTF-8. Extraction has a 20-second timeout and an 18,000-character per-file / 48,000-character combined limit. Partial excerpts are marked and previewed. Empty/image-only, protected or unreadable PDFs fail clearly. OCR, DOCX, images, page layout analysis and embedded attachments are not supported.
 
-**Only extracted text is uploaded and persisted**, inside the existing owner-private room state after explicit per-document sharing consent. Original binary files stay in the browser and cannot be downloaded later from Trellis. The server validates filenames, type metadata, quotas, consent and fingerprints, and scrubs high-risk identifiers before persistence. Client extraction is user-supplied evidence, not independently attested file authenticity. Existing authentication and database access controls are unchanged; no public bucket or signed document URLs were added.
+**Only extracted text is uploaded and persisted**, inside the existing member-shared room state after explicit per-document sharing consent. Original binary files stay in the browser and cannot be downloaded later from Trellis. The server validates filenames, type metadata, quotas, consent and fingerprints, and scrubs high-risk identifiers before persistence. Client extraction is user-supplied evidence, not independently attested file authenticity. Existing authentication and database access controls are unchanged; no public bucket or signed document URLs were added.
 
 Documents can change only in a draft or after a round finishes. Each round retains an immutable snapshot of the document text so independent reviewers receive the same version. All role handoffs contain the extracted text, provenance, truncation and explicit limits; document contents cannot grant tools, access or approvals. The UI says **Included in round N handoff packet**, not that every page was read or every claim verified. Actual provider comprehension is not guaranteed. Live document-provider verification must distinguish real calls from the synthetic local fixture.
 
 Benchmark inspection: Library `libfile_1fd8cc6efcb08191a98ead31abec878b` resolved the eight-page StyleBAR PDF and returned readable page text for all eight pages. The supported local materialization helper failed on Windows Python because `os.setxattr` is unavailable; no final local PDF was installed or falsely reported readable. Page-image pointers were returned by Library, but local PDF render/visual verification remains blocked. The report's design follows the user's stated palette and the readable reference structure. No benchmark PDF or private benchmark content is committed.
 
-An active Trellis owner/admin/operator can create an owner-private client-research or product-specification room. A room stores the original brief, user direction, every round's research/reviews, source text, the living brief, open questions, proposed decisions, human decisions, request counters and activity history. Export downloads the complete Markdown record. Data survives tabs closing and deployments.
+An active Trellis owner/admin/operator can create an member-shared client-research or product-specification room. A room stores the original brief, user direction, every round's research/reviews, source text, the living brief, open questions, proposed decisions, human decisions, request counters and activity history. Export downloads the complete Markdown record. Data survives tabs closing and deployments.
 
 The chief-of-staff workflow is deliberately bounded: Manus research → OpenAI and Claude independently in parallel → Manus comparison and targeted verification → Gemini chief synthesis. The chief can request a focused next pass, ask for user judgment, or leave a deliverable for review. Its JSON cannot approve decisions. Approval/rejection is a separate authenticated user action and survives later rounds. All generated handoffs are readable Markdown; state has a versioned JSON schema.
 
-The room advances once per minute using `pg_cron` and `pg_net`. The Edge Function checks a private worker token; browsers use Supabase Auth and active-operator checks. Every room operation additionally filters by the authenticated creator, including exports and handoffs. Tables have forced RLS, no browser grants, and service-role-only writes. Provider credentials are read only on the server and are never included in room responses.
+The room advances once per minute using `pg_cron` and `pg_net`. The Edge Function checks a private worker token; browsers use Supabase Auth and active-operator checks. Every room operation additionally filters by explicit membership, including exports and handoffs. Tables have forced RLS, no browser grants, and service-role-only writes. Provider credentials are read only on the server and are never included in room responses.
 
 ## Connections and honest fallbacks
 
@@ -39,14 +39,24 @@ Saved connections in Settings are reused on the server. Optional Edge Function m
 - Only explicit stopped/completed Manus states with no running background jobs are accepted. Unknown states keep polling. After three hours Trellis stops waiting and asks for review. No arbitrary attachment URLs are downloaded; attachment-only results must be imported manually. Inline assistant text is the supported POC format; message pagination beyond the newest 100 events is not implemented.
 - Prompts, imported text and generated text pass through the room PII/token scrubber before persistence/provider use. This is a basic pattern scrubber, not a guarantee that arbitrary sensitive project material is safe to share.
 - The UI displays Markdown as safe text/headings. Full Markdown records and source URLs are preserved in export. No HTML from agents is executed.
-- Rooms are private to their creator. Multi-user membership, original-file storage/RAG, arbitrary role planning, direct per-agent chat, token billing, streaming, notifications and automatic external publishing are outside this POC.
+- Rooms are available to their creator and explicitly added teammates. Original-file storage/RAG, arbitrary role planning, direct per-agent chat, full token billing, streaming and automatic external publishing remain outside this increment.
 - Existing Trellis `tenant-secrets` and browser AI adapters still expose saved keys to signed-in users elsewhere in the app. This feature neither uses that response nor expands it; replacing the legacy secret-loading flow remains separate security work. Do not describe the entire app as secret-isolated.
+
+Manus task prompts are capped at 4,800 UTF-8 bytes. Oversized prompts include labeled excerpts from the available research, independent reviews, and project context. The room keeps the complete saved evidence for exports and the chief's synthesis.
+
+## Run logs and alerts
+
+Filter the `project-rooms` function logs by `room_id` and `run_id` to trace a worker step. Logs cover provider dispatch, observed failures, blocked rooms, and alert delivery. Claude stop reasons such as `max_tokens` and `refusal` are also shown in the room's review message.
+
+Set the server-only `PROJECT_ROOM_ALERT_WEBHOOK_URL` secret to a private HTTPS JSON webhook, such as an n8n production webhook that forwards alerts to the team's chosen channel. The worker makes one bounded delivery attempt per persisted block or failure to save a blocked state. Payloads carry room and run IDs, stage, duration, and failure codes. Research content and raw errors stay out of the alert. Check for `alert_accepted` and verify the downstream message with a test incident. An accepted webhook response only confirms receipt by the webhook.
+
+Missing webhook configuration or failed delivery is logged. Worker query and lease errors are logged separately. The webhook covers failures observed by the worker. Monitoring a worker that never starts or is terminated outright requires external monitoring of cron and function logs.
 
 ## Verification
 
 `npm run test:project-rooms` exercises multi-pass progression, decision preservation, reviewer isolation, import ordering, input scrubbing, budgets, path-specific intake, document limits/consent, immutable document packets, and safe editorial report exports.
 
-`deno test --allow-env supabase/functions/project-rooms/providers.test.ts` tests mocked provider transports, connector clearing, private task creation, waiting/background states, assistant-only results and safe errors.
+`deno test --allow-env supabase/functions/project-rooms/{providers,observability}.test.ts` tests mocked provider transports, safe stop-reason classification and alert delivery handling. In PowerShell pass both test paths explicitly.
 
 `deno check supabase/functions/project-rooms/index.ts`, `npx tsc --noEmit`, and `npm run build` check the backend and frontend. `node tests/project-room-live-auth.mjs` uses only the local public Supabase build settings for read-only production auth checks.
 
@@ -57,3 +67,14 @@ Deployment: apply `supabase/migrations/20261106032348_project_rooms.sql` to the 
 ## Lessons
 
 Manus v2 inherits default connectors unless explicitly cleared. A provider task being stopped does not mean its background jobs finished. Paid requests require durable reservation before dispatch and conservative recovery after an uncertain outcome. Model consensus is not factual verification, and model proposals are not user decisions.
+
+
+## Shared prospects increment (local implementation; migration required)
+
+Saving a company briefing creates its prospect and owner membership in the same transaction. Selecting an existing accessible, active prospect links the new room to it; company names are never used for automatic merging. Product rooms remain separate. Existing client rooms are backfilled one prospect per room, and existing creators retain owner access. Other teammates gain access only when the owner shares the room.
+
+Owners can share with active Trellis owners, admins, and operators. Members can collaborate on notes, research and decisions; existing version checks reject stale edits. Sharing changes increment the room version, invalidating in-flight stale saves. Clients may be archived without deleting rooms, history or follow-up dates. Archiving does not cancel already running research. Restore before saving another briefing for an archived prospect.
+
+The service API returns accessible clients alongside room lists. Actions: client_update (client_id, client_version, archived, follow_up_date, follow_up_note, archive_reason); members; share/unshare (id, version, user_id); search_client_data (query, optional client_id); import_meeting (id, version, meeting). Search returns cited excerpts from at most 50 accessible client rooms and explicitly reports limits; it does not invent answers. Meeting imports retain source provenance and require explicit room association.
+
+Tables remain inaccessible directly to browsers; RLS read policies additionally constrain future browser grants by membership. Service-only RPCs atomically create/link prospects and manage membership; each checks its verified active actor. External meeting collection and scheduled delivery require the separately configured bridge; local helper availability alone does not mean collection is running.

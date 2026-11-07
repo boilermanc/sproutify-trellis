@@ -26,6 +26,26 @@ const chief = (options = {}) => ({
   next_action: "ask_user",
   ...options,
 });
+test("oversized Manus handoffs use bounded UTF-8 excerpts from each review", () => {
+  const project = room({ brief: "背景🌱".repeat(2000) });
+  const round = nextRound(project);
+  for (const role of ["research", "openai", "anthropic"]) {
+    round.outputs[role] = { text: `${role} finding ${"農🌱".repeat(2500)}` };
+  }
+  const original = JSON.stringify(project);
+  for (const role of ["research", "review"]) {
+    const prompt = handoff(project, role);
+    assert.ok(Buffer.byteLength(prompt, "utf8") <= 4800);
+    assert.match(prompt, /Excerpt shortened for Manus/);
+    assert.doesNotMatch(prompt, /\uFFFD/);
+  }
+  const review = handoff(project, "review");
+  for (const role of ["research", "openai", "anthropic"]) {
+    assert.ok(review.includes(`${role} finding`));
+  }
+  assert.ok(Buffer.byteLength(handoff(project, "chief"), "utf8") > 4800);
+  assert.equal(JSON.stringify(project), original);
+});
 test("validates hard round/request limits and sanitizes inputs", () => {
   assert.throws(() => room({ max_rounds: 6 }));
   assert.throws(() => room({ call_budget: 0 }));
