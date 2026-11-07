@@ -477,19 +477,20 @@ export default function ProjectRooms({
               <details className="pr-panel">
                 <summary>Research team &amp; connections</summary>
                 <div className="pr-provider-list">
-                  {roles.map((role) => (
-                    <div key={role.id}>
-                      <strong>{role.name}</strong>
-                      <span>{role.detail}</span>
-                      <span className="pr-tag">
-                        {connections[
-                            role.id === "review" ? "research" : role.id
-                          ]
-                          ? "Connected"
-                          : "Import response"}
-                      </span>
-                    </div>
-                  ))}
+                  {roles.map((role) => {
+                    const connected = connections[
+                      role.id === "review" ? "research" : role.id
+                    ];
+                    return (
+                      <div key={role.id}>
+                        <strong>{role.name}</strong>
+                        <span>{role.detail}</span>
+                        <span className={connected ? "pr-tag pr-tag-green" : "pr-tag"}>
+                          {connected ? "Connected" : "Import response"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
                 <p className="pr-muted pr-small">
                   AI providers receive the room packet. Only include information

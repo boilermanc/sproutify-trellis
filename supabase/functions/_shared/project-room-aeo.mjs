@@ -126,6 +126,10 @@ function normalizedName(name) {
   return (String(name || "").normalize("NFKC").toLocaleLowerCase("en-US").match(/[\p{L}\p{N}]+/gu) || []).join(" ");
 }
 
+function withoutLegalSuffix(name) {
+  return name.replace(/ (?:inc|incorporated|corp|corporation|llc|l l c|llp|l l p|ltd|limited)$/, "");
+}
+
 export function summarizeAeoAnswer(payload, company, question, observedAt) {
   const result = { question, outcome: "unmeasured", mentions: [], competitors: [], citations: [], observed_at: observedAt };
   const items = payload?.output;
@@ -158,19 +162,23 @@ export function summarizeAeoAnswer(payload, company, question, observedAt) {
   }
   const citations = [...links.values()].slice(0, 12);
   if (!names.size || !citations.length) return { ...result, citations };
-  const brandNames = new Set([normalizedName(company.name)].filter(Boolean));
+  const brandName = withoutLegalSuffix(normalizedName(company.name));
+  const brandDomains = new Set();
   if (company.website) {
     try {
       const hostname = new URL(company.website).hostname.replace(/^www\./i, "");
-      brandNames.add(normalizedName(hostname));
-      brandNames.add(normalizedName(`www.${hostname}`));
+      brandDomains.add(normalizedName(hostname));
+      brandDomains.add(normalizedName(`www.${hostname}`));
     } catch {
       // Older rooms can lack a normalized company website.
     }
   }
   const mentions = [];
   const competitors = [];
-  for (const [key, label] of names) (brandNames.has(key) ? mentions : competitors).push(label);
+  for (const [key, label] of names) {
+    const matches = brandDomains.has(key) || (brandName && withoutLegalSuffix(key) === brandName);
+    (matches ? mentions : competitors).push(label);
+  }
   return { ...result, outcome: mentions.length ? "mentioned" : "not_mentioned", mentions,
     competitors: competitors.slice(0, 10), citations };
 }

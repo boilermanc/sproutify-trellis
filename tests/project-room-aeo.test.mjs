@@ -81,13 +81,13 @@ test("automatic searches require five spare requests and are reused in later ana
       { type: "web_search_call", status: "completed", action: { type: "search" } },
       { type: "message", role: "assistant", content: [{
         type: "output_text",
-        text: "- **EXAMPLE COMPANY** — local service\n- **Acme Painting** — another option",
+        text: "- **EXAMPLE COMPANY, Inc.** — local service\n- **Acme Painting** — another option",
         annotations: [{ type: "url_citation", title: "Acme", url: "https://example.org/acme" }],
       }] },
     ],
   }, { name: room.title }, 0, now);
   assert.equal(observed.outcome, "mentioned");
-  assert.deepEqual(observed.mentions, ["EXAMPLE COMPANY"]);
+  assert.deepEqual(observed.mentions, ["EXAMPLE COMPANY, Inc."]);
   assert.deepEqual(observed.competitors, ["Acme Painting"]);
   run.status = "finished";
   run.results.push(observed);
