@@ -12,6 +12,7 @@ import {
   RoomSharing,
 } from "../components/ProjectRoomClients";
 import CompanyAssessment from "../components/CompanyAssessment";
+import ProjectRoomAeo from "../components/ProjectRoomAeo";
 import { projectRoomTokenCost } from "../services/projectRoomTokenCost.mjs";
 import RoomDocumentReview from "../components/RoomDocumentReview";
 import {
@@ -61,7 +62,7 @@ function RoomTokenCost({ room }: { room: ProjectRoom }) {
       {priced
         ? `Recorded token cost estimate ${estimate}`
         : "No priced token usage recorded yet"}
-      {" Â· Includes only saved results with supported pricing"}
+      {" · Includes only saved results with supported pricing"}
     </p>
   );
 }
@@ -299,7 +300,7 @@ export default function ProjectRooms({
               <option value="">Add a new prospect when I save</option>
               {clients.filter((c) => !c.archived_at).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} â€” use existing company
+                  {c.name} — use existing company
                 </option>
               ))}
             </select>
@@ -331,7 +332,7 @@ export default function ProjectRooms({
                 <section className="pr-next-step">
                   <span>Next step</span>
                   <h2>{roomNextStep(room.status)}</h2>
-                  <p>{room.title} Â· {roomStatusText(room.status)}</p>
+                  <p>{room.title} · {roomStatusText(room.status)}</p>
                   <button
                     className="pr-button pr-primary"
                     onClick={() => setRoomView("research")}
@@ -447,7 +448,7 @@ export default function ProjectRooms({
                     >
                       <Download size={16} />
                       {wordBusy
-                        ? "Preparing Word documentâ€¦"
+                        ? "Preparing Word document…"
                         : "Download Word document"}
                     </button>
                   )}
@@ -510,10 +511,10 @@ export default function ProjectRooms({
                     </h2>
                     <p className="mt-2 text-xs text-slate-500">
                       Round {round?.number || 0} / {room.state.max_rounds}{" "}
-                      Â· Requests {room.state.calls_used} /{" "}
-                      {room.state.call_budget} Â·{" "}
+                      · Requests {room.state.calls_used} /{" "}
+                      {room.state.call_budget} ·{" "}
                       {round?.stage || "Ready to begin"}
-                      {room.busy ? " Â· Provider step running" : ""}
+                      {room.busy ? " · Provider step running" : ""}
                     </p>
                     <RoomTokenCost room={room} />
                   </div>
@@ -642,6 +643,11 @@ export default function ProjectRooms({
                     )}
                   {room.kind === "client" && (
                     <div key={room.id}>
+                      <ProjectRoomAeo
+                        room={room}
+                        busy={disabled}
+                        save={(change) => perform("aeo", change)}
+                      />
                     </div>
                   )}
                   <details className="mt-5 border-t pt-4">
@@ -674,7 +680,7 @@ export default function ProjectRooms({
                       className="rounded-3xl border border-slate-200 bg-white p-6"
                     >
                       <h3 className="font-bold">
-                        Round {r.number} Â· {r.stage}
+                        Round {r.number} · {r.stage}
                       </h3>
                       <p className="mt-2 text-sm text-slate-500">{r.focus}</p>
                       <div className="mt-4 space-y-3">
@@ -691,7 +697,7 @@ export default function ProjectRooms({
                                     r.outputs[role.id].source === "imported"
                                       ? "Imported by you"
                                       : r.outputs[role.id].model || "API"
-                                  } Â· complete`
+                                  } · complete`
                                   : r.tasks[role.id]
                                   ? "Working in Manus"
                                   : "Waiting"}
@@ -794,7 +800,7 @@ export default function ProjectRooms({
                     maxLength={6000}
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder="We have already decidedâ€¦ Please investigateâ€¦"
+                    placeholder="We have already decided… Please investigate…"
                   />
                   <button
                     disabled={disabled || !note.trim()}
@@ -911,7 +917,7 @@ export default function ProjectRooms({
                 </summary>
                 <p className="mt-3 text-xs leading-5 text-slate-500">
                   Chief synthesis uses Gemini. Manus researches and compares.
-                  Text models receive no tools. No task actions are
+                  The AEO baseline uses OpenAI web search. No task actions are
                   automatically confirmed. Limits bound requests, not dollar
                   spend. Pause and cancel cannot recall a dispatched request.
                 </p>

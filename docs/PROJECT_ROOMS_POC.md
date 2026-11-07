@@ -24,6 +24,12 @@ The chief-of-staff workflow is deliberately bounded: Manus research → OpenAI a
 
 The room advances once per minute using `pg_cron` and `pg_net`. The Edge Function checks a private worker token; browsers use Supabase Auth and active-operator checks. Every room operation additionally filters by explicit membership, including exports and handoffs. Tables have forced RLS, no browser grants, and service-role-only writes. Provider credentials are read only on the server and are never included in room responses.
 
+## AI search (AEO) in company reviews
+
+Open **Living brief → AI search (AEO) baseline**. Enter the public category and optional location a buyer would ask about. Leave out the company name. Save the five questions, then start research. The worker sends each question independently to OpenAI web search using the existing server connection. It saves the names that match the company or its website domain, other options named, and clickable citations supplied by the API. Results are labeled OpenAI web search. The operator can separately record manual checks from ChatGPT, Perplexity, or Google AI Overviews.
+
+Automatic searches use five requests from the room budget and leave room for the five standard requests for that round. An unavailable connection or insufficient budget is shown in the baseline. Unusable or failed answers are excluded from the mention count. Completed attempts are reused in later rounds for the same category, and interrupted requests are not repeated automatically. The review handoffs, living brief, and Markdown export carry the search evidence. The Word report includes the chief's AEO findings when present in the synthesis. The default search model is `gpt-5.4-mini`, with an optional server-side `PROJECT_ROOM_AEO_MODEL` override. Results are stored in the existing room state.
+
 ## Connections and honest fallbacks
 
 The initial installation has Manus and Gemini configured; OpenAI and Anthropic credentials are absent. The room stops at a missing connection. It does not silently impersonate those providers with Gemini. Users can show/copy the role handoff and import actual Markdown responses. Imported output is labeled **Imported by you** and pauses the room. The chief import requires JSON with `summary`, `questions`, `proposals`, `next_handoff`, and `next_action` (`continue`, `ask_user`, `complete`). Resume after importing to run the next available automatic step.
@@ -61,6 +67,8 @@ Missing webhook configuration or failed delivery is logged. Worker query and lea
 `deno check supabase/functions/project-rooms/index.ts`, `npx tsc --noEmit`, and `npm run build` check the backend and frontend. `node tests/project-room-live-auth.mjs` uses only the local public Supabase build settings for read-only production auth checks.
 
 `tests/fixtures/project-room.html` is a synthetic browser fixture. It blocks non-local requests and labels itself clearly. It exercises the real component and shared policy without claiming that provider calls are real.
+
+With Vite serving that fixture, run `node tests/project-room-aeo-browser.mjs` to exercise the AEO save flow and mobile layout. Set `PROJECT_ROOM_TEST_URL` to the local Vite origin and `PLAYWRIGHT_MODULE` if using a bundled runtime.
 
 Deployment: apply `supabase/migrations/20261106032348_project_rooms.sql` to the bound Trellis hub; deploy `project-rooms` with gateway verification disabled because the function explicitly authenticates both browser and cron paths. Do not remove those checks. The migration is included in the Schema Engine's master SQL stamp. Frontend deployment uses the existing GitHub `deploy.yml` workflow and verifies the exact live `build-info.txt` commit.
 

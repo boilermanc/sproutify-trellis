@@ -26,6 +26,21 @@ export interface AeoBaseline {
   questions: string[];
   observations: AeoObservation[];
 }
+export interface AeoSearchRun {
+  round: number;
+  status: "running" | "finished" | "skipped" | "interrupted";
+  reason?: "missing_connection" | "budget" | "interrupted";
+  questions: string[];
+  results: {
+    question: number;
+    outcome: "mentioned" | "not_mentioned" | "unmeasured";
+    mentions: string[];
+    competitors: string[];
+    citations: { url: string; title: string }[];
+    observed_at: string;
+    model?: string;
+  }[];
+}
 export interface ProjectRoom {
   client_id?: string | null;
   member_role?: "owner" | "member";
@@ -62,6 +77,7 @@ export interface ProjectRoom {
       in_flight?: string[];
       documents?: RoomDocument[];
       aeo?: AeoBaseline;
+      aeo_search?: AeoSearchRun;
     }[];
     decisions: { id: string; text: string; status: string; round: number }[];
     questions: string[];

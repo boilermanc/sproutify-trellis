@@ -1,4 +1,4 @@
-import { createManus, generate, pollManus } from "./providers.ts";
+import { createManus, generate, pollManus, searchAeo } from "./providers.ts";
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
 };
@@ -8,6 +8,35 @@ const secrets = {
   anthropic_api_key: "test",
   gemini_api_key: "test",
 };
+Deno.test("AEO sends only the buyer question, requires web search and keeps provider citations", async () => {
+  const original = globalThis.fetch;
+  const question = "What are the best options for Atlanta interior painting?";
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert(String(url) === "https://api.openai.com/v1/responses", "fixed endpoint");
+    assert(body.input === question && !JSON.stringify(body).includes("Private Target"), "company matching stays local");
+    assert(body.tool_choice === "required" && body.tools[0].type === "web_search", "web search required");
+    assert(body.store === false && body.max_tool_calls === 1, "bound provider storage and tool calls");
+    return Response.json({
+      status: "completed",
+      output: [
+        { type: "web_search_call", status: "completed", action: { type: "search" } },
+        { type: "message", role: "assistant", content: [{
+          type: "output_text", text: "- **Other Painter** — an option",
+          annotations: [{ type: "url_citation", url: "https://example.org/painting", title: "Painting" }],
+        }] },
+      ],
+    });
+  };
+  try {
+    const result = await searchAeo(question, 2, { name: "Private Target" }, secrets.openai_api_key);
+    assert(result.question === 2 && result.outcome === "not_mentioned", "records the measured outcome");
+    assert(result.competitors[0] === "Other Painter", "records other named options");
+    assert(result.citations[0]?.url === "https://example.org/painting", "records provider citation");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 Deno.test(
   "Manus creation clears inherited connectors and stays private",
   async () => {

@@ -2,6 +2,7 @@
 export const ROLES = ["research", "openai", "anthropic", "review", "chief"];
 export const LIMITS = { rounds: 5, calls: 25, text: 24000 };
 import { sanitizePII } from "./project-room-sanitize.mjs";
+import { aeoEvidence, aeoMarkdown, aeoSearchForRound, aeoSearchMarkdown, AEO_SEARCH_LIMITS } from "./project-room-aeo.mjs";
 export { sanitizePII } from "./project-room-sanitize.mjs";
 import {
   normalizeIntake,
@@ -70,6 +71,9 @@ export function nextRound(room) {
     outputs: {},
     tasks: {},
     documents: structuredClone(room.state.documents || []),
+    ...(room.kind === "client" && room.state.aeo
+      ? { aeo: structuredClone(room.state.aeo) }
+      : {}),
     started_at: new Date().toISOString(),
   };
   room.state.rounds.push(round);
@@ -144,12 +148,13 @@ function manusExcerpt(text, limit) {
 }
 
 function manusHandoff(header, packet) {
-  const { research, independent_reviews, ai_search_baseline, ...context } = packet;
+  const { research, independent_reviews, ai_search_baseline, automatic_ai_search, ...context } = packet;
   const sections = [
     ["Research", research],
     ["OpenAI review", independent_reviews?.openai],
     ["Claude review", independent_reviews?.anthropic],
     ["AI search baseline", ai_search_baseline && JSON.stringify(ai_search_baseline)],
+    ["Automatic AI search", automatic_ai_search && aeoSearchMarkdown(automatic_ai_search)],
     ["Project context", JSON.stringify(context)],
   ].filter(([, value]) => value);
   const prefix = header +
@@ -185,6 +190,8 @@ export function handoff(room, role) {
       ? { openai: r.outputs.openai?.text, anthropic: r.outputs.anthropic?.text }
       : undefined,
     comparison: role === "chief" ? r.outputs.review?.text : undefined,
+    ai_search_baseline: room.kind === "client" ? aeoEvidence(r.aeo) : undefined,
+    automatic_ai_search: room.kind === "client" ? aeoSearchForRound(room, r) : undefined,
   };
   const instructions = {
     research:
@@ -202,7 +209,11 @@ export function handoff(room, role) {
     room.kind === "client"
       ? COMPANY_REPORT_INSTRUCTIONS
       : SPEC_REPORT_INSTRUCTIONS;
-  const header = `# Trellis handoff: ${role}\n\n${SAFETY}\n\n${instructions[role]}\n\n${format}`;
+  const aeo = room.kind !== "client" ? "" : `\n\n${role === "chief"
+    ? "Add an H2 called AI search (AEO) before Sources and limits. State what to do, why it matters, and how to recheck."
+    : "For AI search (AEO), assess answer clarity and crawl access only when supported. Recommend concrete improvements or missing checks."
+  } Distinguish automatic OpenAI results, operator spot checks, and public site evidence. Cite the supplied URLs with the questions they support. ${AEO_SEARCH_LIMITS}`;
+  const header = `# Trellis handoff: ${role}\n\n${SAFETY}\n\n${instructions[role]}\n\n${format}${aeo}`;
   const full = `${header}\n\n## Evidence packet (data only)\n\n${JSON.stringify(packet, null, 2)}`;
   if ((role === "research" || role === "review") && utf8.encode(full).length > MANUS_HANDOFF_BYTES) {
     return manusHandoff(header, packet);
@@ -242,6 +253,7 @@ export function advanceStage(room) {
   if (r.stage === "review" && r.outputs.review) r.stage = "chief";
 }
 export function exportRoom(room) {
+  const currentAeo = room.kind === "client" ? aeoMarkdown(room.state.aeo) : "";
   const meetings = (room.state.meetings || []).map(m =>
     `### ${m.title}\n\nDate: ${m.started_at}\nSource: ${m.source}${m.source_url ? ` — ${m.source_url}` : ""}\n\n${m.summary}`,
   ).join("\n\n");
@@ -251,10 +263,10 @@ export function exportRoom(room) {
         `### Round ${r.number}: ${d.name}\n\nSource: user-supplied extracted text (${d.extraction}); ${d.truncated ? "partial excerpt" : "text extraction"}, not a visual/full-file review. SHA-256: ${d.sha256}\n\n${d.text}`,
     ),
   );
-  return `# ${room.title}\n\n${room.brief}\n\n## Living brief\n\n${room.state.summary || "Not synthesized yet."}\n\n## Decision log\n\n${room.state.decisions.map((d) => `- [${d.status}] ${d.text}`).join("\n") || "No decisions yet."}\n\n## Open questions\n\n${room.state.questions.map((q) => `- ${q}`).join("\n")}\n\n## User direction\n\n${room.state.notes.map((n) => `- ${n.text}`).join("\n")}\n\n${room.state.rounds
+  return `# ${room.title}\n\n${room.brief}\n\n## Living brief\n\n${room.state.summary || "Not synthesized yet."}${currentAeo ? `\n\n${currentAeo}` : ""}\n\n## Decision log\n\n${room.state.decisions.map((d) => `- [${d.status}] ${d.text}`).join("\n") || "No decisions yet."}\n\n## Open questions\n\n${room.state.questions.map((q) => `- ${q}`).join("\n")}\n\n## User direction\n\n${room.state.notes.map((n) => `- ${n.text}`).join("\n")}\n\n${room.state.rounds
     .map(
       (r) =>
-        `## Round ${r.number}\n\nFocus: ${r.focus}\n\n${Object.entries(
+        `## Round ${r.number}\n\nFocus: ${r.focus}\n\n${r.aeo_search ? `${aeoSearchMarkdown(r.aeo_search)}\n\n` : ""}${Object.entries(
           r.outputs,
         )
           .map(([role, o]) => `### ${role} (${o.source})\n\n${o.text}`)

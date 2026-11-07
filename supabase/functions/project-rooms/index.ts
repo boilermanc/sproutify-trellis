@@ -13,11 +13,12 @@ import {
   reserveCalls,
   sanitizePII,
 } from "../_shared/project-room.mjs";
-import { createManus, generate, pollManus } from "./providers.ts";
+import { createManus, generate, pollManus, searchAeo } from "./providers.ts";
 import { alertBlockedRun, failureDetails, runLog } from "./observability.ts";
 import { validateDocuments } from "../_shared/project-room-intake.mjs";
 import { searchRoomEvidence } from "../_shared/project-room-search.mjs";
 import { attachMeetingNote } from "../_shared/project-room-meetings.mjs";
+import { planAeoSearch, summarizeAeoAnswer, updateAeo } from "../_shared/project-room-aeo.mjs";
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 const CORS = {
@@ -123,6 +124,33 @@ async function processRoom(db: any, id: string, secrets: any) {
       throw new Error(
         "A previous provider request has an uncertain outcome. Review the provider before importing the result. It was not retried.",
       );
+    }
+    if (r.aeo_search?.status === "running") {
+      r.aeo_search.status = "interrupted";
+      r.aeo_search.reason = "interrupted";
+      event(room, "Automatic AI search was interrupted. Continuing with the rest of the research.");
+    }
+    const search = planAeoSearch(room, !!secrets.openai_api_key);
+    if (search?.status === "skipped") r.aeo_search = search;
+    if (search?.status === "running") {
+      const company = { name: room.title, website: room.state.intake?.website };
+      reserveCalls(room, search.questions.length);
+      r.aeo_search = search;
+      event(room, "Starting five buyer questions with OpenAI web search.");
+      await save(db, room, false);
+      const results = await Promise.all(search.questions.map(async (question: string, i: number) => {
+        try {
+          return await searchAeo(question, i, company, secrets.openai_api_key);
+        } catch (error) {
+          runLog("warn", "provider_failed", { ...context, stage: "aeo_search", ...failureDetails(error, "openai") });
+          return summarizeAeoAnswer(null, company, i, new Date().toISOString());
+        }
+      }));
+      currentRound(room).aeo_search = { ...search, status: "finished", results };
+      const measured = results.filter(result => result.outcome !== "unmeasured").length;
+      event(room, `OpenAI web search returned usable evidence for ${measured} of ${search.questions.length} buyer questions.`);
+      await save(db, room);
+      return;
     }
     advanceStage(room);
     stage = r.stage;
@@ -588,7 +616,9 @@ Deno.serve(async (req) => {
         room,
         `User ${room.status} the room. Already dispatched provider work may still finish externally.`,
       );
-
+    } else if (body.action === "aeo") {
+      updateAeo(room, body, user.id);
+      event(room, "User saved AI search evidence for the next round.");
     } else if (body.action === "documents") {
       if (!["draft", "awaiting_user"].includes(room.status)) {
         throw new Error(

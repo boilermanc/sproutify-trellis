@@ -2,7 +2,10 @@ const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
 import assert from "node:assert/strict";
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  executablePath: process.env.CHROMIUM_EXECUTABLE,
+});
 const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));

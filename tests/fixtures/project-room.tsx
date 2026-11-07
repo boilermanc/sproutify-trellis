@@ -12,8 +12,10 @@ import {
 } from "../../supabase/functions/_shared/project-room.mjs";
 import "../../index.css";
 import { validateDocuments } from "../../supabase/functions/_shared/project-room-intake.mjs";
+import { planAeoSearch, summarizeAeoAnswer, updateAeo } from "../../supabase/functions/_shared/project-room-aeo.mjs";
+const fixtureParams = new URL(location.href).searchParams;
 let room: any =
-  new URL(location.href).searchParams.get("scenario") === "report"
+  fixtureParams.get("scenario") === "report"
     ? assessmentFixture()
     : null;
 const original = window.fetch;
@@ -61,7 +63,30 @@ window.fetch = async (input, init) => {
       else {
         if (b.version !== room.version)
           throw new Error("Room changed. Refresh and try again.");
-        if (b.action === "start" || b.action === "next_round") nextRound(room);
+        if (b.action === "start" || b.action === "next_round") {
+          const round = nextRound(room);
+          if (fixtureParams.has("automatic-aeo")) {
+            const run = planAeoSearch(room, true);
+            if (run?.status === "running") {
+              const at = new Date().toISOString();
+              Object.assign(round, { aeo_search: {
+                ...run,
+                status: "finished",
+                results: run.questions.map((_, index) => summarizeAeoAnswer(index === 0 ? {
+                  status: "completed",
+                  output: [
+                    { type: "web_search_call", status: "completed", action: { type: "search" } },
+                    { type: "message", role: "assistant", content: [{
+                      type: "output_text",
+                      text: `- **${room.title}** — local option\n- **Another Painter** — alternative`,
+                      annotations: [{ type: "url_citation", title: "Local options", url: "https://example.org/options" }],
+                    }] },
+                  ],
+                } : null, { name: room.title }, index, at)),
+              } });
+            }
+          }
+        }
         if (b.action === "pause") room.status = "paused";
         if (b.action === "resume") room.status = "running";
         if (b.action === "cancel") room.status = "cancelled";
@@ -70,6 +95,7 @@ window.fetch = async (input, init) => {
           room.state.notes.push({ text: b.text, at: new Date().toISOString() });
         if (b.action === "documents")
           room.state.documents = validateDocuments(b.documents);
+        if (b.action === "aeo") updateAeo(room, b, "fixture-user");
         if (b.action === "import") {
           importOutput(room, b.role, b.text, "fixture-user");
           if (room.status !== "awaiting_user") room.status = "paused";
