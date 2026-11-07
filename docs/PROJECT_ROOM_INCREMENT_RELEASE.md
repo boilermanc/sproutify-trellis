@@ -49,3 +49,5 @@ Lessons: polling must preserve unsaved form edits and their original version; HT
 
 
 Approved layout: Today, Companies, and a room with Overview / Notes & calls / Files / Research. Today counts come from saved rooms and follow-up dates. No sample tasks, timers, delivery stages, or financial ledger are rendered. The existing detailed research controls are under Research.
+
+Feature ideas are available directly in the workspace navigation. Start a feature idea opens the existing product specification intake; all saved product rooms are listed regardless of research status. They do not require a company or create a prospect. The browser regression checks creation, reopening, research entry, and mobile width alongside company archive/restore and Word downloads.

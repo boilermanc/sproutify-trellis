@@ -2,7 +2,14 @@ import React from "react";
 import { ArrowRight, Plus, Users } from "lucide-react";
 import type { ProjectRoom, RoomClient } from "../services/projectRoomService";
 import { ClientSearch } from "./ProjectRoomClients";
-export type WorkspacePage = "today" | "companies" | "room" | "add" | "call";
+export type WorkspacePage =
+  | "today"
+  | "companies"
+  | "ideas"
+  | "room"
+  | "add"
+  | "add-idea"
+  | "call";
 export type RoomView = "overview" | "notes" | "files" | "research";
 export type RoomSummary = Pick<
   ProjectRoom,
@@ -19,7 +26,7 @@ export const roomStatusText = (
   cancelled: "Research stopped",
 }[s] || s.replaceAll("_", " "));
 export const roomNextStep = (s: string) => ({
-  draft: "Start the company research when you are ready.",
+  draft: "Start the research when you are ready.",
   running: "Research is underway. Check back for the findings.",
   awaiting_user: "Review the findings and decide what to do next.",
   blocked: "Review the stopped research step before continuing.",
@@ -116,12 +123,22 @@ export default function ProjectRoomWorkspace(p: Props) {
             Today
           </button>
           <button
-            className={["companies", "room", "add"].includes(p.page)
+            className={(["companies", "add"].includes(p.page) ||
+                p.page === "room" && p.room?.kind === "client")
               ? "is-active"
               : ""}
             onClick={() => p.setPage("companies")}
           >
             Companies
+          </button>
+          <button
+            className={p.page === "ideas" || p.page === "add-idea" ||
+                p.page === "room" && p.room?.kind === "product"
+              ? "is-active"
+              : ""}
+            onClick={() => p.setPage("ideas")}
+          >
+            Feature ideas
           </button>
           <button
             className={p.page === "call" ||
@@ -140,7 +157,7 @@ export default function ProjectRoomWorkspace(p: Props) {
         </nav>
         <div className="pr-sidebar-note">
           <strong>Your shared workspace</strong>
-          <p>Company research, notes, and next steps in one place.</p>
+          <p>Company research, feature ideas, and next steps in one place.</p>
           <p>Only people added to a room can open it.</p>
         </div>
       </aside>
@@ -359,12 +376,32 @@ export default function ProjectRoomWorkspace(p: Props) {
                     : "Save a company briefing to add your first prospect."}
                 </section>
               )}
-            {p.rooms.some((r) => r.kind === "product") && (
-              <section className="pr-panel pr-product-rooms">
-                <h2>Product rooms</h2>
-                {list(p.rooms.filter((r) => r.kind === "product"), "")}
-              </section>
-            )}
+          </>
+        )}
+        {p.page === "ideas" && (
+          <>
+            <header className="pr-top">
+              <div>
+                <h1>Feature ideas</h1>
+                <p>
+                  Turn an idea into a clear plan. Research, compare options, and
+                  refine the requirements with your AI team.
+                </p>
+              </div>
+              <button
+                className="pr-button pr-primary"
+                onClick={() => p.setPage("add-idea")}
+              >
+                <Plus size={17} />Start a feature idea
+              </button>
+            </header>
+            <section className="pr-panel">
+              <h2>Your ideas</h2>
+              {p.loading ? <p role="status">Loading your ideas…</p> : list(
+                p.rooms.filter((r) => r.kind === "product"),
+                "No feature ideas yet. Start one to work through it with the team.",
+              )}
+            </section>
           </>
         )}
         {p.page === "call" && (
@@ -397,17 +434,32 @@ export default function ProjectRoomWorkspace(p: Props) {
             </section>
           </>
         )}
-        {p.page === "add" && (
+        {(p.page === "add" || p.page === "add-idea") && (
           <>
-            <button className="pr-back" onClick={() => p.setPage("companies")}>
-              ← All companies
+            <button
+              className="pr-back"
+              onClick={() =>
+                p.setPage(
+                  p.page === "add-idea"
+                    ? "ideas"
+                    : "companies",
+                )}
+            >
+              {p.page === "add-idea"
+                ? "← All feature ideas"
+                : "← All companies"}
             </button>
             <header className="pr-top">
               <div>
-                <h1>Add a company</h1>
+                <h1>
+                  {p.page === "add-idea"
+                    ? "Start a feature idea"
+                    : "Add a company"}
+                </h1>
                 <p>
-                  Save a company briefing to create a prospect and open its
-                  room.
+                  {p.page === "add-idea"
+                    ? "Describe your idea, who it helps, and what it needs to do."
+                    : "Save a company briefing to create a prospect and open its room."}
                 </p>
               </div>
             </header>
@@ -419,8 +471,14 @@ export default function ProjectRoomWorkspace(p: Props) {
         )}
         {p.page === "room" && p.room && (
           <>
-            <button className="pr-back" onClick={() => p.setPage("companies")}>
-              ← All companies
+            <button
+              className="pr-back"
+              onClick={() =>
+                p.setPage(p.room.kind === "product" ? "ideas" : "companies")}
+            >
+              {p.room.kind === "product"
+                ? "← All feature ideas"
+                : "← All companies"}
             </button>
             <header className="pr-top">
               <div>

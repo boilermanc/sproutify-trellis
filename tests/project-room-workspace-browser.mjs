@@ -97,6 +97,44 @@ await page.screenshot({
 });
 await nav.getByRole("button", { name: "Today", exact: true }).click();
 await page.getByRole("button", { name: /1 Follow up/ }).waitFor();
+await nav.getByRole("button", { name: "Feature ideas", exact: true }).click();
+await page.getByText(
+  "No feature ideas yet. Start one to work through it with the team.",
+  { exact: true },
+).waitFor();
+await page.getByRole("button", { name: "Start a feature idea", exact: true })
+  .click();
+assert.equal(
+  await page.getByText("Company for this briefing", { exact: false }).count(),
+  0,
+);
+await page.getByLabel("Product or project name").fill("Smart reminder feature");
+await page.getByLabel("What problem are we solving?").fill(
+  "Help people remember follow-ups without losing context.",
+);
+await page.getByLabel("Who is it for, and what should they be able to do?")
+  .fill("Our team should see the next action.");
+await page.getByLabel("What would make the first version successful?").fill(
+  "A reminder appears on the selected date.",
+);
+await page.getByRole("button", { name: "Continue", exact: true }).click();
+await page.getByRole("button", {
+  name: "Continue without documents",
+  exact: true,
+}).click();
+await page.getByRole("button", { name: "Create private room", exact: true })
+  .click();
+await page.getByRole("heading", { name: "Smart reminder feature", exact: true })
+  .waitFor();
+await page.getByRole("button", { name: "← All feature ideas", exact: true })
+  .click();
+await page.getByRole("button", { name: /Smart reminder feature/ }).click();
+await page.getByRole("button", { name: "Start research", exact: true })
+  .waitFor();
+assert.equal(
+  await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  true,
+);
 assert.deepEqual(errors, []);
 console.log(
   "PASS: real Today counts, company filters, archive/restore, sharing, Sage evidence, notes, DOCX download, research, mobile width, no errors.",

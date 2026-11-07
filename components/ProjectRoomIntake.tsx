@@ -103,15 +103,17 @@ const productFields = [
 ];
 export default function ProjectRoomIntake({
   busy,
+  initialKind,
   missingConnections,
   onCreate,
 }: {
   busy: boolean;
+  initialKind?: Kind;
   missingConnections: string[];
   onCreate: (value: Record<string, unknown>) => Promise<boolean>;
 }) {
-  const [kind, setKind] = useState<Kind | null>(null);
-  const [step, setStep] = useState(1);
+  const [kind, setKind] = useState<Kind | null>(initialKind || null);
+  const [step, setStep] = useState(initialKind ? 2 : 1);
   const [values, setValues] = useState<Record<Kind, Record<string, string>>>({
     client: {},
     product: {},
@@ -123,8 +125,9 @@ export default function ProjectRoomIntake({
   const [error, setError] = useState("");
   function next() {
     try {
-      if (!kind)
+      if (!kind) {
         throw new Error("Choose a company review or product specification.");
+      }
       if (step === 2) normalizeIntake(kind, values[kind]);
       if (step === 3) validateDocuments(documents);
       setError("");
@@ -167,15 +170,15 @@ export default function ProjectRoomIntake({
           {step === 1
             ? "What are we working through?"
             : kind === "client"
-              ? "Company opportunity review"
-              : "Product specification"}
+            ? "Company opportunity review"
+            : "Product specification"}
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-blue-100">
           {kind === "client"
             ? "Build a recommendation grounded in the company, its strengths and the practical work worth doing."
             : kind === "product"
-              ? "Turn difficult requirements and tradeoffs into a specification the team can challenge and refine."
-              : "Choose a path. We’ll guide the brief, supporting documents and decisions from there."}
+            ? "Turn difficult requirements and tradeoffs into a specification the team can challenge and refine."
+            : "Choose a path. We’ll guide the brief, supporting documents and decisions from there."}
         </p>
       </header>
       <div className="p-6 md:p-8">
@@ -191,11 +194,21 @@ export default function ProjectRoomIntake({
           ].map((label, index) => (
             <li
               key={label}
-              className={`flex items-center gap-2 ${step === index + 1 ? "font-bold text-blue-900" : "text-slate-400"}`}
+              className={`flex items-center gap-2 ${
+                step === index + 1
+                  ? "font-bold text-blue-900"
+                  : "text-slate-400"
+              }`}
               aria-current={step === index + 1 ? "step" : undefined}
             >
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full border ${step > index + 1 ? "border-blue-700 bg-blue-700 text-white" : step === index + 1 ? "border-orange-400 bg-orange-50 text-blue-900" : "border-slate-200"}`}
+                className={`flex h-6 w-6 items-center justify-center rounded-full border ${
+                  step > index + 1
+                    ? "border-blue-700 bg-blue-700 text-white"
+                    : step === index + 1
+                    ? "border-orange-400 bg-orange-50 text-blue-900"
+                    : "border-slate-200"
+                }`}
               >
                 {step > index + 1 ? <Check size={13} /> : index + 1}
               </span>
@@ -279,35 +292,35 @@ export default function ProjectRoomIntake({
                       *
                     </span>
                   )}
-                  {["name", "website", "audience"].includes(key) ? (
-                    <input
-                      id={`room-intake-${key}`}
-                      className={control}
-                      maxLength={key === "name" ? 140 : 2000}
-                      value={values[kind][key] || ""}
-                      onChange={(e) =>
-                        setValues({
-                          ...values,
-                          [kind]: { ...values[kind], [key]: e.target.value },
-                        })
-                      }
-                      placeholder={hint}
-                    />
-                  ) : (
-                    <textarea
-                      id={`room-intake-${key}`}
-                      className={`${control} min-h-24 leading-6`}
-                      maxLength={3000}
-                      value={values[kind][key] || ""}
-                      onChange={(e) =>
-                        setValues({
-                          ...values,
-                          [kind]: { ...values[kind], [key]: e.target.value },
-                        })
-                      }
-                      placeholder={hint}
-                    />
-                  )}
+                  {["name", "website", "audience"].includes(key)
+                    ? (
+                      <input
+                        id={`room-intake-${key}`}
+                        className={control}
+                        maxLength={key === "name" ? 140 : 2000}
+                        value={values[kind][key] || ""}
+                        onChange={(e) =>
+                          setValues({
+                            ...values,
+                            [kind]: { ...values[kind], [key]: e.target.value },
+                          })}
+                        placeholder={hint}
+                      />
+                    )
+                    : (
+                      <textarea
+                        id={`room-intake-${key}`}
+                        className={`${control} min-h-24 leading-6`}
+                        maxLength={3000}
+                        value={values[kind][key] || ""}
+                        onChange={(e) =>
+                          setValues({
+                            ...values,
+                            [kind]: { ...values[kind], [key]: e.target.value },
+                          })}
+                        placeholder={hint}
+                      />
+                    )}
                 </label>
               ),
             )}
@@ -350,7 +363,8 @@ export default function ProjectRoomIntake({
             </details>
             <p className="flex items-center gap-2 text-sm text-slate-600">
               <FileText size={17} />
-              {documents.length} document{documents.length === 1 ? "" : "s"} ·{" "}
+              {documents.length} document{documents.length === 1 ? "" : "s"} ·
+              {" "}
               {documents
                 .reduce((n, d) => n + d.text.length, 0)
                 .toLocaleString()}{" "}
@@ -389,9 +403,9 @@ export default function ProjectRoomIntake({
             </p>
             {missingConnections.length > 0 && (
               <p className="rounded-xl bg-orange-50 p-3 text-sm text-orange-900">
-                Missing connections: {missingConnections.join(", ")}. Those
-                handoffs pause for a connection or a clearly labeled imported
-                response.
+                Missing connections:{" "}
+                {missingConnections.join(", ")}. Those handoffs pause for a
+                connection or a clearly labeled imported response.
               </p>
             )}
           </div>
@@ -418,8 +432,8 @@ export default function ProjectRoomIntake({
               {step === 4
                 ? "Create private room"
                 : step === 3 && documents.length === 0
-                  ? "Continue without documents"
-                  : "Continue"}
+                ? "Continue without documents"
+                : "Continue"}
               <ArrowRight size={16} />
             </button>
           </footer>

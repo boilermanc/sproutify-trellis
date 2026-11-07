@@ -96,7 +96,7 @@ export default function ProjectRooms({
   >([]);
   const [clients, setClients] = useState<RoomClient[]>([]);
   const [page, setPage] = useState<
-    "today" | "companies" | "room" | "add" | "call"
+    "today" | "companies" | "ideas" | "room" | "add" | "add-idea" | "call"
   >("today");
   const [roomView, setRoomView] = useState<
     "overview" | "notes" | "files" | "research"
@@ -289,27 +289,30 @@ export default function ProjectRooms({
       openRoom={openRoom}
       addCompany={addCompany}
     >
-      {page === "add" && (
+      {(page === "add" || page === "add-idea") && (
         <>
-          <label className="pr-panel pr-field">
-            Company for this briefing<select
-              className={input}
-              value={linkClientId}
-              onChange={(e) => setLinkClientId(e.target.value)}
-            >
-              <option value="">Add a new prospect when I save</option>
-              {clients.filter((c) => !c.archived_at).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — use existing company
-                </option>
-              ))}
-            </select>
-            <span>
-              Choose an existing company to keep its briefings together. Product
-              rooms do not create prospects.
-            </span>
-          </label>
+          {page === "add" && (
+            <label className="pr-panel pr-field">
+              Company for this briefing<select
+                className={input}
+                value={linkClientId}
+                onChange={(e) => setLinkClientId(e.target.value)}
+              >
+                <option value="">Add a new prospect when I save</option>
+                {clients.filter((c) => !c.archived_at).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} — use existing company
+                  </option>
+                ))}
+              </select>
+              <span>
+                Choose an existing company to keep its briefings together.
+                Product rooms do not create prospects.
+              </span>
+            </label>
+          )}
           <ProjectRoomIntake
+            initialKind={page === "add-idea" ? "product" : "client"}
             busy={busy}
             missingConnections={missing.map((id) =>
               roles.find((role) => role.id === id)?.name || id
