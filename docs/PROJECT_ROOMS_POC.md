@@ -86,3 +86,7 @@ Owners can share with active Trellis owners, admins, and operators. Members can 
 The service API returns accessible clients alongside room lists. Actions: client_update (client_id, client_version, archived, follow_up_date, follow_up_note, archive_reason); members; share/unshare (id, version, user_id); search_client_data (query, optional client_id); import_meeting (id, version, meeting). Search returns cited excerpts from at most 50 accessible client rooms and explicitly reports limits; it does not invent answers. Meeting imports retain source provenance and require explicit room association.
 
 Tables remain inaccessible directly to browsers; RLS read policies additionally constrain future browser grants by membership. Service-only RPCs atomically create/link prospects and manage membership; each checks its verified active actor. External meeting collection and scheduled delivery require the separately configured bridge; local helper availability alone does not mean collection is running.
+
+### Styled Word reports
+
+Both company assessment download actions use `services/companyAssessmentDocx.mjs`. Downloads are generated from the latest saved room summary, questions, and decisions, so existing reports receive the current design without rerunning research or modifying the saved plan. The editable export uses numbered section labels, recommendation callouts, shaded tables with repeating header rows, and page numbers. Run `node --test tests/company-assessment-docx.test.mjs` to check content, links, and editable structure.
