@@ -1,8 +1,8 @@
 # Project Room proposals and sales pipeline
 
-Status: client-specific estimating release approved. Production backend version 14 preserves task hours, assumptions and evidence. StyleBAR's reviewed draft is saved at room version 16 with 10 discovery hours and 16 optional implementation hours; research is unchanged. Projects finish with verification, customer ownership and handoff; no recurring services are offered.
+Status: automatic drafting deployed on 2026-11-08 in backend version 15 and frontend release 9b6d64d. StyleBAR's reviewed draft is saved at room version 16 with 10 discovery hours and 16 optional implementation hours; research is unchanged. Projects finish with verification, customer ownership and handoff; no recurring services are offered.
 
-## Automatic draft after research (prepared; not deployed)
+## Automatic draft after research
 
 When company research reaches its final review checkpoint, the backend prepares a proposal and client-specific task estimate at the suggested, unapproved $150/hour rate. It saves stage `proposal_drafted` for shared room members to review. This uses one additional Gemini call outside the research-round budget; model and available usage are stored in `state.proposal_generation`. No proposal is sent and no decision is approved. Imported chief responses use the same completion hook.
 
@@ -44,3 +44,7 @@ Seed the painting company's proposal only if explicitly approved, using the late
 ## One-time project policy
 
 New drafts start unpriced; a client-specific estimate replaces that placeholder only after review. All tasks are one-time work and hours remain editable. Scope must state the result, acceptance checks, handoff, customer account ownership and finish date. Additional work requires a separately approved project. Existing proposals are not silently rewritten; recurring items must be explicitly removed before saving or downloading. The painting company draft is updated separately with version and state-hash checks.
+
+## Automatic-draft production verification (2026-11-08)
+
+A clearly labeled synthetic company was seeded at the chief step with bounded research inputs. The live scheduled worker completed the chief response and automatically saved a 12-task proposal at `proposal_drafted`, with estimated hours, $150/hour suggested rate, basis and evidence. No proposal-generation or estimate button was pressed. Both Clint and Sheree were confirmed as room members in the UI; a separate Sheree sign-in was not tested. No decisions were approved and no customer message was sent. The test prospect was archived afterward to exclude its values from the active pipeline. Existing customer drafts were untouched. This tests the real completion-to-draft path, not a fresh end-to-end Manus research run. Local validation: 51 tests, TypeScript, Deno check and production build passed.
