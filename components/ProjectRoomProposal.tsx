@@ -231,6 +231,9 @@ export default function ProjectRoomProposal(
         <button className="pr-button" disabled={busy || room.busy || !room.state.summary} onClick={estimate}>{busy ? "Working…" : "Estimate work from this client's research"}</button>
         {pendingEstimate && <section className="pr-panel" aria-label="Estimate preview">
           <h3>Review proposed work and hours</h3>
+          <p><strong>Proposed included work: {pendingEstimate.items.filter(i => !i.optional).reduce((n,i)=>n+i.quantity,0)} hours · {money(proposalTotals(pendingEstimate).once)}</strong></p>
+          <p><strong>Proposed optional work: {pendingEstimate.items.filter(i => i.optional).reduce((n,i)=>n+i.quantity,0)} hours · {money(proposalTotals(pendingEstimate).optional_once)}</strong></p>
+          <p>When implementation is optional, its testing, final handoff and contingency stay optional too. Review task assumptions before applying; estimates can vary between runs.</p>
           <p>Applying replaces fee items and estimating notes. It keeps your scope and other proposal edits.</p>
           {pendingEstimate.items.map((item, i) => <p key={i}><strong>{item.optional ? "Optional: " : ""}{item.description}</strong><br />{item.quantity} hours × {money(item.unit_cents!)} = {money(item.quantity * item.unit_cents!)}<br />{item.basis}<br />Source: {item.evidence}</p>)}
           <button className="pr-button pr-primary" onClick={() => { edit({items: pendingEstimate.items, pricing_basis: pendingEstimate.pricing_basis, ...(draft.objective.startsWith("After the agreed work") ? {objective: pendingEstimate.objective} : {})}); setPendingEstimate(null); }}>Use estimated breakdown</button>

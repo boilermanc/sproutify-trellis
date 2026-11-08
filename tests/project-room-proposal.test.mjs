@@ -217,3 +217,12 @@ test("Word exports the reviewable task math, assumptions and evidence", async ()
  const xml=strFromU8(zip["word/document.xml"]);
  for(const text of ["3 hours","$175.00","$525.00","Three routes on phone and desktop.","Saved research requires booking route validation."]) assert.ok(xml.includes(text),text);
 });
+
+test("optional implementation keeps its testing handoff and contingency outside base fees", () => {
+ const p=draftProposal(assessmentFixture()), evidence="Evidence for the scoped project work.";
+ const tasks=["discovery","implementation","testing","handoff","contingency"].map(phase=>({description:phase,hours:2,phase,optional:phase==="implementation",basis:"Bounded task allowance.",evidence}));
+ const result=applyWorkEstimate(p,JSON.stringify({tasks}),15000,evidence);
+ assert.equal(proposalTotals(result).once,30000);
+ assert.equal(proposalTotals(result).optional_once,120000);
+ assert.ok(result.items.filter(t=>t.phase!=="discovery").every(t=>t.optional));
+});
