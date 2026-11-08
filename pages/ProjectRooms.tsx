@@ -1,3 +1,4 @@
+import ProjectRoomProposal from "../components/ProjectRoomProposal";
 import "./ProjectRooms.css";
 import ProjectRoomWorkspace, {
   roomNextStep,
@@ -92,16 +93,27 @@ export default function ProjectRooms({
   addToast: (text: string, type?: "success" | "error" | "info") => void;
 }) {
   const [rooms, setRooms] = useState<
-    Pick<ProjectRoom, "id" | "title" | "kind" | "status" | "client_id">[]
+    Pick<
+      ProjectRoom,
+      "id" | "title" | "kind" | "status" | "client_id" | "proposal"
+    >[]
   >([]);
   const [clients, setClients] = useState<RoomClient[]>([]);
   const [page, setPage] = useState<
-    "today" | "companies" | "ideas" | "room" | "add" | "add-idea" | "call"
+    | "today"
+    | "companies"
+    | "pipeline"
+    | "ideas"
+    | "room"
+    | "add"
+    | "add-idea"
+    | "call"
   >("today");
   const [roomView, setRoomView] = useState<
-    "overview" | "notes" | "files" | "research"
+    "overview" | "notes" | "files" | "research" | "proposal"
   >("overview");
   const [listLoading, setListLoading] = useState(true);
+  const [listLimited, setListLimited] = useState(false);
   const [wordBusy, setWordBusy] = useState(false);
   const [linkClientId, setLinkClientId] = useState("");
   const [connections, setConnections] = useState<Record<string, boolean>>({});
@@ -121,10 +133,12 @@ export default function ProjectRooms({
   const refreshList = useCallback(async () => {
     const result = await callRoom<{
       rooms: typeof rooms;
+      limited?: boolean;
       clients?: RoomClient[];
       connections: Record<string, boolean>;
     }>("list");
     setRooms(result.rooms);
+    setListLimited(!!result.limited);
     setClients(result.clients || []);
     setConnections(result.connections);
     setListLoading(false);
@@ -284,6 +298,7 @@ export default function ProjectRooms({
       rooms={rooms}
       clients={clients}
       loading={listLoading}
+      limited={listLimited}
       error={error}
       retry={() => refreshList().catch((e) => reportError(e.message))}
       openRoom={openRoom}
@@ -329,6 +344,14 @@ export default function ProjectRooms({
       )}
       {page === "room" && room && (
         <>
+          {roomView === "proposal" && room.kind === "client" && (
+            <ProjectRoomProposal
+              room={room}
+              onError={reportError}
+              onSave={(proposal, version) =>
+                perform("proposal_save", { proposal, version })}
+            />
+          )}
           {roomView === "overview" && (
             <div className="pr-columns">
               <div className="pr-stack">
@@ -488,7 +511,11 @@ export default function ProjectRooms({
                       <div key={role.id}>
                         <strong>{role.name}</strong>
                         <span>{role.detail}</span>
-                        <span className={connected ? "pr-tag pr-tag-green" : "pr-tag"}>
+                        <span
+                          className={connected
+                            ? "pr-tag pr-tag-green"
+                            : "pr-tag"}
+                        >
                           {connected ? "Connected" : "Import response"}
                         </span>
                       </div>

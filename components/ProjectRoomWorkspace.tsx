@@ -1,3 +1,4 @@
+import ProjectRoomPipeline from "./ProjectRoomPipeline";
 import React from "react";
 import { ArrowRight, Plus, Users } from "lucide-react";
 import type { ProjectRoom, RoomClient } from "../services/projectRoomService";
@@ -5,15 +6,16 @@ import { ClientSearch } from "./ProjectRoomClients";
 export type WorkspacePage =
   | "today"
   | "companies"
+  | "pipeline"
   | "ideas"
   | "room"
   | "add"
   | "add-idea"
   | "call";
-export type RoomView = "overview" | "notes" | "files" | "research";
+export type RoomView = "overview" | "notes" | "files" | "research" | "proposal";
 export type RoomSummary = Pick<
   ProjectRoom,
-  "id" | "title" | "kind" | "status" | "client_id"
+  "id" | "title" | "kind" | "status" | "client_id" | "proposal"
 >;
 export const roomStatusText = (
   s: string,
@@ -42,6 +44,7 @@ interface Props {
   rooms: RoomSummary[];
   clients: RoomClient[];
   loading: boolean;
+  limited: boolean;
   error: string;
   retry: () => void;
   openRoom: (id: string, view?: RoomView) => void;
@@ -130,6 +133,12 @@ export default function ProjectRoomWorkspace(p: Props) {
             onClick={() => p.setPage("companies")}
           >
             Companies
+          </button>
+          <button
+            className={p.page === "pipeline" ? "is-active" : ""}
+            onClick={() => p.setPage("pipeline")}
+          >
+            Sales pipeline
           </button>
           <button
             className={p.page === "ideas" || p.page === "add-idea" ||
@@ -378,6 +387,20 @@ export default function ProjectRoomWorkspace(p: Props) {
               )}
           </>
         )}
+        {p.page === "pipeline" && (p.loading
+          ? (
+            <section className="pr-panel" role="status">
+              Loading pipeline…
+            </section>
+          )
+          : (
+            <ProjectRoomPipeline
+              rooms={p.rooms}
+              clients={p.clients}
+              limited={p.limited}
+              openRoom={(id) => p.openRoom(id, "proposal")}
+            />
+          ))}
         {p.page === "ideas" && (
           <>
             <header className="pr-top">
@@ -440,9 +463,7 @@ export default function ProjectRoomWorkspace(p: Props) {
               className="pr-back"
               onClick={() =>
                 p.setPage(
-                  p.page === "add-idea"
-                    ? "ideas"
-                    : "companies",
+                  p.page === "add-idea" ? "ideas" : "companies",
                 )}
             >
               {p.page === "add-idea"
@@ -545,10 +566,18 @@ export default function ProjectRoomWorkspace(p: Props) {
               </label>
             )}
             <nav className="pr-room-tabs" aria-label="Company room pages">
-              {([["overview", "Overview"], ["notes", "Notes & calls"], [
-                "files",
-                "Files",
-              ], ["research", "Research"]] as const).map(([id, name]) => (
+              {([
+                ["overview", "Overview"],
+                ["notes", "Notes & calls"],
+                [
+                  "files",
+                  "Files",
+                ],
+                ["research", "Research"],
+                ["proposal", "Proposal & pricing"],
+              ] as const).filter(([id]) =>
+                id !== "proposal" || p.room?.kind === "client"
+              ).map(([id, name]) => (
                 <button
                   key={id}
                   aria-current={p.roomView === id ? "page" : undefined}

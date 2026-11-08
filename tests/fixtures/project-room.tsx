@@ -1,3 +1,4 @@
+import { saveProposal, proposalSummary } from "../../supabase/functions/_shared/project-room-proposal.mjs";
 // Local, synthetic UI fixture. No provider or Supabase requests leave this page.
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -30,7 +31,7 @@ window.fetch = async (input, init) => {
     try {
       if (b.action === "list")
         result = {
-          rooms: room ? [room] : [],
+          rooms: room ? [{...room, proposal: proposalSummary(room.state.proposal)}] : [],
           clients: room ? [client] : [],
           connections: {
             research: true,
@@ -63,6 +64,7 @@ window.fetch = async (input, init) => {
       else {
         if (b.version !== room.version)
           throw new Error("Room changed. Refresh and try again.");
+        if (b.action === "proposal_save") saveProposal(room,b.proposal,"clint");
         if (b.action === "start" || b.action === "next_round") {
           const round = nextRound(room);
           if (fixtureParams.has("automatic-aeo")) {

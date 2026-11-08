@@ -21,7 +21,7 @@ const headers = {
   apikey: env.VITE_SUPABASE_ANON_KEY,
   "Content-Type": "application/json",
 };
-for (const action of ["list", "create", "get", "tick", "client_update", "search_client_data", "members", "share", "unshare", "import_meeting"]) {
+for (const action of ["list", "create", "get", "tick", "client_update", "search_client_data", "members", "share", "unshare", "import_meeting", "proposal_save"]) {
   const response = await fetch(`${url}/functions/v1/project-rooms`, {
     method: "POST",
     headers,

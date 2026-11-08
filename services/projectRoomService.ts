@@ -3,12 +3,27 @@ import { supabase } from "../lib/supabase";
 import type { RoomDocument } from "./projectRoomDocuments";
 export type RoomRole = "research" | "openai" | "anthropic" | "review" | "chief";
 export interface RoomClient {
-  id: string; name: string; website?: string; status: "prospect" | "customer";
-  archived_at?: string | null; archive_reason?: string | null;
-  follow_up_date?: string | null; follow_up_note?: string | null; version: number;
+  id: string;
+  name: string;
+  website?: string;
+  status: "prospect" | "customer";
+  archived_at?: string | null;
+  archive_reason?: string | null;
+  follow_up_date?: string | null;
+  follow_up_note?: string | null;
+  version: number;
 }
-export interface RoomMember { user_id: string; role: "owner" | "member"; name?: string; email?: string }
-export interface RoomOperator { user_id: string; name?: string; email?: string }
+export interface RoomMember {
+  user_id: string;
+  role: "owner" | "member";
+  name?: string;
+  email?: string;
+}
+export interface RoomOperator {
+  user_id: string;
+  name?: string;
+  email?: string;
+}
 export type AeoSurface = "chatgpt" | "perplexity" | "google_ai_overviews";
 export type AeoOutcome = "mentioned" | "not_mentioned" | "no_answer";
 export interface AeoObservation {
@@ -41,7 +56,46 @@ export interface AeoSearchRun {
     model?: string;
   }[];
 }
+export interface RoomProposal {
+  schema_version: number;
+  title: string;
+  stage: string;
+  currency: string;
+  close_date: string | null;
+  objective: string;
+  scope: string;
+  deliverables: string;
+  timeline: string;
+  assumptions: string;
+  exclusions: string;
+  payment_terms: string;
+  next_step: string;
+  pricing_basis: string;
+  items: {
+    description: string;
+    quantity: number;
+    unit_cents: number | null;
+    frequency: "once" | "monthly";
+    optional: boolean;
+  }[];
+  source_summary?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+export interface ProposalSummary {
+  stage: string;
+  title: string;
+  close_date: string | null;
+  totals: {
+    once: number;
+    monthly: number;
+    unpriced: number;
+    optional_once: number;
+    optional_monthly: number;
+  };
+}
 export interface ProjectRoom {
+  proposal?: ProposalSummary | null;
   client_id?: string | null;
   member_role?: "owner" | "member";
   members?: RoomMember[];
@@ -54,8 +108,15 @@ export interface ProjectRoom {
   error?: string;
   busy?: boolean;
   state: {
+    proposal?: RoomProposal;
     aeo?: AeoBaseline;
-    meetings?: { source: string; source_id: string; title: string; started_at: string; summary: string }[];
+    meetings?: {
+      source: string;
+      source_id: string;
+      title: string;
+      started_at: string;
+      summary: string;
+    }[];
     intake?: Record<string, string>;
     documents?: RoomDocument[];
     max_rounds: number;

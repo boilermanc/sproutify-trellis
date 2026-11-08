@@ -1,3 +1,4 @@
+import { saveProposal, proposalSummary } from "../_shared/project-room-proposal.mjs";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
 import {
@@ -407,7 +408,7 @@ Deno.serve(async (req) => {
     if (body.action === "list" || body.action === "search_client_data") {
       let query = membershipQuery(
         body.action === "list"
-          ? "id,title,kind,status,client_id,version,created_at,updated_at"
+          ? "id,title,kind,status,client_id,version,created_at,updated_at,proposal:state->proposal"
           : "*",
       ).order("updated_at", { ascending: false });
       if (body.action === "search_client_data") {
@@ -439,7 +440,8 @@ Deno.serve(async (req) => {
       if (clients.error) throw new Error("Could not load prospects.");
       const s = await secretsFor(db);
       return json({
-        rooms: data.map(safeRoom),
+        rooms: data.map((r: any) => ({ ...safeRoom(r), proposal: proposalSummary(r.proposal) })),
+        limited: data.length === 100,
         clients: clients.data,
         connections: {
           research: !!s.manus_api_key,
@@ -585,7 +587,10 @@ Deno.serve(async (req) => {
         409,
       );
     }
-    if (body.action === "start") {
+    if (body.action === "proposal_save") {
+      saveProposal(room, body.proposal, user.id);
+      event(room, "User saved the internal proposal and sales stage.");
+    } else if (body.action === "start") {
       if (room.status !== "draft") {
         throw new Error("This room has already started.");
       }
