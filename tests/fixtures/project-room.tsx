@@ -25,6 +25,13 @@ const members: any[] = [{user_id: "clint", name: "Clint", role: "owner"}];
 if (room) { room.client_id = client.id; room.member_role = "owner"; }
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
+  if (url.includes("/functions/v1/ai-generate")) {
+    return new Response(JSON.stringify({text: JSON.stringify({objective:"The owner can run the improved enquiry process independently.", assumptions:"Synthetic estimate for browser testing.", tasks:[
+      {description:"Confirm enquiry workflow with owner", hours:2, phase:"discovery", optional:false, basis:"One owner interview and notes.", evidence:"Review the existing findings with the owner"},
+      {description:"Verify agreed changes", hours:1, phase:"testing", optional:true, basis:"One acceptance pass.", evidence:"Demonstrate the agreed checks"},
+      {description:"Owner walkthrough", hours:1, phase:"handoff", optional:true, basis:"One walkthrough and instructions.", evidence:"operate independently"}
+    ]})}),{status:200,headers:{"Content-Type":"application/json"}});
+  }
   if (url.includes("/functions/v1/project-rooms")) {
     const b = JSON.parse(String(init?.body));
     let result: any;

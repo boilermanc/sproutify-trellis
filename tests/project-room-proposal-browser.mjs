@@ -31,6 +31,10 @@ assert.equal(await page.getByText("Priced monthly fees", {exact: true}).count(),
 const outcomeBox = await page.getByLabel("What success looks like").boundingBox();
 const priceBox = await page.getByRole("heading", {name: "One-time project investment"}).boundingBox();
 assert.ok(outcomeBox.y < priceBox.y);
+await page.getByRole("button", {name:"Estimate work from this client's research", exact:true}).click();
+await page.getByRole("button", {name:"Use estimated breakdown", exact:true}).click();
+assert.equal(await page.getByLabel("Estimated hours",{exact:true}).first().inputValue(), "2");
+assert.equal(await page.getByLabel("Assumptions and reason for hours").first().inputValue(), "One owner interview and notes.");
 await page.getByLabel("Expected close date").fill("2026-12-01");
 await page.getByRole("button", { name: "Save proposal", exact: true }).first()
   .click();
@@ -49,7 +53,7 @@ await page.screenshot({
   fullPage: true,
 });
 await nav.getByRole("button", { name: "Sales pipeline", exact: true }).click();
-await page.getByText("$1,200.00 one-time", { exact: true })
+await page.getByText("$300.00 one-time", { exact: true })
   .waitFor();
 await page.screenshot({
   path: "tests/fixtures/pipeline-desktop.png",
@@ -71,7 +75,7 @@ assert.match(await openFees.innerText(), /\$0\.00/);
 const wonFees = page.locator(".pr-metric").filter({
   hasText: "Won one-time fees",
 });
-assert.match(await wonFees.innerText(), /\$1,200\.00/);
+assert.match(await wonFees.innerText(), /\$300\.00/);
 await page.setViewportSize({ width: 390, height: 844 });
 assert.equal(
   await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),

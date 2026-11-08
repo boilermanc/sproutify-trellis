@@ -1,3 +1,5 @@
+import { invokeAI } from "../services/aiBackend";
+import { estimateRequest, applyWorkEstimate } from "../services/projectRoomEstimate.mjs";
 import React, { useEffect, useRef, useState } from "react";
 import type { ProjectRoom, RoomProposal } from "../services/projectRoomService";
 import {
@@ -31,12 +33,17 @@ export default function ProjectRoomProposal(
   const [draft, setDraft] = useState<RoomProposal | null>(
     room.state.proposal || null,
   );
+  const [rate, setRate] = useState("150");
+  const [pendingEstimate, setPendingEstimate] = useState<RoomProposal | null>(null);
+  const latestRoom = useRef(room);
+  latestRoom.current = room;
   const [dirty, setDirty] = useState(false);
   const [baseVersion, setBaseVersion] = useState(room.version);
   const [busy, setBusy] = useState(false);
   const editingId = useRef(room.id);
   useEffect(() => {
     if (editingId.current !== room.id || !dirty) {
+      setPendingEstimate(null);
       editingId.current = room.id;
       setDraft(room.state.proposal || null);
       setBaseVersion(room.version);
@@ -44,6 +51,7 @@ export default function ProjectRoomProposal(
     }
   }, [room.id, room.version, dirty]);
   const edit = (patch: Partial<RoomProposal>) => {
+    setPendingEstimate(null);
     setDraft((current) => current ? { ...current, ...patch } : current);
     setDirty(true);
   };
@@ -58,6 +66,21 @@ export default function ProjectRoomProposal(
     });
   const totals = proposalTotals(draft);
   const hasRecurring = draft?.items.some((item) => item.frequency !== "once");
+  async function estimate() {
+    if (!draft) return;
+    const requestRoom = room;
+    const cents = Math.round(Number(rate) * 100);
+    if (!Number.isFinite(Number(rate)) || cents <= 0 || cents > 1000000) { onError("Enter a valid hourly planning rate."); return; }
+    setBusy(true);
+    setPendingEstimate(null);
+    try {
+      const request = estimateRequest(room, draft);
+      const response = await invokeAI(request.body);
+      if (latestRoom.current.id !== requestRoom.id || latestRoom.current.version !== requestRoom.version) throw new Error("The room changed while estimating. Review the latest research and try again.");
+      setPendingEstimate(applyWorkEstimate(draft, response.text, cents, request.evidence) as RoomProposal);
+    } catch (e) { onError((e as Error).message); }
+    finally { setBusy(false); }
+  }
   async function save() {
     setBusy(true);
     try {
@@ -202,6 +225,17 @@ export default function ProjectRoomProposal(
       </section>
       <section className="pr-panel">
         <h2>One-time project investment</h2>
+        <p>Included estimated hours: {draft.items.filter(i => i.estimate_unit === "hours" && !i.optional).reduce((n,i)=>n+i.quantity,0)} · Optional estimated hours: {draft.items.filter(i => i.estimate_unit === "hours" && i.optional).reduce((n,i)=>n+i.quantity,0)}. Legacy fixed-fee items do not imply an hour estimate.</p>
+        <p>Estimate this client's tasks, then review the hours and assumptions before quoting. This uses one AI request outside the research-round budget. It does not save or approve a price automatically.</p>
+        <label className="pr-field">Suggested planning rate (USD/hour; not approved)<input type="number" min="0.01" max="10000" step="0.01" value={rate} onChange={e => setRate(e.target.value)} /></label>
+        <button className="pr-button" disabled={busy || room.busy || !room.state.summary} onClick={estimate}>{busy ? "Working…" : "Estimate work from this client's research"}</button>
+        {pendingEstimate && <section className="pr-panel" aria-label="Estimate preview">
+          <h3>Review proposed work and hours</h3>
+          <p>Applying replaces fee items and estimating notes. It keeps your scope and other proposal edits.</p>
+          {pendingEstimate.items.map((item, i) => <p key={i}><strong>{item.optional ? "Optional: " : ""}{item.description}</strong><br />{item.quantity} hours × {money(item.unit_cents!)} = {money(item.quantity * item.unit_cents!)}<br />{item.basis}<br />Source: {item.evidence}</p>)}
+          <button className="pr-button pr-primary" onClick={() => { edit({items: pendingEstimate.items, pricing_basis: pendingEstimate.pricing_basis, ...(draft.objective.startsWith("After the agreed work") ? {objective: pendingEstimate.objective} : {})}); setPendingEstimate(null); }}>Use estimated breakdown</button>
+          <button className="pr-button" onClick={() => setPendingEstimate(null)}>Discard estimate</button>
+        </section>}
         {hasRecurring && <p role="alert">This older draft contains recurring fees. Remove those fee items and review the scope before saving or downloading.</p>}
         <p>
           USD. These are proposed customer fees, not our internal costs or
@@ -233,7 +267,7 @@ export default function ProjectRoomProposal(
             </label>
             <div className="pr-proposal-grid">
               <label className="pr-field">
-                Quantity (use 1 for a fixed project fee)<input
+                {item.estimate_unit === "hours" ? "Estimated hours" : "Quantity (legacy fixed fee or manual units)"}<input
                   type="number"
                   min={1}
                   max={10000}
@@ -244,7 +278,7 @@ export default function ProjectRoomProposal(
                 />
               </label>
               <label className="pr-field">
-                Project or unit fee (USD)<input
+                {item.estimate_unit === "hours" ? "Hourly rate (USD)" : "Project or unit fee (USD)"}<input
                   type="number"
                   min={0}
                   max={1000000}
@@ -261,6 +295,8 @@ export default function ProjectRoomProposal(
               </label>
 
             </div>
+            <label className="pr-field">Assumptions and reason for hours<textarea value={item.basis || ""} maxLength={3000} onChange={e => updateItem(i, {basis:e.target.value})} /></label>
+            <label className="pr-field">Source evidence<textarea value={item.evidence || ""} maxLength={2000} onChange={e => updateItem(i, {evidence:e.target.value})} /></label>
             <div className="pr-actions">
               <label>
                 <input
@@ -295,6 +331,7 @@ export default function ProjectRoomProposal(
             edit({
               items: [...draft.items, {
                 description: "",
+                estimate_unit: "hours",
                 quantity: 1,
                 unit_cents: null,
                 frequency: "once",

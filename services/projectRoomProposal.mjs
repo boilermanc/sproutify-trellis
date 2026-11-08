@@ -36,23 +36,8 @@ export function draftProposal(room) {
       "Suggested terms for review: 50% at kickoff and 50% on delivery for fixed-scope work. Confirm final terms before sending to the customer.",
     next_step:
       "Review scope and pricing internally, confirm the owner's priorities, then decide whether to send a customer proposal.",
-    pricing_basis:
-      "Suggested internal estimate, not an approved rate card: $150 per hour. Discovery assumes 8 hours; optional implementation assumes 18 hours including verification and handoff. These are planning allowances to review against actual scope, not market quotes or tracked time.",
-    items: [{
-      description:
-        "Discovery — understand the problem and choose the right fixes",
-      quantity: 1,
-      unit_cents: 120000,
-      frequency: "once",
-      optional: false,
-    }, {
-      description:
-        "Implementation — agreed fixes, verified results and owner handoff (allowance)",
-      quantity: 1,
-      unit_cents: 270000,
-      frequency: "once",
-      optional: true,
-    }],
+    pricing_basis: "Not estimated yet. Generate a client-specific work breakdown or enter tasks, hours, rate and assumptions before quoting.",
+    items: [{description: "Scope and hours need review", quantity: 1, unit_cents: null, frequency: "once", optional: false}],
   };
 }
 const cell = (value) =>
@@ -94,6 +79,12 @@ export function proposalDocumentRoom(room, proposal) {
     ["Assumptions and client responsibilities", proposal.assumptions],
     ["Not included", proposal.exclusions],
     ["Next steps", proposal.next_step],
+    ["Internal work and hours breakdown", [
+      "| Task | Hours or units | Rate | One-time total |",
+      "| --- | --- | --- | --- |",
+      ...proposal.items.map(i => `| ${i.optional ? "OPTIONAL — " : ""}${cell(i.description)} | ${i.quantity} ${i.estimate_unit === "hours" ? "hours" : "units"} | ${i.unit_cents === null ? "Unpriced" : money(i.unit_cents)} | ${i.unit_cents === null ? "Unpriced" : money(i.quantity * i.unit_cents)} |`),
+      ...proposal.items.map(i => `\n**${i.description}**\n${i.basis || "Assumptions need review."}\n${i.evidence ? "Source: " + i.evidence : ""}`),
+    ].join("\n")],
     ["Internal estimating notes", proposal.pricing_basis],
   ].map(([title, text]) => `## ${title}\n\n${text || "To be confirmed."}`).join(
     "\n\n",

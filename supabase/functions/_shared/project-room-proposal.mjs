@@ -61,6 +61,10 @@ export function validateProposal(input) {
     }
     return {
       description,
+      estimate_unit: item.estimate_unit === "hours" ? "hours" : "units",
+      phase: ["discovery", "implementation", "testing", "handoff", "contingency"].includes(item.phase) ? item.phase : "",
+      basis: clean(item.basis, 3000),
+      evidence: clean(item.evidence, 2000),
       quantity: item.quantity,
       unit_cents,
       frequency: item.frequency,

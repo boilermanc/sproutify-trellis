@@ -73,6 +73,10 @@ export interface RoomProposal {
   pricing_basis: string;
   items: {
     description: string;
+    estimate_unit?: "hours" | "units";
+    phase?: string;
+    basis?: string;
+    evidence?: string;
     quantity: number;
     unit_cents: number | null;
     frequency: "once" | "monthly";
