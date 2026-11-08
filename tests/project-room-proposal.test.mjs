@@ -13,6 +13,20 @@ import {
 } from "../supabase/functions/_shared/project-room-proposal.mjs";
 import { assessmentFixture } from "./fixtures/company-assessment.mjs";
 import { strFromU8, unzipSync } from "fflate";
+test("new company proposals retain their own outcome and include one-time pricing and independent handoff", () => {
+  const room = assessmentFixture();
+  room.title = "Another Company";
+  room.state.summary = "## What success looks like\n\nStaff can complete the daily order process without outside help.\n\n## Recommendation\n\nInspect the order integration before choosing fixes.";
+  const draft = draftProposal(room);
+  assert.match(draft.objective, /Staff can complete the daily order process/);
+  assert.doesNotMatch(draft.objective, /Inspect the order integration/);
+  assert.ok(draft.items.every((item) => item.frequency === "once"));
+  assert.match(draft.deliverables, /operating instructions/);
+  assert.match(draft.deliverables, /customer account ownership and access/);
+  assert.match(draft.deliverables, /owner's acceptance and close the project/);
+  assert.match(draft.scope, /Additional work needs a separately approved project/);
+  validateProposal(draft);
+});
 test("proposal draft uses research, explicit assumptions, and optional fees outside the base", () => {
   const room = assessmentFixture(), draft = draftProposal(room);
   assert.match(draft.objective, /independently/);
