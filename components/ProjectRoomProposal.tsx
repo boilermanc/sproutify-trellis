@@ -1,5 +1,5 @@
 import { invokeAI } from "../services/aiBackend";
-import { estimateRequest, applyWorkEstimate } from "../services/projectRoomEstimate.mjs";
+import { estimateRequest, applyWorkEstimate, estimateChanges } from "../services/projectRoomEstimate.mjs";
 import React, { useEffect, useRef, useState } from "react";
 import type { ProjectRoom, RoomProposal } from "../services/projectRoomService";
 import {
@@ -65,6 +65,7 @@ export default function ProjectRoomProposal(
       ),
     });
   const totals = proposalTotals(draft);
+  const changes = pendingEstimate && draft ? estimateChanges(draft, pendingEstimate) : null;
   const hasRecurring = draft?.items.some((item) => item.frequency !== "once");
   async function estimate() {
     if (!draft) return;
@@ -238,7 +239,12 @@ export default function ProjectRoomProposal(
           <h3>Review proposed work and hours</h3>
           <p><strong>Proposed included work: {pendingEstimate.items.filter(i => !i.optional).reduce((n,i)=>n+i.quantity,0)} hours · {money(proposalTotals(pendingEstimate).once)}</strong></p>
           <p><strong>Proposed optional work: {pendingEstimate.items.filter(i => i.optional).reduce((n,i)=>n+i.quantity,0)} hours · {money(proposalTotals(pendingEstimate).optional_once)}</strong></p>
-          <p>When implementation is optional, its testing, final handoff and contingency stay optional too. Review task assumptions before applying; estimates can vary between runs.</p>
+          {changes?.hasBaseline && <section aria-label="Changes from current estimate">
+            <h3>What changed from your current estimate?</h3>
+            <p>Current: {changes.before.hours} hours · {money(changes.before.cents)}. Proposed: {changes.after.hours} hours · {money(changes.after.cents)}. Change: {changes.after.hours - changes.before.hours} hours · {money(changes.after.cents - changes.before.cents)}. These totals include optional work.</p>
+            <ul>{changes.lines.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
+          </section>}
+          <p>When implementation is optional, its testing, final handoff and contingency stay optional too. Review the task boundaries and change reasons. Source references support the scope, not the number of hours. Check the schedule against any changed hours before saving.</p>
           <p>Applying replaces fee items and estimating notes. It keeps your scope and other proposal edits.</p>
           {pendingEstimate.items.map((item, i) => <p key={i}><strong>{item.optional ? "Optional: " : ""}{item.description}</strong><br />{item.quantity} hours × {money(item.unit_cents!)} = {money(item.quantity * item.unit_cents!)}<br />{item.basis}<br />Source: {item.evidence}</p>)}
           <button className="pr-button pr-primary" onClick={() => { edit({items: pendingEstimate.items, pricing_basis: pendingEstimate.pricing_basis, ...(draft.objective.startsWith("After the agreed work") ? {objective: pendingEstimate.objective} : {})}); setPendingEstimate(null); }}>Use estimated breakdown</button>

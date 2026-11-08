@@ -1,4 +1,5 @@
 import { saveProposal, proposalSummary } from "../../supabase/functions/_shared/project-room-proposal.mjs";
+import { draftProposal } from "../../services/projectRoomProposal.mjs";
 // Local, synthetic UI fixture. No provider or Supabase requests leave this page.
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -26,6 +27,13 @@ if (room) { room.client_id = client.id; room.member_role = "owner"; }
 if (room && fixtureParams.has("failed-proposal")) {
   room.state.proposal_generation = {status: "failed", at: new Date().toISOString()};
 }
+if (room && fixtureParams.has("estimate-baseline")) {
+  room.state.proposal = {...draftProposal(room), items: [
+    {description:"Confirm enquiry workflow with owner", quantity:2, phase:"discovery", optional:false},
+    {description:"Verify agreed changes", quantity:1, phase:"testing", optional:true},
+    {description:"Owner walkthrough", quantity:1, phase:"handoff", optional:true},
+  ].map(item => ({...item, estimate_unit:"hours", unit_cents:15000, frequency:"once", basis:"Bounded synthetic task.", evidence:"operate independently"}))};
+}
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url.includes("/functions/v1/ai-generate")) {
@@ -33,7 +41,7 @@ window.fetch = async (input, init) => {
       {description:"Confirm enquiry workflow with owner", hours:2, phase:"discovery", optional:false, basis:"One owner interview and notes.", evidence:"Review the existing findings with the owner"},
       {description:"Verify agreed changes", hours:1, phase:"testing", optional:true, basis:"One acceptance pass.", evidence:"Demonstrate the agreed checks"},
       {description:"Owner walkthrough", hours:1, phase:"handoff", optional:true, basis:"One walkthrough and instructions.", evidence:"operate independently"}
-    ]})}),{status:200,headers:{"Content-Type":"application/json"}});
+    ].map((task,index) => fixtureParams.has("estimate-baseline") ? {...task, previous_ids:[`P${index+1}`],change_reason:"Retained the same bounded task and hours; clarified the estimating assumptions."} : task)})}),{status:200,headers:{"Content-Type":"application/json"}});
   }
   if (url.includes("/functions/v1/project-rooms")) {
     const b = JSON.parse(String(init?.body));

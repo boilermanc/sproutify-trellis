@@ -48,3 +48,13 @@ New drafts start unpriced; a client-specific estimate replaces that placeholder 
 ## Automatic-draft production verification (2026-11-08)
 
 A clearly labeled synthetic company was seeded at the chief step with bounded research inputs. The live scheduled worker completed the chief response and automatically saved a 12-task proposal at `proposal_drafted`, with estimated hours, $150/hour suggested rate, basis and evidence. No proposal-generation or estimate button was pressed. Both Clint and Sheree were confirmed as room members in the UI; a separate Sheree sign-in was not tested. No decisions were approved and no customer message was sent. The test prospect was archived afterward to exclude its values from the active pipeline. Existing customer drafts were untouched. This tests the real completion-to-draft path, not a fresh end-to-end Manus research run. Local validation: 51 tests, TypeScript, Deno check and production build passed.
+
+## Estimate reconciliation safeguards
+
+Release approved 2026-11-08; backend version 16 includes these safeguards. Validation: 58 tests, TypeScript, Deno checks, build and browser comparison preview passed.
+
+Reruns must receive the existing task/hour baseline, not estimate independently from scratch. Each prior task ID must appear exactly once in a proposed task or an explicit removal. Changes/additions/removals require explanations. The preview shows current/proposed total hours and dollars (including optional work) and reconciliation lines; each retained task basis saves its explanation. Existing legacy fixed-fee units cannot silently become hours. Generated estimates reject exact duplicate descriptions and require consolidated testing, handoff/acceptance/training and contingency tasks.
+
+These deterministic checks enforce task accounting, not semantic proof: a source reference establishes relevance, not effort, and a supplied explanation can still be weak. Review task ownership, work quantities and excluded work before accepting. No task may charge again for a meeting, test pass, page edit or deliverable budgeted elsewhere. Do not use contingency for excluded development/recovery or ordinary QA already priced. Changed hours also require checking narrative schedules.
+
+StyleBAR was independently reconciled on 2026-11-08 to a provisional 10h discovery +16h optional implementation baseline at the suggested $150/h. The 48h replacement was not supported by documented scope expansion. One combined owner training/acceptance session replaces separate finishing charges; analytics is deferred/unpriced pending access and scope. Production proposal version 19 remains a draft; research hash was unchanged. No claim of measured effort or a firm customer quote is made.
