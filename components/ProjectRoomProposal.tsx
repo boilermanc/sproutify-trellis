@@ -12,9 +12,9 @@ import {
   validateProposal,
 } from "../supabase/functions/_shared/project-room-proposal.mjs";
 const fields = [
-  ["objective", "Business objective"],
+  ["objective", "What success looks like"],
   ["scope", "Scope of work"],
-  ["deliverables", "Deliverables and acceptance"],
+  ["deliverables", "Completion checks and handoff"],
   ["timeline", "Schedule"],
   ["assumptions", "Assumptions and client responsibilities"],
   ["exclusions", "Not included"],
@@ -57,6 +57,7 @@ export default function ProjectRoomProposal(
       ),
     });
   const totals = proposalTotals(draft);
+  const hasRecurring = draft?.items.some((item) => item.frequency !== "once");
   async function save() {
     setBusy(true);
     try {
@@ -130,7 +131,7 @@ export default function ProjectRoomProposal(
             </button>
             <button
               className="pr-button"
-              disabled={busy || dirty || !room.state.proposal}
+              disabled={busy || dirty || hasRecurring || !room.state.proposal}
               onClick={download}
             >
               Download proposal Word
@@ -177,7 +178,31 @@ export default function ProjectRoomProposal(
         </div>
       </section>
       <section className="pr-panel">
-        <h2>Fees and cost structure</h2>
+        <h2>The outcome and the finish line</h2>
+        <div className="pr-stack">
+          {fields.map(([key, label]) => (
+            <label className="pr-field" key={key}>
+              {label}
+              <textarea
+                rows={key === "scope" ? 8 : 4}
+                maxLength={16000}
+                value={draft[key]}
+                onChange={(e) => edit({ [key]: e.target.value })}
+              />
+            </label>
+          ))}
+        </div>
+        <button
+          className="pr-button pr-primary"
+          disabled={busy || room.busy}
+          onClick={save}
+        >
+          Save proposal
+        </button>
+      </section>
+      <section className="pr-panel">
+        <h2>One-time project investment</h2>
+        {hasRecurring && <p role="alert">This older draft contains recurring fees. Remove those fee items and review the scope before saving or downloading.</p>}
         <p>
           USD. These are proposed customer fees, not our internal costs or
           revenue collected. Optional fees stay outside the main pipeline
@@ -188,10 +213,7 @@ export default function ProjectRoomProposal(
             <b>{money(totals.once)}</b>
             <span>Priced one-time fees</span>
           </div>
-          <div className="pr-metric">
-            <b>{money(totals.monthly)}</b>
-            <span>Priced monthly fees</span>
-          </div>
+
         </div>
         {totals.unpriced > 0 && (
           <p role="status">
@@ -211,7 +233,7 @@ export default function ProjectRoomProposal(
             </label>
             <div className="pr-proposal-grid">
               <label className="pr-field">
-                Hours or units<input
+                Quantity (use 1 for a fixed project fee)<input
                   type="number"
                   min={1}
                   max={10000}
@@ -222,7 +244,7 @@ export default function ProjectRoomProposal(
                 />
               </label>
               <label className="pr-field">
-                Fee per unit (USD)<input
+                Project or unit fee (USD)<input
                   type="number"
                   min={0}
                   max={1000000}
@@ -237,18 +259,7 @@ export default function ProjectRoomProposal(
                     })}
                 />
               </label>
-              <label className="pr-field">
-                Frequency<select
-                  value={item.frequency}
-                  onChange={(e) =>
-                    updateItem(i, {
-                      frequency: e.target.value as "once" | "monthly",
-                    })}
-                >
-                  <option value="once">One-time</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-              </label>
+
             </div>
             <div className="pr-actions">
               <label>
@@ -294,7 +305,7 @@ export default function ProjectRoomProposal(
           Add fee item
         </button>
         <label className="pr-field">
-          Pricing assumptions<textarea
+          Internal estimating notes<textarea
             rows={4}
             maxLength={2000}
             value={draft.pricing_basis}
@@ -302,29 +313,7 @@ export default function ProjectRoomProposal(
           />
         </label>
       </section>
-      <section className="pr-panel">
-        <h2>Proposal details</h2>
-        <div className="pr-stack">
-          {fields.map(([key, label]) => (
-            <label className="pr-field" key={key}>
-              {label}
-              <textarea
-                rows={key === "scope" ? 8 : 4}
-                maxLength={16000}
-                value={draft[key]}
-                onChange={(e) => edit({ [key]: e.target.value })}
-              />
-            </label>
-          ))}
-        </div>
-        <button
-          className="pr-button pr-primary"
-          disabled={busy || room.busy}
-          onClick={save}
-        >
-          Save proposal
-        </button>
-      </section>
+
     </div>
   );
 }

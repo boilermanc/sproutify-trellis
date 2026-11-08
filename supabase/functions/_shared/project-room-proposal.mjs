@@ -39,8 +39,8 @@ export function validateProposal(input) {
   const items = input.items.map((item) => {
     const description = clean(item.description, 2000);
     if (!description) throw new Error("Describe each fee item.");
-    if (!["once", "monthly"].includes(item.frequency)) {
-      throw new Error("Choose one-time or monthly fees.");
+    if (item.frequency !== "once") {
+      throw new Error("Projects use one-time fees. Remove recurring fee items before saving.");
     }
     if (
       !Number.isSafeInteger(item.quantity) || item.quantity < 1 ||

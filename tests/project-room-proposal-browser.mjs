@@ -26,6 +26,11 @@ assert.equal(
   }).isEnabled(),
   false,
 );
+assert.equal(await page.getByRole("combobox", {name: "Frequency"}).count(), 0);
+assert.equal(await page.getByText("Priced monthly fees", {exact: true}).count(), 0);
+const outcomeBox = await page.getByLabel("What success looks like").boundingBox();
+const priceBox = await page.getByRole("heading", {name: "One-time project investment"}).boundingBox();
+assert.ok(outcomeBox.y < priceBox.y);
 await page.getByLabel("Expected close date").fill("2026-12-01");
 await page.getByRole("button", { name: "Save proposal", exact: true }).first()
   .click();
@@ -44,7 +49,7 @@ await page.screenshot({
   fullPage: true,
 });
 await nav.getByRole("button", { name: "Sales pipeline", exact: true }).click();
-await page.getByText("$1,200.00 one-time · $0.00/month", { exact: true })
+await page.getByText("$1,200.00 one-time", { exact: true })
   .waitFor();
 await page.screenshot({
   path: "tests/fixtures/pipeline-desktop.png",

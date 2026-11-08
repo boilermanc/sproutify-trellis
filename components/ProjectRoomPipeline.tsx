@@ -38,10 +38,7 @@ export default function ProjectRoomPipeline(
           <b>{money(totals.once)}</b>
           <span>Open one-time fees</span>
         </div>
-        <div className="pr-metric">
-          <b>{money(totals.monthly)}</b>
-          <span>Open monthly fees</span>
-        </div>
+
         <div className="pr-metric">
           <b>{money(totals.won_once)}</b>
           <span>Won one-time fees</span>
@@ -55,7 +52,7 @@ export default function ProjectRoomPipeline(
         USD planning estimates, not booked revenue or cash received. No
         probability weighting. Optional fees, archived companies, stopped
         research rooms and lost opportunities are excluded from open totals.
-        Monthly fees are not added to one-time fees. Marking Won does not change
+        Only one-time project fees count. Each project ends with verification and handoff. Marking Won does not change
         the company’s prospect/customer status.
       </p>
       <div className="pr-pipeline-grid">
@@ -75,11 +72,10 @@ export default function ProjectRoomPipeline(
                     <h3>{r.title}</h3>
                     <p>
                       {r.proposal
-                        ? `${money(r.proposal.totals.once)} one-time · ${
-                          money(r.proposal.totals.monthly)
-                        }/month`
+                        ? `${money(r.proposal.totals.once)} one-time`
                         : "Not priced yet"}
                     </p>
+                    {!!(r.proposal?.totals.monthly || r.proposal?.totals.optional_monthly) && <p>Older recurring fees need review; excluded from project value.</p>}
                     {!!r.proposal?.totals.unpriced && (
                       <p>Partial estimate — pricing needed</p>
                     )}

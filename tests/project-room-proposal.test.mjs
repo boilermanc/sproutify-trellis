@@ -15,14 +15,15 @@ import { assessmentFixture } from "./fixtures/company-assessment.mjs";
 import { strFromU8, unzipSync } from "fflate";
 test("proposal draft uses research, explicit assumptions, and optional fees outside the base", () => {
   const room = assessmentFixture(), draft = draftProposal(room);
-  assert.match(draft.objective, /Clarify the existing enquiry/);
+  assert.match(draft.objective, /independently/);
+  assert.match(draft.scope, /Research to validate/);
   assert.match(draft.pricing_basis, /Suggested internal estimate/);
   assert.deepEqual(proposalTotals(draft), {
     once: 120000,
     monthly: 0,
     unpriced: 0,
     optional_once: 270000,
-    optional_monthly: 60000,
+    optional_monthly: 0,
   });
 });
 test("proposal validation rejects bad money, quantities, stage and dates; sanitizes text", () => {
@@ -124,15 +125,26 @@ test("proposal Word contains scope, fees, assumptions and draft status without a
   for (
     const text of [
       "CONSULTING PROPOSAL",
-      "Scope of work",
+      "What success looks like",
+      "Completion checks and handoff",
       "$1,200.00",
       "$2,700.00",
-      "$600.00",
       "not an approved rate card",
       "Payment schedule",
       "Internal planning draft",
     ]
   ) assert.ok(xml.includes(text), text);
   assert.ok(!xml.includes("Decision log"));
+  assert.ok(!xml.includes("per month"));
+  assert.ok(xml.indexOf("What success looks like") < xml.indexOf("One-time project investment"));
   assert.match(xml, /w:tblHeader/);
+});
+
+test("recurring fees cannot be saved or exported, and are not converted to project fees", async () => {
+  const room = assessmentFixture(), draft = draftProposal(room);
+  draft.items.push({description: "Legacy support", quantity: 1, unit_cents: 60000, frequency: "monthly", optional: false});
+  assert.throws(() => validateProposal(draft), /one-time fees/);
+  await assert.rejects(() => proposalDocx(room, draft), /one-time fees/);
+  assert.equal(proposalTotals(draft).once, 120000);
+  assert.equal(proposalTotals(draft).monthly, 60000);
 });
