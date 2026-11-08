@@ -1,4 +1,5 @@
 import { saveProposal, proposalSummary } from "../_shared/project-room-proposal.mjs";
+import { createAutomaticProposal } from "../_shared/project-room-auto-proposal.mjs";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
 import {
@@ -279,6 +280,7 @@ async function processRoom(db: any, id: string, secrets: any) {
         }
       } else advanceStage(room);
     }
+    await automaticProposal(db, room, secrets);
     await save(db, room);
     runLog("info", "run_step_saved", {
       ...context,
@@ -314,6 +316,21 @@ async function processRoom(db: any, id: string, secrets: any) {
     }
     await alertBlockedRun("run_blocked", incident);
   }
+}
+
+async function automaticProposal(db: any, room: any, secrets?: any) {
+  await createAutomaticProposal(room, {
+    checkpoint: () => save(db, room, false),
+    generate: async (prompt: string) => {
+      const connections = secrets || await secretsFor(db);
+      if (!connections.gemini_api_key) throw new Error("Missing estimating connection.");
+      return generate("proposal", prompt, connections);
+    },
+    failed: (error: unknown) => alertBlockedRun("proposal_generation_failed", {
+      room_id: room.id, run_id: crypto.randomUUID(), stage: "proposal",
+      elapsed_ms: 0, failures: [failureDetails(error, "gemini")],
+    }),
+  });
 }
 
 Deno.serve(async (req) => {
@@ -688,6 +705,9 @@ Deno.serve(async (req) => {
       if (room.status !== "awaiting_user") room.status = "paused";
       room.error = null;
     } else return json({ error: "Unknown action" }, 400);
+    if (body.action === "import" && body.role === "chief") {
+      await automaticProposal(db, room);
+    }
     await save(db, room);
     return json({ room: { ...publicRoom(room), member_role: memberRole } });
   } catch (err) {

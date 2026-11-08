@@ -23,6 +23,9 @@ const original = window.fetch;
 const client: any = {id: "fixture-client", name: "Example Company", status: "prospect", version: 1, archived_at: null, follow_up_date: null};
 const members: any[] = [{user_id: "clint", name: "Clint", role: "owner"}];
 if (room) { room.client_id = client.id; room.member_role = "owner"; }
+if (room && fixtureParams.has("failed-proposal")) {
+  room.state.proposal_generation = {status: "failed", at: new Date().toISOString()};
+}
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url.includes("/functions/v1/ai-generate")) {

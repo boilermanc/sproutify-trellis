@@ -165,6 +165,7 @@ export async function generate(role: string, prompt: string, secrets: any) {
           generationConfig: {
             maxOutputTokens: 6000,
             responseMimeType: "application/json",
+            ...(role === "proposal" ? { temperature: 0.2 } : {}),
           },
         }),
       },
@@ -176,6 +177,10 @@ export async function generate(role: string, prompt: string, secrets: any) {
     text = (data.candidates?.[0]?.content?.parts || [])
       .map((p: any) => p.text || "")
       .join("");
+    if (data.usageMetadata) usage = {
+      input_tokens: data.usageMetadata.promptTokenCount || 0,
+      output_tokens: (data.usageMetadata.candidatesTokenCount || 0) + (data.usageMetadata.thoughtsTokenCount || 0),
+    };
   }
   if (!text.trim()) throw new Error(`${role} returned no text.`);
   return {

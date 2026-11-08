@@ -113,6 +113,7 @@ export interface ProjectRoom {
   busy?: boolean;
   state: {
     proposal?: RoomProposal;
+    proposal_generation?: { status: "running" | "ready" | "failed"; at: string };
     aeo?: AeoBaseline;
     meetings?: {
       source: string;

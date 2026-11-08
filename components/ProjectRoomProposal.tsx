@@ -114,6 +114,11 @@ export default function ProjectRoomProposal(
     return (
       <section className="pr-panel">
         <h2>Turn this research into a proposal</h2>
+        {room.state.proposal_generation && <p role="status" className="pr-muted">
+          {room.state.proposal_generation.status === "running" && room.busy
+            ? "Preparing your proposal and pricing draft. Refresh the room shortly."
+            : "Research is saved. Automatic drafting did not finish; create a draft below and estimate the work for review."}
+        </p>}
         <p className="pr-muted">
           Create an editable internal guide with scope, deliverables, estimated
           fees and suggested terms. It will not be sent to the customer.

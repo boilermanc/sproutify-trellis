@@ -2,6 +2,12 @@
 
 Status: client-specific estimating release approved. Production backend version 14 preserves task hours, assumptions and evidence. StyleBAR's reviewed draft is saved at room version 16 with 10 discovery hours and 16 optional implementation hours; research is unchanged. Projects finish with verification, customer ownership and handoff; no recurring services are offered.
 
+## Automatic draft after research (prepared; not deployed)
+
+When company research reaches its final review checkpoint, the backend prepares a proposal and client-specific task estimate at the suggested, unapproved $150/hour rate. It saves stage `proposal_drafted` for shared room members to review. This uses one additional Gemini call outside the research-round budget; model and available usage are stored in `state.proposal_generation`. No proposal is sent and no decision is approved. Imported chief responses use the same completion hook.
+
+Existing proposals, feature ideas, unfinished rounds and previous automatic attempts prevent generation. Completed research and the attempt marker are checkpointed before spending tokens. Version checks prevent an in-flight result from overwriting concurrent edits or cancellation. Failed estimates keep research intact, record an activity entry and emit `proposal_generation_failed` through the existing alert webhook. Interrupted attempts are not retried automatically: open Proposal & pricing and generate/estimate manually. No schema migration is needed. Roll back the function/frontend to disable automation while retaining saved drafts.
+
 ## User workflow
 
 Open a company room, then **Proposal & pricing**. **Generate proposal draft** uses the saved recommendation, discovery and improvement sections in an editable proposal template. The initial draft is unpriced. **Estimate work from this client's research** makes one authenticated Gemini request through the existing ai-generate service, outside the research-round request budget. It uses the current research, intake, edited scope, deliverables and exclusions. Scope, deliverables, timing, assumptions, exclusions, payment terms and next steps are editable. The outcome and completion checks appear before pricing. The Word proposal leads with “What success looks like,” then scope and handoff, with a project-price table and internal estimating notes at the end. **Save proposal** updates the pipeline; **Download proposal Word** uses the approved assessment design and labels the document as an internal planning draft. Existing assessment exports remain available.
