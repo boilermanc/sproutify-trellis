@@ -30,7 +30,7 @@ test("estimation uses each client's evidence and calculates task hours at the en
     assert.equal(validateProposal(result).items[0].basis,response.tasks[0].basis);
     assert.match(request.body.contents,new RegExp(scope));
     response.tasks[0].evidence="A source quote that does not exist";
-    assert.throws(()=>applyWorkEstimate(draft,JSON.stringify(response),17500,request.evidence),/matching source quote/);
+    assert.throws(()=>applyWorkEstimate(draft,JSON.stringify(response),17500,request.evidence),/supporting quote/);
   }
 });
 test("incomplete or unbounded estimates never fall back to package prices", () => {
@@ -39,6 +39,19 @@ test("incomplete or unbounded estimates never fall back to package prices", () =
   assert.throws(()=>applyWorkEstimate(draft,'{"error":"need scope"}',15000,""),/scope detail/);
   assert.throws(()=>applyWorkEstimate(draft,'{}',0,""),/hourly planning rate/);
   assert.equal(draft.items[0].unit_cents,null);
+});
+test("numbered source references copy original evidence and reject invented IDs", () => {
+ const room=assessmentFixture(), draft=draftProposal(room);
+ draft.assumptions="At most three pages and twenty service entries.";
+ const request=estimateRequest(room,draft);
+ assert.ok(request.evidence.includes(draft.assumptions));
+ const source=request.evidence.split("\n").find(line=>line.includes("Demonstrate the agreed checks"));
+ const id=source.match(/^\[(E\d+)\]/)[1];
+ const tasks=["discovery","testing","handoff"].map(phase=>({description:phase+" task",hours:2,phase,optional:phase!=="discovery",basis:"One bounded review pass.",evidence_id:id}));
+ const result=applyWorkEstimate(draft,JSON.stringify({tasks}),15000,request.evidence);
+ assert.equal(result.items[0].evidence,source.slice(source.indexOf("] ")+2));
+ tasks[0].evidence_id="E99999";
+ assert.throws(()=>applyWorkEstimate(draft,JSON.stringify({tasks}),15000,request.evidence),/unknown evidence ID/);
 });
 test("new company proposals retain their own outcome and include one-time pricing and independent handoff", () => {
   const room = assessmentFixture();
