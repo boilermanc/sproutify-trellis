@@ -7,7 +7,7 @@ export function projectRoomTokenCost(rounds) {
   let microdollars = 0;
   let priced = 0;
   for (const round of rounds) {
-    for (const result of Object.values(round.outputs)) {
+    for (const result of [...Object.values(round.outputs), ...(round.handoff_attempts || [])]) {
       const rate = rates.get(result.model);
       const input = result.usage?.input_tokens;
       const output = result.usage?.output_tokens;

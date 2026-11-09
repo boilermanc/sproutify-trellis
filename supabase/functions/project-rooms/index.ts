@@ -11,6 +11,8 @@ import {
   event,
   exportRoom,
   handoff,
+  handoffPlan,
+  prepareManusHandoff,
   importOutput,
   nextRound,
   reserveCalls,
@@ -180,8 +182,29 @@ async function processRoom(db: any, id: string, secrets: any) {
     if (r.stage === "research" || r.stage === "review") {
       const role = r.stage;
       provider = "manus";
-      runLog("info", "provider_started", { ...context, stage, provider });
       if (!r.tasks[role]) {
+        provider = "gemini";
+        stage = `handoff_${role}`;
+        if (handoffPlan(room, role).oversized && !secrets.gemini_api_key) throw new Error("Needs rework — connect Gemini to prepare the oversized Manus handoff.");
+        const prepared = await prepareManusHandoff(room, role, {
+          checkpoint: () => save(db, room, false),
+          generate: async (prompt: string) => {
+            if (!secrets.gemini_api_key) throw new Error("Needs rework — connect Gemini to prepare the oversized Manus handoff.");
+            runLog("info", "provider_started", { ...context, stage: `handoff_${role}`, provider: "gemini" });
+            const output = await generate("handoff", prompt, secrets);
+            runLog("info", "provider_completed", { ...context, stage: `handoff_${role}`, provider: "gemini" });
+            return output;
+          },
+        });
+        if (prepared) {
+          await save(db, room);
+          runLog("info", "run_step_saved", { ...context, stage, elapsed_ms: Date.now() - started });
+          return; // Next worker step dispatches the saved, validated packet.
+        }
+        provider = "manus";
+        stage = role;
+        runLog("info", "provider_started", { ...context, stage, provider });
+        const prompt = handoff(room, role);
         reserveCalls(room, 1);
         r.in_flight = [role];
         event(
@@ -190,7 +213,7 @@ async function processRoom(db: any, id: string, secrets: any) {
         );
         await save(db, room, false); // reserve BEFORE non-idempotent external call
         const task = await createManus(
-          handoff(room, role),
+          prompt,
           secrets,
           `Trellis: ${room.title} / ${role} / round ${r.number}`,
         );
@@ -198,6 +221,7 @@ async function processRoom(db: any, id: string, secrets: any) {
         currentRound(room).tasks[role] = task;
         delete currentRound(room).in_flight;
       } else {
+        runLog("info", "provider_started", { ...context, stage, provider });
         const output = await pollManus(r.tasks[role], secrets);
         if (output?.waiting) {
           throw new Error(

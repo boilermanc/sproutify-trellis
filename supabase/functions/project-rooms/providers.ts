@@ -165,14 +165,16 @@ export async function generate(role: string, prompt: string, secrets: any) {
           generationConfig: {
             maxOutputTokens: 6000,
             responseMimeType: "application/json",
-            ...(role === "proposal" ? { temperature: 0.2 } : {}),
+            ...(["proposal", "handoff"].includes(role) ? { temperature: 0.2 } : {}),
           },
         }),
       },
       "Chief of staff",
     );
     if (data.candidates?.[0]?.finishReason !== "STOP") {
-      throw new Error("Chief output was incomplete; stopped for review.");
+      throw new Error(role === "handoff"
+        ? "Needs rework — Gemini handoff output was incomplete; nothing was sent to Manus."
+        : "Chief output was incomplete; stopped for review.");
     }
     text = (data.candidates?.[0]?.content?.parts || [])
       .map((p: any) => p.text || "")

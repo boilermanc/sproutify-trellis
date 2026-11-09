@@ -8,6 +8,28 @@ const secrets = {
   anthropic_api_key: "test",
   gemini_api_key: "test",
 };
+Deno.test("handoff preparation uses Gemini JSON, retains usage and rejects incomplete output", async () => {
+  const original = globalThis.fetch;
+  let finishReason = "STOP";
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(String(init?.body));
+    assert(String(url).startsWith("https://generativelanguage.googleapis.com/"), "Gemini only");
+    assert(body.contents[0].parts[0].text === "Full packet including middle disagreement", "full uncut input");
+    assert(body.generationConfig.responseMimeType === "application/json", "structured response");
+    assert(body.generationConfig.temperature === 0.2, "bounded handoff temperature");
+    assert(!body.tools, "preparation has no external tools");
+    return Response.json({ candidates: [{ finishReason, content: { parts: [{ text: '{"status":"needs_rework"}' }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 30 } });
+  };
+  try {
+    const result = await generate("handoff", "Full packet including middle disagreement", secrets);
+    assert(result.usage?.input_tokens === 100 && result.usage?.output_tokens === 50, "usage includes thinking");
+    finishReason = "MAX_TOKENS";
+    let rejected = false;
+    try { await generate("handoff", "Full packet including middle disagreement", secrets); }
+    catch (error) { rejected = error instanceof Error && error.message.includes("Needs rework") && error.message.includes("nothing was sent to Manus"); }
+    assert(rejected, "incomplete output never reaches handoff validation/dispatch");
+  } finally { globalThis.fetch = original; }
+});
 Deno.test("AEO sends only the buyer question, requires web search and keeps provider citations", async () => {
   const original = globalThis.fetch;
   const question = "What are the best options for Atlanta interior painting?";

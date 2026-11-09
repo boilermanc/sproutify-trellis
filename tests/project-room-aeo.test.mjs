@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aeoSearchForRound, planAeoSearch, summarizeAeoAnswer, updateAeo } from "../supabase/functions/_shared/project-room-aeo.mjs";
-import { createRoom, exportRoom, handoff, nextRound } from "../supabase/functions/_shared/project-room.mjs";
+import { createRoom, exportRoom, handoff, handoffPlan, nextRound } from "../supabase/functions/_shared/project-room.mjs";
 
 const company = () => createRoom({
   kind: "client", title: "Example Company", brief: "Review ways to reach new buyers.",
@@ -27,7 +27,8 @@ test("company observations are included in each reviewer packet and snapshotted 
   assert.deepEqual(packet(room, "anthropic").ai_search_baseline, original);
   assert.deepEqual(packet(room, "chief").ai_search_baseline, original);
   assert.match(handoff(room, "chief"), /AI search \(AEO\).*what to do, why it matters, and how to recheck/);
-  assert.match(handoff(room, "research"), /Acme Painting/);
+  assert.match(handoffPlan(room, "research").full, /Acme Painting/);
+  assert.match(handoffPlan(room, "research").sources.context, /Acme Painting/);
   assert.equal(original.observations[0].competitors, "Acme Painting");
   assert.deepEqual(original.observations[1].citations, []);
   assert.equal(original.observations[1].outcome, "No AI answer shown");

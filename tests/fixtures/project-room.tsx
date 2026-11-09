@@ -12,9 +12,11 @@ import {
   nextRound,
   importOutput,
   handoff,
+  handoffPlan,
   exportRoom,
 } from "../../supabase/functions/_shared/project-room.mjs";
 import "../../index.css";
+import { readCompressedHandoff } from "../../supabase/functions/_shared/project-room-handoff.mjs";
 import { validateDocuments } from "../../supabase/functions/_shared/project-room-intake.mjs";
 import { planAeoSearch, summarizeAeoAnswer, updateAeo } from "../../supabase/functions/_shared/project-room-aeo.mjs";
 const fixtureParams = new URL(location.href).searchParams;
@@ -26,6 +28,13 @@ const original = window.fetch;
 const client: any = {id: "fixture-client", name: "Example Company", status: "prospect", version: 1, archived_at: null, follow_up_date: null};
 const members: any[] = [{user_id: "clint", name: "Clint", role: "owner"}];
 if (room) { room.client_id = client.id; room.member_role = "owner"; }
+if (room && fixtureParams.has("handoff-rework")) {
+  if (!room.state.rounds.length) nextRound(room);
+  room.status = "blocked";
+  room.state.rounds.at(-1).stage = "review";
+  try { readCompressedHandoff(handoffPlan(room, "review"), '{"status":"needs_rework"}'); }
+  catch (error) { room.error = (error as Error).message; }
+}
 if (room && fixtureParams.has("failed-proposal")) {
   room.state.proposal_generation = {status: "failed", at: new Date().toISOString()};
 }
