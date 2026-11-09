@@ -168,7 +168,7 @@ function sectionContent(
 }
 export function assessmentDocx(room, options = {}) {
   const title = wordText(room.title);
-  const sections = assessmentSections(room.state.summary);
+  const sections = options.sections || assessmentSections(room.state.summary);
   const children = [
     label(options.eyebrow || "CONSULTING OPPORTUNITY ASSESSMENT"),
     new Paragraph({ text: title, heading: HeadingLevel.TITLE, keepNext: true }),

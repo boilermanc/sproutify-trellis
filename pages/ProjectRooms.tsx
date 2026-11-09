@@ -115,6 +115,8 @@ export default function ProjectRooms({
   const [listLoading, setListLoading] = useState(true);
   const [listLimited, setListLimited] = useState(false);
   const [wordBusy, setWordBusy] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'docx' | 'pdf' | 'md'>('docx');
+  const [exportBusy, setExportBusy] = useState(false);
   const [linkClientId, setLinkClientId] = useState("");
   const [connections, setConnections] = useState<Record<string, boolean>>({});
   const [room, setRoom] = useState<ProjectRoom | null>(null);
@@ -217,24 +219,43 @@ export default function ProjectRooms({
     }
   }
   async function download() {
+    if (!room || exportBusy) return;
+    const exportRoom = room;
+    const format = exportFormat;
+    setExportBusy(true);
     try {
       const result = await callRoom<{ markdown: string }>("export", {
-        id: room?.id,
+        id: exportRoom.id,
       });
-      const url = URL.createObjectURL(
-        new Blob([result.markdown], { type: "text/markdown" }),
-      );
+      let blob: Blob;
+      if (format === 'md') blob = new Blob([result.markdown], { type: 'text/markdown' });
+      else {
+        const reports = await import('../services/projectRoomReport.mjs');
+        blob = await (format === 'docx' ? reports.researchReportDocx(exportRoom, result.markdown) : reports.researchReportPdf(exportRoom, result.markdown)) as Blob;
+      }
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${
-        room?.title.replace(/[^a-z0-9]/gi, "-") || "project-room"
-      }.md`;
+        exportRoom.title.replace(/[^a-z0-9]/gi, "-") || "project-room"
+      }-research.${format}`;
       a.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      addToast(`${format === 'docx' ? 'Word' : format.toUpperCase()} report downloaded.`, 'success');
     } catch (e) {
       setError((e as Error).message);
+      addToast('The research download did not finish. Please try again.', 'error');
+    } finally {
+      setExportBusy(false);
     }
   }
+  const exportControls = <div className="flex flex-wrap items-center gap-2">
+    <label className="sr-only" htmlFor="research-export-format">Research download format</label>
+    <select id="research-export-format" className="pr-input" style={{width:'auto'}} value={exportFormat} disabled={exportBusy} onChange={e=>setExportFormat(e.target.value as 'docx'|'pdf'|'md')}>
+      <option value="docx">Word (.docx)</option><option value="pdf">PDF (.pdf)</option><option value="md">Markdown (.md)</option>
+    </select>
+    <button className="pr-button" onClick={download} disabled={exportBusy}><Download size={16}/>{exportBusy?'Preparing report…':'Export research'}</button>
+  </div>;
   const round = room?.state.rounds.at(-1);
   const disabled = busy || !!room?.busy;
   const missing = ["research", "openai", "anthropic", "chief"].filter(
@@ -479,9 +500,7 @@ export default function ProjectRooms({
                         : "Download Word document"}
                     </button>
                   )}
-                  <button className="pr-button" onClick={download}>
-                    Download full room record
-                  </button>
+                  {exportControls}
                 </div>
                 {!room.state.summary && (
                   <p className="pr-muted pr-small">
@@ -550,7 +569,7 @@ export default function ProjectRooms({
                     </p>
                     <RoomTokenCost room={room} />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       aria-label="Refresh room"
                       className={button}
@@ -559,10 +578,7 @@ export default function ProjectRooms({
                     >
                       <RefreshCw size={16} />
                     </button>
-                    <button className={button} onClick={download}>
-                      <Download size={16} />
-                      Export
-                    </button>
+                    {exportControls}
                   </div>
                 </div>
                 <div className="mt-5 flex flex-wrap gap-2">
