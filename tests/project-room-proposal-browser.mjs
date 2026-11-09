@@ -34,7 +34,7 @@ assert.ok(outcomeBox.y < priceBox.y);
 await page.getByRole("button", {name:"Estimate work from this client's research", exact:true}).click();
 await page.getByRole("button", {name:"Use estimated breakdown", exact:true}).click();
 assert.equal(await page.getByLabel("Estimated hours",{exact:true}).first().inputValue(), "2");
-assert.equal(await page.getByLabel("Assumptions and reason for hours").first().inputValue(), "One owner interview and notes.");
+assert.match(await page.getByLabel("Assumptions and reason for hours").first().inputValue(), /Hours breakdown:/);
 await page.getByLabel("Expected close date").fill("2026-12-01");
 await page.getByRole("button", { name: "Save proposal", exact: true }).first()
   .click();
@@ -53,7 +53,7 @@ await page.screenshot({
   fullPage: true,
 });
 await nav.getByRole("button", { name: "Sales pipeline", exact: true }).click();
-await page.getByText("$300.00 one-time", { exact: true })
+await page.getByText("$600.00 one-time", { exact: true })
   .waitFor();
 await page.screenshot({
   path: "tests/fixtures/pipeline-desktop.png",

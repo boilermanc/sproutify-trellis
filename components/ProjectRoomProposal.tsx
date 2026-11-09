@@ -1,5 +1,6 @@
 import { invokeAI } from "../services/aiBackend";
 import { estimateRequest, applyWorkEstimate, estimateChanges } from "../services/projectRoomEstimate.mjs";
+import { proposalReviewRequest, readProposalReview } from "../supabase/functions/_shared/project-room-proposal-review.mjs";
 import React, { useEffect, useRef, useState } from "react";
 import type { ProjectRoom, RoomProposal } from "../services/projectRoomService";
 import {
@@ -24,9 +25,10 @@ const fields = [
   ["next_step", "Next step"],
 ] as const;
 export default function ProjectRoomProposal(
-  { room, onSave, onError }: {
+  { room, onSave, onReview, onError }: {
     room: ProjectRoom;
     onSave: (proposal: RoomProposal, version: number) => Promise<boolean>;
+    onReview: (version: number, includeImplementation: boolean) => Promise<boolean>;
     onError: (message: string) => void;
   },
 ) {
@@ -34,6 +36,7 @@ export default function ProjectRoomProposal(
     room.state.proposal || null,
   );
   const [rate, setRate] = useState("150");
+  const [implementationReviewed, setImplementationReviewed] = useState(false);
   const [pendingEstimate, setPendingEstimate] = useState<RoomProposal | null>(null);
   const latestRoom = useRef(room);
   latestRoom.current = room;
@@ -43,6 +46,7 @@ export default function ProjectRoomProposal(
   const editingId = useRef(room.id);
   useEffect(() => {
     if (editingId.current !== room.id || !dirty) {
+      setImplementationReviewed(false);
       setPendingEstimate(null);
       editingId.current = room.id;
       setDraft(room.state.proposal || null);
@@ -51,6 +55,7 @@ export default function ProjectRoomProposal(
     }
   }, [room.id, room.version, dirty]);
   const edit = (patch: Partial<RoomProposal>) => {
+    if (patch.scope !== undefined || patch.assumptions !== undefined || patch.exclusions !== undefined) setImplementationReviewed(false);
     setPendingEstimate(null);
     setDraft((current) => current ? { ...current, ...patch } : current);
     setDirty(true);
@@ -75,10 +80,15 @@ export default function ProjectRoomProposal(
     setBusy(true);
     setPendingEstimate(null);
     try {
-      const request = estimateRequest(room, draft);
+      const request = estimateRequest(room, draft, { discoveryOnly: !implementationReviewed });
       const response = await invokeAI(request.body);
       if (latestRoom.current.id !== requestRoom.id || latestRoom.current.version !== requestRoom.version) throw new Error("The room changed while estimating. Review the latest research and try again.");
-      setPendingEstimate(applyWorkEstimate(draft, response.text, cents, request.evidence) as RoomProposal);
+      const estimated = applyWorkEstimate(draft, response.text, cents, request.evidence) as RoomProposal;
+      const reviewResponse = await invokeAI(proposalReviewRequest(room, estimated, { discoveryOnly: !implementationReviewed }));
+      if (latestRoom.current.id !== requestRoom.id || latestRoom.current.version !== requestRoom.version) throw new Error("The room changed during final review. Try again with the latest scope.");
+      const review = readProposalReview(reviewResponse.text);
+      if (review.status !== "passed") throw new Error("Chief of staff found issues: " + review.issues.join(" "));
+      setPendingEstimate(estimated);
     } catch (e) { onError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -141,6 +151,15 @@ export default function ProjectRoomProposal(
   }
   return (
     <div className="pr-stack pr-proposal">
+      {room.state.proposal_generation?.review?.status === "needs_review" && <section className="pr-panel" aria-label="Chief of staff review">
+        <h2>Needs rework — Chief of staff found issues</h2>
+        <p>Pricing is held back. Correct these issues, save the draft, then run the chief’s final review again.</p>
+        <ul>{room.state.proposal_generation.review.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>
+        <h3>Input needed from you or Sheree</h3>
+        {room.state.proposal_generation.review.input_needed?.length
+          ? <ul>{room.state.proposal_generation.review.input_needed.map((question, index) => <li key={index}>{question}</li>)}</ul>
+          : <p>No additional input was requested. Start with the corrections above.</p>}
+      </section>}
       <section className="pr-panel">
         <div className="pr-top">
           <div>
@@ -151,6 +170,10 @@ export default function ProjectRoomProposal(
             </p>
           </div>
           <div className="pr-actions">
+            <button className="pr-button" disabled={busy || room.busy || dirty || !room.state.proposal} onClick={async () => {
+              setBusy(true);
+              try { await onReview(baseVersion, implementationReviewed); } finally { setBusy(false); }
+            }}>Run chief final review</button>
             <button
               className="pr-button pr-primary"
               disabled={busy || room.busy}
@@ -232,11 +255,14 @@ export default function ProjectRoomProposal(
       <section className="pr-panel">
         <h2>One-time project investment</h2>
         <p>Included estimated hours: {draft.items.filter(i => i.estimate_unit === "hours" && !i.optional).reduce((n,i)=>n+i.quantity,0)} · Optional estimated hours: {draft.items.filter(i => i.estimate_unit === "hours" && i.optional).reduce((n,i)=>n+i.quantity,0)}. Legacy fixed-fee items do not imply an hour estimate.</p>
-        <p>Estimate this client's tasks, then review the hours and assumptions before quoting. This uses one AI request outside the research-round budget. It does not save or approve a price automatically.</p>
+        <p>Estimate this client's tasks, then review the hours and assumptions before quoting. An estimate and a final chief of staff review use two AI requests outside the research-round budget. It does not save or approve a price automatically.</p>
         <label className="pr-field">Suggested planning rate (USD/hour; not approved)<input type="number" min="0.01" max="10000" step="0.01" value={rate} onChange={e => setRate(e.target.value)} /></label>
+        <p>Start with discovery. Implementation ideas stay unpriced until you define the work and quantities in Scope of work.</p>
+        <label className="pr-check"><input type="checkbox" checked={implementationReviewed} disabled={busy || room.busy} onChange={e => { setImplementationReviewed(e.target.checked); setPendingEstimate(null); }} /> I reviewed the implementation scope and want it estimated too</label>
         <button className="pr-button" disabled={busy || room.busy || !room.state.summary} onClick={estimate}>{busy ? "Working…" : "Estimate work from this client's research"}</button>
         {pendingEstimate && <section className="pr-panel" aria-label="Estimate preview">
           <h3>Review proposed work and hours</h3>
+          <p>Chief of staff final checks passed. Your review is still required before quoting.</p>
           <p><strong>Proposed included work: {pendingEstimate.items.filter(i => !i.optional).reduce((n,i)=>n+i.quantity,0)} hours · {money(proposalTotals(pendingEstimate).once)}</strong></p>
           <p><strong>Proposed optional work: {pendingEstimate.items.filter(i => i.optional).reduce((n,i)=>n+i.quantity,0)} hours · {money(proposalTotals(pendingEstimate).optional_once)}</strong></p>
           {changes?.hasBaseline && <section aria-label="Changes from current estimate">
@@ -244,7 +270,7 @@ export default function ProjectRoomProposal(
             <p>Current: {changes.before.hours} hours · {money(changes.before.cents)}. Proposed: {changes.after.hours} hours · {money(changes.after.cents)}. Change: {changes.after.hours - changes.before.hours} hours · {money(changes.after.cents - changes.before.cents)}. These totals include optional work.</p>
             <ul>{changes.lines.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
           </section>}
-          <p>When implementation is optional, its testing, final handoff and contingency stay optional too. Review the task boundaries and change reasons. Source references support the scope, not the number of hours. Check the schedule against any changed hours before saving.</p>
+          <p>When implementation is optional, its testing and final handoff stay optional too. Uncertain risks remain unpriced. Review the task boundaries and change reasons. Source references support the scope, not the number of hours. Check the schedule against any changed hours before saving.</p>
           <p>Applying replaces fee items and estimating notes. It keeps your scope and other proposal edits.</p>
           {pendingEstimate.items.map((item, i) => <p key={i}><strong>{item.optional ? "Optional: " : ""}{item.description}</strong><br />{item.quantity} hours × {money(item.unit_cents!)} = {money(item.quantity * item.unit_cents!)}<br />{item.basis}<br />Source: {item.evidence}</p>)}
           <button className="pr-button pr-primary" onClick={() => { edit({items: pendingEstimate.items, pricing_basis: pendingEstimate.pricing_basis, ...(draft.objective.startsWith("After the agreed work") ? {objective: pendingEstimate.objective} : {})}); setPendingEstimate(null); }}>Use estimated breakdown</button>

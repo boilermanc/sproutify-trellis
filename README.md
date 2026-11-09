@@ -147,3 +147,48 @@ To verify locally with Vite running, run `node tests/social-idea-chat-browser.mj
 Start with the plain-language [Content Intelligence operator guide](docs/CONTENT_INTELLIGENCE_GUIDE.md) for what the system does, what each tab means, and the complete day-to-day workflow.
 
 Repository-native schemas, project-partitioned records, task templates, and helper internals live in [`.trellis/README.md`](.trellis/README.md). Every configured branch shares the workflow while keeping topics, posts, performance, and learned strategy separate.
+
+## Proposal quality checks
+
+Automatic company proposals estimate discovery only, including checking and handing
+over the discovery findings. Implementation recommendations remain unpriced until
+Clint or Sheree defines bounded scope and selects the implementation review checkbox.
+This checkbox requests an estimate; it does not approve or send a customer quote.
+Editing scope, assumptions or exclusions resets that choice. Existing saved proposals
+are not rewritten automatically.
+
+All new AI estimates require activity-level hours that sum to each task, unique
+activity IDs/descriptions, exclusions, and substantive source text. Heading-only
+citations, repeated activities and generated contingency fees are rejected before
+prices are applied. Risks belong in assumptions for review. These checks verify
+structure and arithmetic, not the truth of AI claims or the reasonableness of effort;
+paraphrased overlap and misclassified tasks still require human review.
+
+Client research identifies Clint and Sheree as consultants. Customer approval
+authority stays unknown until confirmed. The chief of staff performs a separate final review of the completed estimate,
+research, questions, roles, scope, semantic overlap, effort rationale and handoff.
+Every required check must pass; missing/malformed reviews, uncertainty, or issues
+cannot mark the proposal ready. A rejected automatic estimate leaves an unpriced
+draft, visible findings and an alert. Raw research remains available for audit.
+Automatic review model and usage are retained alongside generation usage; this
+adds one AI request. Manual estimates also require a final review before preview.
+
+Verify with `npm run test:project-rooms`, `npx tsc --noEmit`,
+`deno check --no-config --node-modules-dir=none supabase/functions/project-rooms/index.ts`,
+and `npm run build`. The local `tests/fixtures/project-room.html?scenario=report`
+flow uses synthetic responses with no live provider calls. Check discovery default,
+implementation review, preview/save, Word export and mobile layout.
+
+Release requires the frontend and `project-rooms` Edge Function together; no schema
+migration. Keep the prior deployment available for rollback. Live model verification
+and any correction to existing customer drafts are separate release checks; do not
+claim fixture tests validate real provider output.
+
+The saved-proposal action **Run chief final review** rechecks existing drafts using
+current research and questions. A failed review shows **Needs rework — Chief of staff
+found issues**, correction details, and requested input from Clint/Sheree. It keeps
+the evaluated priced proposal in `proposal_generation.held_proposal` for recovery,
+sets current fee rates to unpriced, and leaves the proposal drafted. A later failed
+review of an unpriced draft cannot overwrite that priced snapshot. A passing rerun
+clears the note; it never sends a customer proposal. Already sent/won/lost proposals
+must be moved back to draft first. Concurrent writes use the existing version check.

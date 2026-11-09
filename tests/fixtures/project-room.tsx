@@ -1,3 +1,5 @@
+import {recordProposalReview} from "../../supabase/functions/_shared/project-room-proposal-review.mjs";
+import {passingReview} from './proposal-review.mjs';
 import { saveProposal, proposalSummary } from "../../supabase/functions/_shared/project-room-proposal.mjs";
 import { draftProposal } from "../../services/projectRoomProposal.mjs";
 // Local, synthetic UI fixture. No provider or Supabase requests leave this page.
@@ -30,18 +32,29 @@ if (room && fixtureParams.has("failed-proposal")) {
 if (room && fixtureParams.has("estimate-baseline")) {
   room.state.proposal = {...draftProposal(room), items: [
     {description:"Confirm enquiry workflow with owner", quantity:2, phase:"discovery", optional:false},
-    {description:"Verify agreed changes", quantity:1, phase:"testing", optional:true},
+    {description:"Verify discovery findings", quantity:1, phase:"testing", optional:true},
     {description:"Owner walkthrough", quantity:1, phase:"handoff", optional:true},
-  ].map(item => ({...item, estimate_unit:"hours", unit_cents:15000, frequency:"once", basis:"Bounded synthetic task.", evidence:"operate independently"}))};
+  ].map(item => ({...item, estimate_unit:"hours", unit_cents:15000, frequency:"once", basis:"Bounded synthetic task.", evidence:"owner the instructions and account ownership needed to operate independently"}))};
 }
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
   if (url.includes("/functions/v1/ai-generate")) {
+    const request = JSON.parse(String(init?.body));
+    if (request.contents?.includes("performing the FINAL quality review")) {
+      const result=passingReview();
+      if(fixtureParams.has("chief-fails")) {
+        const review=JSON.parse(result.text);review.verdict="needs_review";
+        review.checks.duplicate_work={status:"needs_review",reason:"The report preparation repeats time already included in the discovery task."};
+        review.issues=["Separate report preparation from discovery to avoid counting the same work twice."];
+        result.text=JSON.stringify(review);
+      }
+      return Response.json(result);
+    }
     return new Response(JSON.stringify({text: JSON.stringify({objective:"The owner can run the improved enquiry process independently.", assumptions:"Synthetic estimate for browser testing.", tasks:[
       {description:"Confirm enquiry workflow with owner", hours:2, phase:"discovery", optional:false, basis:"One owner interview and notes.", evidence:"Review the existing findings with the owner"},
-      {description:"Verify agreed changes", hours:1, phase:"testing", optional:true, basis:"One acceptance pass.", evidence:"Demonstrate the agreed checks"},
-      {description:"Owner walkthrough", hours:1, phase:"handoff", optional:true, basis:"One walkthrough and instructions.", evidence:"operate independently"}
-    ].map((task,index) => fixtureParams.has("estimate-baseline") ? {...task, previous_ids:[`P${index+1}`],change_reason:"Retained the same bounded task and hours; clarified the estimating assumptions."} : task)})}),{status:200,headers:{"Content-Type":"application/json"}});
+      {description:"Verify discovery findings", hours:1, phase:"testing", optional:false, basis:"One discovery report acceptance pass.", evidence:"Demonstrate the agreed checks"},
+      {description:"Owner walkthrough", hours:1, phase:"handoff", optional:false, basis:"One discovery walkthrough and instructions.", evidence:"owner the instructions and account ownership needed to operate independently"}
+    ].map((task,index) => ({...task,excludes:"Excludes implementation and activities in the other tasks.",work_units:[{id:"work_"+index,description:"Discovery activity "+index+": "+task.description,hours:task.hours}]})).map((task,index) => fixtureParams.has("estimate-baseline") ? {...task, previous_ids:[`P${index+1}`],change_reason:"Retained the same bounded task and hours; clarified the estimating assumptions."} : task)})}),{status:200,headers:{"Content-Type":"application/json"}});
   }
   if (url.includes("/functions/v1/project-rooms")) {
     const b = JSON.parse(String(init?.body));
@@ -83,6 +96,7 @@ window.fetch = async (input, init) => {
         if (b.version !== room.version)
           throw new Error("Room changed. Refresh and try again.");
         if (b.action === "proposal_save") saveProposal(room,b.proposal,"clint");
+        if (b.action === "proposal_review") recordProposalReview(room,room.state.proposal,{status:"needs_review",issues:["Replace the consultant names with the confirmed customer decision-maker."],input_needed:["Who at ACA approves the scope and budget?"],checks:{}},{model:"test-chief"},"clint");
         if (b.action === "start" || b.action === "next_round") {
           const round = nextRound(room);
           if (fixtureParams.has("automatic-aeo")) {

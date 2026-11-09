@@ -2,6 +2,7 @@ import { draftProposal } from "./project-room-proposal-draft.mjs";
 import { estimateRequest, applyWorkEstimate } from "./project-room-estimate.mjs";
 import { saveProposal } from "./project-room-proposal.mjs";
 import { currentRound, event } from "./project-room.mjs";
+import { proposalReviewRequest, readProposalReview } from "./project-room-proposal-review.mjs";
 
 export function needsAutomaticProposal(room) {
   return room.kind === "client" && room.status === "awaiting_user" &&
@@ -11,24 +12,42 @@ export function needsAutomaticProposal(room) {
 
 // Persist the attempt before spending tokens. Interrupted/failed attempts require
 // manual review, never an automatic retry or replacement of an existing draft.
-export async function createAutomaticProposal(room, { checkpoint, generate, failed }) {
+export async function createAutomaticProposal(room, { checkpoint, generate, review, failed }) {
   if (!needsAutomaticProposal(room)) return false;
   room.state.proposal_generation = { status: "running", at: new Date().toISOString() };
   event(room, "Research is ready. Preparing a proposal and work estimate for internal review.");
   await checkpoint();
   try {
     const draft = draftProposal(room);
-    const request = estimateRequest(room, draft);
+    const request = estimateRequest(room, draft, { discoveryOnly: true });
     const output = await generate(request.body.contents);
     const estimated = applyWorkEstimate(draft, output.text, 15000, request.evidence);
+    room.state.proposal_generation.model = output.model;
+    room.state.proposal_generation.usage = output.usage;
+    const reviewOutput = await review(proposalReviewRequest(room, estimated).contents);
+    const quality = readProposalReview(reviewOutput.text);
+    room.state.proposal_generation.review_model = reviewOutput.model;
+    room.state.proposal_generation.review_usage = reviewOutput.usage;
+    room.state.proposal_generation.review = quality;
+    if (quality.status !== "passed") {
+      // Retain an editable, unpriced draft and the reasons. Never publish suspect
+      // prices as ready, retry endlessly, or replace them with invented defaults.
+      room.state.proposal_generation.held_proposal = structuredClone(estimated);
+      saveProposal(room, draft, null);
+      room.state.proposal_generation.status = "needs_review";
+      event(room, "Needs rework — Chief of staff found issues. Review the correction note and requested input in Proposal & pricing. Pricing is held back.");
+      await failed(new Error("Chief of staff final review requires correction."));
+      return true;
+    }
     saveProposal(room, { ...estimated, stage: "proposal_drafted" }, null);
     room.state.proposal_generation = {
+      ...room.state.proposal_generation,
       status: "ready", at: new Date().toISOString(), model: output.model,
       usage: output.usage, rate_cents: 15000,
     };
-    event(room, "Proposal and client-specific pricing saved as a draft. Review the suggested rate, hours, scope and handoff before quoting.");
+    event(room, "Discovery proposal and client-specific pricing saved as a draft. Implementation ideas remain unpriced until scope review. Review the suggested rate, hours and handoff before quoting.");
   } catch (error) {
-    room.state.proposal_generation = { status: "failed", at: new Date().toISOString() };
+    room.state.proposal_generation = { ...room.state.proposal_generation, status: "failed", at: new Date().toISOString() };
     event(room, "Research is complete, but the automatic proposal needs attention. Open Proposal & pricing to create or estimate the draft manually.");
     await failed(error);
   }

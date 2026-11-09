@@ -1,5 +1,6 @@
 import { saveProposal, proposalSummary } from "../_shared/project-room-proposal.mjs";
 import { createAutomaticProposal } from "../_shared/project-room-auto-proposal.mjs";
+import { proposalReviewRequest, readProposalReview, recordProposalReview } from "../_shared/project-room-proposal-review.mjs";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
 import {
@@ -326,6 +327,11 @@ async function automaticProposal(db: any, room: any, secrets?: any) {
       if (!connections.gemini_api_key) throw new Error("Missing estimating connection.");
       return generate("proposal", prompt, connections);
     },
+    review: async (prompt: string) => {
+      const connections = secrets || await secretsFor(db);
+      if (!connections.gemini_api_key) throw new Error("Missing chief of staff connection.");
+      return generate("chief", prompt, connections);
+    },
     failed: (error: unknown) => alertBlockedRun("proposal_generation_failed", {
       room_id: room.id, run_id: crypto.randomUUID(), stage: "proposal",
       elapsed_ms: 0, failures: [failureDetails(error, "gemini")],
@@ -604,7 +610,21 @@ Deno.serve(async (req) => {
         409,
       );
     }
-    if (body.action === "proposal_save") {
+    if (body.action === "proposal_review") {
+      if (room.kind !== "client" || !room.state.proposal) throw new Error("Save a company proposal before final review.");
+      if (["won", "lost", "proposal_sent"].includes(room.state.proposal.stage)) throw new Error("Move this proposal back to draft before reworking it.");
+      const connections = await secretsFor(db);
+      if (!connections.gemini_api_key) throw new Error("Missing chief of staff connection.");
+      const output = await generate("chief", proposalReviewRequest(room, room.state.proposal, { discoveryOnly: body.include_implementation !== true }).contents, connections);
+      const quality = readProposalReview(output.text);
+      recordProposalReview(room, room.state.proposal, quality, output, user.id);
+      await save(db, room);
+      if (quality.status !== "passed") await alertBlockedRun("proposal_needs_rework", {
+        room_id: room.id, run_id: crypto.randomUUID(), stage: "proposal_review",
+        elapsed_ms: 0, failures: [failureDetails(new Error("Chief of staff final review requires correction."), "gemini")],
+      });
+      return json({ room: { ...publicRoom(room), member_role: memberRole } });
+    } else if (body.action === "proposal_save") {
       saveProposal(room, body.proposal, user.id);
       event(room, "User saved the internal proposal and sales stage.");
     } else if (body.action === "start") {

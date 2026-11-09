@@ -33,7 +33,7 @@ type Incident = {
 };
 
 export async function alertBlockedRun(
-  event: "run_blocked" | "run_state_save_failed" | "proposal_generation_failed",
+  event: "run_blocked" | "run_state_save_failed" | "proposal_generation_failed" | "proposal_needs_rework",
   incident: Incident,
 ) {
   runLog("error", event, incident);

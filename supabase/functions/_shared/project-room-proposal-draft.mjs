@@ -15,7 +15,7 @@ export function draftProposal(room) {
       "Phase 1 — Discovery and validation\nReview the existing findings with the owner, verify the highest-priority issues using authorized access, and agree the work worth doing.\n\nResearch to validate:\n" +
       (section("discovery") || section("prioritized findings") ||
         "Confirm the main problem, current workflow and success measures.") +
-      "\n\nPhase 2 — Optional implementation allowance\nOnly proceed after discovery confirms scope and the owner approves it. Candidate improvements from the assessment:\n" +
+      "\n\nPhase 2 — Unpriced implementation candidates\nThese ideas are not included in the discovery estimate. Review quantities, access and scope before estimating implementation; proceed only after the owner approves it. Candidate improvements from the assessment:\n" +
       (section("improve what exists") ||
         "Scope improvements separately after discovery.") +
       "\n\nFinish — Verify and hand over\nDemonstrate the agreed checks, give the owner the instructions and account ownership needed to operate independently, and record acceptance. Additional work needs a separately approved project.",

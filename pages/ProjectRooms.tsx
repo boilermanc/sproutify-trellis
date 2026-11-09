@@ -348,6 +348,7 @@ export default function ProjectRooms({
             <ProjectRoomProposal
               room={room}
               onError={reportError}
+              onReview={(version, includeImplementation) => perform("proposal_review", { version, include_implementation: includeImplementation })}
               onSave={(proposal, version) =>
                 perform("proposal_save", { proposal, version })}
             />
