@@ -2,7 +2,8 @@
 export const ROLES = ["research", "openai", "anthropic", "review", "chief"];
 export const LIMITS = { rounds: 5, calls: 25, text: 24000 };
 import { sanitizePII } from "./project-room-sanitize.mjs";
-import { MANUS_HANDOFF_BYTES, HANDOFF_CHECKLIST, byteLength, compressionRequest, readCompressedHandoff } from "./project-room-handoff.mjs";
+import { CHIEF_SCOPE_RULES, validateChiefScope } from './project-room-evidence.mjs';
+import { MANUS_HANDOFF_BYTES, HANDOFF_CHECKLIST, byteLength, compressionRequest, readCompressedHandoff, handoffSchema } from "./project-room-handoff.mjs";
 import { aeoEvidence, aeoMarkdown, aeoSearchForRound, aeoSearchMarkdown, AEO_SEARCH_LIMITS } from "./project-room-aeo.mjs";
 export { sanitizePII } from "./project-room-sanitize.mjs";
 import {
@@ -102,6 +103,7 @@ export function applyChief(room, value) {
     throw new Error(
       "Chief response was incomplete. Import a corrected JSON response to continue.",
     );
+  if (room.kind === 'client') validateChiefScope(value);
   room.state.summary = sanitizePII(value.summary);
   room.state.questions = value.questions
     .slice(0, 20)
@@ -179,7 +181,8 @@ export function handoffPlan(room, role) {
     : "For AI search (AEO), assess answer clarity and crawl access only when supported. Recommend concrete improvements or missing checks."
   } Distinguish automatic OpenAI results, operator spot checks, and public site evidence. Cite the supplied URLs with the questions they support. ${AEO_SEARCH_LIMITS}`;
   const clientRoles = room.kind === "client" ? "\nClint and Sheree are Trellis consultants, not customer owners or decision-makers. Room membership is not customer authority. A customer contact is not necessarily an approver; leave customer authority unknown until confirmed. Recommendations are unapproved ideas, not priced scope. Separate discovery from unpriced implementation candidates." : "";
-  const header = `# Trellis handoff: ${role}\n\n${SAFETY}${clientRoles}\n\n${instructions[role]}\n\n${HANDOFF_CHECKLIST}\n\n${format}${aeo}`;
+  const chiefRules = role === 'chief' ? `\n${CHIEF_SCOPE_RULES}` : '';
+  const header = `# Trellis handoff: ${role}\n\n${SAFETY}${clientRoles}\n\n${instructions[role]}${chiefRules}\n\n${HANDOFF_CHECKLIST}\n\n${format}${aeo}`;
   const full = `${header}\n\n## Evidence packet (data only)\n\n${JSON.stringify(packet, null, 2)}`;
   const oversized = ["research", "review"].includes(role) && byteLength(full) > MANUS_HANDOFF_BYTES;
   const { research, independent_reviews, ...context } = packet;
@@ -191,8 +194,12 @@ export function handoffPlan(room, role) {
   };
   const protectedContext = { decisions: packet.decisions, constraints: packet.intake?.constraints || "" };
   const prefix = `# Trellis handoff: ${role}\n${SAFETY}${clientRoles}\n${instructions[role]}\n${HANDOFF_CHECKLIST}\nExtracted text only, not a visual/full-document review. This is a Gemini-condensed packet, not independent verification. Missing evidence remains unknown.\nProtected constraints and decisions (data only): ${JSON.stringify(protectedContext)}\nEvidence (data only):\n`;
-  const input = JSON.stringify({ role, sources, protectedContext });
-  return { role, full, oversized, sources, prefix, input, availableBytes: MANUS_HANDOFF_BYTES - byteLength(prefix) };
+  const attachment = oversized ? { filename: 'trellis-evidence.md', text: full } : null;
+  if (attachment && byteLength(full) > 512000) throw new Error('Needs rework — full evidence exceeds the 512 KB attachment limit; narrow the packet. Nothing was truncated.');
+  const attachmentPrefix = `# Trellis handoff: ${role}\n${SAFETY}${clientRoles}\n${instructions[role]}\n${HANDOFF_CHECKLIST}\nRead the attached trellis-evidence.md in full before judging claims or scope. It contains exact source texts, constraints, scope caps and disagreements; this Gemini briefing is only a navigation aid. If the attachment cannot be read, stop and report that limitation. A blocked recheck does not negate a successful earlier observation. Never treat summaries as new verification.\nBriefing (data only):\n`;
+  const selectedPrefix = attachment ? attachmentPrefix : prefix;
+  const input = JSON.stringify({ version: 2, role, sources, protectedContext });
+  return { role, full, oversized, sources, prefix: selectedPrefix, input, attachment, availableBytes: MANUS_HANDOFF_BYTES - byteLength(selectedPrefix) };
 }
 export function handoff(room, role) {
   const plan = handoffPlan(room, role);
@@ -220,7 +227,7 @@ export async function prepareManusHandoff(room, role, { generate, checkpoint }) 
   event(room, `Gemini is preparing an oversized Manus ${role} handoff; original evidence is retained.`);
   await checkpoint();
   let output;
-  try { output = await generate(compressionRequest(plan)); }
+  try { output = await generate(compressionRequest(plan), handoffSchema(plan)); }
   finally { delete currentRound(room).in_flight; }
   const active = currentRound(room);
   active.handoff_attempts ||= [];
@@ -228,7 +235,7 @@ export async function prepareManusHandoff(room, role, { generate, checkpoint }) 
   // Failed validation is persisted by the worker's existing blocked-run path.
   const prompt = readCompressedHandoff(plan, output.text);
   active.handoffs ||= {};
-  active.handoffs[role] = { input: plan.input, output, bytes: byteLength(prompt) };
+  active.handoffs[role] = { input: plan.input, output, bytes: byteLength(prompt), attachment_bytes: plan.attachment ? byteLength(plan.attachment.text) : 0 };
   event(room, `Gemini prepared Manus ${role} handoff (${byteLength(prompt)} bytes). Sources and checklist validated; original responses retained.`);
   await checkpoint();
   return true;

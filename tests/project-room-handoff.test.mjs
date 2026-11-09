@@ -110,7 +110,7 @@ test("budget, missing reviews and protected constraints fail before any provider
   const cases = [room(), room(), room()];
   cases[0].state.calls_used = cases[0].state.call_budget - 1;
   delete currentRound(cases[1]).outputs.anthropic;
-  cases[2].state.decisions.push({ status: "approved", text: "Never omit this constraint. ".repeat(200) });
+  cases[2].state.decisions.push({ status: "approved", text: "Never omit this constraint. ".repeat(24000) });
   for (const r of cases) await assert.rejects(prepareManusHandoff(r, "review", { generate: () => assert.fail(), checkpoint: () => assert.fail() }), /Needs rework/);
 });
 
@@ -132,11 +132,30 @@ test("protected decisions survive verbatim; research preparation works without e
   assert.equal(plan.sources.openai, undefined);
   assert.equal(plan.sources.anthropic, undefined);
   await prepareManusHandoff(r, "research", { checkpoint: async () => {}, generate: async () => output(response(plan)) });
-  assert.match(handoff(r, "research"), /Do not offer ongoing services/);
-  assert.match(handoff(r, "research"), /rejected/);
+  assert.match(handoffPlan(r, "research").full, /Do not offer ongoing services/);
+  assert.match(handoffPlan(r, "research").full, /rejected/);
 });
 
 test("known-price preparation usage is counted once, including rejected attempts", () => {
   const result = { model: "claude-sonnet-5-5", source: "api", usage: { input_tokens: 100, output_tokens: 20 } };
   assert.deepEqual(projectRoomTokenCost([{ outputs: {}, handoff_attempts: [result], handoffs: { review: { output: result } } }]), { microdollars: 400, priced: 1 });
+});
+
+test('full evidence attachment preserves scope caps and blocked rechecks without model-generated quotations', async () => {
+  const r=room();
+  currentRound(r).outputs.openai.text='At most ten URLs, three services; 12–16h public discovery. Optional access review 3–5h.';
+  currentRound(r).outputs.research.text+=' Sitemap observed Nov 8; later recheck blocked, not missing.';
+  const plan=handoffPlan(r,'review');
+  const value=response(plan); delete value.references;
+  value.source_summaries=Object.fromEntries(Object.keys(plan.sources).map(key=>[key,`Read ${key} in the complete attachment; preserve its scope and limitations.`]));
+  await prepareManusHandoff(r,'review',{checkpoint:async()=>{},generate:async (_prompt,schema)=>{
+    assert.deepEqual(schema.properties.source_summaries.required,Object.keys(plan.sources));
+    return output(value);
+  }});
+  assert.ok(Buffer.byteLength(handoff(r,'review'))<=4800);
+  assert.equal(plan.attachment.text,plan.full);
+  assert.match(plan.attachment.text,/At most ten URLs/);
+  assert.match(plan.attachment.text,/later recheck blocked, not missing/);
+  delete value.source_summaries.openai;
+  assert.throws(()=>readCompressedHandoff(plan,JSON.stringify(value)),/source summaries/);
 });

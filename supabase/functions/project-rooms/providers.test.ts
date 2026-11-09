@@ -8,6 +8,58 @@ const secrets = {
   anthropic_api_key: "test",
   gemini_api_key: "test",
 };
+Deno.test('chief synthesis rules are above source evidence and do not restrict the final price audit', async () => {
+ const original=globalThis.fetch; let role='chief';
+ globalThis.fetch=async (_url,init)=>{
+   const body=JSON.parse(String(init?.body));
+   assert(body.generationConfig.thinkingConfig.thinkingLevel==='MEDIUM','review has reasoning headroom');
+   assert(body.generationConfig.maxOutputTokens===10000,'review response cap');
+   if(role==='chief') assert(body.systemInstruction.parts[0].text.includes('NEVER copy, select or recommend hours'),'trusted scope boundary');
+   else {
+     assert(!body.systemInstruction,'price audit may inspect numerical hours');
+     assert(body.generationConfig.responseJsonSchema.required.includes('input_needed'),'missing input must be explicit');
+     assert(body.generationConfig.responseJsonSchema.properties.checks.required.length===6,'all six review checks required');
+   }
+   return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{}'}]}}]});
+ };
+ try {await generate(role,'source suggests 8-13 hours',secrets); role='proposal_review'; await generate(role,'check 9 hours',secrets);} finally {globalThis.fetch=original;}
+});
+Deno.test('oversized Manus evidence is attached intact as UTF-8, with a bounded text briefing', async () => {
+  const original=globalThis.fetch;
+  const evidence='Middle evidence: ten URLs; sitemap observed, later check blocked. 農🌱\n'.repeat(200);
+  globalThis.fetch=async (_url,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert(body.clear_connectors===true && body.share_visibility==='private','private and no inherited connectors');
+    const file=body.message.content[1];
+    assert(file.type==='file' && file.filename==='trellis-evidence.md','document part');
+    const decoded=new TextDecoder().decode(Uint8Array.from(atob(file.file_data.split(',')[1]),c=>c.charCodeAt(0)));
+    assert(decoded===evidence,'all source bytes preserved');
+    return Response.json({task_id:'test'});
+  };
+  try {
+    await createManus('Read the complete evidence attachment.',secrets,'test',{filename:'trellis-evidence.md',text:evidence});
+    let rejected=false;
+    try {await createManus('x'.repeat(4801),secrets,'test');} catch {rejected=true;}
+    assert(rejected,'oversized text cannot dispatch');
+  } finally {globalThis.fetch=original;}
+});
+
+Deno.test('proposal budget reserves room for output and retains incomplete-output protection', async () => {
+  const original=globalThis.fetch;
+  let finishReason='STOP';
+  globalThis.fetch=async (_url,init)=>{
+    const config=JSON.parse(String(init?.body)).generationConfig;
+    assert(config.maxOutputTokens===14000,'proposal output budget');
+    assert(config.thinkingConfig.thinkingLevel==='LOW' && config.temperature===1,'bounded Gemini 3 thinking');
+    return Response.json({candidates:[{finishReason,content:{parts:[{text:'{"tasks":[]}'}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:300,thoughtsTokenCount:200}});
+  };
+  try {
+    assert((await generate('proposal','estimate',secrets)).usage?.output_tokens===500,'thinking included in usage');
+    finishReason='MAX_TOKENS'; let rejected=false;
+    try {await generate('proposal','estimate',secrets);} catch {rejected=true;}
+    assert(rejected,'never accept incomplete estimate');
+  } finally {globalThis.fetch=original;}
+});
 Deno.test("OpenAI review can finish beyond 65 seconds but stops at its bounded deadline without retry", async () => {
   const originalFetch = globalThis.fetch;
   const originalTimeout = AbortSignal.timeout;

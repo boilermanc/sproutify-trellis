@@ -24,7 +24,21 @@ test('invalid estimate preserves research, records failure and never invents fal
  const room=ready(); let alerts=0;
  await createAutomaticProposal(room,{checkpoint:async()=>{},generate:async()=>({text:'truncated'}),failed:async()=>alerts++});
  assert.equal(room.state.proposal,undefined); assert.equal(room.status,'awaiting_user'); assert.equal(room.state.proposal_generation.status,'failed'); assert.equal(alerts,1);
+ assert.equal(room.state.proposal_generation.estimate_output,'truncated');
+ assert.match(room.state.proposal_generation.failure_reason,/incomplete/);
 });
 test('failed checkpoint never spends tokens',async()=>{
  await assert.rejects(createAutomaticProposal(ready(),{checkpoint:async()=>{throw Error('version conflict');},generate:async()=>assert.fail(),failed:async()=>assert.fail()}),/version conflict/);
+});
+test('separate comparison requests baseline reconciliation without mutating or publishing the original',async()=>{
+ const room=ready();
+ room.state.comparison={baseline_proposal:{items:[{description:'Original bounded discovery',estimate_unit:'hours',quantity:9,unit_cents:15000,phase:'discovery',optional:false,basis:'Existing reviewed scope',evidence:'Source'}]}};
+ const before=structuredClone(room.state.comparison);
+ await createAutomaticProposal(room,{checkpoint:async()=>{},generate:async prompt=>{
+   assert.match(prompt,/RECONCILIATION REQUIRED/); assert.match(prompt,/Original bounded discovery/);
+   assert.match(prompt,/"hours":9/); return {text:'incomplete'};
+ },failed:async()=>{}});
+ assert.deepEqual(room.state.comparison,before);
+ assert.equal(room.state.proposal,undefined);
+ assert.equal(room.state.proposal_generation.status,'failed');
 });

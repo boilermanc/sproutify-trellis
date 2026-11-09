@@ -98,7 +98,9 @@ test('chief sees completed prices and source context, and a failing review never
  assert.equal(room.state.proposal_generation.status,'needs_review');
  assert.equal(room.state.proposal_generation.review_model,'test-chief');
  assert.equal(room.state.proposal_generation.review_usage.output_tokens,50);
- assert.equal(proposalTotals(room.state.proposal).once,0);assert.equal(proposalTotals(room.state.proposal).unpriced,1);
+ assert.equal(proposalTotals(room.state.proposal).once,0);assert.equal(proposalTotals(room.state.proposal).unpriced,tasks.length);
+ assert.deepEqual(room.state.proposal.items.map(item=>item.quantity),tasks.map(task=>task.hours));
+ assert.ok(room.state.proposal.items.every(item=>item.unit_cents===null && item.basis.includes('Hours breakdown')));
  assert.match(room.state.proposal_generation.review.issues.join(' '),/charging twice/);
 });
 
@@ -125,7 +127,7 @@ test('review failure preserves research and cannot fall through to ready',async(
 test('final review packet sanitizes sensitive IDs and does not silently truncate oversized evidence',()=>{
  const {room,draft}=fixture();room.state.notes=[{text:'Private ID 123-45-6789'}];
  const request=proposalReviewRequest(room,draft);assert.doesNotMatch(request.contents,/123-45-6789/);assert.match(request.contents,/REDACTED_ID/);
- room.state.summary='x'.repeat(81000);assert.throws(()=>proposalReviewRequest(room,draft),/too large/);
+ room.state.summary='x'.repeat(241000);assert.throws(()=>proposalReviewRequest(room,draft),/too large/);
 });
 import {recordProposalReview} from '../supabase/functions/_shared/project-room-proposal-review.mjs';
 

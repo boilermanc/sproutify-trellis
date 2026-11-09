@@ -38,9 +38,13 @@ Saved connections in Settings are reused on the server. Optional Edge Function m
 
 ## Limits and recovery
 
-Gemini 3 handoff compression uses low thinking and temperature 1, keeping the
-6,000-token response cap and the separate 4,800-byte Manus input gate. The chief's
-review settings are unchanged. Incomplete Gemini responses log an allowlisted
+Gemini 3 handoff and proposal calls use low thinking; chief synthesis and final
+proposal review use medium thinking. All use temperature 1. Chief scope rules
+are system instructions, separate from the evidence packet and final-price review.
+The total response caps (thinking plus output) are 6,000 tokens for handoffs,
+14,000 for proposal estimates and 10,000 for chief synthesis/review. The separate
+Manus text gate remains 4,800 UTF-8 bytes. Provider text is retained up to 80,000
+characters; larger responses fail explicitly rather than truncating JSON. Incomplete Gemini responses log an allowlisted
 finish reason and token counts (never response text or credentials) so truncation
 can be distinguished from safety stops. See Google's [thinking configuration](https://ai.google.dev/gemini-api/docs/generate-content/thinking)
 and [Gemini 3 temperature guidance](https://ai.google.dev/gemini-api/docs/gemini-3).
@@ -58,7 +62,9 @@ and [Gemini 3 temperature guidance](https://ai.google.dev/gemini-api/docs/gemini
 
 Manus task prompts are capped at 4,800 UTF-8 bytes. All handoffs carry a checklist: objective, facts/sources, assumptions, disagreements, missing information, and the next assignment. OpenAI and Claude receive the same original evidence independently; neither receives the other review or a Gemini handoff summary.
 
-Oversized Manus research/comparison packets now require Gemini preparation instead of beginning/end truncation. Gemini reads the full packet and returns a structured summary with exact source excerpts and URLs. Code validates required fields, coverage of every supplied source section (including both reviewers for comparison), quoted text, URLs, and the final UTF-8 byte limit. Saved decisions and intake constraints are copied verbatim outside the summary. These are structural/provenance checks, not proof of semantic completeness; the downstream comparison and final chief review still check the substance.
+Oversized Manus research/comparison packets require Gemini preparation instead of truncation. Gemini supplies a short navigation briefing with schema-constrained source keys. Code validates every source section and the text byte limit. The complete original packet, including decisions, constraints, reviewer scope caps and source URLs, travels as a private inline UTF-8 Markdown attachment (maximum 512 KB, no public URL). Manus must read this attachment before judging the briefing. This avoids asking Gemini to retype exact quotations and prevents a compressed summary from being the only evidence. Existing legacy summaries still require exact quote/URL validation. Changed packet versions invalidate cached preparations. Attachment delivery does not itself prove model comprehension; live checks must inspect the result.
+
+Chief synthesis must preserve successful observations alongside blocked rechecks, use sourced founding years, and leave numerical effort to the estimator. Code rejects numerical hour recommendations and derived business ages in client synthesis. The estimator and final chief review receive the full original research/reviews; the final review adds a required evidence check alongside roles, scope, duplicate work, hours and outcome/handoff. Missing or failing checks hold back prices for human review. No current proposal is automatically replaced.
 
 Preparation is a separate durable worker step. It reserves one request before calling Gemini and requires budget remaining for Manus. The next worker invocation dispatches Manus only after the validated handoff is saved. Unchanged packets reuse the saved preparation; changed notes/evidence invalidate it. Missing connections, invalid summaries, insufficient budget or excessive protected context stop the room with a Needs rework message and use the existing blocked-run alert path. There is no truncation fallback or automatic provider retry. No schema migration is needed.
 
@@ -87,6 +93,8 @@ With Vite serving that fixture, run `node tests/project-room-aeo-browser.mjs` to
 Deployment: apply `supabase/migrations/20261106032348_project_rooms.sql` to the bound Trellis hub; deploy `project-rooms` with gateway verification disabled because the function explicitly authenticates both browser and cron paths. Do not remove those checks. The migration is included in the Schema Engine's master SQL stamp. Frontend deployment uses the existing GitHub `deploy.yml` workflow and verifies the exact live `build-info.txt` commit.
 
 ## Lessons
+
+Comparison estimates send the full baseline task rationale to both the estimator and final chief review. Splitting a combined task must reconcile its original hours, not duplicate its prior task ID or introduce fees merely for formatting. Failed estimates retain sanitized model output, token usage and a validation reason in `proposal_generation`; they are never automatically retried. An authorized operator can archive a failed attempt, clear only that attempt marker, and queue the completed comparison room (`stage: done`) to retry proposal generation without repeating research. Use a version-checked update scoped to that comparison; never clear an existing proposal. The regular worker then returns it to `awaiting_user` and applies the normal final review gate.
 
 Manus v2 inherits default connectors unless explicitly cleared. A provider task being stopped does not mean its background jobs finished. Paid requests require durable reservation before dispatch and conservative recovery after an uncertain outcome. Model consensus is not factual verification, and model proposals are not user decisions.
 

@@ -130,6 +130,14 @@ async function processRoom(db: any, id: string, secrets: any) {
         "A previous provider request has an uncertain outcome. Review the provider before importing the result. It was not retried.",
       );
     }
+    // An explicitly queued proposal-only recovery preserves all completed reviews.
+    // Existing failed attempts remain ineligible until an operator clears them.
+    if (r.stage === "done") {
+      room.status = "awaiting_user";
+      await automaticProposal(db, room, secrets);
+      await save(db, room);
+      return;
+    }
     if (r.aeo_search?.status === "running") {
       r.aeo_search.status = "interrupted";
       r.aeo_search.reason = "interrupted";
@@ -188,10 +196,10 @@ async function processRoom(db: any, id: string, secrets: any) {
         if (handoffPlan(room, role).oversized && !secrets.gemini_api_key) throw new Error("Needs rework — connect Gemini to prepare the oversized Manus handoff.");
         const prepared = await prepareManusHandoff(room, role, {
           checkpoint: () => save(db, room, false),
-          generate: async (prompt: string) => {
+          generate: async (prompt: string, schema: object) => {
             if (!secrets.gemini_api_key) throw new Error("Needs rework — connect Gemini to prepare the oversized Manus handoff.");
             runLog("info", "provider_started", { ...context, stage: `handoff_${role}`, provider: "gemini" });
-            const output = await generate("handoff", prompt, secrets);
+            const output = await generate("handoff", prompt, secrets, schema);
             runLog("info", "provider_completed", { ...context, stage: `handoff_${role}`, provider: "gemini" });
             return output;
           },
@@ -216,6 +224,7 @@ async function processRoom(db: any, id: string, secrets: any) {
           prompt,
           secrets,
           `Trellis: ${room.title} / ${role} / round ${r.number}`,
+          handoffPlan(room, role).attachment,
         );
         // r was replaced by save; always mutate the durable current object.
         currentRound(room).tasks[role] = task;
@@ -354,7 +363,7 @@ async function automaticProposal(db: any, room: any, secrets?: any) {
     review: async (prompt: string) => {
       const connections = secrets || await secretsFor(db);
       if (!connections.gemini_api_key) throw new Error("Missing chief of staff connection.");
-      return generate("chief", prompt, connections);
+      return generate("proposal_review", prompt, connections);
     },
     failed: (error: unknown) => alertBlockedRun("proposal_generation_failed", {
       room_id: room.id, run_id: crypto.randomUUID(), stage: "proposal",
@@ -639,7 +648,7 @@ Deno.serve(async (req) => {
       if (["won", "lost", "proposal_sent"].includes(room.state.proposal.stage)) throw new Error("Move this proposal back to draft before reworking it.");
       const connections = await secretsFor(db);
       if (!connections.gemini_api_key) throw new Error("Missing chief of staff connection.");
-      const output = await generate("chief", proposalReviewRequest(room, room.state.proposal, { discoveryOnly: body.include_implementation !== true }).contents, connections);
+      const output = await generate("proposal_review", proposalReviewRequest(room, room.state.proposal, { discoveryOnly: body.include_implementation !== true }).contents, connections);
       const quality = readProposalReview(output.text);
       recordProposalReview(room, room.state.proposal, quality, output, user.id);
       await save(db, room);

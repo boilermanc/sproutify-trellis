@@ -1,5 +1,7 @@
 import { SAFETY, sanitizePII } from "../_shared/project-room.mjs";
 import { summarizeAeoAnswer } from "../_shared/project-room-aeo.mjs";
+import { CHIEF_SCOPE_RULES } from "../_shared/project-room-evidence.mjs";
+import { PROPOSAL_REVIEW_SCHEMA } from "../_shared/project-room-proposal-review.mjs";
 
 export class ProviderFailure extends Error {
   constructor(
@@ -69,7 +71,7 @@ export async function searchAeo(question: string, index: number, company: { name
   };
 }
 
-export async function generate(role: string, prompt: string, secrets: any) {
+export async function generate(role: string, prompt: string, secrets: any, responseSchema?: object) {
   let text = "";
   let model = "";
   let usage: { input_tokens: number; output_tokens: number } | undefined;
@@ -164,13 +166,14 @@ export async function generate(role: string, prompt: string, secrets: any) {
         },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
+          ...(role === "chief" ? { systemInstruction: { parts: [{ text: CHIEF_SCOPE_RULES }] } } : {}),
           generationConfig: {
-            maxOutputTokens: 6000,
+            maxOutputTokens: role === "proposal" ? 14000 : ["chief", "proposal_review"].includes(role) ? 10000 : 6000,
             responseMimeType: "application/json",
-            ...(role === "proposal" ? { temperature: 0.2 } : {}),
-            // Compression needs a concise result, not the chief's default deep reasoning.
-            ...(role === "handoff" && /^gemini-3(?:[.-])/.test(model)
-              ? { temperature: 1, thinkingConfig: { thinkingLevel: "LOW" } }
+            ...(role === "proposal_review" ? { responseJsonSchema: PROPOSAL_REVIEW_SCHEMA } : responseSchema ? { responseJsonSchema: responseSchema } : {}),
+            // Reserve output for structured responses; synthesis/review still need reasoning.
+            ...(["handoff", "proposal", "chief", "proposal_review"].includes(role) && /^gemini-3(?:[.-])/.test(model)
+              ? { temperature: 1, thinkingConfig: { thinkingLevel: ["chief", "proposal_review"].includes(role) ? "MEDIUM" : "LOW" } }
               : {}),
           },
         }),
@@ -197,15 +200,25 @@ export async function generate(role: string, prompt: string, secrets: any) {
     };
   }
   if (!text.trim()) throw new Error(`${role} returned no text.`);
+  if (text.length > 80000) throw new Error(`${role} output exceeds the saved response limit; nothing was truncated.`);
   return {
-    text: sanitizePII(text),
+    text: sanitizePII(text, 80000),
     source: "api",
     model,
     ...(usage ? { usage } : {}),
     at: new Date().toISOString(),
   };
 }
-export async function createManus(prompt: string, secrets: any, title: string) {
+export async function createManus(prompt: string, secrets: any, title: string, attachment?: { filename: string; text: string } | null) {
+  if (new TextEncoder().encode(prompt).length > 4800) throw new Error("Manus briefing exceeds the request limit.");
+  const content: any[] = [{ type: "text", text: prompt }];
+  if (attachment) {
+    const bytes = new TextEncoder().encode(attachment.text);
+    if (attachment.filename !== "trellis-evidence.md" || bytes.length > 512000) throw new Error("Invalid Manus evidence attachment.");
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    content.push({ type: "file", filename: attachment.filename, file_data: `data:text/markdown;base64,${btoa(binary)}` });
+  }
   const data = await request(
     "https://api.manus.ai/v2/task.create",
     {
@@ -216,7 +229,7 @@ export async function createManus(prompt: string, secrets: any, title: string) {
       },
       body: JSON.stringify({
         message: {
-          content: [{ type: "text", text: prompt }],
+          content,
           enable_skills: [],
           force_skills: [],
         },
