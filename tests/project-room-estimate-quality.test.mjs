@@ -156,3 +156,15 @@ test('missing or outstanding input prevents a ready verdict',()=>{
  response.input_needed=['Confirm who approves the customer budget'];
  assert.equal(readProposalReview(JSON.stringify(response)).status,'needs_review');
 });
+import {reworkIssues} from '../supabase/functions/_shared/project-room-proposal-review.mjs';
+test('rework note shows corrections without repeating the detailed audit reasons',()=>{
+ const review={issues:['Remove the unsupported work.','The scope includes unapproved implementation.'],checks:{scope:{reason:'The scope includes unapproved implementation.'}}};
+ assert.deepEqual(reworkIssues(review),['Remove the unsupported work.']);
+ assert.deepEqual(reworkIssues({issues:['Only finding'],checks:{scope:{reason:'Only finding'}}}),['Only finding']);
+});
+test('new discovery drafts do not claim implementation completion or training on unbuilt features',()=>{
+ const draft=draftProposal(assessmentFixture());
+ assert.doesNotMatch(draft.deliverables,/Implementation is complete/);
+ assert.match(draft.deliverables,/not discovery deliverables/);
+ assert.match(draft.deliverables,/one report walkthrough/);
+});

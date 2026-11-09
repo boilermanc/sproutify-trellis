@@ -1,6 +1,6 @@
 import { invokeAI } from "../services/aiBackend";
 import { estimateRequest, applyWorkEstimate, estimateChanges } from "../services/projectRoomEstimate.mjs";
-import { proposalReviewRequest, readProposalReview } from "../supabase/functions/_shared/project-room-proposal-review.mjs";
+import { proposalReviewRequest, readProposalReview, reworkIssues } from "../supabase/functions/_shared/project-room-proposal-review.mjs";
 import React, { useEffect, useRef, useState } from "react";
 import type { ProjectRoom, RoomProposal } from "../services/projectRoomService";
 import {
@@ -154,7 +154,7 @@ export default function ProjectRoomProposal(
       {room.state.proposal_generation?.review?.status === "needs_review" && <section className="pr-panel" aria-label="Chief of staff review">
         <h2>Needs rework — Chief of staff found issues</h2>
         <p>Pricing is held back. Correct these issues, save the draft, then run the chief’s final review again.</p>
-        <ul>{room.state.proposal_generation.review.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>
+        <ul>{reworkIssues(room.state.proposal_generation.review).map((issue, index) => <li key={index}>{issue}</li>)}</ul>
         <h3>Input needed from you or Sheree</h3>
         {room.state.proposal_generation.review.input_needed?.length
           ? <ul>{room.state.proposal_generation.review.input_needed.map((question, index) => <li key={index}>{question}</li>)}</ul>

@@ -3,6 +3,12 @@ import { saveProposal } from './project-room-proposal.mjs';
 import { event } from './project-room.mjs';
 export const REVIEW_CHECKS = ['customer_roles', 'scope', 'duplicate_work', 'hours', 'outcome_handoff'];
 
+export function reworkIssues(review) {
+  const reasons = new Set(Object.values(review.checks || {}).map(check => check.reason));
+  const actions = review.issues.filter(issue => !reasons.has(issue));
+  return actions.length ? actions : review.issues;
+}
+
 // This review sees the finished estimate as well as the source material. A clean
 // provider response or structurally valid JSON alone never means quality passed.
 export function proposalReviewRequest(room, proposal, { discoveryOnly = true } = {}) {
