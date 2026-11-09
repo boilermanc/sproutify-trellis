@@ -8,6 +8,38 @@ const secrets = {
   anthropic_api_key: "test",
   gemini_api_key: "test",
 };
+Deno.test("OpenAI review can finish beyond 65 seconds but stops at its bounded deadline without retry", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  let elapsed = 70_000;
+  let attempts = 0;
+  AbortSignal.timeout = (deadline: number) => {
+    const controller = new AbortController();
+    if (elapsed >= deadline) controller.abort(new DOMException("Signal timed out.", "TimeoutError"));
+    return controller.signal;
+  };
+  globalThis.fetch = async (_url, init) => {
+    attempts++;
+    init?.signal?.throwIfAborted();
+    return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: "Completed independent review" }] }] });
+  };
+  try {
+    assert((await generate("openai", "original evidence", secrets)).text === "Completed independent review", "review survives the old deadline");
+    elapsed = 110_000;
+    let timedOut = false;
+    try { await generate("openai", "original evidence", secrets); }
+    catch (error) { timedOut = error instanceof DOMException && error.name === "TimeoutError"; }
+    assert(timedOut && attempts === 2, "deadline remains below the lease and no retry occurs");
+    elapsed = 55_000;
+    let searchTimedOut = false;
+    try { await searchAeo("buyer question", 0, { name: "ACA" }, "test"); }
+    catch (error) { searchTimedOut = error instanceof DOMException && error.name === "TimeoutError"; }
+    assert(searchTimedOut && attempts === 3, "search keeps its shorter deadline without retry");
+  } finally {
+    globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
+  }
+});
 Deno.test("handoff preparation uses Gemini JSON, retains usage and rejects incomplete output", async () => {
   const original = globalThis.fetch;
   let finishReason = "STOP";

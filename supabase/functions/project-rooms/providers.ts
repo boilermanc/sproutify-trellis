@@ -92,6 +92,8 @@ export async function generate(role: string, prompt: string, secrets: any) {
         }),
       },
       "OpenAI",
+      // Leave 40 seconds of the worker's 150-second lease for persistence.
+      110_000,
     );
     if (data.status !== "completed") {
       throw new Error("OpenAI output was incomplete; stopped for review.");
