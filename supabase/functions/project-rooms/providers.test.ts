@@ -16,7 +16,8 @@ Deno.test("handoff preparation uses Gemini JSON, retains usage and rejects incom
     assert(String(url).startsWith("https://generativelanguage.googleapis.com/"), "Gemini only");
     assert(body.contents[0].parts[0].text === "Full packet including middle disagreement", "full uncut input");
     assert(body.generationConfig.responseMimeType === "application/json", "structured response");
-    assert(body.generationConfig.temperature === 0.2, "bounded handoff temperature");
+    assert(body.generationConfig.temperature === 1, "Gemini 3 recommended temperature");
+    assert(body.generationConfig.thinkingConfig.thinkingLevel === "LOW", "compression reserves output for the packet");
     assert(!body.tools, "preparation has no external tools");
     return Response.json({ candidates: [{ finishReason, content: { parts: [{ text: '{"status":"needs_rework"}' }] } }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 30 } });
   };
@@ -26,7 +27,7 @@ Deno.test("handoff preparation uses Gemini JSON, retains usage and rejects incom
     finishReason = "MAX_TOKENS";
     let rejected = false;
     try { await generate("handoff", "Full packet including middle disagreement", secrets); }
-    catch (error) { rejected = error instanceof Error && error.message.includes("Needs rework") && error.message.includes("nothing was sent to Manus"); }
+    catch (error) { rejected = error instanceof Error && error.message.includes("MAX_TOKENS") && error.message.includes("nothing was sent to Manus"); }
     assert(rejected, "incomplete output never reaches handoff validation/dispatch");
   } finally { globalThis.fetch = original; }
 });

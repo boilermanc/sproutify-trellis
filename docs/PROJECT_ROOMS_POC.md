@@ -38,6 +38,13 @@ Saved connections in Settings are reused on the server. Optional Edge Function m
 
 ## Limits and recovery
 
+Gemini 3 handoff compression uses low thinking and temperature 1, keeping the
+6,000-token response cap and the separate 4,800-byte Manus input gate. The chief's
+review settings are unchanged. Incomplete Gemini responses log an allowlisted
+finish reason and token counts (never response text or credentials) so truncation
+can be distinguished from safety stops. See Google's [thinking configuration](https://ai.google.dev/gemini-api/docs/generate-content/thinking)
+and [Gemini 3 temperature guidance](https://ai.google.dev/gemini-api/docs/gemini-3).
+
 - Defaults: three rounds, fifteen generation requests. Hard limits: five rounds, twenty-five generation requests. A full automatic round uses five standard requests, plus one Gemini request for each oversized Manus handoff (up to two per round). Automatic AI-search probes use their own five slots when enabled. Polls do not consume generation-request slots. These are request limits, **not dollar or Manus credit caps**.
 - Requests are durably reserved before dispatch. The room uses an atomic 150-second lease plus version and lease-token fencing. Duplicate ticks cannot dispatch the same step. An expired in-flight request blocks for human recovery instead of automatically repeating paid work. Partial successful reviewer output is retained.
 - Pause/cancel stops subsequent Trellis steps and prevents stale completions overwriting the user's action. It cannot recall a sent request or stop an already running Manus task. Open that private task to stop it in Manus. A timed-out/uncertain task may still incur provider charges.

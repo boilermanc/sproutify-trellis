@@ -165,15 +165,25 @@ export async function generate(role: string, prompt: string, secrets: any) {
           generationConfig: {
             maxOutputTokens: 6000,
             responseMimeType: "application/json",
-            ...(["proposal", "handoff"].includes(role) ? { temperature: 0.2 } : {}),
+            ...(role === "proposal" ? { temperature: 0.2 } : {}),
+            // Compression needs a concise result, not the chief's default deep reasoning.
+            ...(role === "handoff" && /^gemini-3(?:[.-])/.test(model)
+              ? { temperature: 1, thinkingConfig: { thinkingLevel: "LOW" } }
+              : {}),
           },
         }),
       },
       "Chief of staff",
     );
     if (data.candidates?.[0]?.finishReason !== "STOP") {
+      const rawReason = data.candidates?.[0]?.finishReason;
+      const reason = ["MAX_TOKENS", "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "OTHER"].includes(rawReason) ? rawReason : "UNKNOWN";
+      console.warn(JSON.stringify({ service: "project-rooms", event: "gemini_output_incomplete", role, model, finish_reason: reason,
+        input_tokens: data.usageMetadata?.promptTokenCount || 0,
+        output_tokens: data.usageMetadata?.candidatesTokenCount || 0,
+        thinking_tokens: data.usageMetadata?.thoughtsTokenCount || 0 }));
       throw new Error(role === "handoff"
-        ? "Needs rework — Gemini handoff output was incomplete; nothing was sent to Manus."
+        ? `Needs rework — Gemini handoff output was incomplete (${reason}); nothing was sent to Manus.`
         : "Chief output was incomplete; stopped for review.");
     }
     text = (data.candidates?.[0]?.content?.parts || [])
