@@ -55,6 +55,10 @@ export function applyWorkEstimate(proposal, text, rateCents, evidence) {
   const baseline = estimateBaseline(proposal);
   let result;
   try { result = JSON.parse(text); } catch { throw new Error("The estimate was incomplete. Your current proposal has not changed. Try again."); }
+  // Some providers wrap the single estimate in an array. Unwrap only one
+  // object; all scope, evidence, arithmetic and reconciliation checks still run.
+  if (Array.isArray(result) && result.length === 1) result = result[0];
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error("The estimate needs one bounded task object.");
   if (result.error) throw new Error("More scope detail is needed before estimating. Review the research and scope.");
   if (!Array.isArray(result.tasks) || result.tasks.length < 3 || result.tasks.length > 20) throw new Error("The estimate needs a bounded task breakdown.");
   const strict = evidence.startsWith("ESTIMATE_POLICY_V2:");

@@ -24,6 +24,17 @@ function fixture() {
  return {room,draft,request,tasks};
 }
 
+test('single wrapped estimate uses every existing validator; multiple estimates and invalid tasks fail',()=>{
+ const {draft,request,tasks}=fixture();
+ const direct=applyWorkEstimate(draft,JSON.stringify({tasks}),15000,request.evidence);
+ const wrapped=applyWorkEstimate(draft,JSON.stringify([{tasks}]),15000,request.evidence);
+ assert.deepEqual(wrapped.items,direct.items);
+ assert.throws(()=>applyWorkEstimate(draft,JSON.stringify([{tasks},{tasks}]),15000,request.evidence),/one bounded task object/);
+ assert.throws(()=>applyWorkEstimate(draft,'[null]',15000,request.evidence),/one bounded task object/);
+ const invalid=structuredClone(tasks);invalid[0].work_units[0].hours=99;
+ assert.throws(()=>applyWorkEstimate(draft,JSON.stringify([{tasks:invalid}]),15000,request.evidence),/hours/);
+});
+
 test('ACA automatic draft leaves recommendations unpriced and preserves reviewable hours in Word',async()=>{
  const {room,draft,request,tasks}=fixture();
  const before=structuredClone(draft);
