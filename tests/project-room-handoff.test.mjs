@@ -188,3 +188,14 @@ test('attachment navigation may repeat an exact supplied URL but rejects invente
   assert.throws(()=>readCompressedHandoff(plan,JSON.stringify(value)),/not an exact URL/);
  }
 });
+
+test('oversized attachment briefing falls back to a source index without cutting evidence',()=>{
+ const plan=handoffPlan(room(),'review'),original=plan.attachment.text,value=response(plan);delete value.references;
+ value.source_summaries=Object.fromEntries(Object.keys(plan.sources).map(key=>[key,'Long navigation '.repeat(1000)]));
+ const navigation=readCompressedHandoff(plan,JSON.stringify(value));
+ assert.ok(Buffer.byteLength(navigation)<=4800);
+ assert.match(navigation,/Gemini navigation exceeded/);
+ for(const key of Object.keys(plan.sources)) assert.ok(navigation.includes(key));
+ assert.equal(plan.attachment.text,original);
+ assert.match(original,/Critical middle/);
+});

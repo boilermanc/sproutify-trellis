@@ -41,7 +41,17 @@ export function readCompressedHandoff(plan, text) {
     const allowedUrls = sourceUrls(plan.attachment.text);
     for (const url of sourceUrls(JSON.stringify(result))) if (!allowedUrls.has(url)) fail('briefing URL is not an exact URL in the full evidence attachment.');
     const prompt = `${plan.prefix}${JSON.stringify(result)}`;
-    if (byteLength(prompt) > MANUS_HANDOFF_BYTES) fail('the prepared briefing exceeds the Manus limit; nothing was truncated or sent.');
+    if (byteLength(prompt) > MANUS_HANDOFF_BYTES) {
+      // This is navigation only: all substantive evidence remains verbatim in
+      // the required attachment. Never slice evidence or a model claim mid-text.
+      const navigation = `${plan.prefix}${JSON.stringify({
+        objective:'Read the full attached evidence and complete the assigned review.',
+        source_sections:Object.keys(plan.sources),
+        notice:'Gemini navigation exceeded the prompt budget. Its summary is omitted; the complete original evidence and instructions are in trellis-evidence.md. Read every source section, preserve disagreements and report inaccessible evidence.',
+      })}`;
+      if (byteLength(navigation) > MANUS_HANDOFF_BYTES) fail('attachment navigation exceeds the Manus limit; narrow the assignment.');
+      return navigation;
+    }
     return prompt;
   }
   if (!Array.isArray(value.references) || !value.references.length) fail("source references are missing.");
