@@ -238,7 +238,7 @@ export function assessmentDocx(room, options = {}) {
   ];
   return Packer.toBlob(
     new Document({
-      creator: "Sproutify Trellis",
+      creator: options.brand || "Sproutify Trellis",
       title: `${title} ${options.footerLabel || "opportunity assessment"}`,
       styles: {
         default: {
@@ -299,13 +299,13 @@ export function assessmentDocx(room, options = {}) {
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: "TRELLIS",
+                    text: options.brand || "TRELLIS",
                     bold: true,
                     color: palette.ink,
                     size: 20,
                   }),
                   new TextRun({
-                    text: "  /  CLIENT INTELLIGENCE",
+                    text: options.brand ? "  /  CONSULTING" : "  /  CLIENT INTELLIGENCE",
                     color: palette.blue,
                     size: 16,
                     characterSpacing: 18,
@@ -330,7 +330,7 @@ export function assessmentDocx(room, options = {}) {
                 },
                 children: [
                   new TextRun({
-                    text: `Trellis  •  ${
+                    text: `${options.brand || "Trellis"}  •  ${
                       options.footerLabel || "Opportunity assessment"
                     }    |    `,
                     color: palette.muted,

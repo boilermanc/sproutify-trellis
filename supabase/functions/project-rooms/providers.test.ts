@@ -18,7 +18,7 @@ Deno.test('chief synthesis rules are above source evidence and do not restrict t
    else {
      assert(!body.systemInstruction,'price audit may inspect numerical hours');
      assert(body.generationConfig.responseJsonSchema.required.includes('input_needed'),'missing input must be explicit');
-     assert(body.generationConfig.responseJsonSchema.properties.checks.required.length===6,'all six review checks required');
+     assert(['customer_roles','scope','duplicate_work','hours','outcome_handoff','evidence','google_business','google_reviews','local_social','supplied_links','related_businesses'].every(k=>body.generationConfig.responseJsonSchema.properties.checks.required.includes(k)),'core and local evidence checks required');
    }
    return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'{}'}]}}]});
  };
@@ -258,3 +258,12 @@ Deno.test(
     }
   },
 );
+Deno.test('customer assessment budget supports full editorial output and rejects truncation', async () => {
+ const original=globalThis.fetch; let finishReason='STOP';
+ globalThis.fetch=async (_url,init)=>{const c=JSON.parse(String(init?.body)).generationConfig;
+ assert(c.maxOutputTokens===14000,'full document output budget');
+ assert(c.thinkingConfig.thinkingLevel==='LOW','bounded prose thinking');
+ assert(c.responseJsonSchema.required.includes('journey'),'full customer schema');
+ return Response.json({candidates:[{finishReason,content:{parts:[{text:'{}'}]}}]});};
+ try { await generate('customer_document','write assessment',secrets,{required:['journey']}); finishReason='MAX_TOKENS'; let rejected=false;try{await generate('customer_document','write assessment',secrets,{required:['journey']});}catch{rejected=true;}assert(rejected,'never save a partial customer document'); }finally{globalThis.fetch=original;}
+});

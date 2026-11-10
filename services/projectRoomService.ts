@@ -112,6 +112,7 @@ export interface ProjectRoom {
   error?: string;
   busy?: boolean;
   state: {
+    customer_documents?: CustomerDocument[];
     proposal?: RoomProposal;
     proposal_generation?: { status: "running" | "ready" | "failed" | "needs_review"; at: string; review?: { status: "passed" | "needs_review"; issues: string[]; input_needed?: string[] } };
     aeo?: AeoBaseline;
@@ -150,6 +151,12 @@ export interface ProjectRoom {
     notes: { text: string; at: string }[];
     events: { at: string; text: string }[];
   };
+}
+export interface CustomerDocument {
+  id: string; kind: 'assessment' | 'proposal'; status: 'draft' | 'approved';
+  content: Record<string,string>; pricing: any; source_key: string;
+  analysis_approval: {by: string; at: string; text: string; note: string};
+  created_at: string; updated_at: string; approved_at: string | null; approved_by: string | null;
 }
 export async function callRoom<T = { room: ProjectRoom }>(
   action: string,

@@ -1,4 +1,5 @@
 import { saveProposal, proposalSummary } from "../_shared/project-room-proposal.mjs";
+import { customerDocumentRequest, addCustomerDocument, updateCustomerDocument, CUSTOMER_DOCUMENT_SCHEMA } from "../_shared/project-room-customer-document.mjs";
 import { createAutomaticProposal } from "../_shared/project-room-auto-proposal.mjs";
 import { proposalReviewRequest, readProposalReview, recordProposalReview } from "../_shared/project-room-proposal-review.mjs";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -643,7 +644,18 @@ Deno.serve(async (req) => {
         409,
       );
     }
-    if (body.action === "proposal_review") {
+    if (body.action === "customer_document_create") {
+      const request = await customerDocumentRequest(room, body);
+      if ((room.state.customer_documents || []).length >= 12) throw new Error("This room already has 12 customer drafts. Edit an existing draft.");
+      const connections = await secretsFor(db);
+      if (!connections.gemini_api_key) throw new Error("Missing document drafting connection.");
+      const output = await generate("customer_document", request.contents, connections, CUSTOMER_DOCUMENT_SCHEMA);
+      addCustomerDocument(room, request, body.kind, output, user.id);
+      event(room, "User approved analysis for a separate customer document. Customer draft created for review; nothing sent.");
+    } else if (["customer_document_save", "customer_document_approve"].includes(body.action)) {
+      await updateCustomerDocument(room, body, user.id);
+      event(room, body.action === "customer_document_approve" ? "User approved a customer document for download. Nothing sent." : "User saved customer document edits; approval reset to draft.");
+    } else if (body.action === "proposal_review") {
       if (room.kind !== "client" || !room.state.proposal) throw new Error("Save a company proposal before final review.");
       if (["won", "lost", "proposal_sent"].includes(room.state.proposal.stage)) throw new Error("Move this proposal back to draft before reworking it.");
       const connections = await secretsFor(db);

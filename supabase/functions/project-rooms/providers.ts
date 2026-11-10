@@ -168,11 +168,11 @@ export async function generate(role: string, prompt: string, secrets: any, respo
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           ...(role === "chief" ? { systemInstruction: { parts: [{ text: CHIEF_SCOPE_RULES }] } } : {}),
           generationConfig: {
-            maxOutputTokens: role === "proposal" ? 14000 : ["chief", "proposal_review"].includes(role) ? 10000 : 6000,
+            maxOutputTokens: ["proposal", "customer_document"].includes(role) ? 14000 : ["chief", "proposal_review"].includes(role) ? 10000 : 6000,
             responseMimeType: "application/json",
             ...(role === "proposal_review" ? { responseJsonSchema: PROPOSAL_REVIEW_SCHEMA } : responseSchema ? { responseJsonSchema: responseSchema } : {}),
             // Reserve output for structured responses; synthesis/review still need reasoning.
-            ...(["handoff", "proposal", "chief", "proposal_review"].includes(role) && /^gemini-3(?:[.-])/.test(model)
+            ...(["handoff", "proposal", "chief", "proposal_review", "customer_document"].includes(role) && /^gemini-3(?:[.-])/.test(model)
               ? { temperature: 1, thinkingConfig: { thinkingLevel: ["chief", "proposal_review"].includes(role) ? "MEDIUM" : "LOW" } }
               : {}),
           },

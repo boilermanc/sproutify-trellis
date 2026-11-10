@@ -1,4 +1,5 @@
 import ProjectRoomProposal from "../components/ProjectRoomProposal";
+import ProjectRoomCustomerDocuments from "../components/ProjectRoomCustomerDocuments";
 import "./ProjectRooms.css";
 import ProjectRoomWorkspace, {
   roomNextStep,
@@ -365,6 +366,7 @@ export default function ProjectRooms({
       )}
       {page === "room" && room && (
         <>
+          {room.kind === "client" && ["overview", "proposal"].includes(roomView) && <ProjectRoomCustomerDocuments room={room} onError={reportError} onAction={(action,input)=>perform(action,input)} />}
           {roomView === "proposal" && room.kind === "client" && (
             <ProjectRoomProposal
               room={room}
