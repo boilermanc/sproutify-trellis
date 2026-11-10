@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { estimateRequest, applyWorkEstimate } from '../supabase/functions/_shared/project-room-estimate.mjs';
 import { draftProposal } from '../supabase/functions/_shared/project-room-proposal-draft.mjs';
 import { createAutomaticProposal } from '../supabase/functions/_shared/project-room-auto-proposal.mjs';
-import { createRoom, nextRound, applyChief, handoff } from '../supabase/functions/_shared/project-room.mjs';
+import { createRoom, nextRound, applyChief, handoffPlan } from '../supabase/functions/_shared/project-room.mjs';
 import { assessmentFixture } from './fixtures/company-assessment.mjs';
 import { saveProposal, proposalTotals } from '../supabase/functions/_shared/project-room-proposal.mjs';
 import { proposalDocx } from '../services/projectRoomProposal.mjs';
@@ -75,8 +75,8 @@ test('research gets explicit role boundaries and final review retains flawed que
  const room=createRoom({title:'ACA Landscaping',kind:'client',brief:'Kelly requests a website review after a reported loss of rankings.'});
  nextRound(room);
  for (const role of ['research','openai','anthropic','review','chief']) {
-  const prompt=handoff(room,role); assert.match(prompt,/Clint and Sheree are Trellis consultants/);
-  if(['research','review'].includes(role)) assert.ok(Buffer.byteLength(prompt)<=4800);
+  const plan=handoffPlan(room,role); assert.match(plan.full,/Clint and Sheree are Trellis consultants/);
+  if(plan.oversized) { assert.match(plan.prefix,/Clint and Sheree are Trellis consultants/); assert.ok(plan.availableBytes>=600); }
  }
  applyChief(room,{summary:'Customer decision-maker remains unknown.',questions:['Who is the final decision-maker (Clint, Sheree, or Kelly)?','Which services matter most?'],proposals:[],next_action:'ask_user'});
  assert.match(proposalReviewRequest(room,draftProposal(room)).contents,/Who is the final decision-maker \(Clint, Sheree, or Kelly\)/);

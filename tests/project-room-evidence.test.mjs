@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateChiefScope} from '../supabase/functions/_shared/project-room-evidence.mjs';
-import {proposalReviewRequest,readProposalReview} from '../supabase/functions/_shared/project-room-proposal-review.mjs';
+import {proposalReviewRequest,readProposalReview,PROPOSAL_REVIEW_SCHEMA} from '../supabase/functions/_shared/project-room-proposal-review.mjs';
+import {createRoom,nextRound,handoffPlan} from '../supabase/functions/_shared/project-room.mjs';
 import {passingReview} from './fixtures/proposal-review.mjs';
 test('chief cannot promote inconsistent effort ranges or a derived business age',()=>{
   for(const summary of ['Recommend 12–16 hours.','A 12-hour discovery.','22 years in business.']) assert.throws(()=>validateChiefScope({summary,proposals:[]}),/Needs rework/);
@@ -24,4 +25,42 @@ test('final review sees the full comparison baseline, including effort already i
   const prompt=proposalReviewRequest(room,{}).contents;
   assert.match(prompt,/comparison_baseline/);
   assert.match(prompt,/Includes AI search checks, report and walkthrough/);
+});
+
+test('company first pass and oversized Manus packet retain local research assignments; product rooms do not',()=>{
+ const company=createRoom({kind:'client',title:'Local company',brief:'Research a local company and its customer opportunities.'});
+ nextRound(company);
+ for(const role of ['research','openai','anthropic','review','chief']) {
+  const plan=handoffPlan(company,role);
+  assert.match(plan.full,/Google Business Profile/);
+  assert.match(plan.full,/Google customer reviews/);
+  assert.match(plan.full,/Local social media \(Facebook first\)/);
+  assert.match(plan.full,/sample size 0/);
+  assert.match(plan.full,/Not verified — follow-up needed/);
+  if(plan.oversized) {
+   assert.match(plan.prefix,/Required coverage: Google Business Profile/);
+   assert.match(plan.attachment.text,/up to 20 accessible recent reviews/);
+   assert.ok(plan.availableBytes>=600);
+  }
+ }
+ assert.match(handoffPlan(company,'chief').full,/Needs rework — local presence verification incomplete/);
+ const product=createRoom({kind:'product',title:'Feature',brief:'Research an internal feature specification and alternatives.'});nextRound(product);
+ assert.doesNotMatch(handoffPlan(product,'research').full,/Required company first-pass coverage/);
+});
+
+test('chief rejects missing local checks and cannot pass a declared unverified area',()=>{
+ for(const key of ['google_business','google_reviews','local_social']) {
+  assert.ok(PROPOSAL_REVIEW_SCHEMA.properties.checks.required.includes(key));
+  const missing=JSON.parse(passingReview().text);delete missing.checks[key];
+  assert.throws(()=>readProposalReview(JSON.stringify(missing)),/missing required checks/);
+  const blocked=JSON.parse(passingReview().text);
+  blocked.checks[key]={status:'needs_review',reason:`Needs rework: ${key} could not be verified because public access was blocked; supply the exact listing URL.`};
+  blocked.input_needed=['Provide the exact public listing/page URL or dated evidence.'];
+  const quality=readProposalReview(JSON.stringify(blocked));
+  assert.equal(quality.status,'needs_review');
+  assert.match(quality.issues.join(' '),/could not be verified/);
+ }
+ const prompt=proposalReviewRequest({title:'Client',state:{rounds:[]}},{}).contents;
+ assert.match(prompt,/Zero readable reviews or snippet-only evidence is unverified/);
+ assert.match(prompt,/lack of access alone cannot/);
 });

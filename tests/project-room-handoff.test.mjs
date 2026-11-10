@@ -33,12 +33,26 @@ function response(plan) {
 }
 const output = value => ({ text: JSON.stringify(value), model: "gemini-3-flash-preview", source: "api", usage: { input_tokens: 100, output_tokens: 200 } });
 
-test("small handoff bypasses Gemini with checklist and unchanged original evidence", async () => {
-  const r = room(false);
+test("small product handoff bypasses Gemini with checklist and unchanged original evidence", async () => {
+  const r = createRoom({kind:'product',title:'Feature',brief:'Investigate a small feature and its constraints.'});
+  nextRound(r);
   assert.equal(handoffPlan(r, "research").oversized, false);
   assert.match(handoff(r, "research"), /Handoff checklist/);
   assert.equal(await prepareManusHandoff(r, "research", { generate: () => assert.fail(), checkpoint: () => assert.fail() }), false);
   assert.equal(r.state.calls_used, 0);
+});
+
+test('company first-pass checklist survives Gemini preparation within the Manus prompt budget',async()=>{
+ const r=room(false), plan=handoffPlan(r,'research');
+ assert.equal(plan.oversized,true);
+ const sourceSummaries=Object.fromEntries(Object.keys(plan.sources).map(key=>[key,'Company context; local presence still needs verification.']));
+ const prepared={status:'ready',objective:'Research the company.',facts:'Only supplied context is known.',assumptions:'Listing identity unconfirmed.',disagreements:'No reviews yet.',missing_information:'Google and Facebook observations needed.',next_assignment:'Read the full checklist and collect public evidence.',source_summaries:sourceSummaries};
+ await prepareManusHandoff(r,'research',{checkpoint:async()=>{},generate:async()=>output(prepared)});
+ const prompt=handoff(r,'research');
+ assert.ok(Buffer.byteLength(prompt)<=MANUS_HANDOFF_BYTES);
+ assert.match(prompt,/Required coverage: Google Business Profile/);
+ assert.match(handoffPlan(r,'research').attachment.text,/number of reviews actually read/);
+ assert.equal(r.state.calls_used,1);
 });
 
 test("oversized comparison preserves middle evidence, quotes, disagreement, UTF-8 budget and originals", async () => {
