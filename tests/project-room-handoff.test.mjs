@@ -180,6 +180,9 @@ test('attachment navigation may repeat an exact supplied URL but rejects invente
  value.source_summaries=Object.fromEntries(Object.keys(plan.sources).map(key=>[key,'Read the source attachment.']));
  value.next_assignment='Inspect https://www.facebook.com/ACALandscaping directly.';
  assert.doesNotThrow(()=>readCompressedHandoff(plan,JSON.stringify(value)));
+ const rootPlan={...plan,attachment:{...plan.attachment,text:plan.attachment.text+' http://www.ACALandscaping.com/'}};
+ value.next_assignment='Inspect http://www.acalandscaping.com.';
+ assert.doesNotThrow(()=>readCompressedHandoff(rootPlan,JSON.stringify(value)));
  for(const url of ['https://www.facebook.com/ACALandscapingFake','https://www.facebook.com.evil.example/ACALandscaping']) {
   value.next_assignment=`Inspect ${url}`;
   assert.throws(()=>readCompressedHandoff(plan,JSON.stringify(value)),/not an exact URL/);

@@ -4,7 +4,10 @@ export const HANDOFF_CHECKLIST = "Handoff checklist: state the objective, facts 
 export const byteLength = text => new TextEncoder().encode(text).length;
 const fields = ["objective", "facts", "assumptions", "disagreements", "missing_information", "next_assignment"];
 const fail = detail => { throw new Error(`Needs rework — Manus handoff: ${detail}`); };
-const sourceUrls = text => new Set((String(text).match(/https?:\/\/[^\s"'<>\\)]+/g) || []).map(url=>url.replace(/[.,;\]\}]+$/g,'')));
+const sourceUrls = text => new Set((String(text).match(/https?:\/\/[^\s"'<>\\)]+/g) || []).map(url=>{
+  const cleaned=url.replace(/[.,;\]\}]+$/g,'');
+  try {return new URL(cleaned).href;} catch {return cleaned;}
+}));
 
 export function handoffSchema(plan) {
   return { type: 'object', properties: {
