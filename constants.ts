@@ -1,4 +1,5 @@
 import PROJECT_ROOMS_SQL_SCHEMA from './supabase/migrations/20261106032348_project_rooms.sql?raw';
+import PROJECT_ROOM_SLACK_SQL_SCHEMA from './supabase/migrations/20261109170937_project_room_slack.sql?raw';
 import PROJECT_ROOM_SHARED_SQL_SCHEMA from './supabase/migrations/20261107222523_project_room_shared_prospects.sql?raw';
 import SHARED_X_SQL_SCHEMA from './supabase/migrations/20261020140327_shared_x_tracking.sql?raw';
 
@@ -3022,6 +3023,7 @@ ${TIKTOK_METRICS_SQL_SCHEMA}
 ${SHARED_X_SQL_SCHEMA}
 ${PROJECT_ROOMS_SQL_SCHEMA}
 ${PROJECT_ROOM_SHARED_SQL_SCHEMA}
+${PROJECT_ROOM_SLACK_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {
