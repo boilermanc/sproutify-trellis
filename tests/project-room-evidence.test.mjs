@@ -49,7 +49,7 @@ test('company first pass and oversized Manus packet retain local research assign
 });
 
 test('chief rejects missing local checks and cannot pass a declared unverified area',()=>{
- for(const key of ['google_business','google_reviews','local_social']) {
+ for(const key of ['google_business','google_reviews','local_social','supplied_links','related_businesses']) {
   assert.ok(PROPOSAL_REVIEW_SCHEMA.properties.checks.required.includes(key));
   const missing=JSON.parse(passingReview().text);delete missing.checks[key];
   assert.throws(()=>readProposalReview(JSON.stringify(missing)),/missing required checks/);
@@ -63,4 +63,19 @@ test('chief rejects missing local checks and cannot pass a declared unverified a
  const prompt=proposalReviewRequest({title:'Client',state:{rounds:[]}},{}).contents;
  assert.match(prompt,/Zero readable reviews or snippet-only evidence is unverified/);
  assert.match(prompt,/lack of access alone cannot/);
+});
+
+test('ACA supplied links and Muse leads remain attributed evidence across research and chief handoffs',()=>{
+ const room=createRoom({kind:'client',title:'ACA comparison',brief:'Investigate ACA and sister-brand lead Braemor. Supplied link https://www.facebook.com/ACALandscaping. Muse claims shared new address, different ratings; verify independently.'});nextRound(room);
+ for(const role of ['research','review','chief']) {
+  const plan=handoffPlan(room,role);
+  assert.match(plan.full,/facebook.com\/ACALandscaping/);
+  assert.match(plan.full,/Search failure never overrides a supplied link/);
+  assert.match(plan.full,/current versus former versus announced\/future/);
+  assert.match(plan.full,/never pool or transfer/);
+  assert.match(plan.full,/AI\/Muse findings are leads to verify/);
+  if(plan.attachment) {assert.match(plan.prefix,/Inspect supplied social links directly/);assert.ok(plan.availableBytes>=600);}
+ }
+ const prompt=proposalReviewRequest(room,{}).contents;
+ assert.match(prompt,/pooled metrics/);assert.match(prompt,/No named related business can be silently omitted/);
 });

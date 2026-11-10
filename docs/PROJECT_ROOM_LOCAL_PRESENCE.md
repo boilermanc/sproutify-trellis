@@ -29,6 +29,16 @@ Existing rooms/proposals are not rewritten. New runs and rechecks use these rule
 completing blocked checks requires accessible public or user-supplied evidence.
 This is a one-time assessment and does not automatically add billable work.
 
+Supplied public social links must be inspected directly and their disposition
+recorded before search results can support an absence claim. Named sister brands
+need separate entity records, sourced relationships, dated location reconciliation
+and separate ratings/social metrics. AI/Muse reports remain attributed leads until
+primary sources confirm them. The chief requires supplied_links and
+related_businesses checks in addition to the three original coverage checks.
+Unresolved links, identity conflicts, unsupported ownership claims and transferred
+metrics must be flagged for rework. The policy version invalidates prior prepared
+handoffs so the new requirements reach Manus.
+
 Validation: npm run test:project-rooms; npx tsc --noEmit; Deno check of project-rooms;
 production build. Regression coverage includes missing/blocked final-review
 checks, first-pass and attachment coverage, and exclusion from feature rooms.
