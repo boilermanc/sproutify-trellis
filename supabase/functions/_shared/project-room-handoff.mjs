@@ -4,6 +4,7 @@ export const HANDOFF_CHECKLIST = "Handoff checklist: state the objective, facts 
 export const byteLength = text => new TextEncoder().encode(text).length;
 const fields = ["objective", "facts", "assumptions", "disagreements", "missing_information", "next_assignment"];
 const fail = detail => { throw new Error(`Needs rework — Manus handoff: ${detail}`); };
+const sourceUrls = text => new Set((String(text).match(/https?:\/\/[^\s"'<>\\)]+/g) || []).map(url=>url.replace(/[.,;\]\}]+$/g,'')));
 
 export function handoffSchema(plan) {
   return { type: 'object', properties: {
@@ -34,7 +35,8 @@ export function readCompressedHandoff(plan, text) {
     const keys = Object.keys(plan.sources);
     if (Object.keys(value.source_summaries).length !== keys.length || keys.some(key => typeof value.source_summaries[key] !== 'string' || !value.source_summaries[key].trim())) fail('source summaries must cover the exact source keys.');
     result.source_summaries = value.source_summaries;
-    if (/https?:\/\//.test(JSON.stringify(result))) fail('put source URLs in the full attachment, not generated prose.');
+    const allowedUrls = sourceUrls(plan.attachment.text);
+    for (const url of sourceUrls(JSON.stringify(result))) if (!allowedUrls.has(url)) fail('briefing URL is not an exact URL in the full evidence attachment.');
     const prompt = `${plan.prefix}${JSON.stringify(result)}`;
     if (byteLength(prompt) > MANUS_HANDOFF_BYTES) fail('the prepared briefing exceeds the Manus limit; nothing was truncated or sent.');
     return prompt;

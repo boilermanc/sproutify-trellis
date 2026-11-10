@@ -173,3 +173,15 @@ test('full evidence attachment preserves scope caps and blocked rechecks without
   delete value.source_summaries.openai;
   assert.throws(()=>readCompressedHandoff(plan,JSON.stringify(value)),/source summaries/);
 });
+
+test('attachment navigation may repeat an exact supplied URL but rejects invented destinations',()=>{
+ const r=room();r.brief+=' Supplied page https://www.facebook.com/ACALandscaping.';
+ const plan=handoffPlan(r,'research'),value=response(plan);delete value.references;
+ value.source_summaries=Object.fromEntries(Object.keys(plan.sources).map(key=>[key,'Read the source attachment.']));
+ value.next_assignment='Inspect https://www.facebook.com/ACALandscaping directly.';
+ assert.doesNotThrow(()=>readCompressedHandoff(plan,JSON.stringify(value)));
+ for(const url of ['https://www.facebook.com/ACALandscapingFake','https://www.facebook.com.evil.example/ACALandscaping']) {
+  value.next_assignment=`Inspect ${url}`;
+  assert.throws(()=>readCompressedHandoff(plan,JSON.stringify(value)),/not an exact URL/);
+ }
+});
