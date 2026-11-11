@@ -123,3 +123,10 @@ The shared segment field Records Added (current collection) also supports
 custom numeric rules; unavailable counts fail all collection rules. The preset
 is appended to preserve existing preset IDs. Tests: profile-collection.test.mjs
 and the expanded profile-subscriptions-browser.mjs fixture.
+
+Deployment recovery: GitHub returned internal startup failures before creating
+any jobs for the onboarding release. The deployment concurrency group was
+renamed from deploy-trellis to trellis-production-deploy to avoid the stuck
+queue state, retaining cancel-in-progress and single-group serialization.
+The documented production SSH command is `ssh -p 2222 sproutify-prod`; the
+endpoint timed out before authentication from this environment during recovery.
