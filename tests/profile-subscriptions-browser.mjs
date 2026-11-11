@@ -23,9 +23,11 @@ try {
   assert.equal(await rows.count(), 2);
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await page.getByLabel('Sort profiles').selectOption('signup-oldest');
-  assert.match(await rows.first().innerText(), /Collector 0\b/);
+  assert.match(await rows.first().innerText(), /collector0@example\.test/);
+  assert.ok(!(await rows.first().innerText()).includes('null null'));
   await rows.first().click();
   await page.getByRole('region', { name: 'Signup and subscriptions' }).waitFor();
+  await page.getByRole('heading', { name: 'collector0@example.test', exact: true }).waitFor();
   await page.reload();
   await page.getByRole('button', { name: 'Rekkrd', exact: true }).click();
   await page.getByLabel('Sort profiles').selectOption('ending');

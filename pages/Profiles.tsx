@@ -1,3 +1,4 @@
+import { profileDisplayName } from '../services/profileIdentity.mjs';
 import { ProfileMembership } from '../components/ProfileMembership';
 import { currentSubscription, subscriptionState, compareProfileSubscriptions } from '../services/profileSubscriptions.mjs';
 
@@ -622,9 +623,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 onClick={() => setSelectedProfileId(profile.id)}
                 className={`w-full text-left flex items-center gap-3 p-4 transition ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : 'hover:bg-slate-50/80'}`}
               >
-                <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
+                <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profileDisplayName(profile).charAt(0).toUpperCase()}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-slate-800 text-sm truncate">{profile.first_name}</p>
+                  <p className="font-black text-slate-800 text-sm truncate">{profileDisplayName(profile)}</p>
                   <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
                   {profile.branches.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
@@ -645,12 +646,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 className="w-full text-left flex items-center gap-3 p-4 hover:bg-slate-50/80 transition"
               >
                 <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {(profile.first_name || profile.email || '?').charAt(0).toUpperCase()}
+                  {profileDisplayName(profile).charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-slate-800 text-sm truncate">
-                    {profile.first_name || profile.email.split('@')[0]}
-                    {profile.last_name ? ` ${profile.last_name}` : ''}
+                    {profileDisplayName(profile)}
                     {profile.order_stats && profile.order_stats.ltv >= 50 && (
                       <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">VIP</span>
                     )}
@@ -711,9 +711,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-colors cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
                   <td className="px-10 py-6">
                     <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profile.first_name.charAt(0)}</div>
+                      <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profileDisplayName(profile).charAt(0).toUpperCase()}</div>
                       <div>
-                        <p className="font-black text-slate-800 text-sm">{profile.first_name}</p>
+                        <p className="font-black text-slate-800 text-sm">{profileDisplayName(profile)}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
                       </div>
                     </div>
@@ -744,12 +744,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   <td className="px-10 py-6">
                     <div className="flex items-center space-x-4">
                       <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {(profile.first_name || profile.email || '?').charAt(0).toUpperCase()}
+                        {profileDisplayName(profile).charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <p className="font-black text-slate-800 text-sm">
-                          {profile.first_name || profile.email.split('@')[0]}
-                          {profile.last_name && ` ${profile.last_name}`}
+                          {profileDisplayName(profile)}
                           {profile.order_stats && profile.order_stats.ltv >= 50 && (
                             <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
                               VIP
@@ -923,9 +922,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             </div>
             <div className="p-10 space-y-10 flex-1 overflow-y-auto custom-scrollbar">
                <div className="flex items-center space-x-6">
-                  <div className={`w-24 h-24 rounded-sm flex items-center justify-center text-4xl font-black ${selectedProfile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{selectedProfile.first_name.charAt(0)}</div>
+                  <div className={`w-24 h-24 rounded-sm flex items-center justify-center text-4xl font-black ${selectedProfile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profileDisplayName(selectedProfile).charAt(0).toUpperCase()}</div>
                   <div>
-                    <h4 className="text-2xl font-black text-slate-800">{selectedProfile.first_name}</h4>
+                    <h4 className="text-2xl font-black text-slate-800">{profileDisplayName(selectedProfile)}</h4>
                     <p className="text-sm text-slate-400 font-mono mb-4">{selectedProfile.email}</p>
                     <div className="space-y-2">
                        <div className="px-4 py-2 bg-slate-50 border border-slate-100 text-slate-400 rounded-sm text-[10px] font-black uppercase tracking-widest italic flex items-center">

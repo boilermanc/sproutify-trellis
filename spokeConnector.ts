@@ -1,3 +1,4 @@
+import { profileText } from './services/profileIdentity.mjs';
 import { isRekkrdConnection } from './supabase/functions/_shared/rekkrd-profile-metrics.mjs';
 import { attachProfileSubscriptions } from './services/profileSubscriptions.mjs';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -351,13 +352,13 @@ export async function fetchSpokeProfiles(
           profile.id = String(row[mapping.id]);
         }
         if (mapping.first_name && row[mapping.first_name] !== undefined) {
-          profile.first_name = String(row[mapping.first_name]);
+          profile.first_name = profileText(row[mapping.first_name]);
         }
         if (mapping.last_name && row[mapping.last_name] !== undefined) {
-          profile.last_name = String(row[mapping.last_name]);
+          profile.last_name = profileText(row[mapping.last_name]);
         }
         if (mapping.phone && row[mapping.phone] !== undefined) {
-          profile.phone = String(row[mapping.phone]);
+          profile.phone = profileText(row[mapping.phone]);
         }
         const toBoolean = (value: unknown): boolean => value === true || value === 1 || value === 'true' || value === '1';
         const hasDigestOptIn = !!mapping.email_digest_optin && row[mapping.email_digest_optin] !== undefined;
@@ -373,7 +374,7 @@ export async function fetchSpokeProfiles(
           profile.subscribed = toBoolean(row[mapping.subscribed]);
         }
         if (mapping.created_at && row[mapping.created_at] !== undefined) {
-          profile.created_at = String(row[mapping.created_at]);
+          profile.created_at = profileText(row[mapping.created_at]);
         }
         // Classification tags (e.g. ATL "School Partner"). PostgREST returns a
         // text[] column as a JSON array; keep only string members, drop nulls.

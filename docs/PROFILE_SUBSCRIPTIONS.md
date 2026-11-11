@@ -98,3 +98,9 @@ rows to the source aggregates: 26,573 records, 38 zeros, max 7,176, 53 active
 and 25 inactive. The expired-trial date fallback was then corrected so six
 known historical trial dates are preserved. The first release commit was
 877ee15 and GitHub Actions run 43073035011 succeeded.
+
+Missing names are normalized before profile enrichment. Desktop rows, mobile
+cards and the detail drawer use a shared display helper: valid name parts first,
+then the full email address. Null, blank, and serialized null/undefined names
+are treated as absent. Avatars use the first letter of that same display value.
+Check with `node --test tests/profile-identity.test.mjs` and the browser fixture.

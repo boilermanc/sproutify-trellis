@@ -1,3 +1,4 @@
+import { profileDisplayName } from '../services/profileIdentity.mjs';
 import { ProfileMembership } from '../components/ProfileMembership';
 import React from 'react';
 import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain, Link2, ExternalLink } from 'lucide-react';
@@ -40,9 +41,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">
-              {profile.first_name || profile.last_name
-                ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
-                : 'Customer Profile'}
+              {profileDisplayName(profile)}
             </h2>
             <p className="text-sm text-gray-500">{profile.email}</p>
           </div>
