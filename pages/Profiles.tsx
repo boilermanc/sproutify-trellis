@@ -1,3 +1,4 @@
+import { matchesCollectionFilter } from '../services/profileCollection.mjs';
 import { profileDisplayName } from '../services/profileIdentity.mjs';
 import { ProfileMembership } from '../components/ProfileMembership';
 import { currentSubscription, subscriptionState, compareProfileSubscriptions } from '../services/profileSubscriptions.mjs';
@@ -123,6 +124,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [searchTerm, setSearchTerm] = useState('');
   const [planFilter, setPlanFilter] = useState('all');
   const [activityFilter, setActivityFilter] = useState('all');
+  const [collectionFilter, setCollectionFilter] = useState('all');
   const [profileSort, setProfileSort] = useState('signup-newest');
   const planOptions = useMemo(() => [...new Set(federatedProfiles.map(p => currentSubscription(p.subscription_records)?.plan).filter(Boolean))].sort() as string[], [federatedProfiles]);
   useEffect(() => { setPlanFilter('all'); }, [selectedSpokeIds]);
@@ -277,13 +279,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     )
     .filter(p => planFilter === 'all' || (planFilter === '__unknown' ? !currentSubscription(p.subscription_records)?.plan : currentSubscription(p.subscription_records)?.plan === planFilter))
     .filter(p => activityFilter === 'all' || subscriptionState(currentSubscription(p.subscription_records)) === activityFilter)
+    .filter(p => matchesCollectionFilter(p, collectionFilter))
     .sort((a, b) => compareProfileSubscriptions(a, b, profileSort));
-  }, [federatedProfiles, searchTerm, planFilter, activityFilter, profileSort]);
+  }, [federatedProfiles, searchTerm, planFilter, activityFilter, collectionFilter, profileSort]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter, selectedSpokeIds, planFilter, activityFilter, profileSort, dataSource]);
+  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter, selectedSpokeIds, planFilter, activityFilter, collectionFilter, profileSort, dataSource]);
 
   // Pagination calculations
   const totalPages = Math.ceil((dataSource === 'federated' ? filteredFederatedProfiles.length : filtered.length) / pageSize);
@@ -561,7 +564,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
             {dataSource === 'local'
               ? `Showing ${filtered.length} of ${profiles.filter(p => p.status === 'active').length} profiles`
-              : searchTerm.trim() || planFilter !== 'all' || activityFilter !== 'all'
+              : searchTerm.trim() || planFilter !== 'all' || activityFilter !== 'all' || collectionFilter !== 'all'
                 ? `Showing ${filteredFederatedProfiles.length} of ${federatedProfiles.length} federated profiles`
                 : `Showing ${federatedProfiles.length} federated profiles`
             }
@@ -583,13 +586,19 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 <option value="all">All activity</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="unknown">Unknown</option>
               </select>
             </label>
+            <label className="text-xs font-bold text-slate-600">Collection
+              <select aria-label="Collection filter" value={collectionFilter} onChange={e => setCollectionFilter(e.target.value)} className="block mt-1 border rounded p-2">
+                <option value="all">All collections</option><option value="empty">No records yet</option><option value="has_records">Has records</option><option value="unknown">Count unknown</option>
+              </select>
+            </label>
             <label className="text-xs font-bold text-slate-600">Sort profiles
               <select aria-label="Sort profiles" value={profileSort} onChange={e => setProfileSort(e.target.value)} className="block mt-1 border rounded p-2">
                 <option value="signup-newest">Signup: newest first</option><option value="signup-oldest">Signup: oldest first</option><option value="plan">Plan: A–Z</option><option value="active">Active first</option><option value="ending">End date: earliest first</option><option value="records">Records added: most first</option>
               </select>
             </label>
-            <button onClick={() => { setPlanFilter('all'); setActivityFilter('all'); setSearchTerm(''); }} className="text-xs font-bold text-emerald-700">Clear filters</button>
+            <button onClick={() => { setPlanFilter('all'); setActivityFilter('all'); setCollectionFilter('all'); setSearchTerm(''); }} className="text-xs font-bold text-emerald-700">Clear filters</button>
           </div>
+          {collectionFilter === 'empty' && <p className="text-xs text-emerald-800">Only confirmed empty collections are included. To target Rekkrd users, select Rekkrd in Campaign Builder and choose the saved audience “Rekkrd: No records yet”. Email consent and suppression still apply.</p>}
           <p className="text-xs text-slate-500">Activity uses the reported subscription status and period dates, not email consent or recent app usage. Period ends may renew. Missing data stays unknown.</p>
         </div>
       )}

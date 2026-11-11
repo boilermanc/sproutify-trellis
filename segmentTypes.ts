@@ -95,6 +95,7 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   { id: 'sms_notifications', label: 'SMS Notifications', type: 'boolean', category: 'profile', path: 'sms_notifications' },
   { id: 'created_at', label: 'Customer Since', type: 'date', category: 'profile', path: 'created_at' },
   { id: 'spoke', label: 'Source/Spoke', type: 'string', category: 'profile', path: '_spoke_name' },
+  { id: 'collection_record_count', label: 'Records Added (current collection)', type: 'number', category: 'profile', path: 'collection_record_count' },
   { id: 'referral_source', label: 'Referral Source', type: 'string', category: 'profile', path: 'referral_source' },
   // Classification tags carried from the spoke's customer_tags (ATL). Use the
   // 'includes'/'does not include' operators with a tag name, e.g. "School Partner".
@@ -387,6 +388,22 @@ export const PRESET_SEGMENTS: Omit<Segment, 'id' | 'created_at' | 'updated_at'>[
     },
     recommended_branches: ['atlurbanfarms'],
     rule_groups: [],
+  },
+  {
+    name: 'Rekkrd: No records yet',
+    description: 'Rekkrd users with a confirmed empty collection. Unknown counts are excluded; email consent still applies.',
+    icon: 'sparkles',
+    color: 'emerald',
+    is_preset: true,
+    recommended_branches: ['rekkrd'],
+    rule_groups: [{
+      id: 'rekkrd-empty-collection-group',
+      join: 'AND',
+      rules: [
+        { id: 'rekkrd-empty-collection-source', field: 'spoke', operator: 'is', value: 'Rekkrd' },
+        { id: 'rekkrd-empty-collection-count', field: 'collection_record_count', operator: 'equals', value: 0 },
+      ],
+    }],
   },
 ];
 

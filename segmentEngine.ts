@@ -1,3 +1,4 @@
+import { hasKnownCollectionCount } from './services/profileCollection.mjs';
 import { EnrichedProfile } from './types';
 import {
   Segment,
@@ -212,6 +213,8 @@ const evaluateRule = (
 ): boolean => {
   const field = SEGMENT_FIELDS.find(f => f.id === rule.field);
   if (!field) return false;
+  // Collection read failures must never become zero through numeric coercion.
+  if (field.id === 'collection_record_count' && !hasKnownCollectionCount(profile)) return false;
 
   if (field.category === 'engagement') {
     // No engagement data supplied — rules in this category simply don't match, so

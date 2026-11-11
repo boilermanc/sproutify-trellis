@@ -104,3 +104,22 @@ cards and the detail drawer use a shared display helper: valid name parts first,
 then the full email address. Null, blank, and serialized null/undefined names
 are treated as absent. Avatars use the first letter of that same display value.
 Check with `node --test tests/profile-identity.test.mjs` and the browser fixture.
+
+## Empty-collection onboarding audience
+
+Profiles → Live Spokes → Rekkrd → Collection → No records yet filters only
+confirmed zero counts. Has records and Count unknown are also available. The
+filter combines with search, plan and activity, and resets pagination. An empty
+collection means no records currently stored; a user who deleted their collection
+also qualifies. Unknown/failed counts never qualify as zero.
+
+For an onboarding campaign, select Rekkrd in Campaign Builder, then the saved
+audience “Rekkrd: No records yet”. The same preset is available on Segments,
+where Send Campaign uses the existing handoff. Segment membership is evaluated
+from the latest loaded federated counts; refresh Profiles before reviewing a
+campaign. Consent and suppression checks still apply, so the sendable count can
+be lower than the Profiles count. Nothing is sent by using the filter or preset.
+The shared segment field Records Added (current collection) also supports
+custom numeric rules; unavailable counts fail all collection rules. The preset
+is appended to preserve existing preset IDs. Tests: profile-collection.test.mjs
+and the expanded profile-subscriptions-browser.mjs fixture.
