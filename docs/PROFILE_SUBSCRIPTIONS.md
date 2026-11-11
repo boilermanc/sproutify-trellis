@@ -64,8 +64,10 @@ with zero records; largest collection 7,176. No album owners or subscription
 users failed the profile-ID join. Running the production date/status helpers
 against anonymized live per-profile values classified 53 as active and 25 as
 inactive at verification time. Nineteen source rows were still trialing despite
-their trial end having passed. Eight subscriptions had no applicable end date;
-the UI preserves Unknown for those dates. These totals can change.
+their trial end having passed. Six expired subscriptions retain a known trial_end and show that trial date
+when no billing-period end exists. Two active subscriptions have no applicable
+end date; the UI preserves Unknown for those dates. An old trial date does not
+override an explicitly active non-App-Store grant. These totals can change.
 
 Publishing requires explicit approval for the Trellis hub `spoke-query`
 deployment and matching frontend release. No DB migration or mapping write is
@@ -90,3 +92,9 @@ release preparation uses an isolated checkout of deployed main 96606dd; only
 Profiles UI, count/subscription helpers, relevant types, tests and this guide
 are included. The user approved the scoped frontend commit and push to main
 to trigger the existing GitHub Actions deployment. No data, credentials or mappings changed.
+
+Live frontend verification after the first deployment matched all 78 rendered
+rows to the source aggregates: 26,573 records, 38 zeros, max 7,176, 53 active
+and 25 inactive. The expired-trial date fallback was then corrected so six
+known historical trial dates are preserved. The first release commit was
+877ee15 and GitHub Actions run 43073035011 succeeded.

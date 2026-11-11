@@ -57,6 +57,14 @@ test('App Store dates/status apply only to App Store subscriptions', () => {
   assert.equal(subscriptionState({ ...iap, provider: 'none' }, now), 'active');
 });
 
+test('expired trials keep their known trial end without expiring active grants from old trial dates', () => {
+  const oldTrial = { ...active, status: 'expired', trial_end: '2026-08-01', expires_at: null };
+  assert.equal(subscriptionEnd(oldTrial), '2026-08-01');
+  assert.equal(subscriptionEndLabel(oldTrial, now), 'Trial ended');
+  assert.equal(subscriptionEnd({ ...oldTrial, status: 'active' }), null);
+  assert.equal(subscriptionState({ ...oldTrial, status: 'active' }, now), 'active');
+});
+
 test('collection counts count copies, ignore ownerless rows, and sort zero above unknown', () => {
   assert.deepEqual(countCollectionRecords([{ user_id: 'a' }, { user_id: 'a' }, { user_id: 'b' }, { user_id: null }]), [{ customer_id: 'a', record_count: 2 }, { customer_id: 'b', record_count: 1 }]);
   assert.ok(compareProfileSubscriptions({ collection_record_count: 5 }, { collection_record_count: 0 }, 'records') < 0);

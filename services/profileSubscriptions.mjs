@@ -28,11 +28,13 @@ export function subscriptionEnd(subscription) {
   if (!subscription) return undefined;
   if (subscription.provider === 'app_store') return subscription.iap_current_period_end || subscription.expires_at;
   if (['trialing', 'trial'].includes(subscriptionSourceStatus(subscription))) return subscription.trial_end || subscription.expires_at;
+  if (subscriptionSourceStatus(subscription) === 'expired' && !subscription.expires_at) return subscription.trial_end;
   return subscription.expires_at;
 }
 
 export function subscriptionEndLabel(subscription, now = Date.now()) {
-  const trial = ['trialing', 'trial'].includes(subscriptionSourceStatus(subscription));
+  const trial = ['trialing', 'trial'].includes(subscriptionSourceStatus(subscription)) ||
+    (subscriptionSourceStatus(subscription) === 'expired' && subscription.provider !== 'app_store' && !subscription.expires_at && !!subscription.trial_end);
   const past = dateValue(subscriptionEnd(subscription));
   return `${trial ? 'Trial' : 'Period'} ${past !== null && past <= now ? 'ended' : 'ends'}`;
 }
