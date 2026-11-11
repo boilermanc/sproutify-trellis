@@ -1,6 +1,8 @@
+import { isRekkrdConnection } from './supabase/functions/_shared/rekkrd-profile-metrics.mjs';
+import { attachProfileSubscriptions } from './services/profileSubscriptions.mjs';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { supabase as hubClient } from './lib/supabase';
-import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress } from './types';
+import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress, ProfileSubscription } from './types';
 import { loadNameCache, predictDemographicsSync } from './demographicsService';
 import { EventRegistrationRecord, fetchEventAudience, isEventNoticeEligibleStatus } from './services/eventAudienceService';
 
@@ -126,18 +128,7 @@ export interface NormalizedOrderItem {
   _spoke_name: string;
 }
 
-export interface NormalizedSubscription {
-  id: string;
-  customer_id?: string;
-  email?: string;
-  status?: string;
-  plan?: string;
-  started_at?: string;
-  expires_at?: string;
-  created_at?: string;
-  _spoke_id: string;
-  _spoke_name: string;
-}
+export type NormalizedSubscription = ProfileSubscription;
 
 // Pagination helper to fetch all records from a Supabase table
 const BATCH_SIZE = 1000; // Supabase default max rows per request
@@ -310,8 +301,8 @@ export const autoMapFields = (
       email: ['email', 'user_email'],
       status: ['status', 'subscription_status', 'state'],
       plan: ['plan', 'plan_name', 'tier', 'subscription_tier'],
-      started_at: ['started_at', 'start_date', 'subscribed_at'],
-      expires_at: ['expires_at', 'expiry_date', 'end_date', 'subscription_expires_at'],
+      started_at: ['started_at', 'start_date', 'subscribed_at', 'current_period_start'],
+      expires_at: ['expires_at', 'expiry_date', 'end_date', 'subscription_expires_at', 'current_period_end'],
       created_at: ['created_at', 'created'],
     },
   };
@@ -635,7 +626,8 @@ export const fetchSpokeSubscriptions = async (
 
   try {
     // Server-side read — the spoke key never touches the browser.
-    const { tables } = await spokeFetch(connection.id, 'subscriptions');
+    const { tables, errors } = await spokeFetch(connection.id, 'subscriptions');
+    if (errors.length) throw new Error(errors.join('; '));
     const data = tables.flatMap(t =>
       t.rows.map(row => ({ row, mapping: t.field_mapping })),
     );
@@ -650,13 +642,17 @@ export const fetchSpokeSubscriptions = async (
       plan: row[mapping.plan],
       started_at: row[mapping.started_at],
       expires_at: row[mapping.expires_at],
+      trial_start: row[mapping.trial_start],
+      trial_end: row[mapping.trial_end],
+      provider: row[mapping.provider],
+      iap_status: row[mapping.iap_status],
+      iap_current_period_end: row[mapping.iap_current_period_end],
       created_at: row[mapping.created_at],
       _spoke_id: connection.id,
       _spoke_name: connection.name,
     }));
   } catch (err) {
-    console.error(`Error fetching subscriptions from ${connection.name}:`, err);
-    return [];
+    throw new Error(`${connection.name}: subscription data unavailable (${err instanceof Error ? err.message : "read failed"})`);
   }
 };
 
@@ -911,10 +907,11 @@ export const fetchEnrichedProfiles = async (
   const eventConnections = newsletterConnections;
 
   // Fetch profiles, commerce, newsletter consent, and ATL event intent in parallel.
-  const [profilesResult, ordersResult, itemsResult, newsletterResults, eventResults] = await Promise.all([
+  const [profilesResult, ordersResult, itemsResult, subscriptionsResult, newsletterResults, eventResults] = await Promise.all([
     fetchAllSpokesProfiles(connections),
     fetchAllSpokesOrders(connections),
     fetchAllSpokesOrderItems(connections),
+    fetchAllSpokesSubscriptions(connections),
     Promise.allSettled(newsletterConnections.map(async connection => ({
       connection,
       rows: await fetchNewsletterAudience(connection.id),
@@ -930,6 +927,7 @@ export const fetchEnrichedProfiles = async (
     ...profilesResult.errors,
     ...ordersResult.errors,
     ...itemsResult.errors,
+    ...subscriptionsResult.errors,
   ];
 
   const activeNewsletterKeys = new Set<string>();
@@ -1085,11 +1083,7 @@ export const fetchEnrichedProfiles = async (
   }
 
   // Enrich profiles with order data and order items
-  const enrichedProfiles = enrichProfilesWithOrders(
-    allProfiles,
-    ordersResult.orders,
-    itemsResult.items
-  );
+  const enrichedProfiles: EnrichedProfile[] = attachProfileSubscriptions(enrichProfilesWithOrders(allProfiles, ordersResult.orders, itemsResult.items), subscriptionsResult.subscriptions);
 
   // Mark order-only profiles with special tags/metadata
   const orderOnlyEmails = new Set(orderOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
@@ -1113,6 +1107,26 @@ export const fetchEnrichedProfiles = async (
       (profile as any)._event_only = true;
       (profile as any)._source = 'event_registrations';
     }
+  });
+
+  // Aggregate collection counts server-side; failed reads remain unknown, never zero.
+  const collectionConnections = connections.filter(c => c.status === 'active' && isRekkrdConnection(c.supabase_url));
+  const collectionResults = await Promise.allSettled(collectionConnections.map(async connection => {
+    const { data, error } = await hubClient.functions.invoke('spoke-query', { body: { op: 'collection_counts', connection_id: connection.id } });
+    if (error || data?.error || !Array.isArray(data?.counts) || !data?.fetched_at) throw new Error('Collection counts unavailable');
+    const counts = new Map<string, number>();
+    for (const row of data.counts) {
+      if (typeof row.customer_id !== 'string' || !Number.isSafeInteger(row.record_count) || row.record_count < 0) throw new Error('Invalid collection counts');
+      counts.set(row.customer_id, row.record_count);
+    }
+    for (const profile of enrichedProfiles) {
+      if (profile._spoke_id !== connection.id || !profile.id) continue;
+      profile.collection_record_count = counts.get(profile.id) ?? 0;
+      profile.collection_count_checked_at = data.fetched_at;
+    }
+  }));
+  collectionResults.forEach((result, index) => {
+    if (result.status === 'rejected') errors.push(collectionConnections[index].name + ': collection counts unavailable');
   });
 
   // Enrich with predicted demographics

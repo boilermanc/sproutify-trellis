@@ -334,7 +334,28 @@ export interface ProfileOrderStats {
   products_purchased?: ProductPurchase[];  // Products this customer has bought
 }
 
+export interface ProfileSubscription {
+  trial_start?: string;
+  trial_end?: string;
+  provider?: string;
+  iap_status?: string;
+  iap_current_period_end?: string;
+  id: string;
+  customer_id?: string;
+  email?: string;
+  status?: string;
+  plan?: string;
+  started_at?: string;
+  expires_at?: string;
+  created_at?: string;
+  _spoke_id: string;
+  _spoke_name: string;
+}
+
 export interface EnrichedProfile extends NormalizedSpokeProfile {
+  subscription_records?: ProfileSubscription[];
+  collection_record_count?: number;
+  collection_count_checked_at?: string;
   order_stats?: ProfileOrderStats;
   metadata?: Record<string, any>;
   _predicted_demographics?: {

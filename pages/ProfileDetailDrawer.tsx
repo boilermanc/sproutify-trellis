@@ -1,3 +1,4 @@
+import { ProfileMembership } from '../components/ProfileMembership';
 import React from 'react';
 import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain, Link2, ExternalLink } from 'lucide-react';
 import { EnrichedProfile, SocialActivity } from '../types';
@@ -88,6 +89,12 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
               )}
             </div>
           </div>
+
+          <section className="bg-gray-50 rounded-sm p-4 space-y-3" aria-label="Signup and subscriptions">
+            <h3 className="text-sm font-semibold text-gray-700">Signup & subscriptions</h3>
+            <ProfileMembership profile={profile} history />
+            <p className="text-xs text-slate-500">Period ends may renew; these dates do not confirm cancellation.</p>
+          </section>
 
           {/* Email Activity — per-contact engagement timeline (Hub email_events, keyed by email) */}
           <EmailActivitySection email={profile.email} />

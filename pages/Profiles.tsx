@@ -1,3 +1,5 @@
+import { ProfileMembership } from '../components/ProfileMembership';
+import { currentSubscription, subscriptionState, compareProfileSubscriptions } from '../services/profileSubscriptions.mjs';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Profile, MarketingEvent, Branch, SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, BranchConsentMap, BranchConsentEntry } from '../types';
@@ -118,6 +120,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   }, [federatedProfiles]);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [planFilter, setPlanFilter] = useState('all');
+  const [activityFilter, setActivityFilter] = useState('all');
+  const [profileSort, setProfileSort] = useState('signup-newest');
+  const planOptions = useMemo(() => [...new Set(federatedProfiles.map(p => currentSubscription(p.subscription_records)?.plan).filter(Boolean))].sort() as string[], [federatedProfiles]);
+  useEffect(() => { setPlanFilter('all'); }, [selectedSpokeIds]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
 
   const [editingConsent, setEditingConsent] = useState<BranchConsentMap | null>(null);
@@ -260,23 +267,26 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   // filter THIS list (the 'filtered' memo above only feeds the 'local' view).
   const filteredFederatedProfiles = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    if (!q) return federatedProfiles;
     return federatedProfiles.filter(p =>
-      (p.email && p.email.toLowerCase().includes(q)) ||
+      !q || (p.email && p.email.toLowerCase().includes(q)) ||
       (p.first_name && p.first_name.toLowerCase().includes(q)) ||
       (p.last_name && p.last_name.toLowerCase().includes(q)) ||
       (p.phone && p.phone.toLowerCase().includes(q)) ||
       (p.id && p.id.toLowerCase().includes(q))
-    );
-  }, [federatedProfiles, searchTerm]);
+    )
+    .filter(p => planFilter === 'all' || (planFilter === '__unknown' ? !currentSubscription(p.subscription_records)?.plan : currentSubscription(p.subscription_records)?.plan === planFilter))
+    .filter(p => activityFilter === 'all' || subscriptionState(currentSubscription(p.subscription_records)) === activityFilter)
+    .sort((a, b) => compareProfileSubscriptions(a, b, profileSort));
+  }, [federatedProfiles, searchTerm, planFilter, activityFilter, profileSort]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter]);
+  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter, selectedSpokeIds, planFilter, activityFilter, profileSort, dataSource]);
 
   // Pagination calculations
-  const totalPages = Math.ceil(filtered.length / pageSize);
+  const totalPages = Math.ceil((dataSource === 'federated' ? filteredFederatedProfiles.length : filtered.length) / pageSize);
+  const paginatedFederatedProfiles = filteredFederatedProfiles.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const paginatedProfiles = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
     return filtered.slice(startIndex, startIndex + pageSize);
@@ -550,7 +560,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
             {dataSource === 'local'
               ? `Showing ${filtered.length} of ${profiles.filter(p => p.status === 'active').length} profiles`
-              : searchTerm.trim()
+              : searchTerm.trim() || planFilter !== 'all' || activityFilter !== 'all'
                 ? `Showing ${filteredFederatedProfiles.length} of ${federatedProfiles.length} federated profiles`
                 : `Showing ${federatedProfiles.length} federated profiles`
             }
@@ -558,6 +568,30 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         </div>
       </div>
 
+      {dataSource === 'federated' && selectedSpokeIds.size > 0 && (
+        <div className="bg-white p-4 border border-slate-200 rounded-sm space-y-3">
+          <div className="flex flex-wrap gap-4">
+            <label className="text-xs font-bold text-slate-600">Plan
+              <select aria-label="Plan filter" value={planFilter} onChange={e => setPlanFilter(e.target.value)} className="block mt-1 border rounded p-2 max-w-full">
+                <option value="all">All plans</option><option value="__unknown">Unknown plan</option>
+                {planOptions.map(plan => <option key={plan} value={plan}>{plan}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">Subscription activity
+              <select aria-label="Subscription activity" value={activityFilter} onChange={e => setActivityFilter(e.target.value)} className="block mt-1 border rounded p-2">
+                <option value="all">All activity</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <label className="text-xs font-bold text-slate-600">Sort profiles
+              <select aria-label="Sort profiles" value={profileSort} onChange={e => setProfileSort(e.target.value)} className="block mt-1 border rounded p-2">
+                <option value="signup-newest">Signup: newest first</option><option value="signup-oldest">Signup: oldest first</option><option value="plan">Plan: A–Z</option><option value="active">Active first</option><option value="ending">End date: earliest first</option><option value="records">Records added: most first</option>
+              </select>
+            </label>
+            <button onClick={() => { setPlanFilter('all'); setActivityFilter('all'); setSearchTerm(''); }} className="text-xs font-bold text-emerald-700">Clear filters</button>
+          </div>
+          <p className="text-xs text-slate-500">Activity uses the reported subscription status and period dates, not email consent or recent app usage. Period ends may renew. Missing data stays unknown.</p>
+        </div>
+      )}
       {/* Empty-selection gate: in federated mode, require a branch pick before loading profiles */}
       {dataSource === 'federated' && activeConnectionCount > 0 && selectedSpokeIds.size === 0 ? (
         <div className="bg-white rounded-[3rem] border border-slate-200  p-12 sm:p-20 flex flex-col items-center justify-center text-center">
@@ -604,7 +638,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               </button>
             ))
           ) : (
-            filteredFederatedProfiles.map((profile, index) => (
+            paginatedFederatedProfiles.map((profile, index) => (
               <button
                 key={`${profile._spoke_id}-${profile.email}-${index}`}
                 onClick={() => setSelectedFederatedProfile(profile)}
@@ -622,6 +656,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                     )}
                   </p>
                   <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
+                  <ProfileMembership profile={profile} />
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100"><Link size={9} />{profile._spoke_name}</span>
                     {profile.order_stats && (
@@ -643,6 +678,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             ))
           )}
         </div>
+        <div className="overflow-x-auto">
         <table className="hidden lg:table w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-100">
@@ -658,13 +694,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               </th>
               {dataSource === 'federated' && (
                 <>
+                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Signup & plan</th>
                   <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">LTV</th>
                   <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Orders</th>
                   <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Purchase</th>
                 </>
               )}
               <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">
-                {dataSource === 'local' ? 'Last Sync' : 'Status'}
+                {dataSource === 'local' ? 'Last Sync' : 'Email consent'}
               </th>
             </tr>
           </thead>
@@ -698,7 +735,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                 </tr>
               ))
             ) : (
-              filteredFederatedProfiles.map((profile, index) => (
+              paginatedFederatedProfiles.map((profile, index) => (
                 <tr
                   key={`${profile._spoke_id}-${profile.email}-${index}`}
                   className="hover:bg-slate-50/80 transition-colors cursor-pointer"
@@ -738,6 +775,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                       )}
                     </div>
                   </td>
+                  <td className="px-4 py-6 min-w-48"><ProfileMembership profile={profile} /></td>
                   {/* LTV Cell */}
                   <td className="px-4 py-6 whitespace-nowrap">
                     {profile.order_stats ? (
@@ -797,6 +835,8 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             )}
           </tbody>
         </table>
+        </div>
+        {dataSource === 'federated' && filteredFederatedProfiles.length === 0 && <p className="p-6 text-sm text-slate-500" role="status">{isFederating ? 'Loading profiles…' : 'No profiles match these filters.'}</p>}
 
         {/* Pagination Controls */}
         <div className="px-4 sm:px-10 py-4 sm:py-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">

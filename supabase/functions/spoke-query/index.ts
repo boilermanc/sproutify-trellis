@@ -1,3 +1,5 @@
+import { isRekkrdConnection, countCollectionRecords } from "../_shared/rekkrd-profile-metrics.mjs";
+import { requireInternalUser } from "../_shared/sweetwater-internal-guard.ts";
 // Trellis: Spoke Query proxy
 // Runs all federated reads against external "spoke" Supabase databases
 // SERVER-SIDE so a spoke's key never has to live in the browser or be
@@ -124,11 +126,13 @@ async function getColumns(client: any, url: string, key: string, table: string):
 }
 
 // Paginated full-table read.
-async function fetchAllRows(client: any, table: string, select: string) {
+async function fetchAllRows(client: any, table: string, select: string, orderColumn?: string) {
   const all: Record<string, unknown>[] = [];
   let offset = 0;
   while (true) {
-    const { data, error } = await client.from(table).select(select).range(offset, offset + BATCH_SIZE - 1);
+    let query = client.from(table).select(select);
+    if (orderColumn) query = query.order(orderColumn);
+    const { data, error } = await query.range(offset, offset + BATCH_SIZE - 1);
     if (error) return { rows: all, error: error.message };
     if (!data || data.length === 0) break;
     all.push(...data);
@@ -155,6 +159,7 @@ async function resolveConnection(hub: any, connectionId: string) {
 }
 
 Deno.serve(async (req: Request) => {
+  const swDenied = await requireInternalUser(req); if (swDenied) return swDenied;
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -224,6 +229,23 @@ Deno.serve(async (req: Request) => {
       return json({ columns });
     }
 
+    // Fixed read-only Rekkrd metric; no caller-supplied tables or columns.
+    if (op === "collection_counts") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+      if (resolved.conn.status !== "active" || !isRekkrdConnection(resolved.conn.supabase_url)) {
+        return json({ error: "Collection counts are only available for the active Rekkrd connection" }, 400);
+      }
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+      const { rows, error } = await fetchAllRows(spoke, "albums", "id,user_id", "id");
+      if (error) return json({ error: "Could not read Rekkrd collection counts" }, 502);
+      // An empty RLS-filtered result cannot establish a zero-size collection.
+      if (rows.length === 0) return json({ error: "Rekkrd collection data is empty or inaccessible" }, 502);
+      return json({ counts: countCollectionRecords(rows), fetched_at: new Date().toISOString() });
+    }
+
     // ── fetch: RUNTIME bulk read (raw rows + field_mapping per table) ──
     if (op === "fetch") {
       const tableType = body.table_type;
@@ -244,11 +266,15 @@ Deno.serve(async (req: Request) => {
       const tables: Array<{ table_name: string; field_mapping: Record<string, string>; rows: unknown[] }> = [];
       const errors: string[] = [];
       for (const cfg of configs) {
-        const fields = Object.values(cfg.field_mapping || {}).filter(Boolean) as string[];
+        const mapping = { ...(cfg.field_mapping || {}) };
+        if (tableType === "subscriptions" && cfg.table_name === "subscriptions" && isRekkrdConnection(resolved.conn.supabase_url)) {
+          Object.assign(mapping, { trial_start: "trial_start", trial_end: "trial_end", provider: "provider", iap_status: "iap_status", iap_current_period_end: "iap_current_period_end" });
+        }
+        const fields = [...new Set(Object.values(mapping).filter(Boolean))] as string[];
         if (fields.length === 0) continue;
         const { rows, error } = await fetchAllRows(spoke, cfg.table_name, fields.join(","));
         if (error) { errors.push(`${resolved.conn.name}/${cfg.table_name}: ${error}`); continue; }
-        tables.push({ table_name: cfg.table_name, field_mapping: cfg.field_mapping, rows });
+        tables.push({ table_name: cfg.table_name, field_mapping: mapping, rows });
       }
       return json({ connection_id: body.connection_id, name: resolved.conn.name, tables, errors });
     }
@@ -491,7 +517,7 @@ Deno.serve(async (req: Request) => {
         }
         if (fm.subscribed) {
           const { count: subCount } = await spoke
-            .from(custCfg.table_name).select("*", { count: "exact", head: true }).eq(fm.subscribed, true);
+            .from(custCfg.table_name).select("*", { count: "exact", head: true }).eq(String(fm.subscribed), true);
           active_subscribers = subCount ?? 0;
         }
       }
