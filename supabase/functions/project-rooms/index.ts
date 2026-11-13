@@ -1,4 +1,5 @@
 import { saveProposal, proposalSummary } from "../_shared/project-room-proposal.mjs";
+import { validateContacts, handleRoomFiles } from "../_shared/project-room-crm.mjs";
 import { customerDocumentRequest, addCustomerDocument, updateCustomerDocument, CUSTOMER_DOCUMENT_SCHEMA } from "../_shared/project-room-customer-document.mjs";
 import { createAutomaticProposal } from "../_shared/project-room-auto-proposal.mjs";
 import { proposalReviewRequest, readProposalReview, recordProposalReview } from "../_shared/project-room-proposal-review.mjs";
@@ -508,6 +509,15 @@ Deno.serve(async (req) => {
         },
       });
     }
+    if (body.action === "client_contacts_save") {
+      if (!Number.isInteger(body.client_version)) throw new Error("Refresh the company before saving.");
+      const contacts = validateContacts(body.contacts);
+      const { data, error } = await db.rpc("save_project_room_contacts", {
+        p_actor: user.id, p_client: body.client_id, p_version: body.client_version, p_contacts: contacts,
+      });
+      if (error || !data?.[0]) return json({ error: "Could not save contacts. The company may have changed or your access was removed. Refresh before retrying." }, 409);
+      return json({ client: data[0] });
+    }
     if (body.action === "client_update") {
       if (!Number.isInteger(body.client_version)) {
         throw new Error("Refresh the prospect before saving.");
@@ -578,6 +588,9 @@ Deno.serve(async (req) => {
     }
     const memberRole = room.project_room_members?.[0]?.role;
     delete room.project_room_members;
+    if (["files_list", "file_prepare", "file_retry", "file_complete", "file_download"].includes(body.action)) {
+      return json(await handleRoomFiles(db, room, user.id, body));
+    }
     if (body.action === "members") {
       const { data: members, error } = await db.from("project_room_members")
         .select("user_id,role").eq("room_id", room.id);

@@ -1,4 +1,5 @@
 import {recordProposalReview} from "../../supabase/functions/_shared/project-room-proposal-review.mjs";
+import {validateContacts, validateOriginalFile} from "../../supabase/functions/_shared/project-room-crm.mjs";
 import {passingReview} from './proposal-review.mjs';
 import { saveProposal, proposalSummary } from "../../supabase/functions/_shared/project-room-proposal.mjs";
 import { draftProposal } from "../../services/projectRoomProposal.mjs";
@@ -26,6 +27,12 @@ let room: any =
     : null;
 const original = window.fetch;
 const client: any = {id: "fixture-client", name: "Example Company", status: "prospect", version: 1, archived_at: null, follow_up_date: null};
+const crmScenario = fixtureParams.has('crm');
+const savedCrm = crmScenario ? JSON.parse(sessionStorage.getItem('crm-fixture') || '{}') : {};
+if (savedCrm.client) Object.assign(client, savedCrm.client);
+const originalFiles: any[] = savedCrm.files || [];
+let failedUpload = false, failedCompletion = false, failedContact = false;
+function persistCrm() { if (crmScenario) sessionStorage.setItem('crm-fixture', JSON.stringify({client, files: originalFiles})); }
 const members: any[] = [{user_id: "clint", name: "Clint", role: "owner"}];
 if (room) { room.client_id = client.id; room.member_role = "owner"; }
 if (room && fixtureParams.has("handoff-rework")) {
@@ -47,6 +54,15 @@ if (room && fixtureParams.has("estimate-baseline")) {
 }
 window.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
+  if (crmScenario && url.includes('/storage/v1/object/upload/sign/project-room-files/')) {
+    if (fixtureParams.has('upload-fails') && !failedUpload) { failedUpload = true; return Response.json({message:'Synthetic upload failure'}, {status:503}); }
+    const path = decodeURIComponent(url.split('/project-room-files/')[1].split('?')[0]);
+    const stored = originalFiles.find(f => f.path === path);
+    const file = (init?.body as FormData).get('') as File;
+    stored.bytes = btoa(String.fromCharCode(...new Uint8Array(await file.arrayBuffer())));
+    persistCrm();
+    return Response.json({Key: path});
+  }
   if (url.includes("/functions/v1/ai-generate")) {
     const request = JSON.parse(String(init?.body));
     if (request.contents?.includes("performing the FINAL quality review")) {
@@ -69,7 +85,27 @@ window.fetch = async (input, init) => {
     const b = JSON.parse(String(init?.body));
     let result: any;
     try {
-      if (b.action === "list")
+      if (b.action === 'client_contacts_save') {
+        if (fixtureParams.has('contact-fails') && !failedContact) { failedContact = true; throw new Error('Company changed. Refresh before retrying.'); }
+        if (b.client_version !== client.version) throw new Error('Company changed. Refresh before retrying.');
+        client.contacts = validateContacts(b.contacts); client.version++; persistCrm(); result = {client};
+      } else if (b.action === 'files_list') result = {files: originalFiles.slice(b.offset || 0, (b.offset || 0) + 50), has_more:false};
+      else if (b.action === 'file_prepare') {
+        const meta = validateOriginalFile(b);
+        const file = {...meta, id:crypto.randomUUID(), room_id:room.id, status:'pending', created_at:new Date().toISOString(), path:''};
+        file.path = `${room.id}/${file.id}.${meta.extension}`; originalFiles.unshift(file); persistCrm();
+        result = {file, upload:{path:file.path,token:'synthetic-token'}};
+      } else if (b.action === 'file_retry') {
+        const file = originalFiles.find(f => f.id === b.file_id); result = {file,upload:{path:file.path,token:'synthetic-token'}};
+      } else if (b.action === 'file_complete') {
+        if (fixtureParams.has('completion-fails') && !failedCompletion) { failedCompletion = true; throw new Error('Upload finished but saving did not. Use Finish saving.'); }
+        const file = originalFiles.find(f => f.id === b.file_id);
+        if (!file?.bytes) throw new Error('Upload is incomplete. Retry upload.');
+        file.status = 'ready'; file.uploaded_at = new Date().toISOString(); persistCrm(); result = {file};
+      } else if (b.action === 'file_download') {
+        const file = originalFiles.find(f => f.id === b.file_id);
+        result = {url:`data:application/octet-stream;base64,${file.bytes}`};
+      } else if (b.action === "list")
         result = {
           rooms: room ? [{...room, proposal: proposalSummary(room.state.proposal)}] : [],
           clients: room ? [client] : [],

@@ -72,7 +72,12 @@ export default function ProjectRoomWorkspace(p: Props) {
     (filter === "archived"
       ? !!c.archived_at
       : !c.archived_at && c.status === filter) &&
-    c.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
+    [
+      c.name,
+      c.website || "",
+      ...(c.contacts || []).filter(contact => !contact.archived)
+        .flatMap(contact => [contact.name, contact.email, contact.phone]),
+    ].some(value => value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
   );
   const client = p.clients.find((c) => c.id === p.room?.client_id);
   const siblings = p.rooms.filter((r) =>
@@ -325,7 +330,7 @@ export default function ProjectRoomWorkspace(p: Props) {
               </div>
               <input
                 aria-label="Find a company"
-                placeholder="Find a company"
+                placeholder="Company, contact, email or phone"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />

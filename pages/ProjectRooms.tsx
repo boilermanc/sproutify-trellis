@@ -1,5 +1,7 @@
 import ProjectRoomProposal from "../components/ProjectRoomProposal";
 import ProjectRoomCustomerDocuments from "../components/ProjectRoomCustomerDocuments";
+import ProjectRoomContacts from "../components/ProjectRoomContacts";
+import ProjectRoomFiles from "../components/ProjectRoomFiles";
 import "./ProjectRooms.css";
 import ProjectRoomWorkspace, {
   roomNextStep,
@@ -414,6 +416,19 @@ export default function ProjectRooms({
               </div>
               <div className="pr-stack">
                 {roomClient && (
+                  <React.Fragment key={roomClient.id}>
+                    <ProjectRoomContacts
+                      client={roomClient}
+                      onReload={refreshList}
+                      onSaved={async () => {
+                        await refreshList();
+                        addToast("Client contacts saved.", "success");
+                      }}
+                      onError={reportError}
+                    />
+                  </React.Fragment>
+                )}
+                {roomClient && (
                   <ClientDetails
                     client={roomClient}
                     onSaved={companySaved}
@@ -483,6 +498,13 @@ export default function ProjectRooms({
           )}
           {roomView === "files" && (
             <div className="pr-stack">
+              <React.Fragment key={room.id}>
+                <ProjectRoomFiles
+                  roomId={room.id}
+                  onError={reportError}
+                  onSuccess={message => addToast(message, "success")}
+                />
+              </React.Fragment>
               <section className="pr-panel">
                 <h2>Company report</h2>
                 <p className="pr-muted">

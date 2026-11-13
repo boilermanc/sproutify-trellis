@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:project-room-crm": "node --test tests/project-room-crm.test.mjs",
     "test:project-rooms": "node --test tests/project-room.test.mjs tests/project-room-intake.test.mjs tests/project-room-search.test.mjs tests/project-room-meetings.test.mjs tests/project-room-bridge.test.mjs tests/project-room-daily-report.test.mjs tests/project-room-digest-workflow.test.mjs tests/project-room-aeo.test.mjs tests/company-assessment-docx.test.mjs tests/project-room-proposal.test.mjs tests/project-room-auto-proposal.test.mjs tests/project-room-estimate-quality.test.mjs tests/project-room-handoff.test.mjs tests/project-room-evidence.test.mjs tests/project-room-slack.test.mjs tests/project-room-report.test.mjs tests/project-room-customer-document.test.mjs",
     "dev": "vite",
     "build": "vite build",

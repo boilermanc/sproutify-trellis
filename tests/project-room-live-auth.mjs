@@ -21,7 +21,7 @@ const headers = {
   apikey: env.VITE_SUPABASE_ANON_KEY,
   "Content-Type": "application/json",
 };
-for (const action of ["list", "create", "get", "tick", "client_update", "search_client_data", "members", "share", "unshare", "import_meeting", "proposal_save", "proposal_review"]) {
+for (const action of ["list", "create", "get", "tick", "client_update", "search_client_data", "members", "share", "unshare", "import_meeting", "proposal_save", "proposal_review", "client_contacts_save", "files_list", "file_prepare", "file_retry", "file_complete", "file_download"]) {
   const response = await fetch(`${url}/functions/v1/project-rooms`, {
     method: "POST",
     headers,
@@ -42,13 +42,15 @@ const invalid = await fetch(`${url}/functions/v1/project-rooms`, {
   body: JSON.stringify({ action: "list" }),
 });
 assert.equal(invalid.status, 401);
-const table = await fetch(`${url}/rest/v1/project_rooms?select=id`, {
+for (const name of ["project_rooms", "project_room_files"]) {
+const table = await fetch(`${url}/rest/v1/${name}?select=id`, {
   headers,
 });
 assert.ok(
   [401, 403].includes(table.status),
   "anonymous table access must be denied",
 );
+}
 console.log(
   "PASS: production list/create/get/worker reject anonymous access; invalid JWT rejected; direct table read denied.",
 );

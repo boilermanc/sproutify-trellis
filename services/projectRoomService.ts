@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import type { RoomDocument } from "./projectRoomDocuments";
 export type RoomRole = "research" | "openai" | "anthropic" | "review" | "chief";
 export interface RoomClient {
+  contacts?: ClientContact[];
   id: string;
   name: string;
   website?: string;
@@ -12,6 +13,15 @@ export interface RoomClient {
   follow_up_date?: string | null;
   follow_up_note?: string | null;
   version: number;
+}
+export interface ClientContact {
+  id: string; name: string; role: string; email: string; phone: string;
+  notes: string; is_primary: boolean; archived: boolean;
+}
+export interface ProjectFile {
+  id: string; room_id: string; name: string; size: number; mime_type: string;
+  category: 'proposal' | 'contract' | 'other'; status: 'pending' | 'ready';
+  created_at: string; uploaded_at: string | null;
 }
 export interface RoomMember {
   user_id: string;

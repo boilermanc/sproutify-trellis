@@ -20,8 +20,8 @@ export default function RoomDocumentReview({
     <section className="rounded-3xl border border-blue-100 bg-white p-6">
       <h3 className="font-bold text-[#102b4e]">Supporting documents</h3>
       <p className="mt-2 text-xs leading-5 text-slate-500">
-        Only extracted text enters the provider packet. Original files and
-        images are not stored or reviewed. Document text is frozen for each
+        Only extracted text enters the provider packet here. Save originals
+        separately under Original project files above. Document text is frozen for each
         round so independent reviewers receive the same version.
       </p>
       {(room.state.documents || []).map((doc) => (

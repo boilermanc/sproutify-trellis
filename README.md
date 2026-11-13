@@ -150,6 +150,10 @@ Repository-native schemas, project-partitioned records, task templates, and help
 
 ## Proposal quality checks
 
+Consulting CRM contacts and original project-file storage are described in
+[Project Room CRM](docs/PROJECT_ROOM_CRM.md), including upload recovery, privacy,
+verification, and the migration/release requirements.
+
 Automatic company proposals estimate discovery only, including checking and handing
 over the discovery findings. Implementation recommendations remain unpriced until
 Clint or Sheree defines bounded scope and selects the implementation review checkbox.

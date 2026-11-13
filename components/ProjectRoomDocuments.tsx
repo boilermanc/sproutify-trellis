@@ -62,7 +62,8 @@ export default function ProjectRoomDocuments({
           any truncation.
         </p>
         <p className="mt-2 text-xs leading-5 text-slate-500">
-          Original files stay in this browser. Only extracted text is saved in
+          This review import saves only extracted text. To keep the original,
+          use Original project files in the saved room’s Files tab. Text is saved in
           your private room and shared with the room providers after consent.
           Images, layout, scanned pages and attached links are not reviewed. No
           OCR or Word file support.
