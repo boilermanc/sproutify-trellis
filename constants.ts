@@ -1,3 +1,4 @@
+import NEWSLETTER_SCHEDULER_AUTH_SQL_SCHEMA from './supabase/migrations/20261116151520_newsletter_scheduler_authorization.sql?raw';
 import NEWSLETTER_RESEND_SAFETY_SQL_SCHEMA from './supabase/migrations/20261115145257_newsletter_resend_safety.sql?raw';
 import PROJECT_ROOMS_SQL_SCHEMA from './supabase/migrations/20261106032348_project_rooms.sql?raw';
 import PROJECT_ROOM_CRM_SQL_SCHEMA from './supabase/migrations/20261113140728_project_room_crm.sql?raw';
@@ -3028,6 +3029,7 @@ ${PROJECT_ROOM_SHARED_SQL_SCHEMA}
 ${PROJECT_ROOM_SLACK_SQL_SCHEMA}
 ${PROJECT_ROOM_CRM_SQL_SCHEMA}
 ${NEWSLETTER_RESEND_SAFETY_SQL_SCHEMA}
+${NEWSLETTER_SCHEDULER_AUTH_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {
