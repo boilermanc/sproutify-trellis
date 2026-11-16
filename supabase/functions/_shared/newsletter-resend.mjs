@@ -84,14 +84,15 @@ export async function fingerprint(value) {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function prepareReminder(bundle, eligible, selection, subject) {
+/** @param {Record<string, string> | null} bindingContext */
+export async function prepareReminder(bundle, eligible, selection, subject, bindingContext=null) {
   assertCampaign(bundle?.campaign, selection, bundle?.authorized_for);
   const audience = buildResendAudience(bundle, eligible);
   // Validate even a zero-size audience using a safe rendered fixture.
   for (const row of audience.recipients.length ? audience.recipients : [{email:'preview@example.invalid',first_name:''}]) {
     renderReminder(subject, bundle.campaign.dispatch.html_template, row, 'https://example.invalid/unsubscribe');
   }
-  const digest = await fingerprint({ selection, subject, dispatch: bundle.campaign.dispatch, recipients: audience.recipients, total: audience.total, exclusions: audience.exclusions });
+  const digest = await fingerprint({ selection, subject, bindingContext, dispatch: bundle.campaign.dispatch, recipients: audience.recipients, total: audience.total, exclusions: audience.exclusions });
   return { ...audience, fingerprint: digest };
 }
 

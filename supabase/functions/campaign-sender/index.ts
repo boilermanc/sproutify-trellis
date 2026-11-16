@@ -1,3 +1,5 @@
+import { authorizeNewsletterWorker, newsletterWorkerMethod } from '../_shared/newsletter-worker-guard.mjs';
+import { readNewsletterProjectBindings, newsletterBranchProject, newsletterDispatchAllowed } from '../_shared/newsletter-project-bindings.mjs';
 import { loadReminder } from '../_shared/newsletter-resend-data.ts';
 import { renderReminder, validateRendered, ResendSafetyError } from '../_shared/newsletter-resend.mjs';
 // campaign-sender — the durable outbox worker.
@@ -48,10 +50,29 @@ function personalize(template: string, unsubscribeUrl: string, r: Rec): string {
 }
 
 const json = (b: unknown, status = 200) =>
-  new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
+  new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json", "Access-Control-Allow-Origin":"*" } });
 
-Deno.serve(async () => {
+Deno.serve(async (req: Request) => {
+  const method = newsletterWorkerMethod(req); if (method) return method;
+  let bindings;
+  try { bindings=readNewsletterProjectBindings((name: string)=>Deno.env.get(name)); }
+  catch { return json({error:'Newsletter project bindings unavailable. Dispatch is disabled.'},503); }
+  if (!newsletterDispatchAllowed(bindings,Deno.env.get('NEWSLETTER_DISPATCH_ENABLED'))) {
+    return json({error:'Newsletter dispatch is disabled for this environment.'},503);
+  }
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+  const denied=await authorizeNewsletterWorker(req,{
+    schedulerToken:Deno.env.get('NEWSLETTER_WORKER_TOKEN'),
+    authenticate:async (token: string)=>{
+      const {data,error}=await admin.auth.getUser(token);
+      return error ? null : data.user;
+    },
+    findStaff:async (id: string)=>{
+      const {data,error}=await admin.from('trellis_users').select('auth_user_id,status,role').eq('auth_user_id',id).maybeSingle();
+      return error ? null : data;
+    },
+  });
+  if (denied) return denied;
 
   const { data: secret } = await admin
     .from("tenant_secrets").select("resend_token, resend_from_address").limit(1).single();
@@ -86,6 +107,10 @@ Deno.serve(async () => {
       }).eq("id", campaign.id);
       processed.push({ campaign: campaign.id, error: msg });
     };
+    try {
+      if (!branchesArr.length) throw new Error('missing branch');
+      for (const slug of branchesArr) newsletterBranchProject(bindings,slug);
+    } catch { await fail('Campaign branch is not enabled in the server newsletter manifest.'); continue; }
     if (!resendToken) { await fail("resend_token not configured in tenant_secrets"); continue; }
     if (!template) { await fail("no html_template saved on campaign dispatch"); continue; }
 

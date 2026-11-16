@@ -1,20 +1,6 @@
 import { ResendSafetyError } from './newsletter-resend.mjs';
-
-// Native contracts reviewed 2026-11-15; default-off Farm/LaneWise source RPCs
-// prepared 2026-11-16. These are not guesses from generic field mappings.
-export const NEWSLETTER_CONSENT = Object.freeze({
-  atlurbanfarms: { project:'povudgtvzggnxwgtjexa', kind:'atl' },
-  rekkrd: { project:'cvqqiuhloefvaaacwxkg', kind:'flags', table:'profiles', fields:['email_digest_optin','email_updates_optin'] },
-  rejoice: { project:'btjttjjmmebwwouuwvmh', kind:'flags', table:'user_profiles', fields:['marketing_opt_in'] },
-  'once-upon-a-drawing': { project:'cdhymstkzhlxcucbzipr', kind:'flags', table:'profiles', fields:['subscribed'] },
-  'sproutify-home': { project:'xzckfyipgrgpwnydddev', kind:'home', table:'profiles' },
-  'sproutify-farm': { project:'qffmtkmetkfysmqmughg', kind:'marketing-rpc' },
-  lanewise: { project:'imdvzbqbzcagduupydxv', kind:'marketing-rpc' },
-  spectiq: { kind:'hub' },
-  'still-janes-daughter': { kind:'hub' },
-  'sweetwater-technology': { kind:'hub' },
-  'sweetwater-urban-farms': { kind:'hub' },
-});
+import { NEWSLETTER_CONSENT, newsletterBranchProject } from './newsletter-project-bindings.mjs';
+export { NEWSLETTER_CONSENT } from './newsletter-project-bindings.mjs';
 
 const fail = message => { throw new ResendSafetyError(message); };
 const emailKey = email => String(email || '').trim().toLowerCase();
@@ -71,9 +57,10 @@ export function applyHubConsent(eligible, hubRows, branch, hubNative=false) {
   });
 }
 
-export async function readBranchConsent(admin, branch, slug, createSpoke, atlKey, candidateEmails=null) {
+export async function readBranchConsent(admin, branch, slug, createSpoke, atlKey, candidateEmails=null, bindings) {
   const contract = Object.hasOwn(NEWSLETTER_CONSENT,slug) ? NEWSLETTER_CONSENT[slug] : null;
   if (!contract || branch?.is_active!==true) fail('This branch has no verified newsletter consent contract or is inactive.');
+  const expectedProject=newsletterBranchProject(bindings,slug);
   if (contract.kind==='blocked') fail(contract.reason);
   if (contract.kind==='hub' && branch.spoke_connection_id) fail('Hub-native newsletter consent does not match this branch’s configured source.');
   if (contract.kind!=='hub' && !branch.spoke_connection_id) fail('This branch’s newsletter consent connection is missing.');
@@ -81,7 +68,7 @@ export async function readBranchConsent(admin, branch, slug, createSpoke, atlKey
   let eligible;
   if (contract.kind!=='hub') {
     const {data:conn,error} = await admin.from('spoke_connections').select('supabase_url,status').eq('id',branch.spoke_connection_id).single();
-    if (error || conn?.status!=='active' || conn.supabase_url?.replace(/\/$/,'')!==`https://${contract.project}.supabase.co`) fail('Newsletter consent connection does not match this business.');
+    if (error || conn?.status!=='active' || ![`https://${expectedProject}.supabase.co`,`https://${expectedProject}.supabase.co/`].includes(conn.supabase_url)) fail('Newsletter consent connection does not match this business.');
     let key = atlKey;
     if (contract.kind!=='atl') {
       const result = await admin.rpc('get_spoke_connection_key',{p_connection_id:branch.spoke_connection_id});

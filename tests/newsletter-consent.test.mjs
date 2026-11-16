@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NEWSLETTER_CONSENT, readBranchConsent, consentPages } from '../supabase/functions/_shared/newsletter-consent.mjs';
 import { prepareReminder, requireSamePreview } from '../supabase/functions/_shared/newsletter-resend.mjs';
+import { productionBindings, stagingBindings } from './helpers/newsletter-bindings.mjs';
 
 const email='person@example.invalid';
 const hubRow=(slug,extra={})=>({id:'hub-id',email,branches:[slug],is_subscribed:true,marketing_pause:false,status:'active',branch_consent:{[slug]:{subscribed:true,paused:false}},...extra});
@@ -9,12 +10,13 @@ function fixture(slug) {
   const contract=NEWSLETTER_CONSENT[slug];
   const state={branch:{is_active:true,spoke_connection_id:contract?.kind==='hub'?null:'connection'},
     conn:{status:'active',supabase_url:`https://${contract?.project}.supabase.co`},key:'sb_secret_fixture',rows:[],hubRows:[],authReads:[],
-    users:new Map(),reads:[],nativeError:false,hubError:false};
+    users:new Map(),reads:[],spokeClients:0,keyReads:0,nativeError:false,hubError:false};
   state.rows=[{id:'native-id',email,...Object.fromEntries((contract?.fields||[]).map(field=>[field,true]))}];
   if(contract?.kind==='hub')state.hubRows=[hubRow(slug)];
   if(contract?.kind==='home')state.users.set('native-id',{id:'native-id',email,user_metadata:{notification_prefs:{marketingEmails:true}}});
   const page=(hub=false)=>({range:async(from,to)=>({data:(hub?state.hubRows:state.rows)?.slice(from,to+1),count:(hub?state.hubRows:state.rows)?.length,error:(hub?state.hubError:state.nativeError)?{}:null})});
   const admin={rpc:async(name,args)=>{
+    state.keyReads++;
     assert.equal(name,'get_spoke_connection_key');assert.equal(args.p_connection_id,state.branch.spoke_connection_id);
     return {data:state.key,error:null};
   },from:name=>{
@@ -23,6 +25,7 @@ function fixture(slug) {
     assert.ok(['profiles','spoke_connections'].includes(name));return q;
   }};
   const createSpoke=(url,key)=>{
+    state.spokeClients++;
     assert.equal(url,state.conn.supabase_url);assert.equal(key,'sb_secret_fixture');
     return {from:name=>{
       assert.equal(name,contract.table);
@@ -30,8 +33,23 @@ function fixture(slug) {
     },rpc:(name,args)=>{assert.equal(name,contract.kind==='marketing-rpc'?'resolve_marketing_audience':'resolve_newsletter_audience');if(contract.kind==='atl')assert.deepEqual(args,{p_tags:null});return {order:()=>page()};},
     auth:{admin:{getUserById:async id=>{state.authReads.push(id);return {data:{user:state.users.get(id)},error:state.authError?{}:null};}}}};
   };
-  return {state,run:(candidates=[email])=>readBranchConsent(admin,state.branch,slug,createSpoke,'sb_secret_fixture',candidates)};
+  state.bindings=productionBindings;
+  return {state,run:(candidates=[email])=>readBranchConsent(admin,state.branch,slug,createSpoke,'sb_secret_fixture',candidates,state.bindings)};
 }
+
+for(const slug of ['sproutify-farm','lanewise'])test(`${slug}: staging uses exact isolated source and the same native consent RPC`,async()=>{
+  const h=fixture(slug);h.state.bindings=stagingBindings;
+  await assert.rejects(h.run,/does not match/); // A production spoke is never contacted.
+  assert.equal(h.state.spokeClients,0);assert.equal(h.state.keyReads,0);
+  h.state.conn.supabase_url=`https://${stagingBindings.branches[slug]}.supabase.co`;
+  assert.equal((await h.run()).length,1);
+});
+test('missing or omitted branch bindings stop before any consent or credential query',async()=>{
+  for(const bindings of [undefined,stagingBindings]) {
+    const h=fixture('rekkrd');h.state.bindings=bindings;
+    await assert.rejects(h.run,/not enabled/);assert.deepEqual(h.state.reads,[]);assert.equal(h.state.spokeClients,0);assert.equal(h.state.keyReads,0);
+  }
+});
 
 test('all 11 configured branches have an explicit reviewed contract or an explicit block',()=>{
   assert.deepEqual(Object.keys(NEWSLETTER_CONSENT).sort(),['atlurbanfarms','rekkrd','rejoice','once-upon-a-drawing','sproutify-home','sproutify-farm','lanewise','spectiq','still-janes-daughter','sweetwater-technology','sweetwater-urban-farms'].sort());

@@ -2,24 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
+import {productionBindings,stagingManifest} from './helpers/newsletter-bindings.mjs';
+import {resolveNewsletterProjectBindings} from '../supabase/functions/_shared/newsletter-project-bindings.mjs';
+globalThis.Deno={env:{get:()=>undefined}};
 const moduleUrl=new URL('../supabase/functions/_shared/newsletter-resend.mjs',import.meta.url).href;
 const consentUrl=new URL('../supabase/functions/_shared/newsletter-consent.mjs',import.meta.url).href;
+const bindingsUrl=new URL('../supabase/functions/_shared/newsletter-project-bindings.mjs',import.meta.url).href;
 const source=fs.readFileSync(new URL('../supabase/functions/_shared/newsletter-resend-data.ts',import.meta.url),'utf8')
   .replace(/^import .*;\r?\n/gm,'');
-const {loadReminder}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(`import {assertCampaign,prepareReminder,ResendSafetyError} from ${JSON.stringify(moduleUrl)};import {readBranchConsent} from ${JSON.stringify(consentUrl)};const createClient=()=>{throw Error('No real client permitted');};\n`+source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText).toString('base64'));
+const {loadReminder}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(`import {assertCampaign,prepareReminder,ResendSafetyError} from ${JSON.stringify(moduleUrl)};import {readBranchConsent} from ${JSON.stringify(consentUrl)};import {readNewsletterProjectBindings,newsletterBranchProject} from ${JSON.stringify(bindingsUrl)};const createClient=()=>{throw Error('No real client permitted');};\n`+source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText).toString('base64'));
 const id='579edbfb-33eb-439a-bee8-a8be1006137e';
 const selection={campaignId:id,userId:'owner',branch:'atlurbanfarms'};
 function fixture() {
   const state={bundle:{campaign:{id,owner_id:'owner',branches:['atlurbanfarms'],send_status:'sent',dispatch:{html_template:'<p>Hello</p>'}},recipients:[{id:'recipient-uuid',email:'a@example.invalid'}],sends:[{campaign_id:id,resend_email_id:'message',email:'a@example.invalid'}],events:[{campaign_id:id,resend_email_id:'message',email:'a@example.invalid',event_type:'delivered'}],suppressions:[]},
     branch:{is_active:true,spoke_connection_id:'atl'},conn:{status:'active',supabase_url:'https://povudgtvzggnxwgtjexa.supabase.co'},rows:[{email:'a@example.invalid'}],rpcError:false,consentError:false};
-  const admin={rpc:async()=>({data:state.bundle,error:state.rpcError?{}:null}),from:name=>{
+  state.bindings=productionBindings;state.rpcCalls=0;
+  const admin={rpc:async()=>{state.rpcCalls++;return {data:state.bundle,error:state.rpcError?{}:null};},from:name=>{
     const q={select:()=>q,eq:()=>q,order:()=>q,range:async()=>({data:[],count:0,error:null}),single:async()=>({data:name==='branches'?state.branch:state.conn})};return q;}};
   const spoke=()=>({rpc:(name,args)=>{
     assert.equal(name,'resolve_newsletter_audience');assert.deepEqual(args,{p_tags:null});
     return {order:column=>{assert.equal(column,'email');return {range:async(from,to)=>({data:state.rows?.slice(from,to+1),count:state.rows?.length,error:state.consentError?{}:null})};}};
   }});
-  return {state,run:(key='fixture-service-key')=>loadReminder(admin,selection,'Reminder',spoke,key)};
+  return {state,run:(key='fixture-service-key')=>loadReminder(admin,selection,'Reminder',spoke,key,state.bindings)};
 }
+test('adapter rejects missing runtime bindings before reading any original data',async()=>{
+  const h=fixture();h.state.bindings=undefined;
+  await assert.rejects(h.run,/bindings/);assert.equal(h.state.rpcCalls,0);
+});
+test('adapter binds environment and selected projects into the preview fingerprint',async()=>{
+  const h=fixture();const before=(await h.run()).audience;
+  const config={hub:stagingManifest.hub,branches:{atlurbanfarms:'aaaaaaaaaaaaaaaaaaaa'}};
+  h.state.bindings=resolveNewsletterProjectBindings('staging',JSON.stringify(config),`https://${config.hub}.supabase.co`);
+  h.state.conn.supabase_url='https://aaaaaaaaaaaaaaaaaaaa.supabase.co';
+  const after=(await h.run()).audience;
+  assert.equal(before.final_count,after.final_count);assert.notEqual(before.fingerprint,after.fingerprint);
+});
 test('adapter reads authoritative consent and retains safe source reference',async()=>{
   const h=fixture();const {audience}=await h.run();assert.equal(audience.final_count,1);assert.equal(audience.recipients[0].source_recipient_id,'recipient-uuid');
 });
@@ -47,7 +64,7 @@ function rekkrdFixture() {
       }};
     }}}};
   };
-  return {state,run:()=>loadReminder(admin,{...selection,branch:'rekkrd'},'Reminder',spoke,'')};
+  return {state,run:()=>loadReminder(admin,{...selection,branch:'rekkrd'},'Reminder',spoke,'',productionBindings)};
 }
 
 test('Rekkrd uses the union of explicit native consent preferences, not global fallback flags',async()=>{
