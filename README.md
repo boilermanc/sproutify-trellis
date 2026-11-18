@@ -305,3 +305,11 @@ Before any future release/send:
 5. After an approved release, as the original owner or an authorized marketing operator, review a fresh server preview and final rendered subject/body. A changed audience requires another preview. Once a reminder was queued, do not delete/recreate it to bypass duplicate protection. Any stopped or uncertain send needs operator reconciliation before retry; no automatic replacement reminder is created.
 
 No live mail was sent, scheduled or triggered during implementation. No production data, schema, deployment or credentials were changed, and nothing was pushed.
+
+## ATL Meta acquisition report
+
+In Campaign Builder, select ATL Urban Farms and open **ATL Urban Farms · Meta acquisition report**. The embedded field guide covers ad tagging, CSV setup, checkout consent, metric definitions, a worked margin example and budget decisions. Each run compares one USD campaign export in Eastern time against eligible ATL orders. The browser receives aggregate counts. The report is read-only and does not retain the export.
+
+The matching backend is the Trellis hub Edge Function `atl-acquisition`. It requires JWT verification, an active Trellis owner or admin, and the existing server-side ATL spoke credential. Deploy the reviewed function to the Trellis hub using Switchboard before releasing the matching frontend through the main-branch workflow. Smoke-test with a closed-period export, reconcile matched plus unmatched orders with ATL, and verify anonymous and non-admin requests are denied. For rollback, revert the frontend release first, then remove the unused function through the normal release process. No schema migration is involved.
+
+Local verification: run `node --test tests/atl-acquisition.test.mjs`, `npm run test:campaigns`, `npx tsc --noEmit`, `deno check supabase/functions/atl-acquisition/index.ts` and `npm run build`. For the browser fixture start Vite with fixture Supabase settings and run `node tests/atl-acquisition-browser.mjs` with STUDIO_TEST_URL pointing to Vite and PLAYWRIGHT_MODULE pointing to an installed Playwright module.
