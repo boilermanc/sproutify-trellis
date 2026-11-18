@@ -1,3 +1,4 @@
+import AtlAcquisition from '../components/AtlAcquisition';
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult, EnrichedProfile } from '../types';
@@ -2938,6 +2939,7 @@ Return ONLY the post content, no explanations or labels.`,
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-12 pb-20">
       <div className="lg:col-span-3 space-y-12">
+        {(branchContext?.isAllSelected || branchContext?.activeBranchSlugs.some(slug => slug === 'atl-urban-farms' || slug === 'atlurbanfarms')) && <AtlAcquisition />}
         <div className={`border px-5 py-4 flex flex-wrap items-center justify-between gap-4 ${
           draftSaveError ? 'border-rose-200 bg-rose-50' : 'border-emerald-100 bg-emerald-50/70'
         }`}>
