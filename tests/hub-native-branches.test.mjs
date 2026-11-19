@@ -88,7 +88,7 @@ test('useBranchStats treats Hub-native branches as stat sources', async () => {
   assert.match(hook, /if \(active\.length === 0\) \{\s*\n\s*setEnrichedProfiles\(hub\.profiles\);/);
 });
 
-test('Profiles offers Hub-native branches as selectable data sources', async () => {
+test('Profiles offers every live or Hub-native branch as a single-business choice', async () => {
   const page = await read('pages/Profiles.tsx');
 
   const sources = page.match(/const dataSources = useMemo\(\(\) => \(\[[\s\S]*?\]\), \[[^\]]*\]\);/);
@@ -96,11 +96,34 @@ test('Profiles offers Hub-native branches as selectable data sources', async () 
   assert.match(sources[0], /branchStats\.hubSources/);
   assert.match(sources[0], /isHub: true/);
 
-  // The picker, select-all, scope sync and the pick-a-branch gate must all run
-  // off the combined list — any one of them left on spokeConnections re-hides
-  // the Hub branches.
+  // The business picker and empty-selection gate both run off the combined
+  // list, so Hub-native businesses stay visible without exposing the storage
+  // implementation to the operator.
   assert.match(page, /\{dataSources\.map\(\(connection\) => \{/);
-  assert.match(page, /setSelectedSpokeIds\(new Set\(dataSources\.map\(s => s\.id\)\)\)/);
+  assert.match(page, /setSelectedSpokeIds\(new Set\(\[id\]\)\)/);
   assert.match(page, /const activeConnectionCount = dataSources\.length;/);
+  assert.match(page, /role="group" aria-label="Select business"/);
+  assert.doesNotMatch(page, />Select Business</);
+  assert.doesNotMatch(page, /Choose one business to view its customer profiles\./);
+  assert.doesNotMatch(page, /Showing \$\{filteredFederatedProfiles\.length\} of/);
+  assert.doesNotMatch(page, /Showing \$\{federatedProfiles\.length\} \$\{selectedBusiness\.name\} profiles/);
+  assert.doesNotMatch(page, /Select All|Select Data Sources|Filter by Branch|>Local<|>Live Spokes</);
   assert.doesNotMatch(page, /spokeConnections\.filter\(c => c\.status === 'active'\)\.map\(c => c\.id\)/);
+
+  const businessPicker = page.indexOf('aria-label="Select business"');
+  const summaryCards = page.indexOf('{/* KPI Summary Bar */}');
+  const search = page.indexOf('placeholder="Search by name, email, phone, or customer ID..."');
+  const profileList = page.indexOf('{/* Empty-selection gate:');
+  assert.ok(
+    businessPicker < summaryCards && summaryCards < search && search < profileList,
+    'Profiles should flow from business picker to summary cards to search to results',
+  );
+});
+
+test('Profiles keeps the global header fixed at All Branches', async () => {
+  const layout = await read('components/Layout.tsx');
+
+  assert.match(layout, /activeView === 'profiles'/);
+  assert.match(layout, /aria-label="All branches"/);
+  assert.match(layout, /All Branches \(\{branchContext\.allBranches\.length\}\)/);
 });

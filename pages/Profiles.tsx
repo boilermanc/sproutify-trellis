@@ -14,7 +14,7 @@ import {
   Search, Tag, MoreHorizontal, X, Edit3,
   History, Globe, GraduationCap, Sprout, Heart, Building2,
   FilterX, Users, MousePointer2, Sparkles, Zap,
-  Clock, ArrowUpRight, DatabaseZap, ShieldCheck, Activity,
+  Clock, ArrowUpRight, ShieldCheck, Activity,
   Fingerprint, Loader2, GitBranch, ChevronLeft, ChevronRight,
   Radio, RefreshCw, AlertCircle, Link, ShoppingBag, DollarSign, Calendar
 } from 'lucide-react';
@@ -68,8 +68,10 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Federated data — now driven by branchStats (client-side filter instead of re-fetch)
-  const [dataSource, setDataSource] = useState<'local' | 'federated'>('federated');
+  // Profiles always read from the live business sources. The legacy local
+  // profile path remains below for now, but it is no longer exposed as a user
+  // choice on the Profiles screen.
+  const [dataSource] = useState<'local' | 'federated'>('federated');
   const [selectedSpokeIds, setSelectedSpokeIds] = useState<Set<string>>(new Set());
   const [selectedFederatedProfile, setSelectedFederatedProfile] = useState<EnrichedProfile | null>(null);
 
@@ -138,13 +140,12 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [subscriptionFilter, setSubscriptionFilter] = useState<'all' | 'subscribed' | 'unsubscribed'>('all');
-  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Fetch branches for display and auto-select active spokes
+  // Fetch branches for display.
   useEffect(() => {
     async function fetchData() {
       try {
@@ -166,51 +167,14 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     fetchData();
   }, [branchContext]);
 
-  // NOTE: We intentionally do NOT auto-select spokes on mount. With multiple
-  // branches now live, the user must explicitly pick which branch(es) to load
-  // before any profiles are shown (see the empty-selection gate below).
+  // Do not auto-select on mount. The operator deliberately chooses one
+  // business before any customer profiles are shown.
 
-  const toggleSpokeSelection = (id: string) => {
-    setSelectedSpokeIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+  const selectBusiness = (id: string) => {
+    setSelectedSpokeIds(new Set([id]));
+    setSelectedFederatedProfile(null);
+    setCurrentPage(1);
   };
-
-  const selectAllSpokes = () => {
-    setSelectedSpokeIds(new Set(dataSources.map(s => s.id)));
-  };
-
-  const clearSpokeSelection = () => {
-    setSelectedSpokeIds(new Set());
-  };
-
-  // Let the global Branch Scope picker (top bar) drive which data sources load
-  // here. When the user narrows the global scope, auto-select the matching
-  // active spokes so Profiles reflects it; manual chip toggles below still work
-  // afterward. "All Branches" (the default) leaves the intentional
-  // pick-a-branch gate intact — see the empty-selection gate below.
-  const scopeKey = branchContext && !branchContext.isAllSelected
-    ? branchContext.activeBranchSlugs.slice().sort().join(',')
-    : '__all__';
-  useEffect(() => {
-    if (!branchContext || branchContext.isAllSelected) return;
-    const activeNames = new Set(
-      branchContext.allBranches
-        .filter(b => branchContext.activeBranchSlugs.includes(b.slug))
-        .map(b => b.name)
-    );
-    const matchingIds = dataSources
-      .filter(s => activeNames.has(s.name))
-      .map(s => s.id);
-    setSelectedSpokeIds(new Set(matchingIds));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, dataSources]);
 
   const activeConnectionCount = dataSources.length;
 
@@ -261,10 +225,9 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
       const matchesSegment = selectedSegments.length === 0 || p.segments.some(s => selectedSegments.includes(s));
       const matchesTag = selectedTags.length === 0 || p.tags.some(t => selectedTags.includes(t));
       const matchesSub = subscriptionFilter === 'all' || (subscriptionFilter === 'subscribed' ? p.is_subscribed : !p.is_subscribed);
-      const matchesBranch = selectedBranchFilter === null || p.branches.includes(selectedBranchFilter);
-      return matchesSearch && matchesSite && matchesSegment && matchesTag && matchesSub && matchesBranch;
+      return matchesSearch && matchesSite && matchesSegment && matchesTag && matchesSub;
     });
-  }, [profiles, searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter]);
+  }, [profiles, searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter]);
 
   // Federated view renders federatedProfiles directly, so the search box has to
   // filter THIS list (the 'filtered' memo above only feeds the 'local' view).
@@ -286,7 +249,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedBranchFilter, selectedSpokeIds, planFilter, activityFilter, collectionFilter, profileSort, dataSource]);
+  }, [searchTerm, selectedSites, selectedSegments, selectedTags, subscriptionFilter, selectedSpokeIds, planFilter, activityFilter, collectionFilter, profileSort, dataSource]);
 
   // Pagination calculations
   const totalPages = Math.ceil((dataSource === 'federated' ? filteredFederatedProfiles.length : filtered.length) / pageSize);
@@ -316,87 +279,20 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
   return (
     <div className="space-y-6 relative h-full pb-20">
-      <div className="bg-white p-8 rounded-sm border border-slate-200  space-y-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="relative flex-1 max-w-xl">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input type="text" placeholder="Search by email, name, or Spoke UUID..." className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition  font-bold text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-          </div>
-          <div className="flex items-center space-x-3">
-             <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-sm flex items-center space-x-2">
-                <DatabaseZap size={14} className="text-indigo-600" />
-                <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Composite Sync: Active</span>
-             </div>
-          </div>
-        </div>
-
-        {/* Data Source Toggle */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
-          <div className="flex items-center space-x-4">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Source</label>
-            <div className="flex bg-slate-100 p-1 rounded-sm">
-              <button
-                onClick={() => setDataSource('local')}
-                className={`px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors ${
-                  dataSource === 'local'
-                    ? 'bg-emerald-600 text-white '
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Local
-              </button>
-              <button
-                onClick={() => setDataSource('federated')}
-                className={`px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors ${
-                  dataSource === 'federated'
-                    ? 'bg-emerald-600 text-white '
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Live Spokes
-              </button>
-            </div>
-          </div>
-
-          {activeConnectionCount > 0 && (
-            <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-sm flex items-center space-x-2">
-              <Link size={12} className="text-emerald-600" />
-              <span className="text-[10px] font-bold text-emerald-700">
-                {activeConnectionCount} active connection{activeConnectionCount !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Spoke Picker - only show in federated mode with active connections */}
-        {dataSource === 'federated' && activeConnectionCount > 0 && (
-          <div className="pt-4 border-t border-slate-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Data Sources</label>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={selectAllSpokes}
-                  className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 transition"
-                >
-                  Select All
-                </button>
-                <span className="text-slate-300">|</span>
-                <button
-                  onClick={clearSpokeSelection}
-                  className="text-[10px] font-bold text-slate-500 hover:text-slate-700 transition"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-
+      <div className="bg-white p-8 rounded-sm border border-slate-200 space-y-8">
+        {/* Business picker. The live spoke/Hub wiring is an implementation
+            detail; operators choose exactly one business at a time. */}
+        {activeConnectionCount > 0 && (
+          <div className="space-y-3" role="group" aria-label="Select business">
             <div className="flex flex-wrap gap-2">
               {dataSources.map((connection) => {
                 const isSelected = selectedSpokeIds.has(connection.id);
                 return (
                   <button
                     key={connection.id}
-                    onClick={() => toggleSpokeSelection(connection.id)}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => selectBusiness(connection.id)}
                     className={`flex items-center space-x-2 px-3 py-2 rounded-sm border-2 transition-colors ${
                       isSelected
                         ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
@@ -404,26 +300,19 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                     }`}
                   >
                     <div
-                      className={`w-4 h-4 rounded flex items-center justify-center ${
-                        isSelected ? 'bg-emerald-600' : 'bg-slate-100 border border-slate-300'
+                      className={`w-4 h-4 rounded-full flex items-center justify-center border ${
+                        isSelected ? 'border-emerald-600' : 'border-slate-300 bg-white'
                       }`}
                     >
-                      {isSelected && (
-                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
+                      {isSelected && <span className="w-2 h-2 rounded-full bg-emerald-600" />}
                     </div>
                     <span className="text-xs font-bold">{connection.name}</span>
-                    {connection.isHub && (
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Hub</span>
-                    )}
                   </button>
                 );
               })}
             </div>
 
-            <div className="flex items-center space-x-3 pt-2">
+            <div className="flex items-center pt-2">
               <button
                 onClick={() => branchStats.refresh()}
                 disabled={isFederating}
@@ -438,17 +327,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   {isFederating ? 'Refreshing...' : 'Refresh Profiles'}
                 </span>
               </button>
-
-              {selectedSpokeIds.size > 0 && (
-                <span className="text-[10px] font-bold text-slate-400">
-                  {selectedSpokeIds.size} of {activeConnectionCount} selected
-                </span>
-              )}
             </div>
           </div>
         )}
 
-        {dataSource === 'federated' && activeConnectionCount === 0 && (
+        {activeConnectionCount === 0 && (
           <div className="pt-4 border-t border-slate-100">
             <div className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-sm flex items-center space-x-2">
               <AlertCircle size={16} className="text-amber-600" />
@@ -469,47 +352,47 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
             {/* Total Profiles */}
             <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Profiles</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{profileStats.totalProfiles}</p>
+              <p className="text-2xl font-bold text-gray-900">{profileStats.totalProfiles}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Profiles</p>
               <p className="text-xs text-gray-400 mt-1">{profileStats.withOrders} with orders</p>
             </div>
 
             {/* Total Orders */}
             <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Orders</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{profileStats.totalOrders.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-gray-900">{profileStats.totalOrders.toLocaleString()}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Orders</p>
               <p className="text-xs text-gray-400 mt-1">across all profiles</p>
             </div>
 
             {/* Total LTV */}
             <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Total Revenue</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">
+              <p className="text-2xl font-bold text-emerald-600">
                 ${profileStats.totalLTV.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Total Revenue</p>
               <p className="text-xs text-gray-400 mt-1">lifetime value</p>
             </div>
 
             {/* Avg Order Value */}
             <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Avg Order</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
+              <p className="text-2xl font-bold text-gray-900">
                 ${profileStats.avgOrderValue.toFixed(2)}
               </p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Avg Order</p>
               <p className="text-xs text-gray-400 mt-1">per order</p>
             </div>
 
             {/* VIP Count */}
             <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">VIP Customers</p>
-              <p className="text-2xl font-bold text-amber-600 mt-1">{profileStats.vipCount}</p>
+              <p className="text-2xl font-bold text-amber-600">{profileStats.vipCount}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">VIP Customers</p>
               <p className="text-xs text-gray-400 mt-1">LTV ≥ $50</p>
             </div>
 
             {/* Opted-In */}
             <div className="bg-white rounded-sm p-4 border border-emerald-100">
-              <p className="text-xs text-emerald-600 uppercase tracking-wide font-bold">Opted-In</p>
-              <p className="text-2xl font-bold text-emerald-700 mt-1">{profileStats.optedIn}</p>
+              <p className="text-2xl font-bold text-emerald-700">{profileStats.optedIn}</p>
+              <p className="text-xs text-emerald-600 uppercase tracking-wide font-bold mt-2">Opted-In</p>
               <p className="text-xs text-gray-400 mt-1">
                 {profileStats.totalProfiles > 0
                   ? `${Math.round((profileStats.optedIn / profileStats.totalProfiles) * 100)}% of total`
@@ -519,57 +402,31 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
 
             {/* Opted-Out */}
             <div className="bg-white rounded-sm p-4 border border-rose-100">
-              <p className="text-xs text-rose-600 uppercase tracking-wide font-bold">Opted-Out</p>
-              <p className="text-2xl font-bold text-rose-600 mt-1">{profileStats.optedOut}</p>
+              <p className="text-2xl font-bold text-rose-600">{profileStats.optedOut}</p>
+              <p className="text-xs text-rose-600 uppercase tracking-wide font-bold mt-2">Opted-Out</p>
               <p className="text-xs text-gray-400 mt-1">unsubscribed</p>
             </div>
 
             {/* Consent Unverified */}
             {profileStats.consentUnverified > 0 && (
               <div className="bg-white rounded-sm p-4 border border-amber-100">
-                <p className="text-xs text-amber-600 uppercase tracking-wide font-bold">Unverified</p>
-                <p className="text-2xl font-bold text-amber-600 mt-1">{profileStats.consentUnverified}</p>
+                <p className="text-2xl font-bold text-amber-600">{profileStats.consentUnverified}</p>
+                <p className="text-xs text-amber-600 uppercase tracking-wide font-bold mt-2">Unverified</p>
                 <p className="text-xs text-gray-400 mt-1">consent unknown</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Branch Filter Row */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4 border-t border-slate-100">
-          <div className="flex items-center space-x-4">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by Branch</label>
-            <div className="relative">
-              <select
-                value={selectedBranchFilter || ''}
-                onChange={(e) => setSelectedBranchFilter(e.target.value || null)}
-                className="appearance-none bg-slate-50 border border-slate-200 rounded-sm px-4 py-2.5 pr-10 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-              >
-                <option value="">All Branches</option>
-                {branches.map((branch) => (
-                  <option key={branch.slug} value={branch.slug}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-              <GitBranch size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-            {selectedBranchFilter && branchMap[selectedBranchFilter] && (
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: branchMap[selectedBranchFilter].primary_color }}
-              />
-            )}
-          </div>
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {dataSource === 'local'
-              ? `Showing ${filtered.length} of ${profiles.filter(p => p.status === 'active').length} profiles`
-              : searchTerm.trim() || planFilter !== 'all' || activityFilter !== 'all' || collectionFilter !== 'all'
-                ? `Showing ${filteredFederatedProfiles.length} of ${federatedProfiles.length} federated profiles`
-                : `Showing ${federatedProfiles.length} federated profiles`
-            }
+        {/* Search belongs with the results it filters: below the selected
+            business summary and directly above the profile list. */}
+        <div className="pt-4 border-t border-slate-100">
+          <div className="relative max-w-xl">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <input type="text" placeholder="Search by name, email, phone, or customer ID..." className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-bold text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
         </div>
+
       </div>
 
       {dataSource === 'federated' && selectedSpokeIds.size > 0 && (
@@ -608,18 +465,10 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           <div className="w-16 h-16 rounded-sm bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5">
             <GitBranch size={28} className="text-emerald-600" />
           </div>
-          <h3 className="text-lg font-black text-slate-800">Select a branch to load profiles</h3>
+          <h3 className="text-lg font-black text-slate-800">Select a business to view profiles</h3>
           <p className="mt-2 max-w-md text-sm font-bold text-slate-400">
-            Pick one or more data sources from <span className="text-slate-600">Select Data Sources</span> above. Nothing is queried until you choose which branch you want to look at.
+            Choose one business above. Each business keeps its own customer profiles, communications, consent, and order history.
           </p>
-          {activeConnectionCount > 1 && (
-            <button
-              onClick={selectAllSpokes}
-              className="mt-6 flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 transition"
-            >
-              <DatabaseZap size={14} /> Load all {activeConnectionCount} branches
-            </button>
-          )}
         </div>
       ) : (
       <div className="bg-white rounded-[3rem] border border-slate-200  overflow-hidden">

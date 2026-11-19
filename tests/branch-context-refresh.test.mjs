@@ -15,6 +15,17 @@ test('App exposes one refresh path for the registry and global branch context', 
   assert.match(app, /onBranchesChange=\{refreshBranches\}/);
 });
 
+test('fresh localhost sessions recover safe spoke ids from the branch registry', async () => {
+  const app = await read('App.tsx');
+
+  assert.match(app, /function connectionsFromBranchRegistry\(branches: Branch\[\]\)/);
+  assert.match(app, /const connectionId = branch\.spoke_connection_id/);
+  assert.match(app, /tables: RUNTIME_TABLE_GATES/);
+  assert.match(app, /status: 'active'/);
+  assert.match(app, /setSpokeConnections\(currentConnections =>\s*\n\s*currentConnections\.length > 0\s*\n\s*\? currentConnections\s*\n\s*: connectionsFromBranchRegistry\(activeBranches\)/);
+  assert.match(app, /connections\.length > 0 \? connections : currentConnections/);
+});
+
 test('Branch Command Center refreshes shared consumers after branch mutations', async () => {
   const commandCenter = await read('pages/BranchCommandCenter.tsx');
 

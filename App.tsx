@@ -68,6 +68,44 @@ const PERSISTENCE_KEY = 'trellis_v1_store';
 // UUID for the main Sproutify organization - must match the organization_id in tenant_secrets table
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 
+// The browser is intentionally not allowed to read spoke_connections directly.
+// Branches expose only the safe connection id needed by the server-side
+// spoke-query function. These placeholder table entries are client-side gates;
+// the Edge Function resolves the authoritative table mappings and credentials.
+const RUNTIME_TABLE_GATES: SpokeConnection['tables'] = [
+  'customers',
+  'orders',
+  'order_items',
+  'subscriptions',
+].map(tableType => ({
+  id: `runtime-${tableType}`,
+  table_type: tableType as SpokeConnection['tables'][number]['table_type'],
+  table_name: '',
+  field_mapping: {},
+  enabled: true,
+}));
+
+function connectionsFromBranchRegistry(branches: Branch[]): SpokeConnection[] {
+  const byConnectionId = new Map<string, SpokeConnection>();
+
+  for (const branch of branches) {
+    const connectionId = branch.spoke_connection_id;
+    if (!connectionId || byConnectionId.has(connectionId)) continue;
+
+    byConnectionId.set(connectionId, {
+      id: connectionId,
+      name: branch.name,
+      supabase_url: '',
+      supabase_key: '',
+      tables: RUNTIME_TABLE_GATES,
+      status: 'active',
+      created_at: branch.created_at,
+    });
+  }
+
+  return Array.from(byConnectionId.values());
+}
+
 type AuthView = 'login' | 'reset-password';
 
 const AppContent: React.FC = () => {
@@ -245,6 +283,11 @@ const AppContent: React.FC = () => {
     const activeSlugs = activeBranches.map(branch => branch.slug);
 
     setBranches(branchData);
+    setSpokeConnections(currentConnections =>
+      currentConnections.length > 0
+        ? currentConnections
+        : connectionsFromBranchRegistry(activeBranches)
+    );
     setAllBranches(previousBranches => {
       setActiveBranchSlugs(previousSelection => {
         const previousSlugs = previousBranches.map(branch => branch.slug);
@@ -428,7 +471,11 @@ const AppContent: React.FC = () => {
       await migrateLocalStorageToSupabase(SPROUTIFY_ORG_ID);
       const connections = await fetchSpokeConnections(SPROUTIFY_ORG_ID);
       if (!cancelled) {
-        setSpokeConnections(connections);
+        // A denied/empty direct read must not erase the safe branch-registry
+        // fallback populated by refreshBranches for a fresh localhost origin.
+        setSpokeConnections(currentConnections =>
+          connections.length > 0 ? connections : currentConnections
+        );
         setSpokeConnectionsReady(true);
       }
     };

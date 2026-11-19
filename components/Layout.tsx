@@ -319,8 +319,21 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
             )}
           </div>
           <div className="flex items-center space-x-2 lg:space-x-4 shrink-0">
-             {/* Branch Scope Picker */}
-             {showBranchPicker && <div className="relative" ref={branchPickerRef}>
+             {/* Profiles has its own single-business picker. Keep the global
+                 context visibly at All Branches here so the two controls do
+                 not compete or imply that profiles are being merged. */}
+             {activeView === 'profiles' ? (
+               <div className="flex items-center space-x-2 px-3 lg:px-4 py-2 bg-slate-100 rounded-xl border border-slate-200" aria-label="All branches">
+                 <GitBranch size={16} className="text-emerald-600 shrink-0" />
+                 <span className="hidden sm:inline text-xs font-black uppercase tracking-widest text-slate-700">
+                   All Branches ({branchContext.allBranches.length})
+                 </span>
+                 <span className="sm:hidden text-xs font-black uppercase tracking-widest text-slate-700">
+                   All ({branchContext.allBranches.length})
+                 </span>
+               </div>
+             ) : showBranchPicker ? (
+             <div className="relative" ref={branchPickerRef}>
                <button
                  id="studio-branch-picker"
                  aria-label={singleBranchView ? 'Choose branch' : 'Branch scope'}
@@ -422,7 +435,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChange, use
                    </div>
                  </div>
                )}
-             </div>}
+             </div>
+             ) : null}
 
              <button
                onClick={() => onViewChange('support-hub')}
