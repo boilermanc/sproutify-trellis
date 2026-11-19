@@ -1,3 +1,4 @@
+import SWEETWATER_TRACE_SQL_SCHEMA from './supabase/migrations/20261119165427_sweetwater_trace_clients.sql?raw';
 import NEWSLETTER_SCHEDULER_AUTH_SQL_SCHEMA from './supabase/migrations/20261116151520_newsletter_scheduler_authorization.sql?raw';
 import NEWSLETTER_RESEND_SAFETY_SQL_SCHEMA from './supabase/migrations/20261115145257_newsletter_resend_safety.sql?raw';
 import PROJECT_ROOMS_SQL_SCHEMA from './supabase/migrations/20261106032348_project_rooms.sql?raw';
@@ -3021,6 +3022,7 @@ ${DASHBOARD_ACTION_STATES_SQL_SCHEMA}
 ${KEYWORD_EXPLORER_SQL_SCHEMA}
 ${OPPORTUNITY_BRIEF_SQL_SCHEMA}
 ${SWEETWATER_INQUIRY_SQL_SCHEMA}
+${SWEETWATER_TRACE_SQL_SCHEMA}
 ${SWEETWATER_CONTACT_SQL_SCHEMA}
 ${TIKTOK_METRICS_SQL_SCHEMA}
 ${SHARED_X_SQL_SCHEMA}
