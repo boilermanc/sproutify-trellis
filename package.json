@@ -13,7 +13,7 @@
     "test:business-overview": "node --test tests/business-overview-contract.test.mjs",
     "test:sage": "node --test tests/sage-posthog-reporting.test.mjs tests/sage-email-reporting.test.mjs tests/sage-event-reporting.test.mjs",
     "test:campaigns": "node --test tests/campaign-draft-contract.test.mjs tests/campaign-cc.test.mjs tests/hub-native-branches.test.mjs tests/link-interest-segments.test.mjs tests/campaign-engagement-segments.test.mjs",
-    "test:newsletter-resend": "node --test tests/newsletter-resend.test.mjs tests/newsletter-resend-data.test.mjs tests/newsletter-resend-worker.test.mjs tests/newsletter-consent.test.mjs tests/newsletter-project-bindings.test.mjs tests/newsletter-worker-guard.test.mjs tests/newsletter-resend-endpoint.test.mjs",
+    "test:newsletter-resend": "node --test tests/newsletter-resend.test.mjs tests/newsletter-resend-data.test.mjs tests/newsletter-resend-worker.test.mjs tests/newsletter-consent.test.mjs tests/newsletter-project-bindings.test.mjs tests/newsletter-worker-guard.test.mjs tests/newsletter-resend-endpoint.test.mjs tests/atl-newsletter-authority.test.mjs",
     "test:reddit-ads": "node --test tests/reddit-ads-contract.test.mjs",
     "test:studio": "node --test tests/studio-album-planning.test.mjs tests/studio-album-contract.test.mjs",
     "test:media-generation": "node --test tests/media-generation-contract.test.mjs",

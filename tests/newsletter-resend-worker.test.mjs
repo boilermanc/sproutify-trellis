@@ -16,7 +16,7 @@ const bindingsUrl=new URL('../supabase/functions/_shared/newsletter-project-bind
 const worker=fs.readFileSync(new URL('../supabase/functions/campaign-sender/index.ts',import.meta.url),'utf8')
   .replace(/^import .*;\r?\n/gm,'').replace('const RATE_LIMIT_MS = 550','const RATE_LIMIT_MS = 0');
 const source=`import {renderReminder,validateRendered,ResendSafetyError} from ${JSON.stringify(moduleUrl)};
-  import {authorizeNewsletterWorker,newsletterWorkerMethod} from ${JSON.stringify(guardUrl)};import {readNewsletterProjectBindings,newsletterBranchProject,newsletterDispatchAllowed} from ${JSON.stringify(bindingsUrl)};const loadReminder=(...args)=>globalThis.__workerFixture.load(...args);
+  import {authorizeNewsletterWorker,newsletterWorkerMethod} from ${JSON.stringify(guardUrl)};import {readNewsletterProjectBindings,newsletterBranchProject,newsletterDispatchAllowed} from ${JSON.stringify(bindingsUrl)};const loadReminder=(...args)=>globalThis.__workerFixture.load(...args);const readBranchConsent=(...args)=>globalThis.__workerFixture.readAtl(...args);
   const createClient=()=>{globalThis.__workerFixture.clientCount++;return globalThis.__workerFixture.admin;};\n`+worker;
 let handler;
 const defaultEnv=()=>({SUPABASE_URL:`https://${productionManifest.hub}.supabase.co`,SUPABASE_SERVICE_ROLE_KEY:'fixture-runtime-key',NEWSLETTER_ENVIRONMENT:'production',NEWSLETTER_PROJECT_BINDINGS:JSON.stringify(productionManifest),NEWSLETTER_WORKER_TOKEN:workerToken,NEWSLETTER_DISPATCH_ENABLED:'true'});
@@ -28,25 +28,27 @@ async function setup() {
   env=defaultEnv();
   const bundle=fixture();const audience=await prepareReminder(bundle,[recipient],{campaignId:id,userId:'owner',branch:'atlurbanfarms'},'Reminder');
   const campaign={...structuredClone(original),id:'reminder-id',subject:'Reminder',send_status:'queued',created_at:new Date().toISOString(),dispatch:{...original.dispatch,subject:'Reminder'},metadata:{resend_of:id,resend_safety_version:1,resend_fingerprint:audience.fingerprint}};
-  const tables={campaigns:[campaign],campaign_recipients:[structuredClone(recipient)],campaign_sends:[],email_suppressions:[],tenant_secrets:[{resend_token:'fixture-provider-token'}],trellis_users:[]};
-  const state={tables,campaign,bundle,loadCount:0,fetchCount:0,clientCount:0,tableReads:[],authReads:0,authUser:null,suppressionFailure:false,attributionFailure:false,providerFailure:false,claimed:false,providerRequests:[],providerCache:new Map()};
+  const tables={campaigns:[campaign],campaign_recipients:[structuredClone(recipient)],campaign_sends:[],email_suppressions:[],tenant_secrets:[{resend_token:'fixture-provider-token'}],trellis_users:[],branches:[{slug:'atlurbanfarms',spoke_connection_id:'atl-connection',is_active:true}]};
+  const state={tables,campaign,bundle,loadCount:0,atlReadCount:0,liveAudience:[{email:recipient.email,first_name:'Live A'}],fetchCount:0,clientCount:0,tableReads:[],authReads:0,authUser:null,suppressionFailure:false,attributionFailure:false,providerFailure:false,claimed:false,providerRequests:[],providerCache:new Map()};
   const admin={auth:{getUser:async()=>{state.authReads++;return {data:{user:state.authUser},error:null};}},rpc:async name=>{assert.equal(name,'claim_due_campaign');if(state.claimed)return {data:null};state.claimed=true;return {data:structuredClone(campaign)};},from:table=>{
     state.tableReads.push(table);
-    let predicates=[],update=null,upsert=null,count=false;
-    const q={select:(_fields,options)=>{count=options?.count==='exact';return q;},eq:(field,value)=>{predicates.push(row=>row[field]===value);return q;},in:(field,values)=>{predicates.push(row=>values.includes(row[field]));return q;},order:()=>q,limit:()=>q,update:values=>{update=values;return q;},upsert:values=>{upsert=values;return q;},single:()=>q,maybeSingle:()=>q,
+    let predicates=[],update=null,upsert=null,count=false,single=false;
+    const q={select:(_fields,options)=>{count=options?.count==='exact';return q;},eq:(field,value)=>{predicates.push(row=>row[field]===value);return q;},in:(field,values)=>{predicates.push(row=>values.includes(row[field]));return q;},order:()=>q,limit:()=>q,update:values=>{update=values;return q;},upsert:values=>{upsert=values;return q;},single:()=>{single=true;return q;},maybeSingle:()=>{single=true;return q;},
       then:(resolve,reject)=>Promise.resolve().then(()=>{
         if(table==='email_suppressions'&&state.suppressionFailure)return {error:{message:'fixture outage'}};
         if(upsert){if(state.attributionFailure)return {error:{message:'fixture outage'}};for(const row of upsert)if(!tables[table].some(r=>r.resend_email_id===row.resend_email_id))tables[table].push(row);return {error:null};}
         const rows=tables[table].filter(row=>predicates.every(predicate=>predicate(row)));if(update)rows.forEach(row=>Object.assign(row,update));
-        return {data:['tenant_secrets','trellis_users'].includes(table)?rows[0]:structuredClone(rows),count:count?rows.length:undefined,error:null};
+        return {data:single||['tenant_secrets','trellis_users'].includes(table)?structuredClone(rows[0]):structuredClone(rows),count:count?rows.length:undefined,error:null};
       }).then(resolve,reject)};return q;}};
   state.admin=admin;state.load=async()=>{state.loadCount++;return {bundle,audience:await prepareReminder(bundle,[recipient],{campaignId:id,userId:'owner',branch:'atlurbanfarms'},'Reminder')};};
+  state.readAtl=async()=>{state.atlReadCount++;return structuredClone(state.liveAudience);};
   globalThis.__workerFixture=state;
   globalThis.fetch=async(url,options)=>{
-    state.fetchCount++;assert.equal(url,'https://api.resend.com/emails');const key=options.headers['Idempotency-Key'];assert.equal(key,'newsletter-reminder/reminder-id/recipient-uuid');
-    const body=JSON.parse(options.body);assert.equal(body.to[0],recipient.email);assert.ok(!body.html.includes('{{'));assert.ok(body.headers['List-Unsubscribe']);
+    state.fetchCount++;const reminderRequest=url==='https://api.resend.com/emails';assert.equal(url,reminderRequest?'https://api.resend.com/emails':'https://api.resend.com/emails/batch');const key=options.headers['Idempotency-Key'];if(reminderRequest)assert.equal(key,'newsletter-reminder/reminder-id/recipient-uuid');
+    const body=JSON.parse(options.body);const message=reminderRequest?body:body[0];assert.equal(message.to[0],recipient.email);assert.ok(!message.html.includes('{{'));assert.ok(message.headers['List-Unsubscribe']);
     state.providerRequests.push({key,body});
     if(state.providerFailure)return new Response('{}',{status:503});
+    if(!reminderRequest)return new Response(JSON.stringify({data:[{id:'fixture-standard-provider-result'}]}),{status:200});
     if(!state.providerCache.has(key))state.providerCache.set(key,{id:'fixture-provider-result'});
     return new Response(JSON.stringify(state.providerCache.get(key)),{status:200});
   };
@@ -54,6 +56,27 @@ async function setup() {
 }
 test('worker dispatches valid reminder and persists provider campaign attribution',async()=>{
   const s=await setup();await s.run();assert.equal(s.fetchCount,1);assert.equal(s.tables.campaign_recipients[0].status,'sent');assert.equal(s.tables.campaign_sends[0].campaign_id,'reminder-id');assert.equal(s.campaign.send_status,'sent');
+});
+test('ordinary ATL campaign revalidates the live audience immediately before dispatch',async()=>{
+  const s=await setup();s.campaign.metadata={};s.campaign.subject='Standard ATL campaign';s.campaign.dispatch.subject=s.campaign.subject;
+  await s.run();
+  assert.equal(s.atlReadCount,1);assert.equal(s.fetchCount,1);assert.equal(s.tables.campaign_recipients[0].status,'sent');assert.equal(s.tables.campaign_sends[0].campaign_id,s.campaign.id);assert.equal(s.campaign.send_status,'sent');
+  assert.match(s.providerRequests[0].body[0].html,/Live A/);
+});
+test('ordinary ATL campaign records a non-delivery when a staged candidate is absent from the live audience',async()=>{
+  const s=await setup();s.campaign.metadata={};s.liveAudience=[];
+  await s.run();
+  assert.equal(s.atlReadCount,1);assert.equal(s.fetchCount,0);assert.equal(s.tables.campaign_recipients[0].status,'failed');assert.match(s.tables.campaign_recipients[0].error,/live ATL newsletter audience/);assert.equal(s.campaign.send_status,'failed');
+});
+test('ordinary ATL campaign fails closed when live audience verification is unavailable',async()=>{
+  const s=await setup();s.campaign.metadata={};s.readAtl=async()=>{s.atlReadCount++;throw Error('fixture outage');};
+  await s.run();
+  assert.equal(s.atlReadCount,1);assert.equal(s.fetchCount,0);assert.equal(s.tables.campaign_recipients[0].status,'pending');assert.equal(s.campaign.send_status,'failed');assert.match(s.campaign.send_error,/could not be verified/);
+});
+test('mixed ATL email campaign cannot bypass branch-safe live revalidation',async()=>{
+  const s=await setup();s.campaign.metadata={};s.campaign.branches=['atlurbanfarms','rejoice'];
+  await s.run();
+  assert.equal(s.atlReadCount,0);assert.equal(s.fetchCount,0);assert.equal(s.campaign.send_status,'failed');assert.match(s.campaign.send_error,/target ATL only/);
 });
 test('crash after provider acceptance retries identical per-recipient key and payload',async()=>{
   const s=await setup();s.attributionFailure=true;await s.run();assert.equal(s.campaign.send_status,'failed');assert.equal(s.tables.campaign_recipients[0].status,'pending');

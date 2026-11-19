@@ -414,7 +414,7 @@ const CampaignDetailDrawer: React.FC<{
               <div className="text-xs text-slate-500 break-words">Preview text <span className="font-bold text-slate-700">{c.dispatch.preview_text}</span></div>
             )}
             {!c.dispatch?.html_template ? (
-              <p className="text-[11px] italic text-slate-400">No saved email content — this campaign predates the durable outbox, or hasn't been sent yet.</p>
+              <p className="text-[11px] italic text-slate-400">No saved email content — this campaign predates delivery tracking, or hasn't been sent yet.</p>
             ) : showEmail && (
               <iframe
                 title="Email preview"
@@ -425,7 +425,7 @@ const CampaignDetailDrawer: React.FC<{
             )}
           </div>
 
-          {/* Delivery / send status (durable outbox) */}
+          {/* Delivery / send status (temporary delivery outbox) */}
           {c.send_status && (
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
               <div className="flex items-center justify-between">

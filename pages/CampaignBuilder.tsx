@@ -1207,7 +1207,7 @@ Return ONLY the post content, no explanations or labels.`,
         out = out.replace(re, () => value);
       });
       // Per-recipient personalization. The real campaign launch keeps these tokens
-      // INTACT (empty profile) so the campaign-sender worker (durable outbox, NOT
+      // INTACT (empty profile) so the campaign-sender worker (delivery outbox, NOT
       // n8n) fills them per recipient at batch-send. A test send passes a real
       // profile, so we resolve them here — otherwise the test email's unsubscribe
       // link would be a literal {{unsubscribe_url}} (the send_resend_email RPC is a
@@ -1306,6 +1306,13 @@ Return ONLY the post content, no explanations or labels.`,
     setIsLaunching(true);
     setChannelDeployResults([]);
 
+    const atlSelected = selectedBranches.some(branch => branch.toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '') === 'atlurbanfarms');
+    if (enabledChannels.has('email') && atlSelected && selectedBranches.length !== 1) {
+      addToast?.('ATL email campaigns must target ATL only so the live newsletter audience can be verified immediately before dispatch.', 'error');
+      setIsLaunching(false);
+      return;
+    }
+
     const launchedAt = new Date().toISOString();
     const scheduledAt = triggerType === 'scheduled' && scheduledDate
       ? new Date(scheduledDate + 'T' + scheduledTime).toISOString()
@@ -1387,10 +1394,9 @@ Return ONLY the post content, no explanations or labels.`,
     setLastDraftSavedAt(null);
     setSavedCampaigns(prev => [newCampaign, ...prev]);
 
-    // Snapshot the EXACT audience into the durable outbox BEFORE any send, so a
-    // bombed send is fully retryable from what's saved. segmentProfiles is already
-    // deduped by email, consent-filtered, and narrowed to the selected segments/
-    // branches. The worker sends in Resend batches and records per-recipient status.
+    // Stage delivery candidates in the temporary outbox. For ATL, the worker
+    // revalidates every candidate against the live newsletter audience immediately
+    // before dispatch; these rows remain only for delivery status and retry tracking.
     if (emailEnabled) {
       const recipients = [
         ...segmentProfiles.map(p => ({
@@ -1404,13 +1410,13 @@ Return ONLY the post content, no explanations or labels.`,
 
       const { inserted, error: enqErr } = await enqueueCampaignRecipients(newCampaign.id, recipients);
       if (enqErr) {
-        addToast?.(`Saved the campaign, but only queued ${inserted}/${recipients.length} recipients (${enqErr}). Fix and retry from the Campaigns page.`, 'error');
+        addToast?.(`Saved the campaign, but only staged ${inserted}/${recipients.length} deliveries (${enqErr}). Fix and retry from the Campaigns page.`, 'error');
       } else if (triggerType === 'immediate') {
         // Kick the worker now; scheduled campaigns wait for their time via pg_cron.
         pingCampaignSender();
-        addToast?.(`Queued ${inserted} recipient(s) — sending now. Track live status on the Campaigns page.`, 'success');
+        addToast?.(`Staged ${inserted} delivery candidate(s) — validating and sending now. Track live status on the Campaigns page.`, 'success');
       } else {
-        addToast?.(`Scheduled ${inserted} recipient(s) for ${scheduledAt ? new Date(scheduledAt).toLocaleString() : 'the chosen time'}.`, 'success');
+        addToast?.(`Scheduled ${inserted} delivery candidate(s) for ${scheduledAt ? new Date(scheduledAt).toLocaleString() : 'the chosen time'}. ATL recipients will be revalidated at dispatch.`, 'success');
       }
     }
 

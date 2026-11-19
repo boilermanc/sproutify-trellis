@@ -1,14 +1,15 @@
 import { authorizeNewsletterWorker, newsletterWorkerMethod } from '../_shared/newsletter-worker-guard.mjs';
 import { readNewsletterProjectBindings, newsletterBranchProject, newsletterDispatchAllowed } from '../_shared/newsletter-project-bindings.mjs';
 import { loadReminder } from '../_shared/newsletter-resend-data.ts';
+import { readBranchConsent } from '../_shared/newsletter-consent.mjs';
 import { renderReminder, validateRendered, ResendSafetyError } from '../_shared/newsletter-resend.mjs';
-// campaign-sender — the durable outbox worker.
+// campaign-sender — the delivery outbox worker.
 //
 // Claims a due, queued campaign (claim_due_campaign flips it queued->sending so
-// no other invocation can grab the same one), then sends its snapshot recipients
-// (campaign_recipients, status='pending') via Resend /emails/batch in chunks of
-// 100, marking each chunk sent/failed and recording resend ids into campaign_sends
-// for attribution. Finalizes send_status = sent | partial | failed.
+// no other invocation can grab the same one), revalidates ATL candidates against
+// ATL's live newsletter audience, then sends eligible pending deliveries via
+// Resend /emails/batch in chunks of 100. campaign_recipients is a delivery ledger,
+// not ATL's customer or consent source of truth.
 //
 // Invoked two ways, same logic:
 //   - pg_cron every 2 min (scheduled campaigns + resume/reaper)
@@ -27,8 +28,12 @@ const CHUNK = 100;            // Resend /emails/batch hard limit
 const RATE_LIMIT_MS = 550;    // stay under Resend's default 2 req/s
 const MAX_CAMPAIGNS = 3;      // campaigns processed per invocation
 const MAX_CHUNKS = 120;       // ~12k recipients/invocation; rest resumes via cron
+const ATL_BRANCH = "atlurbanfarms";
 
 type Rec = { id: string; email: string; first_name: string | null; unsubscribe_token: string | null };
+type LiveAudienceRec = { email?: string; first_name?: string | null };
+
+const emailKey = (email: unknown) => String(email || "").trim().toLowerCase();
 
 function buildUnsubscribeUrl(unsubTemplate: string, scope: string, r: Rec): string {
   return (unsubTemplate && r.unsubscribe_token)
@@ -124,6 +129,36 @@ Deno.serve(async (req: Request) => {
     try { renderReminder(subject, template, {email:'validation@example.invalid',first_name:'Friend'}, 'https://example.invalid/unsubscribe'); }
     catch { await fail('Unresolved placeholder in subject or email body. Correct the saved email (for example [DATE]) before sending.'); continue; }
 
+    // ATL newsletter_subscribers is the authority at dispatch time. The temporary
+    // outbox only records attempted delivery and outcomes; it never overrides a
+    // current opt-out. Mixed-brand rows have no branch attribution, so fail closed
+    // instead of guessing which candidates are governed by ATL consent.
+    let atlAudience: Map<string, LiveAudienceRec> | null = null;
+    if (branchesArr.includes(ATL_BRANCH) && !isReminder) {
+      if (branchesArr.length !== 1) {
+        await fail('ATL email campaigns must target ATL only so every recipient can be revalidated against the live newsletter audience.');
+        continue;
+      }
+      try {
+        const { data: branch, error: branchError } = await admin.from('branches')
+          .select('spoke_connection_id,is_active').eq('slug', ATL_BRANCH).single();
+        if (branchError || !branch) throw new Error('branch unavailable');
+        const live = await readBranchConsent(
+          admin,
+          branch,
+          ATL_BRANCH,
+          createClient,
+          Deno.env.get('ATL_SPOKE_SERVICE_KEY') || '',
+          null,
+          bindings,
+        );
+        atlAudience = new Map(live.map((row: LiveAudienceRec) => [emailKey(row.email), row]));
+      } catch {
+        await fail('ATL live newsletter audience could not be verified. No email was sent.');
+        continue;
+      }
+    }
+
     let sent = 0, failed = 0;
     const invocationStarted = Date.now();
     for (let chunk = 0; chunk < MAX_CHUNKS && (!isReminder || Date.now() - invocationStarted < 45000); chunk++) {
@@ -154,16 +189,40 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      let dispatchable: Rec[] = pending;
+      if (atlAudience) {
+        const noLongerEligible = pending.filter((row: Rec) => !atlAudience!.has(emailKey(row.email)));
+        dispatchable = pending
+          .filter((row: Rec) => atlAudience!.has(emailKey(row.email)))
+          .map((row: Rec) => {
+            const live = atlAudience!.get(emailKey(row.email));
+            return { ...row, first_name: typeof live?.first_name === 'string' ? live.first_name : row.first_name };
+          });
+        if (noLongerEligible.length) {
+          const { error: eligibilityError } = await admin.from('campaign_recipients').update({
+            status: 'failed',
+            error: 'not in live ATL newsletter audience at dispatch',
+            sent_at: new Date().toISOString(),
+          }).in('id', noLongerEligible.map((row: Rec) => row.id));
+          if (eligibilityError) {
+            await fail('ATL audience delivery tracking could not be saved. No further email was sent.');
+            return json({ok:false,processed});
+          }
+          failed += noLongerEligible.length;
+        }
+        if (!dispatchable.length) continue;
+      }
+
       // Skip anyone who unsubscribed/bounced/complained since the snapshot. A row
       // scoped 'global' suppresses everywhere (bounces/complaints); a row scoped to
       // this campaign's branch suppresses just this brand's sends.
-      const emails = pending.map((r: Rec) => r.email.toLowerCase());
+      const emails = dispatchable.map((r: Rec) => r.email.toLowerCase());
       const { data: supp, error: suppError } = await admin.from("email_suppressions")
         .select("email").in("email", emails).in("scope", ["global", scope]);
       if (suppError) { await fail('Suppression status unavailable. No further mail sent.'); return json({ok:false,processed}); }
       const suppressed = new Set((supp || []).map((s: { email: string }) => (s.email || "").toLowerCase()));
-      const send = pending.filter((r: Rec) => !suppressed.has(r.email.toLowerCase()));
-      const skip = pending.filter((r: Rec) => suppressed.has(r.email.toLowerCase()));
+      const send = dispatchable.filter((r: Rec) => !suppressed.has(r.email.toLowerCase()));
+      const skip = dispatchable.filter((r: Rec) => suppressed.has(r.email.toLowerCase()));
       if (isReminder && skip.length) { await fail('Suppression changed. Review a new preview before continuing.'); return json({ok:false,processed}); }
       if (skip.length) {
         await admin.from("campaign_recipients").update({

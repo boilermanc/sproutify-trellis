@@ -279,10 +279,10 @@ export async function duplicateCampaign(id: string): Promise<{ campaign: Campaig
 }
 
 /**
- * Snapshot recipients into the durable outbox (campaign_recipients).
- * Called at launch time so the exact audience is saved BEFORE any send —
- * a bombed send can then be retried from what's stored, nothing re-derived.
- * Inserted in chunks to keep each request small for large lists.
+ * Stage candidate deliveries in campaign_recipients. The sender revalidates ATL
+ * candidates against ATL's live newsletter audience immediately before dispatch;
+ * these rows are retained only as the per-recipient delivery ledger. Inserted in
+ * chunks to keep each request small for large lists.
  */
 export async function enqueueCampaignRecipients(
   campaignId: string,
