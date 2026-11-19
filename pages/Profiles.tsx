@@ -39,6 +39,12 @@ const SITE_ICONS: Record<string, any> = {
 'letsrejoice.app': Heart,
 };
 
+const ATL_SPOKE_PROJECT_REF = 'povudgtvzggnxwgtjexa';
+const isAtlProfileSource = (source: { name?: string; supabase_url?: string }) => {
+  const normalizedName = String(source.name || '').toLowerCase().replace(/\.(com|app|io|net|org)$/, '').replace(/[^a-z0-9]/g, '');
+  return normalizedName === 'atlurbanfarms' || String(source.supabase_url || '').includes(ATL_SPOKE_PROJECT_REF);
+};
+
 // BranchBadge component for displaying branch pills
 const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }> = ({ slug, branchMap }) => {
   const branch = branchMap[slug];
@@ -99,14 +105,18 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
     return branchStats.enrichedProfiles.filter(p => selectedSpokeIds.has(p._spoke_id));
   }, [branchStats.enrichedProfiles, selectedSpokeIds]);
 
-  // Selectable data sources = active spoke connections + Hub-native branches
+  // Selectable data sources = active spoke connections + Hub-native branches.
+  // ATL remains active for Campaign Builder and live newsletter sends; it is
+  // intentionally omitted only from this customer-profile browser.
   // (still-janes-daughter and friends have no spoke DB, so they would otherwise
   // never appear in the picker and their subscribers stay invisible here).
   const dataSources = useMemo(() => ([
     ...spokeConnections
-      .filter(c => c.status === 'active')
+      .filter(c => c.status === 'active' && !isAtlProfileSource(c))
       .map(c => ({ id: c.id, name: c.name, isHub: false })),
-    ...(branchStats.hubSources || []).map(s => ({ id: s.id, name: s.name, isHub: true })),
+    ...(branchStats.hubSources || [])
+      .filter(s => !isAtlProfileSource(s))
+      .map(s => ({ id: s.id, name: s.name, isHub: true })),
   ]), [spokeConnections, branchStats.hubSources]);
   const isFederating = branchStats.isLoading;
   const federationError = branchStats.errors.length > 0 ? branchStats.errors.join('; ') : null;

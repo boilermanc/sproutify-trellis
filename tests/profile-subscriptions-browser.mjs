@@ -12,6 +12,7 @@ try {
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.fulfill({ json: [] }));
   await page.goto(`${base}/tests/fixtures/profiles.html`);
+  assert.equal(await page.getByLabel('Select business').locator('option', { hasText: 'ATL Urban Farms' }).count(), 0);
   await page.getByLabel('Select business').selectOption({ label: 'Rekkrd' });
   await page.getByRole('button', { name: /Filters/ }).click();
   assert.equal(await page.getByRole('columnheader', { name: 'Source', exact: true }).count(), 0);
@@ -68,15 +69,6 @@ try {
   assert.ok(await page.getByText('Signed up:', { exact: false }).first().isVisible());
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await page.screenshot({ path: 'tests/fixtures/profiles-mobile.png', fullPage: true });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByLabel('Select business').selectOption({ label: 'ATL Urban Farms' });
-  assert.equal(await page.getByRole('columnheader', { name: 'Membership', exact: true }).count(), 0);
-  assert.equal(await page.getByRole('columnheader', { name: 'Last login', exact: true }).count(), 0);
-  assert.equal(await page.getByRole('columnheader', { name: 'Orders', exact: true }).count(), 1);
-  assert.equal(await page.getByLabel('Plan filter').count(), 0);
-  assert.match(await rows.first().innerText(), /Sash Ludwig/);
-  assert.match(await rows.first().innerText(), /\$1360\.71 · 25 orders/);
-  assert.ok(!(await rows.first().innerText()).includes('No membership data'));
   assert.deepEqual(errors, []);
   console.log('Profiles desktop/mobile filters, sorting, pagination, drawer, and layout passed.');
 } finally {

@@ -88,13 +88,16 @@ test('useBranchStats treats Hub-native branches as stat sources', async () => {
   assert.match(hook, /if \(active\.length === 0\) \{\s*\n\s*setEnrichedProfiles\(hub\.profiles\);/);
 });
 
-test('Profiles offers every live or Hub-native branch as a single-business choice', async () => {
+test('Profiles offers eligible live or Hub-native businesses while hiding ATL only here', async () => {
   const page = await read('pages/Profiles.tsx');
 
   const sources = page.match(/const dataSources = useMemo\(\(\) => \(\[[\s\S]*?\]\), \[[^\]]*\]\);/);
   assert.ok(sources, 'dataSources useMemo not found');
   assert.match(sources[0], /branchStats\.hubSources/);
   assert.match(sources[0], /isHub: true/);
+  assert.match(page, /const isAtlProfileSource/);
+  assert.match(sources[0], /\.filter\(c => c\.status === 'active' && !isAtlProfileSource\(c\)\)/);
+  assert.match(sources[0], /\.filter\(s => !isAtlProfileSource\(s\)\)/);
 
   // The compact command bar and empty-selection gate both run off the combined
   // list, so Hub-native businesses stay visible without exposing the storage
