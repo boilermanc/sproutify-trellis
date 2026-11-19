@@ -5,6 +5,7 @@ declare
   owner uuid := gen_random_uuid();
   other uuid := gen_random_uuid();
   affected integer;
+  invalid_owner jsonb;
 begin
   if not (select relrowsecurity from pg_class where oid = 'public.sw_trace_clients'::regclass) then
     raise exception 'Trace RLS is disabled';
@@ -37,6 +38,16 @@ begin
     raise exception 'Cross-client nested evidence was accepted';
   exception when check_violation then null;
   end;
+  foreach invalid_owner in array array['42'::jsonb, 'null'::jsonb, '{}'::jsonb, jsonb_build_array(owner)] loop
+    begin
+      update public.sw_trace_clients
+        set payload = jsonb_build_object('client', jsonb_build_object('id', owner), 'studies',
+          jsonb_build_array(jsonb_build_object('clientId', invalid_owner)))
+        where id = owner;
+      raise exception 'A non-string nested clientId was accepted';
+    exception when check_violation then null;
+    end;
+  end loop;
   begin
     update public.sw_trace_clients set payload = '{"client": {}, "studies": []}' where id = owner;
     raise exception 'A client without an ID was accepted';

@@ -8,7 +8,7 @@ create table if not exists public.sw_trace_clients (
     and (payload #>> '{client,id}') is not distinct from id::text
     and jsonb_typeof(payload -> 'studies') is not distinct from 'array'
     and not jsonb_path_exists(
-      payload, '$.studies.** ? (exists(@.clientId) && @.clientId != $owner)',
+      payload, '$.studies.** ? (exists(@.clientId) && (@.clientId.type() != "string" || @.clientId != $owner))',
       jsonb_build_object('owner', id::text)
     )
   )
