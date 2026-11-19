@@ -96,13 +96,16 @@ test('Profiles offers every live or Hub-native branch as a single-business choic
   assert.match(sources[0], /branchStats\.hubSources/);
   assert.match(sources[0], /isHub: true/);
 
-  // The business picker and empty-selection gate both run off the combined
+  // The compact command bar and empty-selection gate both run off the combined
   // list, so Hub-native businesses stay visible without exposing the storage
   // implementation to the operator.
-  assert.match(page, /\{dataSources\.map\(\(connection\) => \{/);
+  assert.match(page, /\{dataSources\.map\(\(connection\) => \(/);
   assert.match(page, /setSelectedSpokeIds\(new Set\(\[id\]\)\)/);
   assert.match(page, /const activeConnectionCount = dataSources\.length;/);
-  assert.match(page, /role="group" aria-label="Select business"/);
+  assert.match(page, /role="group" aria-label="Profile command bar"/);
+  assert.match(page, /aria-label="Select business"/);
+  assert.match(page, /aria-label="Search profiles"/);
+  assert.match(page, /aria-controls="profile-filters"/);
   assert.doesNotMatch(page, />Select Business</);
   assert.doesNotMatch(page, /Choose one business to view its customer profiles\./);
   assert.doesNotMatch(page, /Showing \$\{filteredFederatedProfiles\.length\} of/);
@@ -110,14 +113,39 @@ test('Profiles offers every live or Hub-native branch as a single-business choic
   assert.doesNotMatch(page, /Select All|Select Data Sources|Filter by Branch|>Local<|>Live Spokes</);
   assert.doesNotMatch(page, /spokeConnections\.filter\(c => c\.status === 'active'\)\.map\(c => c\.id\)/);
 
-  const businessPicker = page.indexOf('aria-label="Select business"');
-  const summaryCards = page.indexOf('{/* KPI Summary Bar */}');
+  const commandBar = page.indexOf('aria-label="Profile command bar"');
   const search = page.indexOf('placeholder="Search by name, email, phone, or customer ID..."');
+  const summaryBar = page.indexOf('{/* KPI Summary Bar */}');
+  const filters = page.indexOf('id="profile-filters"');
   const profileList = page.indexOf('{/* Empty-selection gate:');
   assert.ok(
-    businessPicker < summaryCards && summaryCards < search && search < profileList,
-    'Profiles should flow from business picker to summary cards to search to results',
+    commandBar < search && search < summaryBar && summaryBar < filters && filters < profileList,
+    'Profiles should flow from command bar to summary, optional filters, and results',
   );
+});
+
+test('Profiles keeps identity and activity useful without repeating the selected source', async () => {
+  const [page, connector, types, hubService] = await Promise.all([
+    read('pages/Profiles.tsx'),
+    read('spokeConnector.ts'),
+    read('types.ts'),
+    read('lib/supabaseService.ts'),
+  ]);
+
+  assert.doesNotMatch(page, />Source</);
+  assert.doesNotMatch(page, />Contact</);
+  assert.match(page, /\{profile\.phone && <p/);
+  assert.match(page, /const showMembershipColumn = selectedBusiness\?\.name\.toLowerCase\(\)\.includes\('rekkrd'\)/);
+  assert.match(page, /const showLastLoginColumn = federatedProfiles\.some/);
+  assert.match(page, /const showOrdersColumn = federatedProfiles\.some/);
+  assert.match(page, /\{showMembershipColumn && <th[^>]*>Membership<\/th>\}/);
+  assert.match(page, /\{showLastLoginColumn && <th[^>]*>Last login<\/th>\}/);
+  assert.match(page, /\{showOrdersColumn && <th[^>]*>Orders<\/th>\}/);
+  assert.match(page, /Last purchase \{formatListDate\(profile\.order_stats\.last_purchase_at\)\}/);
+  assert.doesNotMatch(page, /profileDisplayName\(profile\)\.charAt\(0\)\.toUpperCase\(\)/);
+  assert.match(types, /last_login_at\?: string;/);
+  assert.match(connector, /last_login_at: \['last_login_at', 'last_sign_in_at', 'last_seen_at', 'last_logged_in_at'\]/);
+  assert.match(hubService, /last_login_at: row\.last_login_at \|\| row\.last_sign_in_at \|\| undefined/);
 });
 
 test('Profiles keeps the global header fixed at All Branches', async () => {

@@ -296,6 +296,9 @@ export interface NormalizedSpokeProfile {
   referral_source?: string;
   email_notifications?: boolean;
   sms_notifications?: boolean;
+  // Customer-auth timestamp when the spoke exposes one. This is deliberately
+  // optional because commerce/newsletter-only profiles may have no login.
+  last_login_at?: string;
   billing_address?: ProfileAddress;
   shipping_address?: ProfileAddress;
   // Per-subscriber token for the spoke's native newsletter unsubscribe link

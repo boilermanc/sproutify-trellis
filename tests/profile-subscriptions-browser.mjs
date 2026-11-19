@@ -2,14 +2,25 @@ import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 const { chromium } = process.env.PLAYWRIGHT_MODULE ? await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href) : await import('playwright');
 const base = process.env.STUDIO_TEST_URL || 'http://localhost:3016';
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}),
+});
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.fulfill({ json: [] }));
   await page.goto(`${base}/tests/fixtures/profiles.html`);
-  await page.getByRole('button', { name: 'Rekkrd', exact: true }).click();
+  await page.getByLabel('Select business').selectOption({ label: 'Rekkrd' });
+  await page.getByRole('button', { name: /Filters/ }).click();
+  assert.equal(await page.getByRole('columnheader', { name: 'Source', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('columnheader', { name: 'Contact', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('columnheader', { name: 'Membership', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('columnheader', { name: 'Last login', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('columnheader', { name: 'Orders', exact: true }).count(), 0);
+  await page.getByText('(404) 555-0113', { exact: true }).waitFor();
+  await page.getByText('Nov 18, 2026', { exact: true }).waitFor();
   const rows = page.locator('tbody tr');
   assert.equal(await rows.count(), 10);
   await page.getByRole('button', { name: '2', exact: true }).click();
@@ -45,7 +56,8 @@ try {
   await page.getByRole('region', { name: 'Signup and subscriptions' }).waitFor();
   await page.getByRole('heading', { name: 'collector0@example.test', exact: true }).waitFor();
   await page.reload();
-  await page.getByRole('button', { name: 'Rekkrd', exact: true }).click();
+  await page.getByLabel('Select business').selectOption({ label: 'Rekkrd' });
+  await page.getByRole('button', { name: /Filters/ }).click();
   await page.getByLabel('Sort profiles').selectOption('ending');
   assert.match(await rows.first().innerText(), /Period ended/);
   await page.getByLabel('Sort profiles').selectOption('records');
@@ -56,6 +68,15 @@ try {
   assert.ok(await page.getByText('Signed up:', { exact: false }).first().isVisible());
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await page.screenshot({ path: 'tests/fixtures/profiles-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByLabel('Select business').selectOption({ label: 'ATL Urban Farms' });
+  assert.equal(await page.getByRole('columnheader', { name: 'Membership', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('columnheader', { name: 'Last login', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('columnheader', { name: 'Orders', exact: true }).count(), 1);
+  assert.equal(await page.getByLabel('Plan filter').count(), 0);
+  assert.match(await rows.first().innerText(), /Sash Ludwig/);
+  assert.match(await rows.first().innerText(), /\$1360\.71 · 25 orders/);
+  assert.ok(!(await rows.first().innerText()).includes('No membership data'));
   assert.deepEqual(errors, []);
   console.log('Profiles desktop/mobile filters, sorting, pagination, drawer, and layout passed.');
 } finally {

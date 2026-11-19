@@ -262,6 +262,7 @@ export const autoMapFields = (
       email_digest_optin: ['email_digest_optin'],
       email_updates_optin: ['email_updates_optin'],
       created_at: ['created_at', 'created', 'createdat', 'signup_date', 'registered_at'],
+      last_login_at: ['last_login_at', 'last_sign_in_at', 'last_seen_at', 'last_logged_in_at'],
     },
     orders: {
       id: ['id', 'order_id', 'uuid'],
@@ -375,6 +376,9 @@ export async function fetchSpokeProfiles(
         }
         if (mapping.created_at && row[mapping.created_at] !== undefined) {
           profile.created_at = profileText(row[mapping.created_at]);
+        }
+        if (mapping.last_login_at && row[mapping.last_login_at] !== undefined) {
+          profile.last_login_at = profileText(row[mapping.last_login_at]);
         }
         // Classification tags (e.g. ATL "School Partner"). PostgREST returns a
         // text[] column as a JSON array; keep only string members, drop nulls.

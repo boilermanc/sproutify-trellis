@@ -16,7 +16,8 @@ import {
   FilterX, Users, MousePointer2, Sparkles, Zap,
   Clock, ArrowUpRight, ShieldCheck, Activity,
   Fingerprint, Loader2, GitBranch, ChevronLeft, ChevronRight,
-  Radio, RefreshCw, AlertCircle, Link, ShoppingBag, DollarSign, Calendar
+  Radio, RefreshCw, AlertCircle, DollarSign, Calendar,
+  SlidersHorizontal, ChevronDown
 } from 'lucide-react';
 import { ProfileDetailDrawer } from './ProfileDetailDrawer';
 import { getConsentLabel } from '../utils';
@@ -61,6 +62,21 @@ const BranchBadge: React.FC<{ slug: string; branchMap: Record<string, Branch> }>
     </span>
   );
 };
+
+const profileLastLoginAt = (profile: EnrichedProfile): string | undefined => {
+  const metadata = profile.metadata || {};
+  const candidates = [
+    profile.last_login_at,
+    metadata.last_login_at,
+    metadata.last_sign_in_at,
+    metadata.last_seen_at,
+  ];
+  return candidates.find(value => typeof value === 'string' && value.length > 0 && !Number.isNaN(new Date(value).getTime()));
+};
+
+const formatListDate = (value?: string): string => value
+  ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  : '—';
 
 const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnections, branchStats, branchContext, onOpenArticle }) => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -128,6 +144,8 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const [activityFilter, setActivityFilter] = useState('all');
   const [collectionFilter, setCollectionFilter] = useState('all');
   const [profileSort, setProfileSort] = useState('signup-newest');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showMoreStats, setShowMoreStats] = useState(false);
   const planOptions = useMemo(() => [...new Set(federatedProfiles.map(p => currentSubscription(p.subscription_records)?.plan).filter(Boolean))].sort() as string[], [federatedProfiles]);
   useEffect(() => { setPlanFilter('all'); }, [selectedSpokeIds]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -173,10 +191,21 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   const selectBusiness = (id: string) => {
     setSelectedSpokeIds(new Set([id]));
     setSelectedFederatedProfile(null);
+    setPlanFilter('all');
+    setActivityFilter('all');
+    setCollectionFilter('all');
+    setProfileSort('signup-newest');
     setCurrentPage(1);
   };
 
   const activeConnectionCount = dataSources.length;
+  const selectedBusinessId = selectedSpokeIds.size === 1 ? Array.from(selectedSpokeIds)[0] : '';
+  const selectedBusiness = dataSources.find(source => source.id === selectedBusinessId);
+  const showMembershipColumn = selectedBusiness?.name.toLowerCase().includes('rekkrd') ?? false;
+  const showLastLoginColumn = federatedProfiles.some(profile => Boolean(profileLastLoginAt(profile)));
+  const showOrdersColumn = federatedProfiles.some(profile => Boolean(profile.order_stats));
+  const activeFilterCount = (showMembershipColumn ? [planFilter, activityFilter, collectionFilter] : [])
+    .filter(value => value !== 'all').length;
 
   // Build branchMap for fast lookup by slug
   const branchMap = useMemo(() => {
@@ -278,61 +307,146 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
   }
 
   return (
-    <div className="space-y-6 relative h-full pb-20">
-      <div className="bg-white p-8 rounded-sm border border-slate-200 space-y-8">
-        {/* Business picker. The live spoke/Hub wiring is an implementation
-            detail; operators choose exactly one business at a time. */}
-        {activeConnectionCount > 0 && (
-          <div className="space-y-3" role="group" aria-label="Select business">
-            <div className="flex flex-wrap gap-2">
-              {dataSources.map((connection) => {
-                const isSelected = selectedSpokeIds.has(connection.id);
-                return (
-                  <button
-                    key={connection.id}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => selectBusiness(connection.id)}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-sm border-2 transition-colors ${
-                      isSelected
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <div
-                      className={`w-4 h-4 rounded-full flex items-center justify-center border ${
-                        isSelected ? 'border-emerald-600' : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {isSelected && <span className="w-2 h-2 rounded-full bg-emerald-600" />}
-                    </div>
-                    <span className="text-xs font-bold">{connection.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+    <div className="space-y-4 relative h-full pb-20">
+      <div className="bg-white rounded-sm border border-slate-200 overflow-hidden">
+        {/* Compact command bar: business, search, filters, and refresh share one row. */}
+        <div className="flex flex-col xl:flex-row xl:items-center gap-3 p-3" role="group" aria-label="Profile command bar">
+          <label className="sr-only" htmlFor="profile-business">Select business</label>
+          <select
+            id="profile-business"
+            aria-label="Select business"
+            value={selectedBusinessId}
+            onChange={(event) => event.target.value && selectBusiness(event.target.value)}
+            disabled={activeConnectionCount === 0}
+            className="h-11 w-full xl:w-56 bg-white border border-slate-200 rounded-sm px-3 text-sm font-bold text-black focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-black"
+          >
+            <option value="">Choose a business</option>
+            {dataSources.map((connection) => (
+              <option key={connection.id} value={connection.id}>{connection.name}</option>
+            ))}
+          </select>
 
-            <div className="flex items-center pt-2">
-              <button
-                onClick={() => branchStats.refresh()}
-                disabled={isFederating}
-                className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isFederating ? (
-                  <RefreshCw size={14} className="animate-spin" />
-                ) : (
-                  <RefreshCw size={14} />
-                )}
-                <span>
-                  {isFederating ? 'Refreshing...' : 'Refresh Profiles'}
-                </span>
-              </button>
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="search"
+              aria-label="Search profiles"
+              placeholder="Search by name, email, phone, or customer ID..."
+              className="h-11 w-full pl-10 pr-3 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-bold text-sm text-black placeholder:text-black"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              disabled={!selectedBusinessId}
+            />
+          </div>
+
+          <button
+            type="button"
+            aria-expanded={showFilters}
+            aria-controls="profile-filters"
+            onClick={() => setShowFilters(value => !value)}
+            disabled={!selectedBusinessId}
+            className="h-11 inline-flex items-center justify-center gap-2 px-4 bg-white border border-slate-200 rounded-sm text-xs font-bold text-black hover:bg-slate-50 transition disabled:opacity-50"
+          >
+            <SlidersHorizontal size={15} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="min-w-5 h-5 px-1 rounded-full bg-slate-800 text-white text-[10px] inline-flex items-center justify-center">{activeFilterCount}</span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => branchStats.refresh()}
+            disabled={isFederating || activeConnectionCount === 0}
+            className="h-11 inline-flex items-center justify-center gap-2 px-4 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={14} className={isFederating ? 'animate-spin' : ''} />
+            <span>{isFederating ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+        </div>
+
+        {/* KPI Summary Bar */}
+        {dataSource === 'federated' && profileStats && (
+          <div className="flex flex-wrap items-center gap-y-2 border-t border-slate-100 px-3 py-2.5">
+            <div className="flex items-baseline gap-1.5 pr-4 mr-4 border-r border-slate-200">
+              <span className="text-base font-black text-black">{profileStats.totalProfiles}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-black">profiles</span>
             </div>
+            {showOrdersColumn && <>
+              <div className="flex items-baseline gap-1.5 pr-4 mr-4 border-r border-slate-200">
+                <span className="text-base font-black text-black">{profileStats.totalOrders.toLocaleString()}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-black">orders</span>
+              </div>
+              <div className="flex items-baseline gap-1.5 pr-4 mr-4 border-r border-slate-200">
+                <span className="text-base font-black text-black">${profileStats.totalLTV.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-black">revenue</span>
+              </div>
+            </>}
+            <div className="flex items-baseline gap-1.5 pr-4 mr-4 border-r border-slate-200">
+              <span className="text-base font-black text-black">{profileStats.optedIn}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-black">opted in</span>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-base font-black text-black">{profileStats.optedOut}</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-black">opted out</span>
+            </div>
+            <button
+              type="button"
+              aria-expanded={showMoreStats}
+              onClick={() => setShowMoreStats(value => !value)}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-black"
+            >
+              More stats <ChevronDown size={13} className={`transition-transform ${showMoreStats ? 'rotate-180' : ''}`} />
+            </button>
+            {showMoreStats && (
+              <div className="basis-full flex flex-wrap gap-x-6 gap-y-1 pt-2 border-t border-slate-100 text-xs text-black">
+                {showOrdersColumn && <>
+                  <span><b>${profileStats.avgOrderValue.toFixed(2)}</b> average order</span>
+                  <span><b>{profileStats.vipCount}</b> VIP customers</span>
+                  <span><b>{profileStats.withOrders}</b> profiles with orders</span>
+                </>}
+                {profileStats.consentUnverified > 0 && <span><b>{profileStats.consentUnverified}</b> consent unverified</span>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {dataSource === 'federated' && selectedSpokeIds.size > 0 && showFilters && (
+          <div id="profile-filters" className="border-t border-slate-100 bg-slate-50/70 p-3 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto] gap-3 items-end">
+              {showMembershipColumn && <>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-black">Plan
+                  <select aria-label="Plan filter" value={planFilter} onChange={event => setPlanFilter(event.target.value)} className="block w-full mt-1 border border-slate-200 bg-white rounded-sm p-2 text-xs normal-case tracking-normal text-black">
+                    <option value="all">All plans</option><option value="__unknown">Unknown plan</option>
+                    {planOptions.map(plan => <option key={plan} value={plan}>{plan}</option>)}
+                  </select>
+                </label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-black">Subscription activity
+                  <select aria-label="Subscription activity" value={activityFilter} onChange={event => setActivityFilter(event.target.value)} className="block w-full mt-1 border border-slate-200 bg-white rounded-sm p-2 text-xs normal-case tracking-normal text-black">
+                    <option value="all">All activity</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="unknown">Unknown</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-black">Collection
+                  <select aria-label="Collection filter" value={collectionFilter} onChange={event => setCollectionFilter(event.target.value)} className="block w-full mt-1 border border-slate-200 bg-white rounded-sm p-2 text-xs normal-case tracking-normal text-black">
+                    <option value="all">All collections</option><option value="empty">No records yet</option><option value="has_records">Has records</option><option value="unknown">Count unknown</option>
+                  </select>
+                </label>
+              </>}
+              <label className="text-[10px] font-bold uppercase tracking-wider text-black">Sort profiles
+                <select aria-label="Sort profiles" value={profileSort} onChange={event => setProfileSort(event.target.value)} className="block w-full mt-1 border border-slate-200 bg-white rounded-sm p-2 text-xs normal-case tracking-normal text-black">
+                  <option value="signup-newest">Signup: newest first</option><option value="signup-oldest">Signup: oldest first</option>
+                  {showMembershipColumn && <><option value="plan">Plan: A–Z</option><option value="active">Active first</option><option value="ending">End date: earliest first</option><option value="records">Records added: most first</option></>}
+                </select>
+              </label>
+              <button onClick={() => { setPlanFilter('all'); setActivityFilter('all'); setCollectionFilter('all'); setSearchTerm(''); }} className="h-9 px-2 text-xs font-bold text-black">Clear filters</button>
+            </div>
+            {showMembershipColumn && collectionFilter === 'empty' && <p className="text-xs text-black">Only confirmed empty collections are included. To target Rekkrd users, select Rekkrd in Campaign Builder and choose the saved audience “Rekkrd: No records yet”. Email consent and suppression still apply.</p>}
+            {showMembershipColumn && <p className="text-[11px] text-black">Activity uses reported subscription status and period dates—not email consent or recent app usage. Missing data stays unknown.</p>}
           </div>
         )}
 
         {activeConnectionCount === 0 && (
-          <div className="pt-4 border-t border-slate-100">
+          <div className="border-t border-slate-100 p-3">
             <div className="px-4 py-3 bg-amber-50 border border-amber-100 rounded-sm flex items-center space-x-2">
               <AlertCircle size={16} className="text-amber-600" />
               <span className="text-sm font-bold text-amber-700">No active connections. Add connections in Settings → Connections.</span>
@@ -341,132 +455,20 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
         )}
 
         {federationError && (
-          <div className="flex items-center space-x-2 p-3 bg-rose-50 border border-rose-100 rounded-sm">
+          <div className="border-t border-slate-100 p-3 flex items-center space-x-2 bg-rose-50">
             <AlertCircle size={16} className="text-rose-500" />
             <span className="text-sm font-bold text-rose-700">{federationError}</span>
           </div>
         )}
-
-        {/* KPI Summary Bar */}
-        {dataSource === 'federated' && profileStats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
-            {/* Total Profiles */}
-            <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-2xl font-bold text-gray-900">{profileStats.totalProfiles}</p>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Profiles</p>
-              <p className="text-xs text-gray-400 mt-1">{profileStats.withOrders} with orders</p>
-            </div>
-
-            {/* Total Orders */}
-            <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-2xl font-bold text-gray-900">{profileStats.totalOrders.toLocaleString()}</p>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Orders</p>
-              <p className="text-xs text-gray-400 mt-1">across all profiles</p>
-            </div>
-
-            {/* Total LTV */}
-            <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-2xl font-bold text-emerald-600">
-                ${profileStats.totalLTV.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Total Revenue</p>
-              <p className="text-xs text-gray-400 mt-1">lifetime value</p>
-            </div>
-
-            {/* Avg Order Value */}
-            <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-2xl font-bold text-gray-900">
-                ${profileStats.avgOrderValue.toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">Avg Order</p>
-              <p className="text-xs text-gray-400 mt-1">per order</p>
-            </div>
-
-            {/* VIP Count */}
-            <div className="bg-white rounded-sm p-4 border border-gray-100">
-              <p className="text-2xl font-bold text-amber-600">{profileStats.vipCount}</p>
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-2">VIP Customers</p>
-              <p className="text-xs text-gray-400 mt-1">LTV ≥ $50</p>
-            </div>
-
-            {/* Opted-In */}
-            <div className="bg-white rounded-sm p-4 border border-emerald-100">
-              <p className="text-2xl font-bold text-emerald-700">{profileStats.optedIn}</p>
-              <p className="text-xs text-emerald-600 uppercase tracking-wide font-bold mt-2">Opted-In</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {profileStats.totalProfiles > 0
-                  ? `${Math.round((profileStats.optedIn / profileStats.totalProfiles) * 100)}% of total`
-                  : 'verified consent'}
-              </p>
-            </div>
-
-            {/* Opted-Out */}
-            <div className="bg-white rounded-sm p-4 border border-rose-100">
-              <p className="text-2xl font-bold text-rose-600">{profileStats.optedOut}</p>
-              <p className="text-xs text-rose-600 uppercase tracking-wide font-bold mt-2">Opted-Out</p>
-              <p className="text-xs text-gray-400 mt-1">unsubscribed</p>
-            </div>
-
-            {/* Consent Unverified */}
-            {profileStats.consentUnverified > 0 && (
-              <div className="bg-white rounded-sm p-4 border border-amber-100">
-                <p className="text-2xl font-bold text-amber-600">{profileStats.consentUnverified}</p>
-                <p className="text-xs text-amber-600 uppercase tracking-wide font-bold mt-2">Unverified</p>
-                <p className="text-xs text-gray-400 mt-1">consent unknown</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Search belongs with the results it filters: below the selected
-            business summary and directly above the profile list. */}
-        <div className="pt-4 border-t border-slate-100">
-          <div className="relative max-w-xl">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input type="text" placeholder="Search by name, email, phone, or customer ID..." className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-bold text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-          </div>
-        </div>
-
       </div>
-
-      {dataSource === 'federated' && selectedSpokeIds.size > 0 && (
-        <div className="bg-white p-4 border border-slate-200 rounded-sm space-y-3">
-          <div className="flex flex-wrap gap-4">
-            <label className="text-xs font-bold text-slate-600">Plan
-              <select aria-label="Plan filter" value={planFilter} onChange={e => setPlanFilter(e.target.value)} className="block mt-1 border rounded p-2 max-w-full">
-                <option value="all">All plans</option><option value="__unknown">Unknown plan</option>
-                {planOptions.map(plan => <option key={plan} value={plan}>{plan}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-bold text-slate-600">Subscription activity
-              <select aria-label="Subscription activity" value={activityFilter} onChange={e => setActivityFilter(e.target.value)} className="block mt-1 border rounded p-2">
-                <option value="all">All activity</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="unknown">Unknown</option>
-              </select>
-            </label>
-            <label className="text-xs font-bold text-slate-600">Collection
-              <select aria-label="Collection filter" value={collectionFilter} onChange={e => setCollectionFilter(e.target.value)} className="block mt-1 border rounded p-2">
-                <option value="all">All collections</option><option value="empty">No records yet</option><option value="has_records">Has records</option><option value="unknown">Count unknown</option>
-              </select>
-            </label>
-            <label className="text-xs font-bold text-slate-600">Sort profiles
-              <select aria-label="Sort profiles" value={profileSort} onChange={e => setProfileSort(e.target.value)} className="block mt-1 border rounded p-2">
-                <option value="signup-newest">Signup: newest first</option><option value="signup-oldest">Signup: oldest first</option><option value="plan">Plan: A–Z</option><option value="active">Active first</option><option value="ending">End date: earliest first</option><option value="records">Records added: most first</option>
-              </select>
-            </label>
-            <button onClick={() => { setPlanFilter('all'); setActivityFilter('all'); setCollectionFilter('all'); setSearchTerm(''); }} className="text-xs font-bold text-emerald-700">Clear filters</button>
-          </div>
-          {collectionFilter === 'empty' && <p className="text-xs text-emerald-800">Only confirmed empty collections are included. To target Rekkrd users, select Rekkrd in Campaign Builder and choose the saved audience “Rekkrd: No records yet”. Email consent and suppression still apply.</p>}
-          <p className="text-xs text-slate-500">Activity uses the reported subscription status and period dates, not email consent or recent app usage. Period ends may renew. Missing data stays unknown.</p>
-        </div>
-      )}
       {/* Empty-selection gate: in federated mode, require a branch pick before loading profiles */}
       {dataSource === 'federated' && activeConnectionCount > 0 && selectedSpokeIds.size === 0 ? (
         <div className="bg-white rounded-[3rem] border border-slate-200  p-12 sm:p-20 flex flex-col items-center justify-center text-center">
           <div className="w-16 h-16 rounded-sm bg-emerald-50 border border-emerald-100 flex items-center justify-center mb-5">
             <GitBranch size={28} className="text-emerald-600" />
           </div>
-          <h3 className="text-lg font-black text-slate-800">Select a business to view profiles</h3>
-          <p className="mt-2 max-w-md text-sm font-bold text-slate-400">
+          <h3 className="text-lg font-black text-black">Select a business to view profiles</h3>
+          <p className="mt-2 max-w-md text-sm font-bold text-black">
             Choose one business above. Each business keeps its own customer profiles, communications, consent, and order history.
           </p>
         </div>
@@ -479,12 +481,11 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               <button
                 key={profile.id}
                 onClick={() => setSelectedProfileId(profile.id)}
-                className={`w-full text-left flex items-center gap-3 p-4 transition ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : 'hover:bg-slate-50/80'}`}
+                className={`w-full text-left flex items-center gap-3 p-4 text-black transition ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : 'hover:bg-slate-50/80'}`}
               >
-                <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profileDisplayName(profile).charAt(0).toUpperCase()}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-slate-800 text-sm truncate">{profileDisplayName(profile)}</p>
-                  <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
+                  <p className="font-black text-black text-sm truncate">{profileDisplayName(profile)}</p>
+                  <p className="text-[10px] text-black font-mono truncate">{profile.email}</p>
                   {profile.branches.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {profile.branches.map((slug) => (
@@ -501,31 +502,32 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               <button
                 key={`${profile._spoke_id}-${profile.email}-${index}`}
                 onClick={() => setSelectedFederatedProfile(profile)}
-                className="w-full text-left flex items-center gap-3 p-4 hover:bg-slate-50/80 transition"
+                className="w-full text-left flex items-center gap-3 p-4 text-black hover:bg-slate-50/80 transition"
               >
-                <div className={`w-11 h-11 rounded-sm flex items-center justify-center font-black text-base shrink-0 ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {profileDisplayName(profile).charAt(0).toUpperCase()}
-                </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-black text-slate-800 text-sm truncate">
+                  <p className="font-black text-black text-sm truncate">
                     {profileDisplayName(profile)}
                     {profile.order_stats && profile.order_stats.ltv >= 50 && (
                       <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">VIP</span>
                     )}
                   </p>
-                  <p className="text-[10px] text-slate-400 font-mono truncate">{profile.email}</p>
-                  <ProfileMembership profile={profile} />
+                  <p className="text-[10px] text-black font-mono truncate">{profile.email}</p>
+                  {profile.phone && <p className="mt-1 text-[11px] font-medium text-black truncate">{profile.phone}</p>}
+                  <p className="mt-1 text-[11px] text-black">{(profile as EnrichedProfile & { _order_only?: boolean })._order_only ? 'First order' : 'Signed up'}: <span className="font-semibold">{formatListDate(profile.created_at)}</span></p>
+                  {showMembershipColumn && <ProfileMembership profile={profile} compact showSignup={false} />}
+                  {showLastLoginColumn && profileLastLoginAt(profile) && (
+                    <p className="mt-1.5 text-[10px] text-black">Last login: <span className="font-semibold">{formatListDate(profileLastLoginAt(profile))}</span></p>
+                  )}
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100"><Link size={9} />{profile._spoke_name}</span>
-                    {profile.order_stats && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600"><DollarSign className="w-3 h-3" />{profile.order_stats.ltv.toFixed(2)}</span>
+                    {showOrdersColumn && profile.order_stats && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-black"><DollarSign className="w-3 h-3" />{profile.order_stats.ltv.toFixed(2)} · {profile.order_stats.order_count} orders</span>
                     )}
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                       profile.subscribed
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                        ? 'bg-emerald-50 text-black border border-emerald-100'
                         : profile.subscribed === false
-                        ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                        : 'bg-amber-50 text-amber-600 border border-amber-100'
+                        ? 'bg-rose-50 text-black border border-rose-100'
+                        : 'bg-amber-50 text-black border border-amber-100'
                     }`}>
                       {profile.subscribed === true ? 'Sub' : profile.subscribed === false ? 'Unsub' : 'Unverified'}
                     </span>
@@ -537,30 +539,25 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           )}
         </div>
         <div className="overflow-x-auto">
-        <table className="hidden lg:table w-full text-left border-collapse">
+        <table className="hidden lg:table w-full text-left text-black border-collapse">
           <thead>
             <tr className="border-b border-slate-100">
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Profile Identity</th>
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">
-                <span className="flex items-center justify-center space-x-1">
-                  <span>{dataSource === 'local' ? 'Spoke UUID' : 'Source'}</span>
-                  <HelpLink articleId="art_identity_golden_record" variant="icon-only" onOpenArticle={onOpenArticle!} />
-                </span>
-              </th>
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                {dataSource === 'local' ? 'Presence' : 'Contact'}
-              </th>
-              {dataSource === 'federated' && (
+              {dataSource === 'local' ? (
                 <>
-                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Signup & plan</th>
-                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">LTV</th>
-                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Orders</th>
-                  <th className="px-4 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Purchase</th>
+                  <th className="px-10 py-6 text-[10px] font-black text-black uppercase tracking-widest">Profile Identity</th>
+                  <th className="px-10 py-6 text-[10px] font-black text-black uppercase tracking-widest text-center">Spoke UUID</th>
+                  <th className="px-10 py-6 text-[10px] font-black text-black uppercase tracking-widest">Presence</th>
+                  <th className="px-10 py-6 text-[10px] font-black text-black uppercase tracking-widest text-right">Last Sync</th>
+                </>
+              ) : (
+                <>
+                  <th className="px-8 py-5 text-[10px] font-black text-black uppercase tracking-widest">Profile</th>
+                  {showMembershipColumn && <th className="px-6 py-5 text-[10px] font-black text-black uppercase tracking-widest">Membership</th>}
+                  {showLastLoginColumn && <th className="px-6 py-5 text-[10px] font-black text-black uppercase tracking-widest">Last login</th>}
+                  {showOrdersColumn && <th className="px-6 py-5 text-[10px] font-black text-black uppercase tracking-widest">Orders</th>}
+                  <th className="px-8 py-5 text-[10px] font-black text-black uppercase tracking-widest text-right">Email consent</th>
                 </>
               )}
-              <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">
-                {dataSource === 'local' ? 'Last Sync' : 'Email consent'}
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -568,18 +565,15 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
               paginatedProfiles.map((profile) => (
                 <tr key={profile.id} onClick={() => setSelectedProfileId(profile.id)} className={`hover:bg-slate-50/80 transition-colors cursor-pointer group ${selectedProfileId === profile.id ? 'bg-emerald-50/50' : ''}`}>
                   <td className="px-10 py-6">
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.is_subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{profileDisplayName(profile).charAt(0).toUpperCase()}</div>
-                      <div>
-                        <p className="font-black text-slate-800 text-sm">{profileDisplayName(profile)}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
-                      </div>
+                    <div>
+                      <p className="font-black text-black text-sm">{profileDisplayName(profile)}</p>
+                      <p className="text-[10px] text-black font-mono">{profile.email}</p>
                     </div>
                   </td>
                   <td className="px-10 py-6 text-center">
                      <div className="inline-flex items-center space-x-2 bg-slate-50 px-3 py-1 rounded-sm border border-slate-100">
                         <Fingerprint size={10} className="text-indigo-400" />
-                        <span className="text-[10px] font-mono text-slate-600 font-bold">{profile.spoke_uuid || 'UNSET'}</span>
+                        <span className="text-[10px] font-mono text-black font-bold">{profile.spoke_uuid || 'UNSET'}</span>
                      </div>
                   </td>
                   <td className="px-10 py-6">
@@ -589,7 +583,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                       ))}
                     </div>
                   </td>
-                  <td className="px-10 py-6 text-right font-black text-[10px] text-slate-800">{new Date(profile.last_event_timestamp || profile.last_active || '').toLocaleDateString()}</td>
+                  <td className="px-10 py-6 text-right font-black text-[10px] text-black">{new Date(profile.last_event_timestamp || profile.last_active || '').toLocaleDateString()}</td>
                 </tr>
               ))
             ) : (
@@ -599,80 +593,56 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                   className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                   onClick={() => setSelectedFederatedProfile(profile)}
                 >
-                  <td className="px-10 py-6">
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-sm flex items-center justify-center font-black text-lg ${profile.subscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {profileDisplayName(profile).charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-black text-slate-800 text-sm">
+                  <td className="px-8 py-5 w-[38%]">
+                      <div className="min-w-0">
+                        <p className="font-black text-black text-sm">
                           {profileDisplayName(profile)}
                           {profile.order_stats && profile.order_stats.ltv >= 50 && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-black">
                               VIP
                             </span>
                           )}
                         </p>
-                        <p className="text-[10px] text-slate-400 font-mono">{profile.email}</p>
+                        <p className="text-[10px] text-black font-mono break-all">{profile.email}</p>
+                        {profile.phone && <p className="mt-1 text-[11px] font-medium text-black">{profile.phone}</p>}
+                        <p className="mt-1 text-[10px] text-black">{(profile as EnrichedProfile & { _order_only?: boolean })._order_only ? 'First order' : 'Signed up'}: <span className="font-semibold">{formatListDate(profile.created_at)}</span></p>
                       </div>
-                    </div>
                   </td>
-                  <td className="px-10 py-6 text-center">
-                    <div className="inline-flex items-center space-x-2 bg-indigo-50 px-3 py-1 rounded-sm border border-indigo-100">
-                      <Link size={10} className="text-indigo-500" />
-                      <span className="text-[10px] font-bold text-indigo-700">{profile._spoke_name}</span>
-                    </div>
-                  </td>
-                  <td className="px-10 py-6">
-                    <div className="flex flex-wrap gap-2">
-                      {profile.phone && (
-                        <span className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100">
-                          {profile.phone}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-6 min-w-48"><ProfileMembership profile={profile} /></td>
-                  {/* LTV Cell */}
-                  <td className="px-4 py-6 whitespace-nowrap">
+                  {showMembershipColumn && <td className="px-6 py-5 min-w-48">
+                    <ProfileMembership profile={profile} compact showSignup={false} />
+                  </td>}
+                  {showLastLoginColumn && <td className="px-6 py-5 whitespace-nowrap">
+                    {profileLastLoginAt(profile) ? (
+                      <div>
+                        <p className="text-sm font-semibold text-black">{formatListDate(profileLastLoginAt(profile))}</p>
+                        <p className="mt-1 text-[10px] text-black">Reported by business</p>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-black">Not available</span>
+                    )}
+                  </td>}
+                  {showOrdersColumn && <td className="px-6 py-5 whitespace-nowrap">
                     {profile.order_stats ? (
-                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600">
-                        <DollarSign className="w-3 h-3" />
-                        {profile.order_stats.ltv.toFixed(2)}
-                      </span>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-black">
+                          <span className="text-black">${profile.order_stats.ltv.toFixed(2)}</span>
+                          <span className="mx-1.5 text-black">·</span>
+                          {profile.order_stats.order_count} {profile.order_stats.order_count === 1 ? 'order' : 'orders'}
+                        </p>
+                        <p className="text-[10px] text-black">Last purchase {formatListDate(profile.order_stats.last_purchase_at)}</p>
+                      </div>
                     ) : (
-                      <span className="text-gray-300 text-sm">—</span>
+                      <span className="text-xs text-black">No orders</span>
                     )}
-                  </td>
-                  {/* Orders Cell */}
-                  <td className="px-4 py-6 whitespace-nowrap">
-                    {profile.order_stats ? (
-                      <span className="inline-flex items-center gap-1 text-sm text-gray-700">
-                        <ShoppingBag className="w-3 h-3 text-blue-500" />
-                        {profile.order_stats.order_count}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300 text-sm">—</span>
-                    )}
-                  </td>
-                  {/* Last Purchase Cell */}
-                  <td className="px-4 py-6 whitespace-nowrap">
-                    {profile.order_stats?.last_purchase_at ? (
-                      <span className="text-sm text-gray-600">
-                        {new Date(profile.order_stats.last_purchase_at).toLocaleDateString()}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300 text-sm">—</span>
-                    )}
-                  </td>
-                  <td className="px-10 py-6 text-right">
+                  </td>}
+                  <td className="px-8 py-5 text-right">
                     <div className="flex flex-col items-end gap-1">
                       <span className={`inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-bold uppercase ${
                         profile.subscribed
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                          ? 'bg-emerald-50 text-black border border-emerald-100'
                           : profile.subscribed === false
-                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                          : 'bg-amber-50 text-amber-600 border border-amber-100'
+                          ? 'bg-rose-50 text-black border border-rose-100'
+                          : 'bg-amber-50 text-black border border-amber-100'
                       }`}>
                         {profile.subscribed === true ? 'Subscribed' : profile.subscribed === false ? 'Unsubscribed' : 'Unverified'}
                       </span>
@@ -680,7 +650,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
                         const source = profile.subscribed !== undefined && profile.subscribed !== null ? 'spoke_native' : 'import_default';
                         const consent = getConsentLabel(source);
                         return (
-                          <span className={`text-[8px] font-bold uppercase tracking-widest text-${consent.color}-600`}>
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-black">
                             {consent.label}
                           </span>
                         );
@@ -693,19 +663,19 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
           </tbody>
         </table>
         </div>
-        {dataSource === 'federated' && filteredFederatedProfiles.length === 0 && <p className="p-6 text-sm text-slate-500" role="status">{isFederating ? 'Loading profiles…' : 'No profiles match these filters.'}</p>}
+        {dataSource === 'federated' && filteredFederatedProfiles.length === 0 && <p className="p-6 text-sm text-black" role="status">{isFederating ? 'Loading profiles…' : 'No profiles match these filters.'}</p>}
 
         {/* Pagination Controls */}
         <div className="px-4 sm:px-10 py-4 sm:py-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Per page</label>
+            <label className="text-[10px] font-black text-black uppercase tracking-widest">Per page</label>
             <select
               value={pageSize}
               onChange={(e) => {
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              className="appearance-none bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              className="appearance-none bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm font-bold text-black focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
               <option value={10}>10</option>
               <option value={25}>25</option>
@@ -760,7 +730,7 @@ const Profiles: React.FC<ProfilesProps> = ({ onTestFlow, events, spokeConnection
             </button>
           </div>
 
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          <div className="text-[10px] font-black text-black uppercase tracking-widest">
             Page {currentPage} of {totalPages || 1}
           </div>
         </div>

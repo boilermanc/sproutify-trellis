@@ -92,6 +92,7 @@ export async function fetchHubNativeProfiles(): Promise<HubNativeResult> {
         // mapFederatedConsent rather than inventing an opt-in here.
         subscribed: row.is_subscribed !== false,
         created_at: row.created_at || undefined,
+        last_login_at: row.last_login_at || row.last_sign_in_at || undefined,
         tags: Array.isArray(row.tags) ? row.tags.filter((t: unknown) => typeof t === 'string') : undefined,
         _spoke_id: spokeId,
         _spoke_name: name,
