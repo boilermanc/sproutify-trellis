@@ -1,8 +1,12 @@
+import { markStudioDraftChanged } from '../services/contentStudioDraft';
+import { fetchBrandByBranch } from '../brandRepository';
+import { sanitizePII } from '../services/aiService';
+import { creativeHistoryTitle } from '../services/creativeStudioIdeas';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, TextOverlayConfig, TextOverlayLayer } from '../types';
-import { GoogleGenAI } from '@google/genai';
-import { BRANCH_DISPLAY_NAMES, formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Profile, SpokeConnection, VideoAdConfig, VideoAdJob, VideoAdStatus, VideoAdFormat, BranchContext, BrandIdentity, BranchInfo, CreativeStudioIdea, TextOverlayConfig, TextOverlayLayer } from '../types';
+import { createBackendGemini } from '../services/aiBackend';
+import { formatBranchName, PLATFORM_ICONS, PLATFORM_COLORS, SOCIAL_PLATFORM_META } from '../utils';
 import {
   TONE_PRESETS, ACTOR_STYLES, PIPELINE_OPTIONS, VIDEO_AD_STAGES,
   ASPECT_RATIOS, VIDEO_SETTINGS, VIDEO_LIGHTING, VIDEO_MOODS,
@@ -10,7 +14,7 @@ import {
 import {
   submitVideoAdJob, getVideoAdJobs, cancelVideoAdJob,
   submitStaticAdJob, submitStaticAdBatch, submitCarouselJob, approveJob, approveAndRenderVideo,
-  regenerateJob, discardJob, saveOverlayConfig, saveComposite, publishableImageUrl,
+  regenerateJob, discardJob, saveOverlayConfig, saveComposite, publishableImageUrl, canArchiveCreative, setCreativeArchived,
 } from '../services/videoAdService';
 import { publishToSocial, publishToFacebook } from '../services/socialService';
 import { uploadSocialMedia } from '../lib/supabaseService';
@@ -18,13 +22,14 @@ import { supabase } from '../lib/supabase';
 import { useVideoAdPoller } from '../hooks/useVideoAdPoller';
 import TextOverlayEditor from '../components/TextOverlayEditor';
 import MetaAdExportModal from '../components/MetaAdExportModal';
+import CreativeStudioIdeas from '../components/CreativeStudioIdeas';
 import { compositeOverlay, defaultOverlayForHeadline } from '../utils/imageComposite';
 import {
   Video, Sparkles, Loader2, Film, User, Play, Download, Trash2,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Target, FileText, Zap, DollarSign,
   Palette, Eye, Check, BookTemplate, RefreshCw, Clock, CalendarClock,
   Image as ImageIcon, Layers, Send, Instagram, ThumbsUp, Sliders, Upload, X, GitBranch, Plus, Megaphone,
-  ListChecks, AlertTriangle, Wand2,
+  ListChecks, AlertTriangle, Wand2, Archive, ArchiveRestore,
 } from 'lucide-react';
 
 // ─── Template helpers ────────────────────────────────────────────────
@@ -69,6 +74,7 @@ async function deleteTemplate(id: string): Promise<void> {
 
 // ─── Constants ───────────────────────────────────────────────────────
 interface VideoAdLabProps {
+  selectedBranchSlug: string;
   profiles: Profile[];
   spokeConnections: SpokeConnection[];
   geminiApiKey: string;
@@ -77,7 +83,6 @@ interface VideoAdLabProps {
 }
 
 const TERMINAL_STATUSES: VideoAdStatus[] = ['completed', 'failed', 'cancelled'];
-const BRANCH_KEYS = Object.keys(BRANCH_DISPLAY_NAMES);
 
 // Static/Carousel formats don't use the wider video aspect ratio set —
 // these are the ratios the n8n image pipelines actually support.
@@ -179,7 +184,7 @@ const stagesForFormat = (fmt?: VideoAdFormat): { key: VideoAdStatus; label: stri
   ];
 };
 
-type StatusFilter = 'all' | 'active' | 'completed' | 'failed';
+type StatusFilter = 'all' | 'active' | 'completed' | 'failed' | 'archived';
 type FormatFilter = 'all' | VideoAdFormat;
 
 const VOICE_NAMES: Record<string, string> = {
@@ -210,15 +215,21 @@ const statusChipClasses = (status: VideoAdStatus): string =>
   'bg-amber-50 text-amber-600';
 
 // ─── Component ───────────────────────────────────────────────────────
-const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext }) => {
-  // ── Branch options — pulled from the real branches (fall back to the static
-  //    ecosystem list only if branch context hasn't loaded). ──
-  const branchOptions = useMemo(() => {
-    if (branchContext?.allBranches?.length) {
-      return branchContext.allBranches.map(b => ({ value: b.slug, label: b.name }));
-    }
-    return BRANCH_KEYS.map(k => ({ value: k, label: BRANCH_DISPLAY_NAMES[k] }));
-  }, [branchContext]);
+const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, geminiApiKey, addToast, branchContext, selectedBranchSlug }) => {
+  // Dashboard review cards deep-link here with the affected branch. Keep the
+  // value in component state after consuming the URL parameter so returning to
+  // Creative Studio later from the sidebar does not reopen stale work.
+  const [reviewQueueBranch, setReviewQueueBranch] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('reviewBranch') === selectedBranchSlug ? selectedBranchSlug : null,
+  );
+  useEffect(() => {
+    if (!reviewQueueBranch) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('reviewBranch')) return;
+    url.searchParams.delete('reviewBranch');
+    window.history.replaceState({}, '', url);
+  }, [reviewQueueBranch]);
+
   // Prefer the real branch name for display; fall back to the slug formatter.
   const branchName = (slug: string) =>
     branchContext?.allBranches.find(b => b.slug === slug)?.name || formatBranchName(slug);
@@ -250,20 +261,40 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   }, [format]);
 
   // ── Form fields (shared across formats where sensible) ──
-  const [branch, setBranch] = useState('');
-  // Default to the first real branch once branch options are available.
+  const branch = selectedBranchSlug;
+  const selectedBrandInfo = useMemo<BranchInfo>(() => branchContext?.allBranches.find(item => item.slug === branch) || {
+    id: branch, slug: branch, name: formatBranchName(branch), type: 'internal', is_active: true, primary_color: '#059669',
+  }, [branchContext?.allBranches, branch]);
+  const [brandData, setBrandData] = useState<{ slug: string; identity: BrandIdentity | null; failed: boolean } | null>(null);
+  const savedBrand = brandData?.slug === branch ? brandData.identity : null;
+  const brandLoading = brandData?.slug !== branch;
   useEffect(() => {
-    if (!branch && branchOptions.length > 0) setBranch(branchOptions[0].value);
-  }, [branchOptions, branch]);
-  const [productDescription, setProductDescription] = useState('');
-  const [targetSegment, setTargetSegment] = useState('');
-  const [tone, setTone] = useState<string>(TONE_PRESETS[0]);
-  const [cta, setCta] = useState('');
+    let cancelled = false;
+    fetchBrandByBranch(branch).then(identity => {
+      if (!cancelled) setBrandData({ slug: branch, identity, failed: false });
+    }).catch(() => {
+      if (!cancelled) setBrandData({ slug: branch, identity: null, failed: true });
+    });
+    return () => { cancelled = true; };
+  }, [branch]);
+  // Null means use the saved brand default. An empty string is an intentional
+  // edit, so a late Brand DNA response must never replace what the user typed.
+  const [productOverride, setProductDescription] = useState<string | null>(null);
+  const [audienceOverride, setTargetSegment] = useState<string | null>(null);
+  const [toneOverride, setTone] = useState<string | null>(null);
+  const [ctaOverride, setCta] = useState<string | null>(null);
+  const brandSummary = savedBrand?.mission || savedBrand?.site_preview_description || savedBrand?.tagline || '';
+  const brandIntroduction = brandSummary ? `Introduce ${branchName(branch)}: ${brandSummary}` : '';
+  const productDescription = productOverride ?? brandIntroduction;
+  const targetSegment = audienceOverride ?? savedBrand?.target_audience ?? '';
+  const tone = toneOverride ?? (savedBrand?.voice || TONE_PRESETS[0]);
+  const brandWebsite = savedBrand?.website_url || branchContext?.allBranches.find(b => b.slug === branch)?.website_url;
+  const cta = ctaOverride ?? (brandWebsite ? `Visit ${brandWebsite} to learn more` : '');
   const [pipeline, setPipeline] = useState<'talking_head' | 'full_scene'>('full_scene');
   const [actorGender, setActorGender] = useState<'male' | 'female'>('female');
   const [actorStyle, setActorStyle] = useState<string>(ACTOR_STYLES[1]);
   const [aspectRatio, setAspectRatio] = useState('9:16');
-  const [duration, setDuration] = useState(10);
+  const [duration, setDuration] = useState<5 | 10>(10);
   const [platform, setPlatform] = useState<'general' | 'tiktok' | 'instagram_reels' | 'youtube_shorts'>('general');
   const [setting, setSetting] = useState<string>(VIDEO_SETTINGS[0]);
   const [lighting, setLighting] = useState<string>(VIDEO_LIGHTING[0]);
@@ -324,8 +355,15 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Job state ──
   const [jobs, setJobs] = useState<VideoAdJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const [activeJobIds, setActiveJobIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Baseline statuses loaded from Supabase before polling starts. The poller
+  // intentionally reports its first result for each job; without this map,
+  // every historical review-ready creative looks like a fresh transition and
+  // floods the page with duplicate notifications on mount.
+  const knownJobStatusesRef = useRef<Map<string, VideoAdStatus>>(new Map());
 
   // ── Tracking state — the job the Progress step is watching ──
   const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
@@ -461,6 +499,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [formatFilter, setFormatFilter] = useState<FormatFilter>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [archiveBusyId, setArchiveBusyId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -567,16 +606,43 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Load jobs on mount from Hub Supabase ──
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        const fetched = await getVideoAdJobs();
+        // Match the Dashboard queue's window so a review card never counts
+        // jobs that Creative Studio then fails to load.
+        const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
+        if (cancelled) return;
+        knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
         setJobs(fetched);
-        setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
+        setActiveJobIds(fetched.filter(j => !j.archived_at && !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
+
+        // A dashboard card represents all review-ready jobs for one branch and
+        // uses the oldest job for its age. Open that same oldest job directly,
+        // in the full review panel, so the click lands on actual work.
+        if (reviewQueueBranch === selectedBranchSlug) {
+          const target = fetched
+            .filter(job => job.branch === reviewQueueBranch && !job.archived_at && job.status === 'awaiting_approval' && !isCardBackground(job))
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0];
+          if (target) {
+            setFormat(target.format || 'video');
+            setTrackedJobId(target.id);
+            setStep(4);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            addToast(`No review-ready creatives remain for ${branchName(reviewQueueBranch)}.`, 'info');
+          }
+        }
       } catch (err: any) {
+        if (cancelled) return;
+        setHistoryFailed(true);
         console.error('[VideoAdLab] Failed to load jobs:', err);
         addToast(`Failed to load video jobs: ${err.message}`, 'error');
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   // ── Load templates when branch changes (Hub) ──
@@ -587,16 +653,20 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // ── Poller ──
   const handleStatusChange = useCallback((updatedJob: VideoAdJob) => {
+    const previousStatus = knownJobStatusesRef.current.get(updatedJob.id);
+    const statusChanged = previousStatus !== updatedJob.status;
+    knownJobStatusesRef.current.set(updatedJob.id, updatedJob.status);
+
     // Upsert, not map: n8n inserts the row asynchronously, so a job we just
     // submitted often isn't in the list yet when its first poll lands.
     setJobs(prev => prev.some(j => j.id === updatedJob.id)
       ? prev.map(j => j.id === updatedJob.id ? updatedJob : j)
       : [updatedJob, ...prev]);
-    if (updatedJob.status === 'completed') {
+    if (statusChanged && updatedJob.status === 'completed') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." completed!`, 'success');
-    } else if (updatedJob.status === 'awaiting_approval') {
+    } else if (statusChanged && updatedJob.status === 'awaiting_approval') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." is ready for review`, 'info');
-    } else if (updatedJob.status === 'failed') {
+    } else if (statusChanged && updatedJob.status === 'failed') {
       addToast(`${formatLabel(updatedJob.format)} ad "${updatedJob.id.slice(0, 8)}..." failed: ${updatedJob.error_message || 'Unknown error'}`, 'error');
     }
     if (TERMINAL_STATUSES.includes(updatedJob.status)) {
@@ -609,68 +679,82 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
   // ── Refresh handler ──
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    setHistoryLoading(true);
     try {
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
+      setHistoryFailed(false);
+      knownJobStatusesRef.current = new Map(fetched.map(job => [job.id, job.status]));
       setJobs(fetched);
-      setActiveJobIds(fetched.filter(j => !TERMINAL_STATUSES.includes(j.status)).map(j => j.id));
+      setActiveJobIds(fetched.filter(j => !j.archived_at && !TERMINAL_STATUSES.includes(j.status) && !isCardBackground(j)).map(j => j.id));
       addToast('Video library refreshed', 'info');
     } catch (err: any) {
+      setHistoryFailed(true);
       console.error('[VideoAdLab] Failed to refresh jobs:', err);
       addToast(`Failed to refresh: ${err.message}`, 'error');
     } finally {
       setIsRefreshing(false);
+      setHistoryLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, selectedBranchSlug]);
+
+  // A job requested by Card Studio purely as an editorial card's backdrop.
+  // Card Studio consumes its frame_url directly the moment it exists — there
+  // is nothing here for a human to approve, and the review panel would show
+  // it with auto-seeded headline text it was never meant to carry. They are
+  // inputs to Card Studio, not standalone ads, so they are kept out of the
+  // Creative Library (and its counts) entirely — otherwise they sit here
+  // forever as phantom "review" creatives with no available action.
+  const isCardBackground = (j: VideoAdJob) => j.request_payload?.purpose === 'card_background';
 
   // ── Branch-scoped jobs ──
-  // The generation wizard keeps its own branch picker; this only scopes the
-  // jobs history (and its count badges) to the global Branch Scope picker in
-  // the top bar. `j.branch` is a slug.
+  // All creation and review use the branch selected in the header.
   const scopedJobs = useMemo(() => {
-    if (!branchContext || branchContext.isAllSelected) return jobs;
-    const activeSlugs = new Set(branchContext.activeBranchSlugs);
-    return jobs.filter(j => j.branch && activeSlugs.has(j.branch));
-  }, [jobs, branchContext]);
+    const ads = jobs.filter(j => !isCardBackground(j) && !j.archived_at);
+    return ads.filter(j => j.branch === selectedBranchSlug);
+  }, [jobs, selectedBranchSlug]);
+
+  const archivedJobs = useMemo(() => jobs.filter(job => job.branch === selectedBranchSlug && job.archived_at && !isCardBackground(job)), [jobs, selectedBranchSlug]);
 
   // ── Filtered jobs ──
   const filteredJobs = useMemo(() => {
-    let list = scopedJobs;
+    let list = statusFilter === 'archived' ? archivedJobs : scopedJobs;
     if (statusFilter === 'active') list = list.filter(j => !TERMINAL_STATUSES.includes(j.status));
     else if (statusFilter === 'completed') list = list.filter(j => j.status === 'completed');
     else if (statusFilter === 'failed') list = list.filter(j => j.status === 'failed' || j.status === 'cancelled');
     if (formatFilter !== 'all') list = list.filter(j => (j.format || 'video') === formatFilter);
     return list;
-  }, [scopedJobs, statusFilter, formatFilter]);
+  }, [scopedJobs, archivedJobs, statusFilter, formatFilter]);
 
   // ── Filter counts (respect the active branch scope) ──
   const filterCounts = useMemo(() => ({
     all: scopedJobs.length,
+    archived: archivedJobs.length,
     active: scopedJobs.filter(j => !TERMINAL_STATUSES.includes(j.status)).length,
     completed: scopedJobs.filter(j => j.status === 'completed').length,
     failed: scopedJobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length,
-  }), [scopedJobs]);
+  }), [scopedJobs, archivedJobs]);
 
-  const formatCounts = useMemo(() => ({
-    all: scopedJobs.length,
-    video: scopedJobs.filter(j => (j.format || 'video') === 'video').length,
-    static: scopedJobs.filter(j => j.format === 'static').length,
-    carousel: scopedJobs.filter(j => j.format === 'carousel').length,
-  }), [scopedJobs]);
-
-  // A job requested by Card Studio purely as an editorial card's backdrop.
-  // Card Studio consumes its frame_url directly the moment it exists — there
-  // is nothing here for a human to approve, and the review panel would show
-  // it with auto-seeded headline text it was never meant to carry.
-  const isCardBackground = (j: VideoAdJob) => j.request_payload?.purpose === 'card_background';
+  const formatCounts = useMemo(() => {
+    const list = statusFilter === 'archived' ? archivedJobs : scopedJobs;
+    return {
+      all: list.length,
+      video: list.filter(j => (j.format || 'video') === 'video').length,
+      static: list.filter(j => j.format === 'static').length,
+      carousel: list.filter(j => j.format === 'carousel').length,
+    };
+  }, [scopedJobs, archivedJobs, statusFilter]);
 
   // ── Jobs awaiting review ──
   // The Progress step already shows the job it's tracking in full, so exclude
   // it here — otherwise the same creative gets two identical review panels.
   const awaitingApprovalJobs = useMemo(
-    () => jobs.filter(j =>
-      j.status === 'awaiting_approval' && !isCardBackground(j) && !(step === 4 && j.id === trackedJobId),
+    () => scopedJobs.filter(j =>
+      j.status === 'awaiting_approval'
+      && !isCardBackground(j)
+      && (!reviewQueueBranch || j.branch === reviewQueueBranch)
+      && !(step === 4 && j.id === trackedJobId),
     ),
-    [jobs, step, trackedJobId],
+    [scopedJobs, reviewQueueBranch, step, trackedJobId],
   );
 
   // ── The job the Progress step is watching ──
@@ -679,20 +763,60 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     [jobs, trackedJobId],
   );
 
+  // Scroll target for jumping back up to the review/progress panel (step 4).
+  const topRef = useRef<HTMLDivElement>(null);
+
+  // Open the Step 4 review/progress panel for any job in the library. Same
+  // surface Generate lands on — full approve / regenerate / discard / edit
+  // controls — so a creative sitting in the list is no longer a dead end.
+  const openInReviewPanel = (job: VideoAdJob) => {
+    setTrackedJobId(job.id);
+    setStep(4);
+    setExpandedJobId(null);
+    // Let step 4 render before scrolling it into view.
+    requestAnimationFrame(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
   // Clear the form and start over from the format picker.
   const startAnother = () => {
     setTrackedJobId(null);
-    setProductDescription('');
-    setCta('');
+    setProductDescription(null);
+    setCta(null);
+    setTone(null);
     setGeneratedScript('');
     setStaticMessage('');
     setCarouselTopic('');
-    setTargetSegment('');
+    setTargetSegment(null);
     setStyleNotes('');
     setRefImageUrl('');
     setStaticBatchMode(false);
     setStaticBatchText('');
     setStep(0);
+  };
+
+  const useCreativeIdea = (idea: CreativeStudioIdea) => {
+    if (idea.format !== format) {
+      addToast('This idea does not match your selected format. Choose one of the current ideas.', 'info');
+      return;
+    }
+    const hasEdits = productOverride !== null || audienceOverride !== null || toneOverride !== null || ctaOverride !== null ||
+      !!(staticMessage || carouselTopic || generatedScript || staticBatchText || refImageUrl || customVisualNotes || styleNotes);
+    if (hasEdits && !window.confirm('Replace your current creative brief with this idea? Your unsaved text and reference image will be cleared.')) return;
+    startAnother();
+    setSelectedTemplateId(null);
+    setSaveAsTemplate(false);
+    setNewTemplateName('');
+    setCustomVisualNotes('');
+    const ideaCta = brandWebsite ? `Visit ${brandWebsite} to learn more` : `Learn more about ${branchName(branch)}`;
+    const brief = `Suggested hook: ${idea.hook}\n\n${idea.brief}`;
+    if (format === 'video') setProductDescription(brief);
+    if (format === 'static') setStaticMessage(`${brief}\n\nCall to action: ${ideaCta}`);
+    if (format === 'carousel') setCarouselTopic(`${brief}\n\nCall to action: ${ideaCta}`);
+    setCta(ideaCta);
+    setStep(1);
+    markStudioDraftChanged();
+    addToast('Idea loaded. Review your brief before creating the ad.', 'success');
+    requestAnimationFrame(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
   // ── Pagination ──
@@ -704,6 +828,30 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
 
   // Reset to page 1 when filter changes
   useEffect(() => { setCurrentPage(1); }, [statusFilter, formatFilter]);
+  useEffect(() => { setCurrentPage(page => Math.min(page, totalPages)); }, [totalPages]);
+
+  const handleArchiveCreative = async (job: VideoAdJob, archived: boolean) => {
+    if (archiveBusyId) return;
+    setArchiveBusyId(job.id);
+    try {
+      const archivedAt = await setCreativeArchived(job, selectedBranchSlug, archived);
+      setJobs(current => current.map(item => item.id === job.id ? { ...item, archived_at: archivedAt } : item));
+      if (archived) {
+        setActiveJobIds(current => current.filter(id => id !== job.id));
+        if (trackedJobId === job.id) { setTrackedJobId(null); setStep(0); }
+        if (expandedJobId === job.id) setExpandedJobId(null);
+        if (publishDraftJobId === job.id) setPublishDraftJobId(null);
+        if (schedulingJobId === job.id) setSchedulingJobId(null);
+      } else if (job.status === 'awaiting_approval') {
+        setActiveJobIds(current => current.includes(job.id) ? current : [...current, job.id]);
+      }
+      addToast(archived ? 'Creative archived. Restore it from the Archived filter.' : 'Creative restored to your library.', 'success');
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Archive change could not be saved.', 'error');
+    } finally {
+      setArchiveBusyId(null);
+    }
+  };
 
   // ── Apply template ──
   const applyTemplate = (templateId: string | null) => {
@@ -711,6 +859,7 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     if (!templateId) return;
     const tpl = templates.find(t => t.id === templateId);
     if (!tpl) return;
+    markStudioDraftChanged();
     const s = tpl.settings;
     if (s.pipeline) setPipeline(s.pipeline);
     if (s.actorGender) setActorGender(s.actorGender);
@@ -730,12 +879,13 @@ const VideoAdLab: React.FC<VideoAdLabProps> = ({ profiles, spokeConnections, gem
     setIsGeneratingScript(true);
     try {
       if (!geminiApiKey) { addToast('No Gemini API key configured. Add one in Settings.', 'error'); return; }
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-      const wl = Math.floor(duration * 2.5);
+      const ai = createBackendGemini();
+      const wl = Math.floor((duration - 1) * 2.2);
       const prompt = `You are a video ad scriptwriter for Sproutify. Write a spoken-word script for a ${pipeline === 'talking_head' ? 'talking-head' : 'full scene'} video ad.
 
 PRODUCT: ${productDescription}
 BRAND: ${branchName(branch)}
+BRAND BACKGROUND: ${brandSummary}
 TARGET AUDIENCE: ${targetSegment || 'general audience'}
 TONE: ${tone}
 CTA: ${cta || 'Visit our website'}
@@ -752,9 +902,9 @@ STRICT RULES:
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: prompt,
+        contents: sanitizePII(prompt),
       });
-      setGeneratedScript(response.text || '');
+      setGeneratedScript(sanitizePII(response.text || ''));
     } catch (err: any) {
       addToast(`Script generation failed: ${err.message}`, 'error');
     } finally {
@@ -787,7 +937,7 @@ STRICT RULES:
         actor_style: actorStyle,
         actor_gender: actorGender,
         voice_style: 'friendly',
-        video_duration: pipeline === 'full_scene' ? 15 : 30,
+        video_duration: duration,
         pipeline,
         platform,
       };
@@ -799,7 +949,7 @@ STRICT RULES:
         setting,
       });
       setActiveJobIds(prev => [...prev, result.job_id]);
-      addToast('Video generation started!', 'success');
+      addToast('Creating your frame. You will approve it before video rendering starts.', 'success');
 
       // Watch it on the Progress step. Form values are kept so a failure can
       // be retried without retyping — cleared by "Create another".
@@ -808,7 +958,7 @@ STRICT RULES:
       setSaveAsTemplate(false);
       setNewTemplateName('');
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
@@ -844,7 +994,7 @@ STRICT RULES:
       setTrackedJobId(result.job_id);
       setStep(4);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
@@ -894,7 +1044,7 @@ STRICT RULES:
       // review queue below pick each one up as it finishes.
       setStep(0);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Batch submit failed: ${err.message}`, 'error');
@@ -923,7 +1073,7 @@ STRICT RULES:
       setTrackedJobId(result.job_id);
       setStep(4);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
       setJobs(fetched);
     } catch (err: any) {
       addToast(`Submit failed: ${err.message}`, 'error');
@@ -990,7 +1140,7 @@ STRICT RULES:
   const handleApproveAndRender = async (job: VideoAdJob) => {
     setApprovingJobId(job.id);
     try {
-      await approveAndRenderVideo(job.id);
+      await approveAndRenderVideo(job);
       setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'rendering' as VideoAdStatus } : j));
       addToast('Frame approved — rendering video now!', 'success');
     } catch (err: any) {
@@ -1018,7 +1168,7 @@ STRICT RULES:
       // If the Progress step was watching this job, follow the retry instead.
       setTrackedJobId(prev => prev === job.id ? result.job_id : prev);
 
-      const fetched = await getVideoAdJobs();
+      const fetched = await getVideoAdJobs(selectedBranchSlug, 100, true);
       setJobs(fetched);
     } catch (err: any) {
       addToast(err.message || 'Regenerate failed.', 'error');
@@ -1200,7 +1350,7 @@ STRICT RULES:
   // RENDER
   // ═══════════════════════════════════════════════════════════════════
   return (
-    <div className="space-y-6 min-h-screen pb-40">
+    <div ref={topRef} className="space-y-6 min-h-screen pb-40">
 
       {/* ── Top Bar ── */}
       <div className="flex items-center justify-between">
@@ -1213,7 +1363,7 @@ STRICT RULES:
         </div>
 
         {/* Template selector — video only, since static/carousel don't have Look & Feel settings to template */}
-        {format === 'video' && (
+        {format === 'video' && step > 0 && templates.length > 0 && (
           <div className="flex items-center gap-2">
             <BookTemplate size={16} className="text-slate-400" />
             <select
@@ -1228,6 +1378,14 @@ STRICT RULES:
             </select>
           </div>
         )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3">
+        <p className="flex items-center gap-2 font-bold text-emerald-900" aria-live="polite">
+          <FormatIcon format={format} size={20} />
+          {step === 4 ? 'Reviewing' : 'Creating'}: {format === 'static' ? 'Image' : format === 'carousel' ? 'Carousel' : 'Video'}
+        </p>
+        {step > 0 && step < 4 && <button type="button" onClick={() => setStep(0)} className="text-sm font-semibold text-emerald-800 underline">Change format</button>}
       </div>
 
       {/* ── Stepper ── */}
@@ -1267,7 +1425,7 @@ STRICT RULES:
       {step === 0 && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
           <h3 className="text-lg font-black text-slate-800 mb-1">What kind of ad?</h3>
-          <p className="text-xs text-slate-400 mb-6">Pick a format — this drives what you'll configure next.</p>
+          <p className="text-xs text-slate-500 mb-6">Choose a format. Get three matching ideas, or write your own brief.</p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {FORMAT_OPTIONS.map(opt => {
@@ -1296,62 +1454,85 @@ STRICT RULES:
         </div>
       )}
 
+      {/* Keep suggestions mounted across wizard steps so Back does not generate again. */}
+      <div hidden={step !== 0 && step !== 1}>
+        <CreativeStudioIdeas
+          key={`${branch}:${format}`}
+          format={format}
+          branch={selectedBrandInfo}
+          brand={savedBrand}
+          brandLoading={brandLoading}
+          brandFailed={!!brandData?.failed}
+          jobs={scopedJobs}
+          historyLoading={historyLoading}
+          historyFailed={historyFailed}
+          apiKey={geminiApiKey}
+          onUseIdea={useCreativeIdea}
+          onOpenCreative={job => { setFormat(job.format || 'video'); openInReviewPanel(job); }}
+          onRetryHistory={handleRefresh}
+          addToast={addToast}
+        />
+      </div>
+
       {/* ── Step 1: Message / Topic (format-specific) ── */}
       {step === 1 && format === 'video' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-          <h3 className="text-lg font-black text-slate-800 mb-1">What's your message?</h3>
-          <p className="text-xs text-slate-400 mb-6">Tell us about your product and who you're talking to.</p>
+          <h3 className="text-lg font-black text-slate-800 mb-1">What should this video focus on?</h3>
+          <p className="text-sm text-slate-500 mb-6">Start with a brand introduction, or focus on a specific feature, offer, or announcement. Review the details below, then choose Next.</p>
+
+          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4 mb-6" role="status">
+            <p className="text-sm font-bold text-emerald-900">{brandLoading ? 'Loading saved Brand DNA…' : savedBrand ? `${branchName(branch)} Brand DNA loaded` : brandData?.failed ? 'Brand DNA could not be loaded' : 'No active Brand DNA found'}</p>
+            <p className="text-xs text-emerald-800 mt-1">{savedBrand ? 'Saved brand details provide your starting point. You can edit any field for this video without changing the brand.' : brandLoading ? 'You can start typing while we load your brand details.' : 'You can fill in this brief manually, or check the selected branch in Brand DNA.'}</p>
+          </div>
 
           <div className="space-y-5">
             {/* Branch */}
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
-              <select
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
-              >
-                {branchOptions.length === 0 && <option value="">No branches available</option>}
-                {branchOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-400 mt-1">Which brand is this video for?</p>
+              <p className="text-sm font-bold text-slate-700">{branchName(branch)}</p>
+              <p className="text-xs text-slate-400 mt-1">Selected in the page header.</p>
             </div>
 
             {/* Product Description */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Product Description</label>
+              <label htmlFor="creative-video-focus" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Video focus</label>
               <textarea
+                id="creative-video-focus"
                 value={productDescription}
                 onChange={e => setProductDescription(e.target.value)}
                 rows={3}
-                placeholder="Describe what you're promoting..."
+                placeholder="What should viewers learn about this brand, feature, or offer?"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
               />
-              <p className="text-xs text-slate-400 mt-1">Describe what you're promoting — be specific about features and benefits.</p>
+              <p className="text-xs text-slate-500 mt-1">A general introduction is a good first video. For a specific promotion, add the feature, benefit, or offer you want to highlight.</p>
+              {brandIntroduction && (
+                <button type="button" onClick={() => { markStudioDraftChanged(); setProductDescription(brandIntroduction); }} className="mt-2 text-xs font-bold text-emerald-700 underline">Use brand introduction</button>
+              )}
             </div>
 
             {/* Target Audience */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Target Audience</label>
+              <label htmlFor="creative-video-audience" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Target Audience</label>
               <input
+                id="creative-video-audience"
                 value={targetSegment}
                 onChange={e => setTargetSegment(e.target.value)}
-                placeholder="e.g. health-conscious millennials, new gardeners"
+                placeholder="Who should this video reach?"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
               />
-              <p className="text-xs text-slate-400 mt-1">Who should this resonate with? e.g. health-conscious millennials, new gardeners</p>
+              <p className="text-xs text-slate-500 mt-1">{savedBrand?.target_audience ? 'Starts with your saved audience. Narrow it here if this video is for a specific group.' : 'Add an audience for this video, or leave blank for a general audience.'}</p>
             </div>
 
             {/* Tone */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Tone</label>
+              <label htmlFor="creative-video-tone" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Tone</label>
               <select
+                id="creative-video-tone"
                 value={tone}
                 onChange={e => setTone(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
               >
+                {!TONE_PRESETS.includes(tone) && <option value={tone}>{tone}</option>}
                 {TONE_PRESETS.map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
@@ -1361,8 +1542,9 @@ STRICT RULES:
 
             {/* CTA */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Call to Action</label>
+              <label htmlFor="creative-video-cta" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Call to Action</label>
               <input
+                id="creative-video-cta"
                 value={cta}
                 onChange={e => setCta(e.target.value)}
                 placeholder="e.g. Visit oursite.com to learn more"
@@ -1394,7 +1576,7 @@ STRICT RULES:
       {/* ── Step 1: Static config ── */}
       {step === 1 && format === 'static' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-          <h3 className="text-lg font-black text-slate-800 mb-1">What's the offer?</h3>
+          <h3 className="text-lg font-black text-slate-800 mb-1">What should this image promote?</h3>
           <p className="text-xs text-slate-400 mb-6">n8n writes the ad copy for you — just describe the message.</p>
 
           {/* Single / Batch mode toggle */}
@@ -1421,16 +1603,7 @@ STRICT RULES:
             {/* Branch */}
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
-              <select
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
-              >
-                {branchOptions.length === 0 && <option value="">No branches available</option>}
-                {branchOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              <p className="text-sm font-bold text-slate-700">{branchName(branch)}</p>
             </div>
 
             {/* Message — single job, or one line per image in batch mode */}
@@ -1445,7 +1618,7 @@ STRICT RULES:
                       {availableStaticBatchPresets.map(preset => (
                         <button
                           key={preset.label}
-                          onClick={() => setStaticBatchText(preset.lines.join('\n'))}
+                          onClick={() => { markStudioDraftChanged(); setStaticBatchText(preset.lines.join('\n')); }}
                           className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition"
                         >
                           <Wand2 size={12} /> {preset.label}
@@ -1478,8 +1651,9 @@ STRICT RULES:
               </div>
             ) : (
               <div>
-                <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
+                <label htmlFor="creative-static-message" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Message / Offer</label>
                 <textarea
+                  id="creative-static-message"
                   value={staticMessage}
                   onChange={e => setStaticMessage(e.target.value)}
                   rows={3}
@@ -1514,7 +1688,7 @@ STRICT RULES:
                 ] as const).map(opt => (
                   <button
                     key={opt.value}
-                    onClick={() => setImageStyle(opt.value)}
+                    onClick={() => { markStudioDraftChanged(); setImageStyle(opt.value); }}
                     className={`border-2 rounded-xl p-3 text-left transition ${
                       imageStyle === opt.value ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
                     }`}
@@ -1538,7 +1712,7 @@ STRICT RULES:
                 {STATIC_ASPECT_RATIOS.map(ar => (
                   <button
                     key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
+                    onClick={() => { markStudioDraftChanged(); setAspectRatio(ar.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1583,7 +1757,7 @@ STRICT RULES:
                 ] as const).map(p => (
                   <button
                     key={p.value}
-                    onClick={() => setPlatform(p.value)}
+                    onClick={() => { markStudioDraftChanged(); setPlatform(p.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1664,7 +1838,7 @@ STRICT RULES:
                     ] as const).map(m => (
                       <button
                         key={m.value}
-                        onClick={() => setRefMode(m.value)}
+                        onClick={() => { markStudioDraftChanged(); setRefMode(m.value); }}
                         className={`border rounded-full px-4 py-1.5 text-sm transition ${
                           refMode === m.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                         }`}
@@ -1705,29 +1879,21 @@ STRICT RULES:
       {/* ── Step 1: Carousel config ── */}
       {step === 1 && format === 'carousel' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-          <h3 className="text-lg font-black text-slate-800 mb-1">What's the topic?</h3>
+          <h3 className="text-lg font-black text-slate-800 mb-1">What should this carousel cover?</h3>
           <p className="text-xs text-slate-400 mb-6">n8n plans the slide-by-slide story and writes the caption.</p>
 
           <div className="space-y-5">
             {/* Branch */}
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Branch</label>
-              <select
-                value={branch}
-                onChange={e => setBranch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition"
-              >
-                {branchOptions.length === 0 && <option value="">No branches available</option>}
-                {branchOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              <p className="text-sm font-bold text-slate-700">{branchName(branch)}</p>
             </div>
 
             {/* Topic */}
             <div>
-              <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Topic</label>
+              <label htmlFor="creative-carousel-topic" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Topic</label>
               <textarea
+                id="creative-carousel-topic"
                 value={carouselTopic}
                 onChange={e => setCarouselTopic(e.target.value)}
                 rows={3}
@@ -1755,7 +1921,7 @@ STRICT RULES:
                 {SLIDE_COUNT_OPTIONS.map(n => (
                   <button
                     key={n}
-                    onClick={() => setSlideCount(n)}
+                    onClick={() => { markStudioDraftChanged(); setSlideCount(n); }}
                     className={`w-10 h-10 rounded-full text-sm font-bold border transition ${
                       slideCount === n ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1774,7 +1940,7 @@ STRICT RULES:
                 {CAROUSEL_ASPECT_RATIOS.map(ar => (
                   <button
                     key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
+                    onClick={() => { markStudioDraftChanged(); setAspectRatio(ar.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1797,7 +1963,7 @@ STRICT RULES:
                 ] as const).map(p => (
                   <button
                     key={p.value}
-                    onClick={() => setPlatform(p.value)}
+                    onClick={() => { markStudioDraftChanged(); setPlatform(p.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1857,7 +2023,7 @@ STRICT RULES:
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => setPipeline(opt.value as 'talking_head' | 'full_scene')}
+                      onClick={() => { markStudioDraftChanged(); setPipeline(opt.value as 'talking_head' | 'full_scene'); }}
                       className={`border-2 rounded-xl p-4 text-left transition ${
                         selected ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
@@ -1882,7 +2048,7 @@ STRICT RULES:
                 {(['female', 'male'] as const).map(g => (
                   <button
                     key={g}
-                    onClick={() => setActorGender(g)}
+                    onClick={() => { markStudioDraftChanged(); setActorGender(g); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       actorGender === g ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1916,7 +2082,7 @@ STRICT RULES:
                 {ASPECT_RATIOS.map(ar => (
                   <button
                     key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
+                    onClick={() => { markStudioDraftChanged(); setAspectRatio(ar.value); }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       aspectRatio === ar.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
@@ -1926,6 +2092,15 @@ STRICT RULES:
                 ))}
               </div>
               <p className="text-xs text-slate-400 mt-1">Vertical for Reels & TikTok, horizontal for YouTube, square for Instagram feed.</p>
+            </div>
+
+            <div>
+              <label htmlFor="video-clip-duration" className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Video duration</label>
+              <select id="video-clip-duration" value={duration} onChange={event => { markStudioDraftChanged(); setDuration(Number(event.target.value) as 5 | 10); }} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                <option value={5}>5 seconds</option>
+                <option value={10}>10 seconds</option>
+              </select>
+              <p className="text-xs text-slate-500 mt-1">Includes generated speech and ambient audio. Talking Head speaks on camera; Full Scene uses a voiceover.</p>
             </div>
 
             {/* Platform pills */}
@@ -1942,7 +2117,6 @@ STRICT RULES:
                     key={p.value}
                     onClick={() => {
                       setPlatform(p.value);
-                      if (p.value !== 'general' && duration === 60) setDuration(15);
                     }}
                     className={`border rounded-full px-4 py-1.5 text-sm transition ${
                       platform === p.value ? 'bg-emerald-500 text-white border-emerald-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'
@@ -2051,7 +2225,7 @@ STRICT RULES:
       {step === 3 && format === 'video' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
           <h3 className="text-lg font-black text-slate-800 mb-1">Review & generate</h3>
-          <p className="text-xs text-slate-400 mb-6">Check everything looks good, then generate your video.</p>
+          <p className="text-xs text-slate-500 mb-6">Create a still frame first. After you approve it, we animate that frame and generate audio using your edited script.</p>
 
           {/* Summary grid */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-8">
@@ -2129,13 +2303,14 @@ STRICT RULES:
             </button>
 
             <textarea
+              aria-label="Spoken video script"
               value={generatedScript}
               onChange={e => setGeneratedScript(e.target.value)}
               rows={6}
               placeholder="AI will write your script, or paste your own. You can edit before generating."
               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition resize-none"
             />
-            <p className="text-xs text-slate-400">{wordCount} words</p>
+            <p className={`text-xs ${wordCount > Math.floor((duration - 1) * 2.2) ? 'text-red-600' : 'text-slate-500'}`}>{wordCount} / {Math.floor((duration - 1) * 2.2)} words for a {duration}-second clip. Your edited words are saved and used for the audio.</p>
           </div>
 
           {/* Template save option */}
@@ -2178,11 +2353,11 @@ STRICT RULES:
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isSubmitting || !generatedScript}
+              disabled={isSubmitting || !generatedScript.trim() || wordCount > Math.floor((duration - 1) * 2.2)}
               className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-sm font-bold rounded-lg hover:from-emerald-700 hover:to-emerald-600 transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg"
             >
               {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
-              {isSubmitting ? 'Generating...' : 'Generate Video'}
+              {isSubmitting ? 'Creating frame...' : 'Create Frame for Approval'}
             </button>
           </div>
         </div>
@@ -2678,6 +2853,20 @@ STRICT RULES:
             <h3 className="text-sm font-black uppercase tracking-tight text-amber-800">
               Needs Your Review ({awaitingApprovalJobs.length})
             </h3>
+            {reviewQueueBranch && (
+              <>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200">
+                  {branchName(reviewQueueBranch)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReviewQueueBranch(null)}
+                  className="text-[10px] font-bold text-amber-700 underline decoration-amber-300 underline-offset-2 hover:text-amber-900"
+                >
+                  Show all reviews
+                </button>
+              </>
+            )}
           </div>
 
           <div className="grid gap-4">
@@ -2904,7 +3093,8 @@ STRICT RULES:
       )}
 
       {/* ── Video Library ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <details className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <summary className="cursor-pointer p-6 text-sm font-bold text-slate-700">Browse saved creatives ({scopedJobs.length}){archivedJobs.length > 0 && <span className="ml-2 text-xs font-normal text-slate-500">{archivedJobs.length} archived</span>}</summary>
         {/* Header */}
         <div className="p-6 border-b border-slate-100">
           <div className="flex items-center justify-between mb-4">
@@ -2923,7 +3113,7 @@ STRICT RULES:
             </div>
             <button
               onClick={handleRefresh}
-              disabled={isRefreshing}
+              disabled={isRefreshing || !!archiveBusyId}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition disabled:opacity-30"
             >
               <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
@@ -2933,8 +3123,8 @@ STRICT RULES:
 
           {/* Filter pills */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex gap-2">
-              {(['all', 'active', 'completed', 'failed'] as const).map(f => (
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'active', 'completed', 'failed', 'archived'] as const).map(f => (
                 <button
                   key={f}
                   onClick={() => setStatusFilter(f)}
@@ -2968,12 +3158,14 @@ STRICT RULES:
           </div>
         </div>
 
+        {statusFilter === 'archived' && <p className="px-6 pt-4 text-xs text-slate-500">Archived creatives keep their files and history. Archiving does not remove posts already published. Restore a creative to review or reuse it.</p>}
+
         {/* Table or empty state */}
         {filteredJobs.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
             <Film size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-bold text-sm">
-              {jobs.length === 0 ? 'No ads yet' : 'No ads match this filter'}
+              {statusFilter === 'archived' ? 'No archived creatives match this filter' : jobs.length === 0 ? 'No ads yet' : 'No ads match this filter'}
             </p>
             <p className="text-xs mt-1">
               {jobs.length === 0
@@ -2981,6 +3173,18 @@ STRICT RULES:
                 : 'Try a different filter or refresh'}
             </p>
           </div>
+        ) : statusFilter === 'archived' ? (
+          <ul className="divide-y divide-slate-100 p-4 sm:p-6" aria-label="Archived creatives">
+            {paginatedJobs.map(job => <li key={job.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-700 break-words">{creativeHistoryTitle(job)}</p>
+                <p className="text-xs text-slate-500 mt-1">{formatLabel(job.format)} · {job.status} · Archived {new Date(job.archived_at!).toLocaleDateString()}</p>
+              </div>
+              <button type="button" disabled={!!archiveBusyId || isRefreshing} onClick={() => handleArchiveCreative(job, false)} aria-label={`Restore creative ${job.id}`} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 text-emerald-700 text-xs font-bold hover:bg-emerald-50 disabled:opacity-50">
+                {archiveBusyId === job.id ? <Loader2 size={14} className="animate-spin" /> : <ArchiveRestore size={14} />} Restore
+              </button>
+            </li>)}
+          </ul>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -3088,6 +3292,14 @@ STRICT RULES:
                           </p>
                         )}
                         <span className="text-[10px] font-mono text-slate-300">{job.id.slice(0, 12)}</span>
+                        <div className="mt-2" onClick={event => event.stopPropagation()}>
+                          <button type="button" onClick={() => handleArchiveCreative(job, true)} disabled={!!archiveBusyId || isRefreshing || !canArchiveCreative(job) || isScheduling || !!publishingJobId || !!approvingJobId || !!isRegenerating}
+                            aria-label={`Archive creative ${job.id}`}
+                            title={canArchiveCreative(job) ? 'Move to Archived; keep files and history' : 'Finish generation or cancel the schedule before archiving'}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                            {archiveBusyId === job.id ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />} Archive
+                          </button>
+                        </div>
                       </td>
 
                       {/* Status */}
@@ -3233,6 +3445,15 @@ STRICT RULES:
                                 <Instagram size={14} />
                               </button>
                             )
+                          )}
+                          {job.status === 'awaiting_approval' && !isCardBackground(job) && (
+                            <button
+                              onClick={() => openInReviewPanel(job)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 text-white rounded-lg text-[11px] font-bold hover:bg-amber-600 transition"
+                              title="Open the review panel — approve, edit, regenerate, or discard"
+                            >
+                              <ThumbsUp size={13} /> Review
+                            </button>
                           )}
                           {!TERMINAL_STATUSES.includes(job.status) && (
                             <button
@@ -3525,6 +3746,24 @@ STRICT RULES:
                                 </div>
                               )}
 
+                              {/* Still in review — the detail panel is view-only, so
+                                  send it to the Step 4 panel that has the full
+                                  approve / edit / regenerate / discard controls. */}
+                              {job.status === 'awaiting_approval' && !isCardBackground(job) && (
+                                <div className="col-span-2 mt-2 pt-3 border-t border-slate-200">
+                                  <span className="text-xs uppercase tracking-wider text-slate-400 block mb-2">What's next</span>
+                                  <button
+                                    onClick={() => openInReviewPanel(job)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600 transition"
+                                  >
+                                    <ThumbsUp size={13} /> Review this creative
+                                  </button>
+                                  <p className="text-[11px] text-slate-400 mt-1.5">
+                                    Approve, edit the caption or headline, regenerate, or discard.
+                                  </p>
+                                </div>
+                              )}
+
                               {/* What's next — the row's action icons are easy to miss
                                   up in the Actions column, so an approved creative
                                   looked like a dead end from this panel ("it's just
@@ -3742,7 +3981,7 @@ STRICT RULES:
             </div>
           </div>
         )}
-      </div>
+      </details>
 
       {/* ── Export for Meta Ads modal ── */}
       {adExportJobId && (() => {

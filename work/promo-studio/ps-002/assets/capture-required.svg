@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <rect width="1080" height="1920" fill="#13232b"/>
+  <rect x="74" y="210" width="932" height="1320" rx="48" fill="#f5f0e8" stroke="#d96c3f" stroke-width="8"/>
+  <circle cx="540" cy="675" r="190" fill="#1d333d"/>
+  <circle cx="540" cy="675" r="60" fill="#d96c3f"/>
+  <text x="540" y="1030" text-anchor="middle" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#1d333d">REAL REKKRD UI CAPTURE</text>
+  <text x="540" y="1110" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#50616a">required to complete PS-002</text>
+  <text x="540" y="1240" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#7c6f65">No product UI is simulated in this placeholder.</text>
+</svg>

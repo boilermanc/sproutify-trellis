@@ -122,12 +122,12 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
         return (
           <div 
             key={task.id} 
-            className={`group bg-white p-8 rounded-[2.5rem] border-2 transition-all duration-300 flex flex-col ${
-              isCompleted ? 'border-slate-100 opacity-60' : `border-slate-100 hover:${config.border} hover:shadow-2xl hover:shadow-emerald-900/5`
+            className={`group bg-white p-8 rounded-sm border-2 transition-colors duration-300 flex flex-col ${
+              isCompleted ? 'border-slate-100 opacity-60' : `border-slate-100 hover:${config.border}  `
             }`}
           >
             <div className="flex justify-between items-start mb-6">
-              <div className={`p-3.5 rounded-2xl ${config.bg} ${config.color} transition-transform group-hover:rotate-6`}>
+              <div className={`p-3.5 rounded-sm ${config.bg} ${config.color} transition-transform group-hover:rotate-6`}>
                 {React.createElement(config.icon, { size: 22 })}
               </div>
               <div className="flex items-center space-x-3">
@@ -139,7 +139,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                 </span>
                 <button 
                   onClick={() => toggleTaskStatus(task.id)}
-                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                  className={`w-6 h-6 rounded-sm border-2 flex items-center justify-center transition-colors ${
                     isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 hover:border-emerald-500'
                   }`}
                 >
@@ -148,7 +148,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
               </div>
             </div>
 
-            <h3 className={`text-base font-black mb-2 uppercase tracking-tight ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+            <h3 className={`text-base font-black mb-2   ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
               {task.title}
             </h3>
             <p className="text-xs text-slate-500 mb-8 line-clamp-2 h-10 leading-relaxed font-medium">
@@ -162,7 +162,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
               </div>
               <button 
                 onClick={() => setEditingTask(task)}
-                className="p-2 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                className="p-2 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-sm transition-colors"
               >
                 <Settings2 size={18} />
               </button>
@@ -174,7 +174,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
   );
 
   const renderListView = () => (
-    <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
+    <div className="bg-white rounded-sm border border-slate-200  overflow-hidden animate-in fade-in duration-300">
       <table className="w-full text-left">
         <thead className="bg-slate-50 border-b border-slate-100">
            <tr>
@@ -195,7 +195,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                     <div className="flex items-center space-x-4">
                        <button 
                          onClick={() => toggleTaskStatus(task.id)}
-                         className={`w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center transition-all ${
+                         className={`w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
                             isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200'
                          }`}
                        >
@@ -208,7 +208,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                     </div>
                   </td>
                   <td className="px-8 py-5">
-                    <div className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest`}>
+                    <div className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-sm ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest`}>
                        {React.createElement(config.icon, { size: 12 })}
                        <span>{config.label}</span>
                     </div>
@@ -244,12 +244,12 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
     const days = Array.from({ length: totalSlots });
 
     return (
-      <div className="bg-white rounded-[3rem] border border-slate-200 overflow-hidden shadow-sm animate-in fade-in duration-300">
+      <div className="bg-white rounded-[3rem] border border-slate-200 overflow-hidden  animate-in fade-in duration-300">
         <div className="bg-slate-900 px-10 py-6 flex justify-between items-center text-white">
-           <h3 className="text-sm font-black uppercase tracking-widest">{monthLabel}</h3>
+           <h3 className="text-sm font-black">{monthLabel}</h3>
            <div className="flex items-center space-x-4">
-              <button className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition"><ChevronLeft size={16} /></button>
-              <button className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition"><ChevronRight size={16} /></button>
+              <button className="p-2 bg-white/5 rounded-sm hover:bg-white/10 transition"><ChevronLeft size={16} /></button>
+              <button className="p-2 bg-white/5 rounded-sm hover:bg-white/10 transition"><ChevronRight size={16} /></button>
            </div>
         </div>
         <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-100">
@@ -272,7 +272,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
               <div key={idx} className={`border-r border-b border-slate-50 p-3 transition-colors group relative ${isPadding ? 'bg-slate-50/50' : 'hover:bg-slate-50/50'}`}>
                  {!isPadding && (
                     <>
-                       <span className={`text-[10px] font-black mb-2 block w-6 h-6 flex items-center justify-center rounded-lg ${isToday ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400'}`}>
+                       <span className={`text-[10px] font-black mb-2 block w-6 h-6 flex items-center justify-center rounded-sm ${isToday ? 'bg-emerald-600 text-white ' : 'text-slate-400'}`}>
                           {dayNum}
                        </span>
                        <div className="space-y-1.5 overflow-y-auto custom-scrollbar-light max-h-[110px]">
@@ -280,7 +280,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                             <div 
                               key={t.id} 
                               onClick={() => setEditingTask(t)}
-                              className={`p-2 rounded-lg text-[9px] font-black uppercase truncate border cursor-pointer shadow-sm flex items-center space-x-1.5 transition-transform hover:scale-105 ${
+                              className={`p-2 rounded-sm text-[9px] font-black uppercase truncate border cursor-pointer  flex items-center space-x-1.5 transition-transform hover:scale-105 ${
                                 t.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border-emerald-100 opacity-60' : 
                                 t.priority === 'high' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-slate-50 text-slate-700 border-slate-100'
                               }`}
@@ -306,16 +306,16 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
   return (
     <div className="space-y-10 pb-40">
       <div className="flex flex-col md:flex-row justify-between items-center gap-8">
-        <div className="flex bg-slate-200/40 p-1.5 rounded-[2rem] w-fit border border-slate-200 shadow-inner">
-          <button onClick={() => setActiveView('grid')} className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeView === 'grid' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
+        <div className="flex bg-slate-200/40 p-1.5 rounded-sm w-fit border border-slate-200 ">
+          <button onClick={() => setActiveView('grid')} className={`flex items-center space-x-3 px-8 py-3 rounded-sm text-xs font-black uppercase tracking-widest transition-colors ${activeView === 'grid' ? 'bg-white text-emerald-700 ' : 'text-slate-500 hover:text-slate-800'}`}>
             <LayoutGrid size={18} />
             <span>Grid</span>
           </button>
-          <button onClick={() => setActiveView('list')} className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeView === 'list' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
+          <button onClick={() => setActiveView('list')} className={`flex items-center space-x-3 px-8 py-3 rounded-sm text-xs font-black uppercase tracking-widest transition-colors ${activeView === 'list' ? 'bg-white text-emerald-700 ' : 'text-slate-500 hover:text-slate-800'}`}>
             <List size={18} />
             <span>List</span>
           </button>
-          <button onClick={() => setActiveView('calendar')} className={`flex items-center space-x-3 px-8 py-3 rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all ${activeView === 'calendar' ? 'bg-white text-emerald-700 shadow-lg' : 'text-slate-500 hover:text-slate-800'}`}>
+          <button onClick={() => setActiveView('calendar')} className={`flex items-center space-x-3 px-8 py-3 rounded-sm text-xs font-black uppercase tracking-widest transition-colors ${activeView === 'calendar' ? 'bg-white text-emerald-700 ' : 'text-slate-500 hover:text-slate-800'}`}>
             <CalendarDays size={18} />
             <span>Calendar</span>
           </button>
@@ -327,14 +327,14 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
               <input 
                 type="text" 
                 placeholder="Audit tasks by title or desc..." 
-                className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-[1.5rem] outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all font-bold text-sm"
+                className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-sm outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-colors font-bold text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
            </div>
            <button 
             onClick={() => setIsModalOpen(true)} 
-            className="p-3.5 bg-slate-900 text-white rounded-[1.2rem] flex items-center justify-center hover:bg-emerald-600 transition-all shadow-xl"
+            className="p-3.5 bg-slate-900 text-white rounded-[1.2rem] flex items-center justify-center hover:bg-emerald-600 transition-colors "
           >
             <Plus size={24} />
           </button>
@@ -349,14 +349,14 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
 
       {editingTask && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
-           <div className="bg-white w-full max-w-5xl h-[85vh] rounded-[4rem] shadow-2xl overflow-hidden flex flex-col border border-white/20">
+           <div className="bg-white w-full max-w-5xl h-[85vh] rounded-[4rem]  overflow-hidden flex flex-col border border-white/20">
               <div className="p-10 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                  <div className="flex items-center space-x-6">
-                    <div className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-lg ${TYPE_CONFIG[editingTask.type].bg} ${TYPE_CONFIG[editingTask.type].color}`}>
+                    <div className={`w-16 h-16 rounded-sm flex items-center justify-center  ${TYPE_CONFIG[editingTask.type].bg} ${TYPE_CONFIG[editingTask.type].color}`}>
                        {React.createElement(TYPE_CONFIG[editingTask.type].icon, { size: 32 })}
                     </div>
                     <div>
-                       <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">{editingTask.title}</h3>
+                       <h3 className="text-3xl font-black text-slate-800">{editingTask.title}</h3>
                        <div className="flex items-center space-x-3 text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
                           <span className="flex items-center text-emerald-600"><ShieldCheck size={12} className="mr-1" /> Campaign Integrity Verified</span>
                           <span>•</span>
@@ -375,7 +375,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                           <div className="space-y-2">
                              <span className="text-[9px] font-black text-slate-400 uppercase ml-2">Title</span>
                              <input 
-                               className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm font-black uppercase text-slate-800 focus:border-emerald-500 outline-none transition"
+                               className="w-full bg-white border border-slate-200 rounded-sm p-4 text-sm font-black uppercase text-slate-800 focus:border-emerald-500 outline-none transition"
                                value={editingTask.title}
                                onChange={e => setEditingTask({...editingTask, title: e.target.value})}
                              />
@@ -384,7 +384,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                              <span className="text-[9px] font-black text-slate-400 uppercase ml-2">Due Date</span>
                              <input 
                                type="date"
-                               className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm font-bold text-slate-800 focus:border-emerald-500 outline-none transition"
+                               className="w-full bg-white border border-slate-200 rounded-sm p-4 text-sm font-bold text-slate-800 focus:border-emerald-500 outline-none transition"
                                value={editingTask.due_date}
                                onChange={e => setEditingTask({...editingTask, due_date: e.target.value})}
                              />
@@ -393,25 +393,25 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                        <div className="space-y-2">
                           <span className="text-[9px] font-black text-slate-400 uppercase ml-2">Description / Objectives</span>
                           <textarea 
-                            className="w-full bg-white border border-slate-200 rounded-3xl p-6 text-sm font-medium text-slate-600 leading-relaxed min-h-[150px] outline-none focus:border-emerald-500 transition"
+                            className="w-full bg-white border border-slate-200 rounded-sm p-6 text-sm font-medium text-slate-600 leading-relaxed min-h-[150px] outline-none focus:border-emerald-500 transition"
                             value={editingTask.description}
                             onChange={e => setEditingTask({...editingTask, description: e.target.value})}
                           />
                        </div>
                     </div>
 
-                    <div className="bg-emerald-50 p-8 rounded-[2.5rem] border border-emerald-100 relative overflow-hidden group">
+                    <div className="bg-emerald-50 p-8 rounded-sm border border-emerald-100 relative overflow-hidden group">
                        <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
                           <Sparkles size={100} className="text-emerald-500" />
                        </div>
-                       <h4 className="text-sm font-black text-emerald-900 uppercase mb-4 flex items-center">
+                       <h4 className="text-sm font-black text-emerald-900  mb-4 flex items-center">
                           <Activity size={16} className="mr-2" /> 
                           Workspace Execution
                        </h4>
                        <p className="text-xs text-emerald-700 leading-relaxed italic max-w-xl">
-                          "This task is linked to the <b>Global Onboarding Flow</b>. Automated drafting is available for the Copywriting and Design components."
+"This task is linked to the <b>Global Onboarding Flow</b>. Automated drafting is available for the Copywriting and Design components."
                        </p>
-                       <button className="mt-8 px-8 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition flex items-center space-x-2">
+                       <button className="mt-8 px-8 py-4 bg-emerald-600 text-white rounded-sm font-black text-xs uppercase tracking-widest   hover:bg-emerald-700 transition flex items-center space-x-2">
                           <span>Initiate AI Flow</span>
                           <ArrowUpRight size={14} />
                        </button>
@@ -421,13 +421,13 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                  <div className="w-[400px] bg-white border-l border-slate-100 flex flex-col">
                     <div className="p-10 border-b border-slate-50 flex items-center space-x-3">
                        <History size={20} className="text-slate-400" />
-                       <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">Audit History</h4>
+                       <h4 className="text-xs font-black text-slate-800">Audit History</h4>
                     </div>
                     <div className="flex-1 overflow-y-auto p-10 space-y-6 custom-scrollbar">
                        {editingTask.audit_log?.map((log, i) => (
                          <div key={i} className="relative pl-8">
                             <div className="absolute left-0 top-0 bottom-[-24px] w-0.5 bg-slate-50 last:hidden"></div>
-                            <div className="absolute left-[-4px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white shadow-sm"></div>
+                            <div className="absolute left-[-4px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white "></div>
                             <p className="text-[10px] font-black text-slate-800 uppercase tracking-tight mb-1">{log.action}</p>
                             <p className="text-[9px] text-slate-400 font-bold mb-1">BY {log.user}</p>
                             <p className="text-[8px] text-slate-300 font-mono">{new Date(log.timestamp).toLocaleString()}</p>
@@ -442,14 +442,14 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                     <div className="p-8 bg-slate-50 border-t border-slate-100 space-y-3">
                        <button 
                          onClick={() => handleUpdateTask(editingTask)}
-                         className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black text-sm flex items-center justify-center space-x-3 shadow-xl hover:bg-slate-800 transition"
+                         className="w-full py-5 bg-slate-900 text-white rounded-sm font-black text-sm flex items-center justify-center space-x-3  hover:bg-slate-800 transition"
                        >
                           <Save size={18} />
                           <span>Commit Changes</span>
                        </button>
                        <button 
                          onClick={() => handleArchiveTask(editingTask.id)}
-                         className="w-full py-5 bg-rose-50 text-rose-600 border border-rose-100 rounded-3xl font-black text-sm flex items-center justify-center space-x-3 hover:bg-rose-100 transition"
+                         className="w-full py-5 bg-rose-50 text-rose-600 border border-rose-100 rounded-sm font-black text-sm flex items-center justify-center space-x-3 hover:bg-rose-100 transition"
                        >
                           <Archive size={18} />
                           <span>Archive Task</span>
@@ -463,13 +463,13 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md">
-          <div className="bg-white w-full max-w-2xl rounded-[4rem] p-12 shadow-2xl animate-in zoom-in-95 duration-300 border border-white/20">
+          <div className="bg-white w-full max-w-2xl rounded-[4rem] p-12  animate-in zoom-in-95 duration-300 border border-white/20">
             <div className="flex justify-between items-center mb-10 pb-6 border-b border-slate-100">
               <div>
-                <h3 className="text-3xl font-black text-slate-800 tracking-tighter uppercase">New Campaign Task</h3>
+                <h3 className="text-3xl font-black text-slate-800 tracking-tighter ">New Campaign Task</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Global Orchestration Gateway</p>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-rose-500 transition"><X size={28} /></button>
+              <button onClick={() => setIsModalOpen(false)} className="p-3 bg-slate-50 rounded-sm text-slate-400 hover:text-rose-500 transition"><X size={28} /></button>
             </div>
             
             <form onSubmit={handleCreateTask} className="space-y-8">
@@ -480,7 +480,7 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                     const cfg = TYPE_CONFIG[type];
                     const active = newTask.type === type;
                     return (
-                      <button key={type} type="button" onClick={() => setNewTask({...newTask, type})} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-2 transition-all ${active ? 'border-emerald-500 bg-emerald-50 shadow-lg scale-105' : 'border-slate-100 hover:border-slate-200'}`}>
+                      <button key={type} type="button" onClick={() => setNewTask({...newTask, type})} className={`p-4 rounded-sm border-2 flex flex-col items-center gap-2 transition-colors ${active ? 'border-emerald-500 bg-emerald-50  scale-105' : 'border-slate-100 hover:border-slate-200'}`}>
                         {React.createElement(cfg.icon, { size: 20, className: active ? 'text-emerald-600' : 'text-slate-300' })}
                         <span className={`text-[8px] font-black uppercase ${active ? 'text-emerald-700' : 'text-slate-400'}`}>{cfg.label}</span>
                       </button>
@@ -492,13 +492,13 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
               <div className="space-y-6">
                 <div className="space-y-2">
                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Title</label>
-                   <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] outline-none focus:bg-white focus:border-emerald-500 transition font-black uppercase text-sm tracking-tight shadow-inner" placeholder="e.g. AUDIT FALL 2024 IMAGE ASSETS" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} required />
+                   <input className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-sm outline-none focus:bg-white focus:border-emerald-500 transition font-black uppercase text-sm tracking-tight " placeholder="e.g. AUDIT FALL 2024 IMAGE ASSETS" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} required />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-6">
                    <div className="space-y-2">
                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Priority Level</label>
-                     <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] outline-none font-bold text-xs shadow-inner" value={newTask.priority} onChange={e => setNewTask({...newTask, priority: e.target.value as any})}>
+                     <select className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-sm outline-none font-bold text-xs " value={newTask.priority} onChange={e => setNewTask({...newTask, priority: e.target.value as any})}>
                         <option value="low">LOW PRIORITY</option>
                         <option value="medium">MEDIUM PRIORITY</option>
                         <option value="high">HIGH PRIORITY (URGENT)</option>
@@ -506,12 +506,12 @@ const Tasks: React.FC<TasksProps> = ({ tasks, setTasks }) => {
                    </div>
                    <div className="space-y-2">
                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Deadline</label>
-                     <input type="date" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] outline-none font-bold text-xs shadow-inner" value={newTask.due_date} onChange={e => setNewTask({...newTask, due_date: e.target.value})} required />
+                     <input type="date" className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-sm outline-none font-bold text-xs " value={newTask.due_date} onChange={e => setNewTask({...newTask, due_date: e.target.value})} required />
                    </div>
                 </div>
               </div>
 
-              <button type="submit" className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black text-xl flex items-center justify-center space-x-4 shadow-2xl hover:bg-emerald-600 transition active:scale-95">
+              <button type="submit" className="w-full py-6 bg-slate-900 text-white rounded-sm font-black text-xl flex items-center justify-center space-x-4  hover:bg-emerald-600 transition active:scale-95">
                 <Zap size={24} className="text-emerald-400" />
                 <span>Synchronize & Create Task</span>
               </button>

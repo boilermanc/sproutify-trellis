@@ -1,0 +1,114 @@
+{
+  "name": "Trellis: Rejoice Daily App Store Downloads",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "35 16 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Daily at 16:35 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/app-store-analytics",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"op\":\"sync\",\"apple_app_id\":\"6754806358\"}",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "name": "Import Apple Daily Aggregates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Rejoice only · inactive until approved\n\nApp Apple ID: 6754806358. Runs daily at 16:35 UTC.\n\nSelect the existing Trellis HTTP Header Auth refresh credential: header x-trellis-refresh-secret, value from server-side POSTHOG_REFRESH_SECRET. Never paste the value into this file.\n\nConfirm the app-store-analytics function, schema and ASC credentials are ready, run one manual import, inspect Rejoice results, then activate only with authorization. The validation node fails executions for per-app failures even when HTTP status is 207. See docs/APP_STORE_ANALYTICS.md.",
+        "width": 620,
+        "height": 320
+      },
+      "name": "Setup and Security Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        80,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nif (!Array.isArray(payload.results) || !payload.results.length) throw new Error('No Rejoice sync result returned');\nconst failed = payload.results.filter(result => !result.ok);\nif (failed.length) throw new Error('Rejoice App Store sync failed; inspect the app status in Trellis');\nreturn $input.all();"
+      },
+      "name": "Validate Rejoice Sync",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily at 16:35 UTC": {
+      "main": [
+        [
+          {
+            "node": "Import Apple Daily Aggregates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import Apple Daily Aggregates": {
+      "main": [
+        [
+          {
+            "node": "Validate Rejoice Sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "UTC"
+  }
+}

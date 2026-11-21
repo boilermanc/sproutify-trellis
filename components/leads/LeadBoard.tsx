@@ -53,7 +53,7 @@ const LeadBoard: React.FC<LeadBoardProps> = ({ stages, leads, stageDates, pendin
           return (
             <section
               key={stage}
-              className={`w-72 shrink-0 rounded-[1.5rem] border bg-[#10142E] transition ${dragOverStage === stage ? 'border-cyan-400/50 bg-cyan-400/[0.04]' : 'border-white/10'}`}
+              className={`w-72 shrink-0 rounded-sm border bg-[#10142E] transition ${dragOverStage === stage ? 'border-emerald-400/50 bg-emerald-400/[0.04]' : 'border-white/10'}`}
               onDragOver={event => { event.preventDefault(); setDragOverStage(stage); }}
               onDragLeave={() => setDragOverStage(current => current === stage ? null : current)}
               onDrop={event => {
@@ -73,14 +73,14 @@ const LeadBoard: React.FC<LeadBoardProps> = ({ stages, leads, stageDates, pendin
                   const org = parseFarmOrOrg(lead.notes);
                   const stageStart = stageDates[lead.id] || lead.created_at;
                   return (
-                    <article key={lead.id} draggable={pendingLeadId !== lead.id} onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/lead-id', lead.id); }} className="rounded-2xl border border-white/10 bg-[#0A0E27] p-4 shadow-lg shadow-slate-950/20">
-                      <div className="flex items-start gap-2"><GripVertical className="mt-0.5 shrink-0 cursor-grab text-slate-700" size={15} /><div className="min-w-0 flex-1"><h4 className="truncate text-sm font-black text-white">{leadName(lead)}</h4>{org && <p className="mt-1 truncate text-[10px] text-cyan-300/70">{org}</p>}</div>{pendingLeadId === lead.id && <Loader2 className="animate-spin text-cyan-300" size={14} />}</div>
+                    <article key={lead.id} draggable={pendingLeadId !== lead.id} onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/lead-id', lead.id); }} className="rounded-sm border border-white/10 bg-[#0A0E27] p-4">
+                      <div className="flex items-start gap-2"><GripVertical className="mt-0.5 shrink-0 cursor-grab text-slate-700" size={15} /><div className="min-w-0 flex-1"><h4 className="truncate text-sm font-black text-white">{leadName(lead)}</h4>{org && <p className="mt-1 truncate text-[10px] text-emerald-300/70">{org}</p>}</div>{pendingLeadId === lead.id && <Loader2 className="animate-spin text-emerald-300" size={14} />}</div>
                       <div className="mt-4 flex items-center justify-between text-[10px] text-slate-500"><span className="flex items-center gap-1"><CircleDollarSign size={12} />{lead.estimated_value == null ? 'No estimate' : `$${lead.estimated_value.toLocaleString()}`}</span><span>{daysSince(stageStart)}d in stage</span></div>
-                      <label className="mt-3 block"><span className="sr-only">Move {leadName(lead)} to stage</span><select value={lead.stage} onChange={event => { if (event.target.value !== lead.stage) void onMove(lead, event.target.value); }} disabled={pendingLeadId === lead.id} className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-2 py-2 text-[10px] font-bold capitalize text-slate-300 outline-none focus:border-cyan-400/40 disabled:opacity-40">{stages.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+                      <label className="mt-3 block"><span className="sr-only">Move {leadName(lead)} to stage</span><select value={lead.stage} onChange={event => { if (event.target.value !== lead.stage) void onMove(lead, event.target.value); }} disabled={pendingLeadId === lead.id} className="w-full rounded-sm border border-white/10 bg-white/[0.03] px-2 py-2 text-[10px] font-bold capitalize text-slate-300 outline-none focus:border-emerald-400/40 disabled:opacity-40">{stages.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
                     </article>
                   );
                 })}
-                {stageLeads.length === 0 && <div className="rounded-xl border border-dashed border-white/10 py-8 text-center text-[10px] text-slate-600">Drop a lead here</div>}
+                {stageLeads.length === 0 && <div className="rounded-sm border border-dashed border-white/10 py-8 text-center text-[10px] text-slate-600">Drop a lead here</div>}
               </div>}
             </section>
           );

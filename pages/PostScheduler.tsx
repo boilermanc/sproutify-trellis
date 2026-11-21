@@ -3,17 +3,18 @@ import {
   CalendarClock, UploadCloud, ImagePlus, Loader2, X, Trash2, Clock,
   CheckCircle2, XCircle, AlertTriangle, Ban, Instagram, Facebook, Music,
   Send, Sparkles, Info, RefreshCw, Image as ImageIcon, Pencil, Save, Zap,
-  Eye, Bookmark, Share2, Users, MousePointerClick,
+  Eye, Bookmark, Share2, Users, MousePointerClick, Video,
 } from 'lucide-react';
 import { BranchContext, ScheduledPost, NewScheduledPost } from '../types';
 import {
   createScheduledPosts, fetchScheduledPosts, cancelScheduledPost,
-  uploadPostImage, buildSchedule, updateScheduledPost,
+  uploadPostMedia, buildSchedule, updateScheduledPost,
 } from '../services/scheduledPostService';
 import { fetchLatestInsights, getDisplayInsights, PostInsightSnapshot } from '../services/socialInsightsService';
 
 interface PostSchedulerProps {
   branchContext?: BranchContext;
+  selectedBranchSlug: string;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -25,6 +26,7 @@ interface StagingRow {
   file: File;
   previewUrl: string;
   url: string | null;
+  mediaType: 'image' | 'video';
   uploading: boolean;
   uploadError: string | null;
   caption: string;
@@ -59,6 +61,7 @@ const STATUS_CHIP: Record<ScheduledPost['status'], { label: string; className: s
   published: { label: 'Published', className: 'bg-emerald-50 text-emerald-600', icon: CheckCircle2 },
   failed: { label: 'Failed', className: 'bg-rose-50 text-rose-500', icon: XCircle },
   cancelled: { label: 'Cancelled', className: 'bg-slate-100 text-slate-400', icon: Ban },
+  needs_review: { label: 'Needs Review', className: 'bg-orange-50 text-orange-600', icon: AlertTriangle },
 };
 
 // Only a `scheduled` row is still waiting to go out — everything else is
@@ -83,7 +86,7 @@ function rowBlockingReason(row: StagingRow): string | null {
   if (row.uploading) return 'still uploading';
   if (!row.caption.trim()) return 'needs a caption';
   if ((row.platform === 'instagram' || row.platform === 'tiktok') && !row.url) {
-    return `needs an image — ${row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} requires media`;
+    return `needs media — ${row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} requires an image or video`;
   }
   return null;
 }
@@ -143,14 +146,18 @@ function fmtCompactOrDash(n: number | null): string {
   return n === null ? '—' : fmtCompactCount(n);
 }
 
-const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }) => {
+const PostScheduler: React.FC<PostSchedulerProps> = ({ selectedBranchSlug, branchContext, addToast }) => {
   // ── Branch selection ──
   const branchOptions = branchContext?.allBranches ?? [];
-  const [branchId, setBranchId] = useState('');
-  useEffect(() => {
-    if (!branchId && branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [branchOptions, branchId]);
-  const selectedBranch = branchOptions.find(b => b.id === branchId) || null;
+  const selectedBranch = branchOptions.find(b => b.slug === selectedBranchSlug) || null;
+
+  // Resolve the header-selected branch for queue labels.
+  const brandNameBySlug = useMemo(() => {
+    const m = new Map<string, string>();
+    branchOptions.forEach(b => m.set(b.slug, b.name));
+    return m;
+  }, [branchOptions]);
+  const brandName = (slug: string | null | undefined) => (slug ? brandNameBySlug.get(slug) ?? slug : 'Unknown');
 
   // ── Staging rows (uploaded, not yet saved) ──
   const [rows, setRows] = useState<StagingRow[]>([]);
@@ -171,6 +178,9 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [queueLoading, setQueueLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
+  // ── Queue view controls (all brands, filterable + sortable) ──
+  const [sortMode, setSortMode] = useState<'auto' | 'date_asc' | 'date_desc' | 'brand' | 'status'>('auto');
+
   // ── Inline edit of a queued (still `scheduled`) row ──
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
@@ -182,12 +192,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   const [postInsights, setPostInsights] = useState<Map<string, PostInsightSnapshot>>(new Map());
   const [insightsLoading, setInsightsLoading] = useState(false);
 
+  // The header selection scopes both uploads and the saved queue.
   const loadQueue = async () => {
-    if (!selectedBranch) { setQueue([]); setQueueLoading(false); return; }
     setQueueLoading(true);
     try {
-      const posts = await fetchScheduledPosts({ branchSlug: selectedBranch.slug });
-      setQueue(posts);
+      const posts = await fetchScheduledPosts();
+      setQueue(posts.filter(post => post.branch_slug === selectedBranchSlug || post.branch_id === selectedBranch?.id));
     } catch (e) {
       addToast?.(e instanceof Error ? e.message : 'Failed to load the scheduled queue.', 'error');
     } finally {
@@ -195,24 +205,23 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
     }
   };
 
-  useEffect(() => { loadQueue(); }, [selectedBranch?.slug]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Switching brands (or a refresh) while a row is mid-edit would otherwise
-  // leave a stale edit form pointing at a post that's no longer in view.
-  useEffect(() => { setEditingId(null); setEditDraft(null); }, [selectedBranch?.slug]);
+  useEffect(() => { loadQueue(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Upload handling ──
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    if (!selectedBranch) { addToast?.('Choose a brand before uploading images.', 'error'); return; }
+    if (!selectedBranch) { addToast?.('Choose a brand before uploading media.', 'error'); return; }
 
     const files = Array.from(fileList).filter(f => {
-      if (!f.type.startsWith('image/')) {
-        addToast?.(`${f.name} is not an image — skipped.`, 'error');
+      const isImage = f.type.startsWith('image/');
+      const isVideo = f.type === 'video/mp4' || /\.mp4$/i.test(f.name);
+      if (!isImage && !isVideo) {
+        addToast?.(`${f.name} is not an image or video — skipped.`, 'error');
         return false;
       }
-      if (f.size > 10 * 1024 * 1024) {
-        addToast?.(`${f.name} is over 10MB — skipped.`, 'error');
+      const limitMb = isVideo ? 50 : 10;
+      if (f.size > limitMb * 1024 * 1024) {
+        addToast?.(`${f.name} is over ${limitMb}MB — skipped.`, 'error');
         return false;
       }
       return true;
@@ -224,6 +233,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       file,
       previewUrl: URL.createObjectURL(file),
       url: null,
+      mediaType: file.type.startsWith('video/') ? 'video' : 'image',
       uploading: true,
       uploadError: null,
       caption: '',
@@ -234,7 +244,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
 
     for (const row of newRows) {
       try {
-        const url = await uploadPostImage(selectedBranch.slug, row.file);
+        const url = await uploadPostMedia(selectedBranch.slug, row.file);
         setRows(prev => prev.map(r => (r.localId === row.localId ? { ...r, url, uploading: false } : r)));
       } catch (e) {
         const message = e instanceof Error ? e.message : `Failed to upload ${row.file.name}.`;
@@ -302,7 +312,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         branch_slug: selectedBranch.slug,
         platform: r.platform,
         caption: r.caption.trim(),
-        media_type: 'image',
+        media_type: r.mediaType,
         media_urls: r.url ? [r.url] : [],
         scheduled_for: r.scheduledFor,
         source: 'upload',
@@ -388,15 +398,36 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
   };
 
   // ── Queue split: upcoming vs. history ──
+  // Shared brand-filter + sort applied to both sections. `auto` keeps the
+  // sensible defaults (upcoming soonest-first, history most-recent-first);
+  // any explicit choice overrides both lists.
+  const applyView = useMemo(() => {
+    const byDateAsc = (a: ScheduledPost, b: ScheduledPost) =>
+      new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime();
+    return (list: ScheduledPost[], isHistory: boolean): ScheduledPost[] => {
+      const out = list.slice();
+      switch (sortMode) {
+        case 'date_asc': out.sort(byDateAsc); break;
+        case 'date_desc': out.sort((a, b) => -byDateAsc(a, b)); break;
+        case 'brand': out.sort((a, b) => brandName(a.branch_slug).localeCompare(brandName(b.branch_slug)) || byDateAsc(a, b)); break;
+        case 'status': out.sort((a, b) => a.status.localeCompare(b.status) || byDateAsc(a, b)); break;
+        default: out.sort((a, b) => (isHistory ? -byDateAsc(a, b) : byDateAsc(a, b)));
+      }
+      return out;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortMode, brandNameBySlug]);
+
   const upcoming = useMemo(
-    () => queue.filter(p => p.status === 'scheduled' || p.status === 'publishing')
-      .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime()),
-    [queue],
+    () => applyView(queue.filter(p => p.status === 'scheduled' || p.status === 'publishing'), false),
+    [queue, applyView],
   );
   const history = useMemo(
-    () => queue.filter(p => p.status === 'published' || p.status === 'failed' || p.status === 'cancelled')
-      .sort((a, b) => new Date(b.scheduled_for).getTime() - new Date(a.scheduled_for).getTime()),
-    [queue],
+    () => applyView(
+      queue.filter(p => p.status === 'published' || p.status === 'failed' || p.status === 'cancelled' || p.status === 'needs_review'),
+      true,
+    ),
+    [queue, applyView],
   );
 
   // ── Load insights for published posts with a real platform post id —
@@ -430,11 +461,11 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <CalendarClock className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Post Scheduler</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Post scheduler</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               Bring your own creative — upload, caption, and queue a week in one go
             </p>
@@ -460,29 +491,11 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         </p>
       </div>
 
-      {/* Brand selector */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-3">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Brand</span>
-        {branchOptions.length === 0 ? (
-          <p className="text-sm text-slate-400">No brands available yet.</p>
-        ) : (
-          <select
-            value={branchId}
-            onChange={e => setBranchId(e.target.value)}
-            className="w-full lg:w-80 text-sm font-bold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-          >
-            {branchOptions.map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
-
       {/* Drop zone */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
         <div className="flex items-center gap-2">
           <ImagePlus className="w-4 h-4 text-emerald-600" />
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Drop This Week's Images</h2>
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">1. Upload images or videos</h2>
         </div>
 
         <label
@@ -500,12 +513,12 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
           }`}
         >
           <UploadCloud size={20} />
-          <span className="font-bold">{isDragging ? 'Drop the images here' : 'Drag images here, or click to browse'}</span>
-          <span className="text-xs text-slate-300">PNG or JPG, up to 10MB each — multiple files at once</span>
+          <span className="font-bold">{isDragging ? 'Drop the media here' : 'Drag images or videos here, or click to browse'}</span>
+          <span className="text-xs text-slate-300">Images up to 10MB · MP4 video up to 50MB · multiple files at once</span>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4"
             multiple
             className="hidden"
             onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
@@ -518,7 +531,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CalendarClock className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto-schedule all rows</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">2. Set publishing dates</span>
               </div>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col gap-1">
@@ -564,7 +577,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Bulk caption add-on</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Optional: add a shared caption</span>
               </div>
               <p className="text-[11px] text-slate-400">
                 Creative Studio posts get the brand's default CTA automatically — uploads don't, so add a standing CTA or hashtag set here
@@ -597,7 +610,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                 return (
                 <div key={row.localId} className="flex flex-col lg:flex-row gap-3 border border-slate-200 rounded-xl p-3">
                   <div className="relative w-full lg:w-28 h-28 shrink-0 rounded-lg overflow-hidden bg-slate-100 border border-slate-200">
-                    <img src={row.previewUrl} alt="" className="w-full h-full object-cover" />
+                    {row.mediaType === 'video' ? <video src={row.previewUrl} muted playsInline className="w-full h-full object-cover" /> : <img src={row.previewUrl} alt="" className="w-full h-full object-cover" />}
                     {row.uploading && (
                       <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
                         <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
@@ -640,7 +653,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                             if (!selectedBranch) return;
                             updateRow(row.localId, { uploading: true, uploadError: null });
                             try {
-                              const url = await uploadPostImage(selectedBranch.slug, row.file);
+                              const url = await uploadPostMedia(selectedBranch.slug, row.file);
                               updateRow(row.localId, { url, uploading: false });
                             } catch (e) {
                               updateRow(row.localId, { uploading: false, uploadError: e instanceof Error ? e.message : 'Upload failed.' });
@@ -663,7 +676,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                     {needsImage && (
                       <p className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500">
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        Image required for {row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} — upload one, retry the failed upload, or switch this row to Facebook.
+                        Media required for {row.platform === 'tiktok' ? 'TikTok' : 'Instagram'} — upload an image or video, retry the failed upload, or switch this row to Facebook.
                       </p>
                     )}
                     {imageOptional && (
@@ -687,7 +700,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             {/* Save to queue */}
             <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
               <p className="text-[11px] text-slate-400">
-                {readyRows.length} of {rows.length} image{rows.length === 1 ? '' : 's'} uploaded
+                {readyRows.length} of {rows.length} media file{rows.length === 1 ? '' : 's'} uploaded
               </p>
               <button
                 type="button"
@@ -703,32 +716,48 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
         )}
 
         {rows.length === 0 && (
-          <p className="text-center text-xs text-slate-300 py-2">No images staged yet — drop some in above.</p>
+          <p className="text-center text-xs text-slate-300 py-2">No media staged yet — drop images or videos above.</p>
         )}
       </div>
 
       {/* Queue list */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-emerald-600" />
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-            Scheduled Queue {selectedBranch ? `· ${selectedBranch.name}` : ''}
-          </h2>
+      {(queueLoading || queue.length > 0) && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-600" />
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+              Scheduled Queue · {selectedBranch?.name}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={sortMode}
+              onChange={e => setSortMode(e.target.value as typeof sortMode)}
+              title="Sort the queue"
+              className="text-xs font-bold text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+            >
+              <option value="auto">Sort: Default</option>
+              <option value="date_asc">Date ↑ (soonest)</option>
+              <option value="date_desc">Date ↓ (latest)</option>
+              <option value="brand">Brand (A–Z)</option>
+              <option value="status">Status</option>
+            </select>
+          </div>
         </div>
 
         {queueLoading ? (
           <div className="flex items-center justify-center py-10 text-slate-300">
             <Loader2 className="w-5 h-5 animate-spin" />
           </div>
-        ) : !selectedBranch ? (
-          <p className="text-center text-xs text-slate-300 py-6">Choose a brand to see its queue.</p>
         ) : (
           <>
             {/* Upcoming */}
             <div className="space-y-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Upcoming</span>
               {upcoming.length === 0 ? (
-                <p className="text-xs text-slate-300 py-3">Nothing scheduled yet for {selectedBranch.name}.</p>
+                <p className="text-xs text-slate-300 py-3">
+                  Nothing scheduled yet. Upload media above to create your first post.
+                </p>
               ) : (
                 <div className="space-y-2">
                   {upcoming.map(post => {
@@ -743,15 +772,18 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                       <div key={post.id} className="border border-slate-100 rounded-xl p-2.5 space-y-2">
                         <div className="flex items-center gap-3">
                           {post.media_urls[0] ? (
-                            <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                            post.media_type === 'video'
+                              ? <video src={post.media_urls[0]} muted playsInline preload="metadata" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                              : <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                              <ImageIcon className="w-4 h-4 text-slate-300" />
+                              {post.media_type === 'video' ? <Video className="w-4 h-4 text-slate-300" /> : <ImageIcon className="w-4 h-4 text-slate-300" />}
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
                             {!isEditing && <p className="text-xs font-bold text-slate-700 truncate">{post.caption || '(no caption)'}</p>}
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold uppercase tracking-widest">{brandName(post.branch_slug)}</span>
                               <PlatformIcon className={`w-3 h-3 ${platformMeta.color}`} />
                               <span>{platformMeta.label}</span>
                               <span>·</span>
@@ -874,15 +906,18 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
                       <div key={post.id} className="border border-slate-100 rounded-xl p-2.5 space-y-1.5">
                         <div className="flex items-center gap-3">
                           {post.media_urls[0] ? (
-                            <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                            post.media_type === 'video'
+                              ? <video src={post.media_urls[0]} muted playsInline preload="metadata" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
+                              : <img src={post.media_urls[0]} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0" />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                              <ImageIcon className="w-4 h-4 text-slate-300" />
+                              {post.media_type === 'video' ? <Video className="w-4 h-4 text-slate-300" /> : <ImageIcon className="w-4 h-4 text-slate-300" />}
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-slate-700 truncate">{post.caption || '(no caption)'}</p>
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold uppercase tracking-widest">{brandName(post.branch_slug)}</span>
                               <PlatformIcon className={`w-3 h-3 ${platformMeta.color}`} />
                               <span>{platformMeta.label}</span>
                               <span>·</span>
@@ -967,7 +1002,7 @@ const PostScheduler: React.FC<PostSchedulerProps> = ({ branchContext, addToast }
             </div>
           </>
         )}
-      </div>
+      </div>}
     </div>
   );
 };

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import TikTokMetricsPanel from '../components/TikTokMetricsPanel';
 import {
   Award, RefreshCw, Loader2, Sparkles, ImageOff, ArrowUpDown, Info, Bookmark, Share2, Eye,
+  Check, ChevronDown,
 } from 'lucide-react';
 import { ApiKeyConfig, BranchContext, CardTemplate, CardPalette } from '../types';
 import { supabase } from '../lib/supabase';
@@ -20,6 +22,7 @@ import { fetchLatestInsights, engagementRate, saveRate, shareRate, PostInsightSn
 interface PostPerformanceProps {
   apiKeys?: ApiKeyConfig;
   branchContext?: BranchContext;
+  selectedBranchSlug: string;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
@@ -128,13 +131,12 @@ function parseJsonbField<T>(value: unknown, fallback: T): T {
   }
 }
 
-const PostPerformance: React.FC<PostPerformanceProps> = ({ apiKeys, branchContext, addToast }) => {
+const PostPerformance: React.FC<PostPerformanceProps> = ({ selectedBranchSlug, apiKeys, branchContext, addToast }) => {
   const activeKeys = apiKeys || DEFAULT_KEYS;
 
   const [posts, setPosts] = useState<PublishedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [branchFilter, setBranchFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<SortKey>('saves');
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -197,16 +199,9 @@ const PostPerformance: React.FC<PostPerformanceProps> = ({ apiKeys, branchContex
 
   // ── Branch scoping — creative is per-brand, so a mixed leaderboard would
   // compare posts that were never speaking to the same audience. ──
-  const branchOptions = useMemo(() => {
-    const slugs: string[] = Array.from(
-      new Set<string>(posts.map(p => p.branch_slug).filter((b): b is string => !!b)),
-    );
-    return slugs.sort((a, b) => branchLabel(a).localeCompare(branchLabel(b)));
-  }, [posts, branchContext]);
-
   const scopedPosts = useMemo(
-    () => (branchFilter === 'all' ? posts : posts.filter(p => p.branch_slug === branchFilter)),
-    [posts, branchFilter],
+    () => posts.filter(post => post.branch_slug === selectedBranchSlug || post.branch_id === branchContext?.allBranches.find(branch => branch.slug === selectedBranchSlug)?.id),
+    [posts, selectedBranchSlug, branchContext],
   );
 
   const measuredCount = useMemo(() => scopedPosts.filter(p => p.insight).length, [scopedPosts]);
@@ -361,14 +356,15 @@ Keep it under 300 words.`;
 
   return (
     <div className="p-6 lg:p-10 space-y-6">
+      <div key={selectedBranchSlug}><TikTokMetricsPanel branchId={branchContext?.allBranches.find(b => b.slug === selectedBranchSlug)?.id || ''} branchName={branchContext?.allBranches.find(b => b.slug === selectedBranchSlug)?.name || ''} addToast={addToast} /></div>
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <Award className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Post Performance</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Post performance</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               Published Instagram posts · which template/angle actually performs
             </p>
@@ -386,40 +382,54 @@ Keep it under 300 words.`;
       </div>
 
       {loading ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 flex items-center justify-center text-slate-400 gap-2">
+        <div className="bg-white border border-slate-200 p-12 flex items-center justify-center text-slate-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading published posts…
         </div>
       ) : loadError ? (
-        <div className="bg-white rounded-2xl border border-rose-200 shadow-sm p-8 text-center space-y-2">
+        <div className="bg-white border border-rose-200 p-8 text-center space-y-2">
           <p className="text-sm font-bold text-rose-600">Failed to load post performance.</p>
           <p className="text-xs text-slate-400">{loadError}</p>
         </div>
-      ) : posts.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center space-y-2">
+      ) : scopedPosts.length === 0 ? (
+        <div className="bg-white border border-slate-200 p-12 text-center space-y-2">
           <Award className="w-8 h-8 text-slate-200 mx-auto" />
-          <p className="text-sm font-bold text-slate-500">No organic posts have published yet.</p>
+          <p className="text-sm font-bold text-slate-500">No Instagram posts have published for this branch yet.</p>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Once posts approved in Card Studio or queued in Post Scheduler go live on Instagram, they'll show up here ranked by saves, shares, and impressions — grouped by the creative template that produced them.
+            Next, create a post in Card Studio or upload one in Post Scheduler. After it publishes to Instagram, return here to review its results.
           </p>
         </div>
       ) : (
         <>
-          {/* Branch scoping */}
-          {branchOptions.length > 1 && (
-            <div className="flex items-center justify-end">
-              <select
-                value={branchFilter}
-                onChange={e => { setBranchFilter(e.target.value); setAiResult(null); }}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-slate-600 focus:outline-none focus:border-emerald-500 transition"
-                title="Creative is per-brand — compare within one brand at a time"
+          {/* AI advisor */}
+          {measuredCount > 0 && <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Sage: What's Working?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={handleAskAdvisor}
+                disabled={aiLoading || measuredCount === 0}
+                className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest transition disabled:opacity-40 shadow-sm"
               >
-                <option value="all">All brands</option>
-                {branchOptions.map(slug => (
-                  <option key={slug} value={slug}>{branchLabel(slug)}</option>
-                ))}
-              </select>
+                {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Ask Sage
+              </button>
             </div>
-          )}
+
+            {measuredCount === 0 ? (
+              <p className="text-xs text-slate-400">Sage needs at least one post with synced engagement data before it can spot a pattern.</p>
+            ) : aiError ? (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-700">{aiError}</div>
+            ) : aiResult ? (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{aiResult}</div>
+            ) : (
+              <p className="text-xs text-slate-400">
+                Sage will only cite the numbers in the leaderboard below — including each post's original creative rationale from Card Studio — and will say "not enough data" rather than guess when a template hasn't run long enough.
+              </p>
+            )}
+          </div>}
 
           {measuredCount === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center space-y-2">
@@ -577,36 +587,6 @@ Keep it under 300 words.`;
             </>
           )}
 
-          {/* AI advisor */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Sage: What's Working?</h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleAskAdvisor}
-                disabled={aiLoading || measuredCount === 0}
-                className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest transition disabled:opacity-40 shadow-sm"
-              >
-                {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                Ask Sage
-              </button>
-            </div>
-
-            {measuredCount === 0 ? (
-              <p className="text-xs text-slate-400">Sage needs at least one post with synced engagement data before it can spot a pattern.</p>
-            ) : aiError ? (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-700">{aiError}</div>
-            ) : aiResult ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{aiResult}</div>
-            ) : (
-              <p className="text-xs text-slate-400">
-                Sage will only cite the numbers in the leaderboard above — including each post's original creative rationale from Card Studio — and will say "not enough data" rather than guess when a template hasn't run long enough.
-              </p>
-            )}
-          </div>
         </>
       )}
     </div>

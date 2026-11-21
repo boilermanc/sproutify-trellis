@@ -45,14 +45,14 @@ export const YouTubePerformancePanel: React.FC = () => {
   const hasData = rows.length > 0;
 
   return (
-    <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8">
+    <div className="bg-white border border-slate-200 p-6 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-red-600 flex items-center justify-center border border-red-700">
             <Youtube size={22} className="text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">YouTube Performance</h2>
+            <h2 className="text-lg font-bold text-slate-900">YouTube performance</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Episodes + Studio Albums &middot; synced daily</p>
           </div>
         </div>
@@ -60,7 +60,7 @@ export const YouTubePerformancePanel: React.FC = () => {
           type="button"
           onClick={load}
           disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+          className="flex min-h-11 items-center gap-2 px-3 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs font-bold disabled:opacity-50"
         >
           {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
           Refresh
@@ -87,19 +87,19 @@ export const YouTubePerformancePanel: React.FC = () => {
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-            <div className="rounded-2xl border border-red-100 bg-red-50/50 p-4 text-center">
+            <div className="border border-red-100 bg-red-50/50 p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-red-500 flex items-center justify-center gap-1"><PlayCircle size={11} /> Total Views</p>
               <p className="text-2xl font-black text-red-600 mt-1">{fmtNumber(totals.views)}</p>
             </div>
-            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 text-center">
+            <div className="border border-indigo-100 bg-indigo-50/50 p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500">7-Day Watch</p>
               <p className="text-2xl font-black text-indigo-600 mt-1">{fmtWatchHours(totals.watchMinutes)} hr</p>
             </div>
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 text-center">
+            <div className="border border-emerald-100 bg-emerald-50/50 p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 flex items-center justify-center gap-1"><ThumbsUp size={11} /> Likes</p>
               <p className="text-2xl font-black text-emerald-600 mt-1">{fmtNumber(totals.likes)}</p>
             </div>
-            <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-center">
+            <div className="border border-blue-100 bg-blue-50/50 p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-blue-500 flex items-center justify-center gap-1"><MessageCircle size={11} /> Comments</p>
               <p className="text-2xl font-black text-blue-600 mt-1">{fmtNumber(totals.comments)}</p>
             </div>

@@ -176,7 +176,7 @@ export default function Branches() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Toast */}
         {toast && (
-          <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${
+          <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-none ${
             toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
           }`}>
             {toast.message}
@@ -188,16 +188,16 @@ export default function Branches() {
           <div className="flex items-center gap-4">
             <button
               onClick={handleBack}
-              className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm"
+              className="p-2 rounded-none bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-none"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
             </button>
             <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold text-white shadow-lg"
+              className="w-12 h-12 rounded-none flex items-center justify-center text-xl font-bold text-white shadow-none"
               style={{ backgroundColor: editedBranch.primary_color || '#10b981' }}
             >
               {editedBranch.logo_url ? (
-                <img src={editedBranch.logo_url} alt="Logo" className="w-full h-full object-contain rounded-xl" />
+                <img src={editedBranch.logo_url} alt="Logo" className="w-full h-full object-contain rounded-none" />
               ) : (
                 editedBranch.name?.charAt(0) || 'B'
               )}
@@ -231,7 +231,7 @@ export default function Branches() {
         {/* Form Sections */}
         <div className="space-y-6">
           {/* Basic Info */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+          <div className="bg-white rounded-none p-6 border border-slate-200 shadow-none">
             <h2 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
               <Building2 className="w-4 h-4" />
               Basic Information
@@ -243,7 +243,7 @@ export default function Branches() {
                   type="text"
                   value={editedBranch.name || ''}
                   onChange={(e) => setEditedBranch({ ...editedBranch, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-bold"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-bold"
                 />
               </div>
               <div>
@@ -252,7 +252,7 @@ export default function Branches() {
                   type="text"
                   value={editedBranch.slug || ''}
                   onChange={(e) => setEditedBranch({ ...editedBranch, slug: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 font-mono placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                 />
                 <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
@@ -264,7 +264,7 @@ export default function Branches() {
                 <select
                   value={editedBranch.type || 'external'}
                   onChange={(e) => setEditedBranch({ ...editedBranch, type: e.target.value as 'internal' | 'external' })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 font-bold"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 focus:outline-none focus:border-emerald-500 font-bold"
                 >
                   <option value="internal">Internal</option>
                   <option value="external">External</option>
@@ -277,7 +277,7 @@ export default function Branches() {
                   value={editedBranch.tagline || ''}
                   onChange={(e) => setEditedBranch({ ...editedBranch, tagline: e.target.value })}
                   placeholder="Your catchy tagline..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                 />
               </div>
               <div>
@@ -287,7 +287,7 @@ export default function Branches() {
                   value={editedBranch.logo_url || ''}
                   onChange={(e) => setEditedBranch({ ...editedBranch, logo_url: e.target.value })}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
                 />
               </div>
               <div>
@@ -297,7 +297,7 @@ export default function Branches() {
                   value={editedBranch.website_url || ''}
                   onChange={(e) => setEditedBranch({ ...editedBranch, website_url: e.target.value })}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
                 />
               </div>
               <div className="md:col-span-2">
@@ -307,14 +307,14 @@ export default function Branches() {
                   onChange={(e) => setEditedBranch({ ...editedBranch, description: e.target.value })}
                   placeholder="Describe this branch..."
                   rows={3}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 resize-none"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 resize-none"
                 />
               </div>
             </div>
           </div>
 
           {/* Colors */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+          <div className="bg-white rounded-none p-6 border border-slate-200 shadow-none">
             <h2 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
               <Palette className="w-4 h-4" />
               Brand Colors
@@ -333,7 +333,7 @@ export default function Branches() {
                     type="text"
                     value={editedBranch.primary_color || '#10b981'}
                     onChange={(e) => setEditedBranch({ ...editedBranch, primary_color: e.target.value })}
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500"
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -350,7 +350,7 @@ export default function Branches() {
                     type="text"
                     value={editedBranch.secondary_color || '#1e293b'}
                     onChange={(e) => setEditedBranch({ ...editedBranch, secondary_color: e.target.value })}
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500"
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -367,7 +367,7 @@ export default function Branches() {
                     type="text"
                     value={editedBranch.accent_color || '#f59e0b'}
                     onChange={(e) => setEditedBranch({ ...editedBranch, accent_color: e.target.value })}
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500"
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 text-sm font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -381,7 +381,7 @@ export default function Branches() {
 
           {/* Brand Voice & Typography */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+            <div className="bg-white rounded-none p-6 border border-slate-200 shadow-none">
               <h2 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
                 <Type className="w-4 h-4" />
                 Typography & Voice
@@ -392,7 +392,7 @@ export default function Branches() {
                   <select
                     value={editedBranch.font_family || 'Inter'}
                     onChange={(e) => setEditedBranch({ ...editedBranch, font_family: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 font-bold"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 focus:outline-none focus:border-emerald-500 font-bold"
                   >
                     {FONT_OPTIONS.map(font => (
                       <option key={font} value={font}>{font}</option>
@@ -404,7 +404,7 @@ export default function Branches() {
                   <select
                     value={editedBranch.tone || 'friendly'}
                     onChange={(e) => setEditedBranch({ ...editedBranch, tone: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-emerald-500 font-bold"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 focus:outline-none focus:border-emerald-500 font-bold"
                   >
                     {TONE_OPTIONS.map(tone => (
                       <option key={tone} value={tone}>{tone.charAt(0).toUpperCase() + tone.slice(1)}</option>
@@ -421,14 +421,14 @@ export default function Branches() {
                       brand_keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean)
                     })}
                     placeholder="innovative, sustainable, premium..."
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                   <p className="mt-1 text-xs text-slate-500">Comma-separated keywords</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+            <div className="bg-white rounded-none p-6 border border-slate-200 shadow-none">
               <h2 className="text-[10px] font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-widest">
                 <Mail className="w-4 h-4" />
                 Email Settings
@@ -441,7 +441,7 @@ export default function Branches() {
                     value={editedBranch.contact_email || ''}
                     onChange={(e) => setEditedBranch({ ...editedBranch, contact_email: e.target.value })}
                     placeholder="contact@example.com"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
                   />
                 </div>
                 <div>
@@ -451,7 +451,7 @@ export default function Branches() {
                     value={editedBranch.default_from_name || ''}
                     onChange={(e) => setEditedBranch({ ...editedBranch, default_from_name: e.target.value })}
                     placeholder="Your Brand Name"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
@@ -461,7 +461,7 @@ export default function Branches() {
                     value={editedBranch.default_reply_to || ''}
                     onChange={(e) => setEditedBranch({ ...editedBranch, default_reply_to: e.target.value })}
                     placeholder="reply@example.com"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono text-sm"
                   />
                 </div>
               </div>
@@ -476,7 +476,7 @@ export default function Branches() {
               <button
                 onClick={handleArchive}
                 disabled={isSaving}
-                className="px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm font-bold"
+                className="px-4 py-2 rounded-none border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm font-bold"
               >
                 <Archive className="w-4 h-4" />
                 Archive Branch
@@ -486,7 +486,7 @@ export default function Branches() {
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-6 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-6 py-2 rounded-none bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
@@ -500,7 +500,7 @@ export default function Branches() {
     <div className="space-y-6">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-2xl shadow-lg ${
+        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-none shadow-none ${
           toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'
         }`}>
           {toast.message}
@@ -518,7 +518,7 @@ export default function Branches() {
         </div>
         <button
           onClick={() => setIsCreating(true)}
-          className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors flex items-center gap-2"
+          className="px-6 py-3 rounded-none bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors flex items-center gap-2"
         >
           <Plus className="w-5 h-5" />
           Add Branch
@@ -527,19 +527,19 @@ export default function Branches() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-none p-5 border border-slate-200 shadow-none">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Total Branches</p>
           <p className="text-3xl font-black text-yale-blue mt-1">{stats.total}</p>
         </div>
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-none p-5 border border-slate-200 shadow-none">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Internal</p>
           <p className="text-3xl font-black text-blue-600 mt-1">{stats.internal}</p>
         </div>
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-none p-5 border border-slate-200 shadow-none">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">External</p>
           <p className="text-3xl font-black text-purple-600 mt-1">{stats.external}</p>
         </div>
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-none p-5 border border-slate-200 shadow-none">
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Active</p>
           <p className="text-3xl font-black text-emerald-600 mt-1">{stats.active}</p>
         </div>
@@ -547,13 +547,13 @@ export default function Branches() {
 
       {/* Branch Grid */}
       {branches.length === 0 ? (
-        <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-200 shadow-sm">
+        <div className="bg-white rounded-none p-12 text-center border border-slate-200 shadow-none">
           <GitBranch className="w-16 h-16 text-slate-300 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-800 mb-2">No branches yet</h3>
           <p className="text-slate-500 mb-6">Create your first branch to start organizing your data sources.</p>
           <button
             onClick={() => setIsCreating(true)}
-            className="px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors inline-flex items-center gap-2"
+            className="px-6 py-3 rounded-none bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors inline-flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             Create Branch
@@ -561,7 +561,7 @@ export default function Branches() {
         </div>
       ) : (
         <>
-          <div className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-200 shadow-sm">
+          <div className="bg-white rounded-none overflow-hidden border border-slate-200 shadow-none">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100">
@@ -620,7 +620,7 @@ export default function Branches() {
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors font-bold text-sm"
+                  className="px-4 py-2 rounded-none bg-white border border-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors font-bold text-sm"
                 >
                   Previous
                 </button>
@@ -630,7 +630,7 @@ export default function Branches() {
                 <button
                   onClick={() => setCurrentPage(p => Math.min(Math.ceil(branches.length / pageSize), p + 1))}
                   disabled={currentPage >= Math.ceil(branches.length / pageSize)}
-                  className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors font-bold text-sm"
+                  className="px-4 py-2 rounded-none bg-white border border-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors font-bold text-sm"
                 >
                   Next
                 </button>
@@ -643,7 +643,7 @@ export default function Branches() {
       {/* Create Modal */}
       {isCreating && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-[2rem] p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-none p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-none">
             <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tight">
               <Plus className="w-6 h-6 text-emerald-500" />
               Create Branch
@@ -660,7 +660,7 @@ export default function Branches() {
                   value={newBranch.name || ''}
                   onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })}
                   placeholder="My Branch"
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                 />
               </div>
 
@@ -672,7 +672,7 @@ export default function Branches() {
                 <select
                   value={newBranch.type || 'external'}
                   onChange={(e) => setNewBranch({ ...newBranch, type: e.target.value as 'internal' | 'external' })}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-none text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                 >
                   <option value="internal">Internal</option>
                   <option value="external">External</option>
@@ -689,7 +689,7 @@ export default function Branches() {
                   value={newBranch.tagline || ''}
                   onChange={(e) => setNewBranch({ ...newBranch, tagline: e.target.value })}
                   placeholder="Your catchy tagline..."
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
@@ -703,7 +703,7 @@ export default function Branches() {
                   value={newBranch.website_url || ''}
                   onChange={(e) => setNewBranch({ ...newBranch, website_url: e.target.value })}
                   placeholder="https://..."
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-none text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-sm"
                 />
               </div>
 
@@ -717,13 +717,13 @@ export default function Branches() {
                     type="color"
                     value={newBranch.primary_color || '#10b981'}
                     onChange={(e) => setNewBranch({ ...newBranch, primary_color: e.target.value })}
-                    className="w-12 h-12 rounded-xl cursor-pointer border border-slate-200"
+                    className="w-12 h-12 rounded-none cursor-pointer border border-slate-200"
                   />
                   <input
                     type="text"
                     value={newBranch.primary_color || '#10b981'}
                     onChange={(e) => setNewBranch({ ...newBranch, primary_color: e.target.value })}
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-none text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
@@ -733,14 +733,14 @@ export default function Branches() {
             <div className="flex items-center justify-end gap-3 mt-8">
               <button
                 onClick={() => setIsCreating(false)}
-                className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors font-bold"
+                className="px-6 py-3 rounded-none bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors font-bold"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
                 disabled={isSaving || !newBranch.name?.trim()}
-                className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-3 rounded-none bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
               >
                 {isSaving ? 'Creating...' : 'Create Branch'}
               </button>

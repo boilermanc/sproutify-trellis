@@ -1,9 +1,13 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
+import ContentStudioStart from './components/ContentStudioStart';
+import { CONTENT_STUDIO_VIEWS } from './services/contentStudioViews';
 import Dashboard from './pages/Dashboard';
 import Profiles from './pages/Profiles';
 import Leads from './pages/Leads';
+import SweetwaterLeads from './pages/SweetwaterLeads';
+import Prospecting from './pages/Prospecting';
 import EmailPreviewer from './pages/EmailPreviewer';
 import DevTools from './pages/DevTools';
 import Automations from './pages/Automations';
@@ -11,10 +15,14 @@ import Tasks from './pages/Tasks';
 import CampaignBuilder from './pages/CampaignBuilder';
 import SocialHub from './pages/SocialHub';
 import VideoAdLab from './pages/VideoAdLab';
+import MediaGeneration from './pages/MediaGeneration';
+import MotionPosts from './pages/MotionPosts';
+import PromoStudio from './pages/PromoStudio';
 import TrellisStudio from './pages/TrellisStudio';
 import StudioAlbums from './pages/StudioAlbums';
 import TrellisEpisodes from './pages/TrellisEpisodes';
 import ClipStudio from './pages/ClipStudio';
+import Transcriptions from './pages/Transcriptions';
 import AdPerformance from './pages/AdPerformance';
 import PostScheduler from './pages/PostScheduler';
 import CardStudio from './pages/CardStudio';
@@ -26,7 +34,7 @@ import HelpCenter from './pages/HelpCenter';
 import { Article } from './src/data/helpContent';
 import Settings from './pages/Settings';
 import Reports from './pages/Reports';
-import TeamMembers from './pages/TeamMembers';
+import TeamPanel from './pages/TeamPanel';
 import UserProfile from './pages/UserProfile';
 import BranchCommandCenter from './pages/BranchCommandCenter';
 import PlatformSetupWizard from './pages/PlatformSetupWizard';
@@ -40,29 +48,72 @@ import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import SetPassword from './pages/SetPassword';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { getProfileByEmail, fetchAllBranches } from './lib/supabaseService';
-import { supabase } from './lib/supabase';
+import { getProfileByEmail, fetchAllBranches, hubSlugFromSpokeId } from './lib/supabaseService';
 import { useBranchStats } from './hooks/useBranchStats';
 import { fetchSecrets, saveSecrets } from './services/secretsService';
 import { fetchSpokeConnections, migrateLocalStorageToSupabase } from './services/spokeConnectionsService';
+import { fetchBranchSocialAccounts, migrateLegacyBranchSocialAccounts } from './services/branchSocialAccountsService';
 import { fetchSocialSignals } from './services/socialService';
 import { fetchEngagementIndex, computeEngagementScore, type EngagementSummary } from './services/emailReportingService';
 import { mapFederatedConsent } from './utils/profileMapper';
 import { ViewState, Profile, MarketingEvent, MarketingTask, User, Brand, Ticket, Toast, ApiKeyConfig, SpokeConnection, SavedConnection, Branch, BranchInfo, BranchContext, BranchSocialAccountsMap, SocialActivity, DraftPost, DeployedCampaign } from './types';
 import { MOCK_EVENTS, MOCK_TASKS, DEFAULT_BRAND, MOCK_TICKETS } from './constants';
 import { AlertCircle, CheckCircle2, Info, X, Loader2 } from 'lucide-react';
+import FeatureErrorBoundary from './components/FeatureErrorBoundary';
+
+const ContentIntelligence = React.lazy(() => import('./pages/ContentIntelligence'));
+const ProjectRooms = React.lazy(() => import('./pages/ProjectRooms'));
 
 const PERSISTENCE_KEY = 'trellis_v1_store';
 // UUID for the main Sproutify organization - must match the organization_id in tenant_secrets table
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
+
+// The browser is intentionally not allowed to read spoke_connections directly.
+// Branches expose only the safe connection id needed by the server-side
+// spoke-query function. These placeholder table entries are client-side gates;
+// the Edge Function resolves the authoritative table mappings and credentials.
+const RUNTIME_TABLE_GATES: SpokeConnection['tables'] = [
+  'customers',
+  'orders',
+  'order_items',
+  'subscriptions',
+].map(tableType => ({
+  id: `runtime-${tableType}`,
+  table_type: tableType as SpokeConnection['tables'][number]['table_type'],
+  table_name: '',
+  field_mapping: {},
+  enabled: true,
+}));
+
+function connectionsFromBranchRegistry(branches: Branch[]): SpokeConnection[] {
+  const byConnectionId = new Map<string, SpokeConnection>();
+
+  for (const branch of branches) {
+    const connectionId = branch.spoke_connection_id;
+    if (!connectionId || byConnectionId.has(connectionId)) continue;
+
+    byConnectionId.set(connectionId, {
+      id: connectionId,
+      name: branch.name,
+      supabase_url: '',
+      supabase_key: '',
+      tables: RUNTIME_TABLE_GATES,
+      status: 'active',
+      created_at: branch.created_at,
+    });
+  }
+
+  return Array.from(byConnectionId.values());
+}
 
 type AuthView = 'login' | 'reset-password';
 
 const AppContent: React.FC = () => {
   const { user, loading, isPasswordRecovery, signOut } = useAuth();
   const [authView, setAuthView] = useState<AuthView>('login');
-  const [activeView, setActiveView] = useState<ViewState>('dashboard');
+  const [activeView, setActiveViewState] = useState<ViewState>(() => { const view = new URLSearchParams(window.location.search).get('view'); return view === 'project-rooms' || view === 'sweetwater-leads' ? view : 'dashboard'; });
   const [campaignDraftId, setCampaignDraftId] = useState<string | null>(null);
+  const [focusedCampaignId, setFocusedCampaignId] = useState<string | null>(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'integrations' | 'spokes' | 'api' | 'social' | 'team' | undefined>(undefined);
   const [connectionAutoStart, setConnectionAutoStart] = useState<{ nonce: number; name?: string }>({ nonce: 0 });
   const [helpArticle, setHelpArticle] = useState<Article | null>(null);
@@ -71,6 +122,47 @@ const AppContent: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [allBranches, setAllBranches] = useState<BranchInfo[]>([]);
   const [activeBranchSlugs, setActiveBranchSlugs] = useState<string[]>([]);
+  const [studioScope, setStudioScope] = useState<{ view: ViewState; slug: string }>({ view: 'dashboard', slug: '' });
+  const studioDirty = useRef(false);
+  const inquiryDirty = useRef(false);
+  const onInquiryDirtyChange = useCallback((dirty: boolean) => { inquiryDirty.current = dirty; }, []);
+  const studioView = CONTENT_STUDIO_VIEWS[activeView];
+  const selectedStudioBranchSlug = studioScope.view === activeView
+    && allBranches.some(branch => branch.slug === studioScope.slug)
+    ? studioScope.slug : '';
+
+  useEffect(() => {
+    setStudioScope({ view: activeView, slug: '' });
+    studioDirty.current = false;
+  }, [activeView]);
+
+  const setActiveView = (view: ViewState) => {
+    if (view === activeView) return;
+    if (inquiryDirty.current && !window.confirm('Discard unsaved follow-up changes?')) return;
+    inquiryDirty.current = false;
+    if (studioView && studioDirty.current && !window.confirm('Leave this workspace? Save your draft first if you want to keep it.')) return;
+    studioDirty.current = false;
+    setActiveViewState(view);
+  };
+
+  useEffect(() => {
+    const markDirty = () => { if (studioView) studioDirty.current = true; };
+    window.addEventListener('studio-draft-change', markDirty);
+    return () => window.removeEventListener('studio-draft-change', markDirty);
+  }, [studioView]);
+
+  const changeBranchScope = (slugs: string[]) => {
+    if (!studioView?.branchRequired) {
+      setActiveBranchSlugs(slugs);
+      return;
+    }
+    const slug = slugs.length === 1 && allBranches.some(branch => branch.slug === slugs[0]) ? slugs[0] : '';
+    if (slug === selectedStudioBranchSlug) return;
+    if (studioDirty.current && !window.confirm('Switch branches and leave the current draft? Save your work first if you want to keep it.')) return;
+    studioDirty.current = false;
+    setStudioScope({ view: activeView, slug });
+  };
+
 
   // Initialize Global State from LocalStorage or Mocks
   const [events, setEvents] = useState<MarketingEvent[]>(() => {
@@ -117,6 +209,7 @@ const AppContent: React.FC = () => {
     gemini_api_key: '',
     openai_api_key: '',
     anthropic_api_key: '',
+    xai_api_key: '',
     n8n_webhooks: { chat: '', workflow: '' },
     slack_webhook: '',
     resend_token: '',
@@ -130,7 +223,9 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem('trellis_spoke_connections');
     return saved ? JSON.parse(saved) : [];
   });
+  const [spokeConnectionsReady, setSpokeConnectionsReady] = useState(false);
 
+  // localStorage is now an instant cache; Supabase is the source of truth.
   const [branchSocialAccounts, setBranchSocialAccounts] = useState<BranchSocialAccountsMap>(() => {
     try {
       const saved = localStorage.getItem('trellis_branch_social_accounts');
@@ -172,40 +267,52 @@ const AppContent: React.FC = () => {
   });
 
   // Shared branch stats hook — single source of truth for all federated data
-  const branchStats = useBranchStats(spokeConnections);
+  // The local cache is display-only until the authenticated Hub read replaces
+  // it. Otherwise stale connection IDs can reach spoke-query during auth boot.
+  const branchStats = useBranchStats(spokeConnectionsReady ? spokeConnections : []);
 
   // Branch records from Supabase — needed to resolve connectionId → branch slug
   const [branches, setBranches] = useState<Branch[]>([]);
-  useEffect(() => {
-    fetchAllBranches().then(setBranches).catch(() => {});
+
+  // Keep the branch registry and the global branch picker on one refresh path.
+  // BranchCommandCenter calls this after mutations so downstream modules (Brand
+  // DNA, Campaign Builder, etc.) see a newly-created branch without a page reload.
+  const refreshBranches = useCallback(async () => {
+    const branchData = await fetchAllBranches();
+    const activeBranches = branchData.filter(branch => branch.is_active);
+    const activeSlugs = activeBranches.map(branch => branch.slug);
+
+    setBranches(branchData);
+    setSpokeConnections(currentConnections =>
+      currentConnections.length > 0
+        ? currentConnections
+        : connectionsFromBranchRegistry(activeBranches)
+    );
+    setAllBranches(previousBranches => {
+      setActiveBranchSlugs(previousSelection => {
+        const previousSlugs = previousBranches.map(branch => branch.slug);
+        const previouslySelectedAll = previousSelection.length === previousSlugs.length
+          && previousSlugs.every(slug => previousSelection.includes(slug));
+
+        // The initial load and an existing "All branches" scope should include
+        // newly-created branches. A deliberate partial scope stays partial.
+        return previousBranches.length === 0 || previouslySelectedAll
+          ? activeSlugs
+          : previousSelection.filter(slug => activeSlugs.includes(slug));
+      });
+      return activeBranches;
+    });
   }, []);
 
-  // Fetch active branches for the global branch context picker
   useEffect(() => {
-    const loadBranches = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('branches')
-          .select('id, name, slug, type, is_active, primary_color, secondary_color, accent_color, font_family, website_url, logo_url')
-          .eq('is_active', true)
-          .order('name');
-        if (data && !error) {
-          setAllBranches(data);
-          // Default: all branches are active (no filtering)
-          setActiveBranchSlugs(data.map((b: BranchInfo) => b.slug));
-        }
-      } catch (err) {
-        console.error('Failed to load branches:', err);
-      }
-    };
-    loadBranches();
-  }, []);
+    refreshBranches().catch(err => console.error('Failed to load branches:', err));
+  }, [refreshBranches]);
 
   const branchContext: BranchContext = {
     allBranches,
-    activeBranchSlugs,
-    setActiveBranchSlugs,
-    isAllSelected: activeBranchSlugs.length === allBranches.length,
+    activeBranchSlugs: studioView?.branchRequired ? (selectedStudioBranchSlug ? [selectedStudioBranchSlug] : []) : activeBranchSlugs,
+    setActiveBranchSlugs: changeBranchScope,
+    isAllSelected: studioView?.branchRequired ? false : activeBranchSlugs.length === allBranches.length,
   };
 
   // Real email engagement, loaded once and joined onto profiles below. Before
@@ -232,9 +339,13 @@ const AppContent: React.FC = () => {
     }
 
     const now = new Date().toISOString();
-    return branchStats.enrichedProfiles.map(p => {
+    const mapped = branchStats.enrichedProfiles.map(p => {
       const consent = mapFederatedConsent(p);
-      const branchSlug = slugByConnectionId.get(p._spoke_id) || p._spoke_name;
+      // Hub-native rows arrive as `hub:<slug>` pseudo-spokes and already carry
+      // the slug; real connections resolve through the branches table.
+      const branchSlug = hubSlugFromSpokeId(p._spoke_id)
+        || slugByConnectionId.get(p._spoke_id)
+        || p._spoke_name;
 
       // Only score addresses we have actually emailed. Everyone else is
       // 'unknown' rather than being scored 0 / critical off the back of no data.
@@ -252,7 +363,11 @@ const AppContent: React.FC = () => {
         phone: p.phone,
         is_subscribed: consent.is_subscribed,
         marketing_pause: consent.marketing_pause,
-        tags: (p as any)._order_only ? ['order_only'] : [],
+        tags: Array.from(new Set([
+          ...(p.tags || []),
+          ...((p as any)._order_only ? ['order_only'] : []),
+          ...(p.event_registrations?.length ? ['event_registrant'] : []),
+        ])),
         segments: (p as any)._order_only ? ['legacy_orders'] : [],
         branches: [branchSlug],
         branch_consent: {
@@ -270,14 +385,61 @@ const AppContent: React.FC = () => {
         unsubscribe_token: p.unsubscribe_token,
         metadata: {
           consent_source: consent.consent_source,
+          email_digest_optin: p.email_digest_optin,
+          email_updates_optin: p.email_updates_optin,
           spoke_origin: p._spoke_name,
           spoke_id: p._spoke_id,
           spoke_name: p._spoke_name,
           order_stats: p.order_stats,
           predicted_demographics: p._predicted_demographics,
+          event_notice_consent: p.event_notice_consent === true,
+          event_registrations: p.event_registrations || [],
+          event_titles: p.event_titles || [],
+          event_statuses: p.event_statuses || [],
+          last_event_registration_at: p.last_event_registration_at,
         },
       };
     });
+
+    // Collapse on email (the atomic merge key). One person can appear once per
+    // spoke AND once per Hub branch tag — union the branch tags and consent so
+    // they stay targetable from every branch rather than one source winning.
+    const byEmail = new Map<string, number>();
+    const merged: Profile[] = [];
+
+    for (const p of mapped) {
+      const key = (p.email || '').toLowerCase();
+      const existingIndex = byEmail.get(key);
+      if (existingIndex === undefined) {
+        merged.push(p);
+        byEmail.set(key, merged.length - 1);
+        continue;
+      }
+      const existing = merged[existingIndex];
+      const existingRegistrations = existing.metadata?.event_registrations || [];
+      const incomingRegistrations = p.metadata?.event_registrations || [];
+      merged[existingIndex] = {
+        ...existing,
+        tags: Array.from(new Set([...(existing.tags || []), ...(p.tags || [])])),
+        branches: Array.from(new Set([...existing.branches, ...p.branches])),
+        branch_consent: { ...(p.branch_consent || {}), ...(existing.branch_consent || {}) },
+        // Keep the richest commercial signal across sources.
+        ltv: Math.max(existing.ltv || 0, p.ltv || 0),
+        metadata: {
+          ...(p.metadata || {}),
+          ...(existing.metadata || {}),
+          event_notice_consent: existing.metadata?.event_notice_consent === true || p.metadata?.event_notice_consent === true,
+          event_registrations: [...existingRegistrations, ...incomingRegistrations],
+          event_titles: Array.from(new Set([...(existing.metadata?.event_titles || []), ...(p.metadata?.event_titles || [])])),
+          event_statuses: Array.from(new Set([...(existing.metadata?.event_statuses || []), ...(p.metadata?.event_statuses || [])])),
+          last_event_registration_at: [existing.metadata?.last_event_registration_at, p.metadata?.last_event_registration_at]
+            .filter(Boolean)
+            .sort()
+            .at(-1),
+        },
+      };
+    }
+    return merged;
   }, [branchStats.enrichedProfiles, branches, engagementIndex]);
   const isLoadingProfiles = branchStats.isLoading;
 
@@ -299,15 +461,31 @@ const AppContent: React.FC = () => {
 
   // Fetch spoke connections from Supabase on mount (localStorage is instant cache)
   useEffect(() => {
+    if (!user?.id) {
+      setSpokeConnectionsReady(false);
+      return;
+    }
+
+    let cancelled = false;
     const loadConnections = async () => {
       await migrateLocalStorageToSupabase(SPROUTIFY_ORG_ID);
       const connections = await fetchSpokeConnections(SPROUTIFY_ORG_ID);
-      if (connections.length > 0 || spokeConnections.length === 0) {
-        setSpokeConnections(connections);
+      if (!cancelled) {
+        // A denied/empty direct read must not erase the safe branch-registry
+        // fallback populated by refreshBranches for a fresh localhost origin.
+        setSpokeConnections(currentConnections =>
+          connections.length > 0 ? connections : currentConnections
+        );
+        setSpokeConnectionsReady(true);
       }
     };
-    loadConnections();
-  }, []);
+    loadConnections().catch(error => {
+      console.error('[spokeConnections] Failed to hydrate authenticated connections:', error);
+      if (!cancelled) setSpokeConnectionsReady(true);
+    });
+
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   // Poll for social signals (30s interval).
   // fetchSocialSignals internally gates on table existence — if social_signals
@@ -367,6 +545,25 @@ const AppContent: React.FC = () => {
     }, 4000);
   }, []);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    const loadBranchSocialAccounts = async () => {
+      try {
+        await migrateLegacyBranchSocialAccounts();
+        const accounts = await fetchBranchSocialAccounts();
+        if (!cancelled) setBranchSocialAccounts(accounts);
+      } catch (error) {
+        console.error('Failed to load branch social accounts:', error);
+        if (!cancelled) addToast('Could not load branch social accounts.', 'error');
+      }
+    };
+
+    loadBranchSocialAccounts();
+    return () => { cancelled = true; };
+  }, [user?.id, addToast]);
+
   const handleOpenHelpArticle = useCallback((article: Article) => {
     setHelpArticle(article);
     setActiveView('help-center');
@@ -380,7 +577,7 @@ const AppContent: React.FC = () => {
     );
   }, []);
 
-  const handleCampaignLaunch = (campaign: { name: string, audienceSize: number, segments: string[] }) => {
+  const handleCampaignLaunch = (campaign: { id: string, name: string, audienceSize: number, segments: string[] }) => {
     const newEvent: MarketingEvent = {
       id: `evt_${Date.now()}`,
       profile_id: 'SYSTEM',
@@ -391,33 +588,49 @@ const AppContent: React.FC = () => {
     };
     setEvents(prev => [newEvent, ...prev]);
     addToast(`Global sync successful: ${campaign.name} is now live across ${currentBrand.name} spokes.`);
+    setFocusedCampaignId(campaign.id);
+    setActiveView('campaigns');
   };
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
+      case 'dashboard': return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} onOpenCampaignDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branches={branches} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
       case 'profiles': return <Profiles onTestFlow={setTestEmail} events={events} spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'leads': return <Leads branchContext={branchContext} addToast={addToast} />;
+      case 'sweetwater-leads': return <SweetwaterLeads onDirtyChange={onInquiryDirtyChange} />;
+      case 'prospecting': return <Prospecting addToast={addToast} />;
       case 'segments': return <Segments spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onSendCampaign={(seg) => { try { localStorage.setItem('trellis_pending_campaign_segment', seg.id); } catch { /* ignore */ } setCampaignDraftId(null); setActiveView('campaign-builder'); }} />;
       case 'intelligence': return <CustomerIntelligence spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} />;
-      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
-      case 'social-hub': return <SocialHub profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
-      case 'video-ad-lab': return <VideoAdLab profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
-      case 'trellis-studio': return <TrellisStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
-      case 'studio-albums': return <StudioAlbums addToast={addToast} />;
-      case 'trellis-episodes': return <TrellisEpisodes branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
-      case 'clip-studio': return <ClipStudio branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
-      case 'ad-performance': return <AdPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'post-scheduler': return <PostScheduler branchContext={branchContext} addToast={addToast} />;
-      case 'card-studio': return <CardStudio apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'post-performance': return <PostPerformance apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
-      case 'reddit-growth': return <RedditGrowth branchContext={branchContext} apiKeys={apiKeys} addToast={addToast} onNavigate={setActiveView} />;
+      case 'branches': return <BranchCommandCenter branchStats={branchStats} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} branchSocialAccounts={branchSocialAccounts} onBranchSocialAccountsChange={setBranchSocialAccounts} onBranchesChange={refreshBranches} onAddConnection={(name) => { setSettingsInitialTab('spokes'); setConnectionAutoStart(prev => ({ nonce: prev.nonce + 1, name })); setActiveView('settings'); }} />;
+      case 'social-hub': return <SocialHub selectedBranchSlug={selectedStudioBranchSlug} profiles={profiles} setEvents={setEvents} branchContext={branchContext} branches={branches} branchSocialAccounts={branchSocialAccounts} socialSignals={socialSignals} setSocialSignals={setSocialSignals} tickets={tickets} setTickets={setTickets} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} deployedCampaigns={deployedCampaigns} addToast={addToast} apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} onNavigate={(v) => setActiveView(v as ViewState)} />;
+      case 'video-ad-lab': return <VideoAdLab selectedBranchSlug={selectedStudioBranchSlug} profiles={profiles} spokeConnections={spokeConnections} geminiApiKey={apiKeys.gemini_api_key} addToast={addToast} branchContext={branchContext} />;
+      case 'media-generation': return <MediaGeneration selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} />;
+      case 'motion-posts': return <MotionPosts selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchContext={branchContext} addToast={addToast} />;
+      case 'project-rooms': return <FeatureErrorBoundary featureName="Project rooms" onExit={() => setActiveView('dashboard')}><React.Suspense fallback={<div className="p-8">Loading project rooms…</div>}><ProjectRooms addToast={addToast}/></React.Suspense></FeatureErrorBoundary>;
+      case 'promo-studio': return <PromoStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} />;
+      case 'trellis-studio': return <TrellisStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} onNavigate={setActiveView} />;
+      case 'studio-albums': return <StudioAlbums branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} />;
+      case 'trellis-episodes': return <TrellisEpisodes selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'clip-studio': return <ClipStudio selectedBranchSlug={selectedStudioBranchSlug} branches={branches} branchSocialAccounts={branchSocialAccounts} addToast={addToast} userId={user?.id} geminiApiKey={apiKeys.gemini_api_key} />;
+      case 'transcriptions': return <Transcriptions addToast={addToast} />;
+      case 'ad-performance': return <AdPerformance selectedBranchSlug={selectedStudioBranchSlug} apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
+      case 'post-scheduler': return <PostScheduler selectedBranchSlug={selectedStudioBranchSlug} branchContext={branchContext} addToast={addToast} />;
+      case 'card-studio': return <CardStudio selectedBranchSlug={selectedStudioBranchSlug} apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
+      case 'post-performance': return <PostPerformance selectedBranchSlug={selectedStudioBranchSlug} apiKeys={apiKeys} branchContext={branchContext} addToast={addToast} />;
+      case 'content-intelligence': return (
+        <FeatureErrorBoundary featureName="Content Intelligence" onExit={() => setActiveView('dashboard')}>
+          <React.Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center"><div className="text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin text-emerald-600" /><p className="tr-label mt-3">Loading content intelligence</p></div></div>}>
+            <ContentIntelligence selectedBranchSlug={selectedStudioBranchSlug} branchContext={branchContext} addToast={addToast} />
+          </React.Suspense>
+        </FeatureErrorBoundary>
+      );
+      case 'reddit-growth': return <RedditGrowth selectedBranchSlug={selectedStudioBranchSlug} branchContext={branchContext} apiKeys={apiKeys} addToast={addToast} onNavigate={setActiveView} />;
       case 'brand-intelligence': return <BrandIntelligence geminiApiKey={apiKeys.gemini_api_key} branchContext={branchContext} addToast={addToast} />;
       case 'support-hub': return <SupportHub tickets={tickets} setTickets={setTickets} profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'knowledge-base': return <KnowledgeBase apiKeys={apiKeys} onOpenArticle={handleOpenHelpArticle} />;
       case 'help-center': return <HelpCenter initialArticle={helpArticle} />;
       case 'campaign-builder': return <CampaignBuilder onCampaignLaunch={handleCampaignLaunch} profiles={profiles} branchStats={branchStats} spokeConnections={spokeConnections} branches={branches} branchContext={branchContext} branchSocialAccounts={branchSocialAccounts} addToast={addToast} setEvents={setEvents} onCampaignDeployed={(c) => setDeployedCampaigns(prev => [c, ...prev])} onOpenArticle={handleOpenHelpArticle} draftCampaignId={campaignDraftId} onDraftIdChange={setCampaignDraftId} />;
-      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} onEditDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} />;
+      case 'campaigns': return <Campaigns branchContext={branchContext} addToast={addToast} focusedCampaignId={focusedCampaignId} onFocusedCampaignOpened={() => setFocusedCampaignId(null)} onEditDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} />;
       case 'marketing-brands': return (
         <MarketingBrands
           branchContext={branchContext}
@@ -436,13 +649,23 @@ const AppContent: React.FC = () => {
       case 'email-preview': return <EmailPreviewer profiles={profiles} initialEmail={testEmail} branchContext={branchContext} />;
       case 'dev-tools': return <DevTools profiles={profiles} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
       case 'reports': return <Reports spokeConnections={spokeConnections} branchStats={branchStats} branchContext={branchContext} onOpenArticle={handleOpenHelpArticle} />;
-      case 'team': return <TeamMembers addToast={addToast} />;
+      // Operators live in trellis_users, not the federated profiles table.
+      // The Team route must never treat audience records with a legacy role as staff.
+      case 'team': return <TeamPanel />;
       case 'user-profile': return <UserProfile profile={userProfile} onProfileUpdate={setUserProfile} />;
       case 'platform-wizard': return (
         <PlatformSetupWizard
           supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
           branches={branches}
-          onComplete={(platform) => {
+          branchSocialAccounts={branchSocialAccounts}
+          onComplete={async (platform) => {
+            try {
+              setBranchSocialAccounts(await fetchBranchSocialAccounts());
+            } catch (error) {
+              console.error('Could not refresh social accounts after OAuth:', error);
+              addToast('Connected, but the channel list needs a page refresh.', 'info');
+              return;
+            }
             addToast(`${platform.charAt(0).toUpperCase() + platform.slice(1)} connected successfully.`);
           }}
           onClose={() => setActiveView('social-hub')}
@@ -453,12 +676,13 @@ const AppContent: React.FC = () => {
         <Settings
           apiKeys={apiKeys}
           onUpdateApiKeys={async (keys) => {
-            setApiKeys(keys);
             const success = await saveSecrets(SPROUTIFY_ORG_ID, keys);
+            if (success) setApiKeys(await fetchSecrets(SPROUTIFY_ORG_ID));
             addToast(
               success ? 'Secrets committed to vault.' : 'Failed to save secrets.',
               success ? 'success' : 'error'
             );
+            return success;
           }}
           spokeConnections={spokeConnections}
           onSpokeConnectionsChange={setSpokeConnections}
@@ -471,13 +695,13 @@ const AppContent: React.FC = () => {
           onConnectionAutoStartConsumed={() => setConnectionAutoStart(prev => ({ nonce: 0, name: undefined }))}
         />
       );
-      default: return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
+      default: return <Dashboard onViewChange={(view) => { if (view === 'campaign-builder') setCampaignDraftId(null); setActiveView(view); }} onOpenCampaignDraft={(id) => { setCampaignDraftId(id); setActiveView('campaign-builder'); }} events={events} tasks={tasks} profiles={profiles} brand={currentBrand} spokeConnections={spokeConnections} onSpokeConnectionsChange={setSpokeConnections} savedConnections={savedConnections} onToggleFavorite={handleToggleFavorite} branchStats={branchStats} branchContext={branchContext} scheduledPosts={scheduledPosts} setScheduledPosts={setScheduledPosts} onOpenArticle={handleOpenHelpArticle} />;
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-trellis-canvas">
         <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
       </div>
     );
@@ -497,31 +721,38 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Layout activeView={activeView} onViewChange={(v) => { setSettingsInitialTab(undefined); if (v === 'campaign-builder') setCampaignDraftId(null); setActiveView(v); }} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
-      {renderView()}
+    <Layout activeView={activeView} onViewChange={(v) => { setSettingsInitialTab(undefined); if (v === 'campaign-builder') setCampaignDraftId(null); setActiveView(v); }} user={currentUser} brand={currentBrand} profiles={profiles} onLogout={signOut} branchContext={branchContext} apiKeys={apiKeys} spokeConnections={spokeConnections} onOpenHelpArticle={handleOpenHelpArticle} onOpenHelpCenter={() => { setHelpArticle(null); setActiveView('help-center'); }}>
+      {studioView?.branchRequired && !selectedStudioBranchSlug
+        ? <ContentStudioStart view={activeView} title={studioView.title} nextAction={studioView.nextAction} branchesAvailable={allBranches.length > 0} />
+        : <div key={studioView ? `${activeView}:${selectedStudioBranchSlug}` : 'main-view'} onChangeCapture={event => {
+          if (!studioView) return;
+          const target = event.target as HTMLInputElement;
+          if (target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || (target.tagName === 'INPUT' && target.type !== 'search')) studioDirty.current = true;
+        }}>{renderView()}</div>}
 
       {/* Global Toast Notification Engine */}
-      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[300] space-y-3 w-full max-w-md pointer-events-none">
+      <div className="pointer-events-none fixed bottom-6 left-1/2 z-[300] w-full max-w-md -translate-x-1/2 space-y-2 px-4">
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className="pointer-events-auto bg-white/80 backdrop-blur-xl border border-slate-200/50 shadow-2xl p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-bottom-4 duration-300"
+            className="pointer-events-auto flex min-h-14 items-center justify-between border border-trellis-line bg-white p-4 shadow-[var(--trellis-shadow-float)] animate-in slide-in-from-bottom-4 duration-300"
           >
             <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-xl ${
+              <div className={`grid h-9 w-9 place-items-center border ${
                 toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
                 toast.type === 'error' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600'
               }`}>
                 {toast.type === 'success' ? <CheckCircle2 size={18} /> :
                  toast.type === 'error' ? <AlertCircle size={18} /> : <Info size={18} />}
               </div>
-              <p className="text-xs font-black uppercase text-slate-800 tracking-tight leading-tight max-w-[280px]">
+              <p className="max-w-[280px] text-sm font-semibold leading-snug text-trellis-ink">
                 {toast.message}
               </p>
             </div>
             <button
               onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-              className="p-1.5 text-slate-400 hover:text-slate-900 transition-colors"
+              className="min-h-11 min-w-11 text-slate-400 transition-colors hover:bg-trellis-subtle hover:text-trellis-ink"
+              aria-label="Dismiss notification"
             >
               <X size={16} />
             </button>

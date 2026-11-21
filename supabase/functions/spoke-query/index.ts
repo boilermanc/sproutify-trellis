@@ -1,3 +1,5 @@
+import { isRekkrdConnection, countCollectionRecords } from "../_shared/rekkrd-profile-metrics.mjs";
+import { requireInternalUser } from "../_shared/sweetwater-internal-guard.ts";
 // Trellis: Spoke Query proxy
 // Runs all federated reads against external "spoke" Supabase databases
 // SERVER-SIDE so a spoke's key never has to live in the browser or be
@@ -20,6 +22,7 @@
 //   { op: "fetch",    connection_id, table_type }                // runtime
 //   { op: "snapshot", connection_id }                            // runtime
 //   { op: "newsletter_audience", connection_id, tags? }           // runtime ATL RPC
+//   { op: "event_audience", connection_id }                       // runtime ATL events
 //   { op: "bible_passage", connection_id, book_id, chapter,
 //     verse_start, verse_end?, translation? }                     // runtime Rejoice BSB RPC
 //
@@ -30,6 +33,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const HUB_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Project-scoped secret already used by resend-webhook. Event registrations
+// are intentionally RLS-hidden from ATL's public connection key, so this one
+// fixed operation uses the server-only ATL service key.
+const ATL_SPOKE_SERVICE_KEY = Deno.env.get("ATL_SPOKE_SERVICE_KEY") || "";
 const BATCH_SIZE = 1000;
 const SNAPSHOT_NAME_SAMPLE = 500;
 const SNAPSHOT_TOTAL_SAMPLE = 5000;
@@ -44,6 +51,7 @@ const COMMON_TABLES = [
   "orders", "order_items", "legacy_orders", "legacy_order_items",
   "subscriptions", "payments", "products",
   "newsletter_subscribers", "customer_tags", "customer_addresses",
+  "events", "event_registrations",
 ];
 
 const cors = {
@@ -118,11 +126,13 @@ async function getColumns(client: any, url: string, key: string, table: string):
 }
 
 // Paginated full-table read.
-async function fetchAllRows(client: any, table: string, select: string) {
+async function fetchAllRows(client: any, table: string, select: string, orderColumn?: string) {
   const all: Record<string, unknown>[] = [];
   let offset = 0;
   while (true) {
-    const { data, error } = await client.from(table).select(select).range(offset, offset + BATCH_SIZE - 1);
+    let query = client.from(table).select(select);
+    if (orderColumn) query = query.order(orderColumn);
+    const { data, error } = await query.range(offset, offset + BATCH_SIZE - 1);
     if (error) return { rows: all, error: error.message };
     if (!data || data.length === 0) break;
     all.push(...data);
@@ -149,6 +159,7 @@ async function resolveConnection(hub: any, connectionId: string) {
 }
 
 Deno.serve(async (req: Request) => {
+  const swDenied = await requireInternalUser(req); if (swDenied) return swDenied;
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -218,6 +229,23 @@ Deno.serve(async (req: Request) => {
       return json({ columns });
     }
 
+    // Fixed read-only Rekkrd metric; no caller-supplied tables or columns.
+    if (op === "collection_counts") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+      if (resolved.conn.status !== "active" || !isRekkrdConnection(resolved.conn.supabase_url)) {
+        return json({ error: "Collection counts are only available for the active Rekkrd connection" }, 400);
+      }
+      const spoke = createClient(resolved.conn.supabase_url, resolved.key);
+      const { rows, error } = await fetchAllRows(spoke, "albums", "id,user_id", "id");
+      if (error) return json({ error: "Could not read Rekkrd collection counts" }, 502);
+      // An empty RLS-filtered result cannot establish a zero-size collection.
+      if (rows.length === 0) return json({ error: "Rekkrd collection data is empty or inaccessible" }, 502);
+      return json({ counts: countCollectionRecords(rows), fetched_at: new Date().toISOString() });
+    }
+
     // ── fetch: RUNTIME bulk read (raw rows + field_mapping per table) ──
     if (op === "fetch") {
       const tableType = body.table_type;
@@ -238,11 +266,15 @@ Deno.serve(async (req: Request) => {
       const tables: Array<{ table_name: string; field_mapping: Record<string, string>; rows: unknown[] }> = [];
       const errors: string[] = [];
       for (const cfg of configs) {
-        const fields = Object.values(cfg.field_mapping || {}).filter(Boolean) as string[];
+        const mapping = { ...(cfg.field_mapping || {}) };
+        if (tableType === "subscriptions" && cfg.table_name === "subscriptions" && isRekkrdConnection(resolved.conn.supabase_url)) {
+          Object.assign(mapping, { trial_start: "trial_start", trial_end: "trial_end", provider: "provider", iap_status: "iap_status", iap_current_period_end: "iap_current_period_end" });
+        }
+        const fields = [...new Set(Object.values(mapping).filter(Boolean))] as string[];
         if (fields.length === 0) continue;
         const { rows, error } = await fetchAllRows(spoke, cfg.table_name, fields.join(","));
         if (error) { errors.push(`${resolved.conn.name}/${cfg.table_name}: ${error}`); continue; }
-        tables.push({ table_name: cfg.table_name, field_mapping: cfg.field_mapping, rows });
+        tables.push({ table_name: cfg.table_name, field_mapping: mapping, rows });
       }
       return json({ connection_id: body.connection_id, name: resolved.conn.name, tables, errors });
     }
@@ -286,6 +318,49 @@ Deno.serve(async (req: Request) => {
       }
 
       return json({ connection_id: body.connection_id, name: resolved.conn.name, rows, errors });
+    }
+
+    // ── event_audience: RUNTIME ATL event registrations ──────────
+    // Fixed tables + fixed columns only. This deliberately does not expose a
+    // generic spoke-table passthrough or payment-intent/phone fields.
+    if (op === "event_audience") {
+      if (!body.connection_id) return json({ error: "connection_id is required" }, 400);
+
+      const hub = createClient(HUB_URL, SERVICE_KEY);
+      const resolved = await resolveConnection(hub, body.connection_id);
+      if ("error" in resolved) return json({ error: resolved.error }, 404);
+      if (!String(resolved.conn.supabase_url || "").includes("povudgtvzggnxwgtjexa")) {
+        return json({ error: "Event audience is only available for the ATL Urban Farms spoke" }, 404);
+      }
+
+      if (!ATL_SPOKE_SERVICE_KEY) return json({ error: "ATL event audience service key is not configured" }, 503);
+      const spoke = createClient(resolved.conn.supabase_url, ATL_SPOKE_SERVICE_KEY);
+      const registrationResult = await fetchAllRows(
+        spoke,
+        "event_registrations",
+        "id,event_id,name,email,status,amount_paid,quantity,created_at,updated_at",
+      );
+      if (registrationResult.error) return json({ error: registrationResult.error }, 502);
+
+      const eventIds = Array.from(new Set(
+        registrationResult.rows.map((row: any) => row.event_id).filter(Boolean),
+      ));
+      let events: Record<string, unknown>[] = [];
+      if (eventIds.length > 0) {
+        const { data, error } = await spoke
+          .from("events")
+          .select("id,title,event_type,start_date,end_date,start_time,end_time,location,is_active,registration_enabled,pre_register_enabled")
+          .in("id", eventIds);
+        if (error) return json({ error: error.message }, 502);
+        events = data || [];
+      }
+
+      const eventById = new Map(events.map((event: any) => [event.id, event]));
+      const rows = registrationResult.rows.map((row: any) => ({
+        ...row,
+        event: eventById.get(row.event_id) || null,
+      }));
+      return json({ connection_id: body.connection_id, name: resolved.conn.name, rows, errors: [] });
     }
 
     // ── bible_passage: RUNTIME Berean Standard Bible verse lookup ─────
@@ -442,7 +517,7 @@ Deno.serve(async (req: Request) => {
         }
         if (fm.subscribed) {
           const { count: subCount } = await spoke
-            .from(custCfg.table_name).select("*", { count: "exact", head: true }).eq(fm.subscribed, true);
+            .from(custCfg.table_name).select("*", { count: "exact", head: true }).eq(String(fm.subscribed), true);
           active_subscribers = subCount ?? 0;
         }
       }

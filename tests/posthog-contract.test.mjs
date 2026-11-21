@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   canonicalEventType,
+  DEFAULT_POSTHOG_EVENTS,
+  DEFAULT_POSTHOG_PROPERTIES,
+  getPosthogBranchDefaults,
+  REJOICE_CANONICAL_EVENTS,
+  REJOICE_CANONICAL_PROPERTIES,
   normalizePosthogEmail,
+  posthogEmailForBranch,
+  posthogEventsForType,
+  posthogLifecycleForBranch,
   qualifyPosthogEventId,
   sanitizePosthogProperties,
 } from '../supabase/functions/_shared/posthog-contract.mjs';
@@ -11,6 +19,102 @@ test('maps lifecycle events and normalizes custom milestones', () => {
   assert.equal(canonicalEventType('user_signed_up'), 'product_signup');
   assert.equal(canonicalEventType('onboarding_completed'), 'product_onboarding_completed');
   assert.equal(canonicalEventType('lesson_completed'), 'product_feature_milestone');
+});
+
+test('Home uses shipped event names without inventing signup or paid evidence', () => {
+  const home = posthogLifecycleForBranch('sproutify-home');
+  assert.deepEqual(home.signup_events, ['home signup confirmed']);
+  assert.deepEqual(home.onboarding_events, ['onboarding completed']);
+  assert.deepEqual(home.activation_events, ['tower added']);
+  assert.equal(home.coverage.signup, false);
+  assert.equal(home.coverage.paid, false);
+  assert.equal(home.coverage.ordered_funnel, false);
+  assert.equal(canonicalEventType('onboarding completed', 'sproutify-home'), 'product_onboarding_completed');
+  assert.equal(canonicalEventType('tower added', 'sproutify-home'), 'product_activated');
+  assert.equal(canonicalEventType('tower added', 'rekkrd'), 'product_feature_milestone');
+  const defaults = getPosthogBranchDefaults('sproutify-home');
+  assert.ok(defaults.allowed_events.includes('community post shared'));
+  assert.ok(!defaults.allowed_events.includes('$identify'));
+  assert.ok(!defaults.allowed_events.includes('purchase_started'));
+  assert.deepEqual(sanitizePosthogProperties({
+    app_platform: 'web', port_count: 24, email: 'private@example.com',
+    caption: 'private', url: 'https://example.com/private',
+  }, defaults.allowed_properties), { app_platform: 'web', port_count: 24 });
+});
+
+test('Home counts become available only with verified export coverage', () => {
+  const start = '2026-10-20T13:00:00Z';
+  const home = posthogLifecycleForBranch('sproutify-home', start, true);
+  assert.equal(posthogLifecycleForBranch('sproutify-home', start).coverage.paid, false);
+  assert.equal(home.coverage.signup, true);
+  assert.equal(home.coverage.paid, true);
+  assert.equal(home.coverage.started_at, start);
+  assert.equal(home.coverage.ordered_funnel, false);
+  assert.deepEqual(home.paid_events, ['home payment confirmed']);
+  assert.equal(posthogLifecycleForBranch('sproutify-home', 'invalid').coverage.paid, false);
+  assert.equal(canonicalEventType('home signup confirmed', 'sproutify-home'), 'product_signup');
+});
+
+test('Rekkrd signup and first record count as lifecycle events in reports and ingestion', () => {
+  assert.equal(canonicalEventType('signup_completed'), 'product_signup');
+  assert.ok(posthogEventsForType('product_signup').includes('signup_completed'));
+  assert.equal(canonicalEventType('first_record_added'), 'product_activated');
+  assert.ok(posthogEventsForType('product_activated').includes('first_record_added'));
+  assert.equal(canonicalEventType('discogs_import_completed'), 'product_feature_milestone');
+  assert.ok(!posthogEventsForType('product_onboarding_completed').includes('discogs_connected'));
+});
+
+test('Rekkrd defaults accept shipped product milestones and their categorical properties', () => {
+  const defaults = getPosthogBranchDefaults('rekkrd');
+  assert.deepEqual(defaults.allowed_events, [
+    'signup_completed', 'first_record_added', 'discogs_connected',
+    'discogs_import_completed', 'collection_value_viewed', 'third_spin_logged',
+  ]);
+  assert.deepEqual(sanitizePosthogProperties({
+    platform: 'ios', surface: 'ios', placement: 'app', value: 12,
+    source: 'https://rekkrd.com/private', campaign: 'private free text',
+    email: 'collector@example.com', record_title: 'Private collection content',
+  }, defaults.allowed_properties), { platform: 'ios', surface: 'ios', placement: 'app', value: 12 });
+});
+
+test('Rejoice reconciles canonical lifecycle events with its deployed proxy', () => {
+  const rejoice = posthogLifecycleForBranch('rejoice');
+  assert.deepEqual(rejoice.signup_events, ['user_signed_up', 'Application Installed']);
+  assert.deepEqual(rejoice.onboarding_events, ['onboarding_completed', '$identify']);
+  assert.equal(rejoice.labels.signed_up, 'Signup / install signal');
+  assert.equal(rejoice.conversion_labels.signup_to_onboarding, 'Signup and onboarding signals');
+  const rekkrd = posthogLifecycleForBranch('rekkrd');
+  assert.ok(rekkrd.signup_events.includes('signup_completed'));
+  assert.ok(!rekkrd.signup_events.includes('Application Installed'));
+  assert.ok(rekkrd.activation_events.includes('first_record_added'));
+  assert.equal(rekkrd.labels.signed_up, 'Signed up');
+});
+
+test('Rejoice defaults include canonical growth events and categorical properties', () => {
+  const defaults = getPosthogBranchDefaults('rejoice');
+  assert.deepEqual(defaults.allowed_events, REJOICE_CANONICAL_EVENTS);
+  assert.deepEqual(defaults.allowed_properties, REJOICE_CANONICAL_PROPERTIES);
+  for (const event of ['devotion_completed', 'paywall_viewed', 'share_card_created', 'review_prompt_requested']) {
+    assert.ok(defaults.allowed_events.includes(event));
+  }
+  assert.deepEqual(sanitizePosthogProperties({
+    custom_feeling: true,
+    feeling: 'anxious',
+    platform: 'ios',
+    email: 'private@example.com',
+  }, defaults.allowed_properties), { custom_feeling: true, platform: 'ios' });
+});
+
+test('other branches retain the existing defaults and receive independent editable lists', () => {
+  for (const slug of ['unknown', undefined]) {
+    assert.deepEqual(getPosthogBranchDefaults(slug), {
+      allowed_events: DEFAULT_POSTHOG_EVENTS, allowed_properties: DEFAULT_POSTHOG_PROPERTIES,
+    });
+  }
+  getPosthogBranchDefaults('rekkrd').allowed_events.push('custom_event');
+  assert.ok(!getPosthogBranchDefaults('rekkrd').allowed_events.includes('custom_event'));
+  assert.ok(posthogEventsForType('product_signup').includes('user_signed_up'));
+  assert.ok(posthogEventsForType('product_activated').includes('activation_milestone_reached'));
 });
 
 test('keeps only approved categorical properties', () => {
@@ -38,6 +142,8 @@ test('drops sensitive keys and free-text-like values even when allowlisted', () 
 test('normalizes valid email and rejects malformed identity values', () => {
   assert.equal(normalizePosthogEmail(' User@Example.com '), 'user@example.com');
   assert.equal(normalizePosthogEmail('anonymous-id'), null);
+  assert.equal(posthogEmailForBranch('rejoice', 'user@example.com'), null);
+  assert.equal(posthogEmailForBranch('atl', ' User@Example.com '), 'user@example.com');
 });
 
 test('qualifies event IDs by project for cross-project idempotency', () => {

@@ -4,15 +4,18 @@ import {
   MousePointerClick, MailX, AlertTriangle, Send, Clock, ChevronRight, Tag, GitBranch, Pencil,
   Copy, Trash2, MailPlus, Ban,
 } from 'lucide-react';
-import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign, fetchNonOpeners, resendToNonOpeners } from '../supabaseService';
+import { fetchCampaigns, Campaign, retryCampaign, fetchCampaignRecipientStats, CampaignRecipientStats, deleteCampaign, duplicateCampaign, fetchNonOpeners, resendToNonOpeners, ReminderPreview } from '../supabaseService';
 import { fetchCampaignEmailStats, CampaignEmailStat, fetchCampaignUnsubscribedCount } from '../services/emailReportingService';
 import { CampaignRecipientsModal } from '../components/CampaignRecipientsModal';
+import { LinkClickSummaryModal } from '../components/LinkClickSummaryModal';
 import { BranchContext } from '../types';
 
 interface CampaignsProps {
   branchContext?: BranchContext;
   addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
   onEditDraft?: (campaignId: string) => void;
+  focusedCampaignId?: string | null;
+  onFocusedCampaignOpened?: () => void;
 }
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
@@ -48,13 +51,13 @@ const SEND_STATUS_LABEL: Record<string, string> = {
 // it (so we have delivery/open events + a saved dispatch to reuse).
 const canResend = (c: Campaign) => c.send_status === 'sent' || c.send_status === 'partial';
 
-// Stats are aggregated by subject on the Hub, so we match a campaign to its stats by subject line.
-const emptyStat = (subject: string): CampaignEmailStat => ({
-  campaign_subject: subject, sent: 0, delivered: 0, opened: 0, clicked: 0,
+const emptyStat = (campaign: Campaign): CampaignEmailStat => ({
+  campaign_id: campaign.id, campaign_name: campaign.name, campaign_subject: campaign.subject, branches: campaign.branches || [],
+  sent: 0, delivered: 0, opened: 0, clicked: 0,
   bounced: 0, complained: 0, first_event_at: null, last_event_at: null,
 });
 
-const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDraft }) => {
+const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDraft, focusedCampaignId, onFocusedCampaignOpened }) => {
   const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +96,14 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!focusedCampaignId) return;
+    const focusedCampaign = allCampaigns.find(campaign => campaign.id === focusedCampaignId);
+    if (!focusedCampaign) return;
+    setSelected(focusedCampaign);
+    onFocusedCampaignOpened?.();
+  }, [allCampaigns, focusedCampaignId, onFocusedCampaignOpened]);
+
   const handleDuplicate = async (c: Campaign) => {
     setBusyId(c.id);
     const { campaign, error } = await duplicateCampaign(c.id);
@@ -110,34 +121,33 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
     else { addToast?.(`Couldn't delete: ${error}`, 'error'); }
   };
 
-  // subject -> stat lookup
-  const statBySubject = useMemo(() => {
+  const statById = useMemo(() => {
     const m = new Map<string, CampaignEmailStat>();
-    for (const s of stats) if (s.campaign_subject) m.set(s.campaign_subject, s);
+    for (const s of stats) if (s.campaign_id) m.set(s.campaign_id, s);
     return m;
   }, [stats]);
 
-  const statFor = (c: Campaign): CampaignEmailStat => statBySubject.get(c.subject) || emptyStat(c.subject);
+  const statFor = (c: Campaign): CampaignEmailStat => statById.get(c.id) || emptyStat(c);
 
   const totals = useMemo(() => {
     const t = { sent: 0, delivered: 0, opened: 0, clicked: 0 };
     for (const c of campaigns) {
-      const s = statBySubject.get(c.subject);
+      const s = statById.get(c.id);
       if (s) { t.sent += s.sent; t.delivered += s.delivered; t.opened += s.opened; t.clicked += s.clicked; }
     }
     return t;
-  }, [campaigns, statBySubject]);
+  }, [campaigns, statById]);
 
   return (
     <div className="p-6 lg:p-10 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <Rocket className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Campaigns</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Campaigns</h1>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
               {branchContext && !branchContext.isAllSelected
                 ? `Scoped to ${branchContext.activeBranchSlugs.length} of ${branchContext.allBranches.length} branches · change in the top bar`
@@ -161,10 +171,10 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
         {[
           { label: 'Campaigns', value: campaigns.length, icon: Send, color: 'text-slate-700' },
           { label: 'Delivered', value: totals.delivered, icon: MailCheck, color: 'text-emerald-600' },
-          { label: 'Open Rate', value: `${pct(totals.opened, totals.delivered)}%`, icon: Eye, color: 'text-blue-600' },
+          { label: 'Tracked Open Rate', value: `${pct(totals.opened, totals.delivered)}%`, icon: Eye, color: 'text-blue-600' },
           { label: 'Click Rate', value: `${pct(totals.clicked, totals.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600' },
         ].map((k) => (
-          <div key={k.label} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div key={k.label} className="bg-white border border-slate-200 p-5">
             <div className="flex items-center gap-2 mb-2">
               <k.icon className={`w-4 h-4 ${k.color}`} />
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{k.label}</span>
@@ -175,7 +185,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
       </div>
 
       {/* List */}
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center gap-2 text-slate-400 py-20">
             <Loader2 className="w-5 h-5 animate-spin" /> Loading campaigns…
@@ -223,14 +233,14 @@ const Campaigns: React.FC<CampaignsProps> = ({ branchContext, addToast, onEditDr
                       </div>
                     </div>
                     {c.status === 'draft' ? (
-                      <div className="hidden sm:inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-700 shrink-0">
+                      <div className="hidden sm:inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-700 shrink-0">
                         <Pencil className="w-3.5 h-3.5" /> Continue Editing
                       </div>
                     ) : (
                       <div className="hidden md:flex items-center gap-5 shrink-0">
                         {[
                           { label: 'Sent', value: s.sent, color: 'text-slate-600' },
-                          { label: 'Open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
+                          { label: 'Tracked open', value: `${pct(s.opened, s.delivered)}%`, color: 'text-blue-600' },
                           { label: 'Click', value: `${pct(s.clicked, s.delivered)}%`, color: 'text-violet-600' },
                         ].map((m) => (
                           <div key={m.label} className="text-center w-14">
@@ -320,6 +330,8 @@ const CampaignDetailDrawer: React.FC<{
   const [unsubCount, setUnsubCount] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
+  const [showLinkClicks, setShowLinkClicks] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -331,11 +343,11 @@ const CampaignDetailDrawer: React.FC<{
 
   useEffect(() => {
     let alive = true;
-    if (c.subject) {
-      fetchCampaignUnsubscribedCount(c.subject).then((n) => { if (alive) setUnsubCount(n); }).catch(() => {});
+    if (c.id) {
+      fetchCampaignUnsubscribedCount(c.id, c.branches || []).then((n) => { if (alive) setUnsubCount(n); }).catch(() => {});
     }
     return () => { alive = false; };
-  }, [c.subject]);
+  }, [c.id, c.branches]);
 
   const canRetry = c.send_status === 'failed' || c.send_status === 'partial' || (!!rstats && rstats.failed > 0);
   const handleRetry = async () => {
@@ -349,18 +361,23 @@ const CampaignDetailDrawer: React.FC<{
   const metrics = [
     { label: 'Sent', value: s.sent, icon: Send, color: 'text-slate-600', bg: 'bg-slate-100' },
     { label: 'Delivered', value: s.delivered, sub: `${pct(s.delivered, s.sent)}%`, icon: MailCheck, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { label: 'Opened', value: s.opened, sub: `${pct(s.opened, s.delivered)}%`, icon: Eye, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { label: 'Clicked', value: s.clicked, sub: `${pct(s.clicked, s.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600', bg: 'bg-violet-100' },
+    { label: 'Tracked Opens', value: s.opened, sub: `${pct(s.opened, s.delivered)}%`, icon: Eye, color: 'text-blue-600', bg: 'bg-blue-100' },
+    { label: 'Clicked', value: s.clicked, sub: `${pct(s.clicked, s.delivered)}%`, icon: MousePointerClick, color: 'text-violet-600', bg: 'bg-violet-100', onClick: s.clicked > 0 ? () => setShowLinkClicks(true) : undefined },
     { label: 'Bounced', value: s.bounced, icon: MailX, color: 'text-red-600', bg: 'bg-red-100' },
     { label: 'Complained', value: s.complained, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-100' },
     { label: 'Unsubscribed', value: unsubCount ?? 0, sub: s.delivered ? `${pct(unsubCount ?? 0, s.delivered)}%` : undefined, icon: Ban, color: 'text-slate-600', bg: 'bg-slate-200' },
   ];
   const hasEvents = s.sent + s.delivered + s.opened + s.clicked + s.bounced + s.complained > 0;
+  // The exact HTML that was sent, with recipient tokens filled in for preview.
+  const emailPreviewHtml = (c.dispatch?.html_template || '')
+    .replace(/\{\{\s*first_name\s*\}\}/g, 'Friend')
+    .replace(/\{\{\s*unsubscribe_url\s*\}\}/g, '#')
+    .replace(/\{\{\s*email\s*\}\}/g, 'friend@example.com');
 
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 overflow-y-auto">
+      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white border-l border-slate-200 shadow-xl z-50 overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
           <div className="min-w-0">
             <h2 className="text-xl font-black text-slate-800 truncate">{c.name}</h2>
@@ -377,6 +394,35 @@ const CampaignDetailDrawer: React.FC<{
             <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded ${STATUS_STYLE[c.status] || 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-500 flex items-center gap-1"><Clock className="w-3 h-3" />{c.trigger_type}</span>
             <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-500 flex items-center gap-1"><Calendar className="w-3 h-3" />{fmtDate(c.launched_at || c.created_at)}</span>
+          </div>
+
+          {/* Email that went out */}
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Email sent</h3>
+              {c.dispatch?.html_template && (
+                <button onClick={() => setShowEmail((v) => !v)} className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-700">
+                  <Eye className="w-3.5 h-3.5" />{showEmail ? 'Hide' : 'Preview'}
+                </button>
+              )}
+            </div>
+            {c.dispatch?.from && (
+              <div className="text-xs text-slate-500">From <span className="font-bold text-slate-700">{c.dispatch.from}</span></div>
+            )}
+            <div className="text-xs text-slate-500 break-words">Subject <span className="font-bold text-slate-700">{c.dispatch?.subject || c.subject || 'No subject'}</span></div>
+            {c.dispatch?.preview_text && (
+              <div className="text-xs text-slate-500 break-words">Preview text <span className="font-bold text-slate-700">{c.dispatch.preview_text}</span></div>
+            )}
+            {!c.dispatch?.html_template ? (
+              <p className="text-[11px] italic text-slate-400">No saved email content — this campaign predates the durable outbox, or hasn't been sent yet.</p>
+            ) : showEmail && (
+              <iframe
+                title="Email preview"
+                sandbox=""
+                className="w-full h-[26rem] rounded-lg border border-slate-200 bg-white"
+                srcDoc={emailPreviewHtml}
+              />
+            )}
           </div>
 
           {/* Delivery / send status (durable outbox) */}
@@ -409,7 +455,7 @@ const CampaignDetailDrawer: React.FC<{
                 <button
                   onClick={handleRetry}
                   disabled={retrying}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-600 transition disabled:opacity-50"
+                className="w-full min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold hover:bg-emerald-600 transition disabled:opacity-50"
                 >
                   {retrying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   Retry failed recipients
@@ -421,39 +467,56 @@ const CampaignDetailDrawer: React.FC<{
           {/* Metrics grid */}
           <div>
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Engagement</h3>
+            <p className="text-[11px] text-slate-500 mb-3">
+              Tracked opens are estimates based on the email tracking image. Privacy tools and security scanners may load it automatically without a confirmed read.
+            </p>
             {!hasEvents && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
-                No delivery events recorded for this subject yet. Stats populate from Resend webhook events.
+                No delivery events recorded for this campaign yet. Stats populate from accepted sends and Resend webhook events.
               </p>
             )}
             <div className="grid grid-cols-3 gap-3">
-              {metrics.map((m) => (
-                <div key={m.label} className="bg-slate-50 rounded-xl border border-slate-100 p-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${m.bg}`}>
-                    <m.icon className={`w-4 h-4 ${m.color}`} />
-                  </div>
-                  <div className={`text-xl font-black ${m.color}`}>{m.value.toLocaleString()}</div>
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                    {m.label}{m.sub ? ` · ${m.sub}` : ''}
-                  </div>
-                </div>
-              ))}
+              {metrics.map((m) => {
+                const Tile = m.onClick ? 'button' : 'div';
+                return (
+                  <Tile
+                    key={m.label}
+                    {...(m.onClick ? { type: 'button' as const, onClick: m.onClick, title: 'See which links were clicked, and who clicked them' } : {})}
+                    className={`bg-slate-50 rounded-xl border border-slate-100 p-3 text-left w-full ${
+                      m.onClick ? 'hover:border-violet-300 hover:bg-violet-50/40 transition cursor-pointer' : ''
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${m.bg}`}>
+                      <m.icon className={`w-4 h-4 ${m.color}`} />
+                    </div>
+                    <div className={`text-xl font-black ${m.color}`}>{m.value.toLocaleString()}</div>
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                      {m.label}{m.sub ? ` · ${m.sub}` : ''}
+                    </div>
+                    {m.onClick && (
+                      <div className="text-[9px] font-black uppercase tracking-widest text-violet-500 mt-1 flex items-center gap-0.5">
+                        Links <ChevronRight className="w-2.5 h-2.5" />
+                      </div>
+                    )}
+                  </Tile>
+                );
+              })}
             </div>
             {hasEvents && (
               <button
                 type="button"
                 onClick={() => setShowRecipients(true)}
-                className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition"
+                className="w-full mt-3 min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
               >
                 <Users className="w-4 h-4" />
-                See who opened, clicked & complained
+                See tracked opens, clicks & complaints
               </button>
             )}
             {canResend(c) && (
               <button
                 type="button"
                 onClick={() => onResend(c)}
-                className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 transition"
+                className="w-full mt-2 min-h-11 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition"
               >
                 <MailPlus className="w-4 h-4" />
                 Resend to non-openers
@@ -500,113 +563,123 @@ const CampaignDetailDrawer: React.FC<{
           )}
 
           <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1">
-            <Mail className="w-3 h-3" /> Engagement matched by subject line via Resend delivery events
+            <Mail className="w-3 h-3" /> Engagement matched by exact campaign ID via Resend events · tracked opens are estimates
           </p>
         </div>
       </div>
 
       {showRecipients && c.subject && (
-        <CampaignRecipientsModal campaignSubject={c.subject} onClose={() => setShowRecipients(false)} />
+        <CampaignRecipientsModal campaignId={c.id} campaignSubject={c.subject} branches={c.branches || []} onClose={() => setShowRecipients(false)} />
+      )}
+      {showLinkClicks && c.subject && (
+        <LinkClickSummaryModal
+          campaignSubject={c.subject}
+          campaignId={c.id}
+          // We already hold the sent HTML here, so pass it and skip the by-subject
+          // lookup the Reports panel has to do.
+          sentHtml={c.dispatch?.html_template || ''}
+          onClose={() => setShowLinkClicks(false)}
+        />
       )}
     </>
   );
 };
 
 // ── Resend-to-non-openers modal ──────────────────────────────────────────────
-// Computes who was sent the original but never opened it, then launches a
+// Computes who was sent the original but has no tracked open, then launches a
 // follow-up campaign (same email, new subject) to exactly that audience.
-const ResendModal: React.FC<{
+export const ResendModal: React.FC<{
   campaign: Campaign;
   onClose: () => void;
   addToast?: (m: string, t?: 'success' | 'error' | 'info') => void;
   onDone: () => void;
 }> = ({ campaign: c, onClose, addToast, onDone }) => {
-  const [loading, setLoading] = useState(true);
-  const [recipients, setRecipients] = useState<Array<{ email: string; first_name: string; unsubscribe_token: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<ReminderPreview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [subject, setSubject] = useState(`Reminder: ${c.subject || ''}`.trim());
   const [sending, setSending] = useState(false);
 
+  const busy = React.useRef(false);
+  const dialog = React.useRef<HTMLDivElement>(null);
   useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    fetchNonOpeners(c.id, c.subject).then(({ recipients, error }) => {
-      if (!alive) return;
-      if (error) setLoadError(error);
-      setRecipients(recipients);
-      setLoading(false);
-    });
-    return () => { alive = false; };
-  }, [c.id, c.subject]);
+    const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.querySelector<HTMLInputElement>('input')?.focus();
+    return () => { previous?.focus(); };
+  }, []);
+  const branch = c.branches?.length === 1 ? c.branches[0] : '';
+  const handlePreview = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setLoading(true); setLoadError(null); setPreview(null);
+    try { setPreview(await fetchNonOpeners(c.id, branch, subject)); }
+    catch (error) { setLoadError(error instanceof Error ? error.message : 'Preview unavailable.'); }
+    finally { busy.current = false; setLoading(false); }
+  };
 
   const handleSend = async () => {
-    if (!recipients.length || !subject.trim()) return;
+    if (busy.current || !preview?.final_count || !subject.trim()) return;
+    busy.current = true;
     setSending(true);
-    const { campaign, error } = await resendToNonOpeners(c.id, subject, recipients);
-    setSending(false);
-    if (campaign) {
-      addToast?.(`Reminder queued to ${recipients.length.toLocaleString()} non-opener(s) — sending now.`, 'success');
+    try {
+      await resendToNonOpeners(c.id, branch, subject, preview.token);
+      addToast?.(`Reminder queued for ${preview.final_count.toLocaleString()} eligible recipients with no recorded engagement.`, 'success');
       onDone();
       onClose();
-    } else {
-      addToast?.(`Couldn't send reminder: ${error}`, 'error');
-    }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not queue reminder.';
+      setLoadError(message); setPreview(null); addToast?.(message, 'error');
+    } finally { busy.current = false; setSending(false); }
   };
 
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-[60]" onClick={onClose} />
       <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-none">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl pointer-events-auto overflow-hidden">
+        <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="reminder-heading"
+          onKeyDown={event => {
+            if (event.key === 'Escape' && !busy.current) onClose();
+            if (event.key !== 'Tab') return;
+            const controls = dialog.current?.querySelectorAll<HTMLElement>('input:not(:disabled), button:not(:disabled)');
+            if (!controls?.length) return;
+            const first = controls[0], last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+          }}
+          className="w-full max-w-md bg-white border border-slate-200 shadow-xl pointer-events-auto overflow-hidden">
           <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
               <MailPlus className="w-5 h-5 text-blue-600" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-black text-slate-800">Resend to non-openers</h2>
+              <h2 id="reminder-heading" className="text-lg font-black text-slate-800">Resend to non-openers</h2>
               <p className="text-xs text-slate-400 truncate">{c.name}</p>
             </div>
           </div>
 
-          <div className="p-6 space-y-5">
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 text-slate-400 py-8">
-                <Loader2 className="w-5 h-5 animate-spin" /> Finding who didn't open…
-              </div>
-            ) : (
-              <>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-center">
-                  <div className="text-3xl font-black text-slate-800">{recipients.length.toLocaleString()}</div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
-                    recipients who didn't open
-                  </div>
-                </div>
-                {loadError && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{loadError}</p>
-                )}
-                {recipients.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center">
-                    Everyone who was sent this campaign has already opened it — or bounced/unsubscribed. Nothing to resend.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">New subject line</label>
-                    <input
-                      type="text"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                      placeholder="Subject line"
-                    />
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Same email, fresh subject. A different subject keeps this reminder's opens
-                      separate from the original in your reports (and usually lifts opens).
-                      Unsubscribes and bounces are re-checked at send time.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
+          <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+            <p className="text-xs text-slate-600 break-words">Original: {c.subject}<br />Campaign ID: {c.id}<br />Business: {branch || 'Ambiguous — select a single-business original'}</p>
+            <label className="block text-xs font-bold text-slate-700" htmlFor="reminder-subject">Reminder subject</label>
+            <input id="reminder-subject" type="text" value={subject} disabled={loading || sending}
+              onChange={event => { setSubject(event.target.value); setPreview(null); setLoadError(null); }}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm" />
+            <p className="text-xs text-slate-500">Email opens are imperfect signals. No recorded open does not mean someone did not read the email. Known openers and clickers are excluded.</p>
+            <button type="button" onClick={handlePreview} disabled={loading || sending || !subject.trim() || !branch}
+              className="min-h-11 px-4 py-2 rounded-xl border border-slate-300 text-sm font-bold disabled:opacity-40">
+              {loading ? 'Validating audience…' : 'Preview audience'}
+            </button>
+            {loadError && <p role="alert" className="text-sm text-red-700 bg-red-50 p-3 rounded-xl">{loadError}</p>}
+            {preview && <div aria-live="polite" className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2 text-sm">
+              <p className="font-bold">{preview.name}</p>
+              <p className="text-xs break-words">Selected original subject: {preview.original_subject}</p>
+              <p>Original sent recipients: {preview.total.toLocaleString()}</p>
+              {Object.entries(preview.exclusions).map(([reason, count]) => <p key={reason}>{reason === 'opened' ? 'Known open or click' : reason.replaceAll('_', ' ')}: {count.toLocaleString()}</p>)}
+              <p className="font-black">Final audience: {preview.final_count.toLocaleString()}</p>
+              <p className="text-xs">Safe sample (addresses hidden):</p>
+              <ul className="text-xs">{preview.sample.map(row => <li key={row}>{row}</li>)}</ul>
+              {!preview.final_count && <p>No eligible recipients. Nothing will be queued.</p>}
+              <p className="text-xs text-slate-500">Consent, suppressions, engagement and content are checked again before queueing and dispatch. Any audience change requires a new preview. Preview expires in 10 minutes. One reminder per original.</p>
+            </div>}
           </div>
 
           <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -620,8 +693,8 @@ const ResendModal: React.FC<{
             <button
               type="button"
               onClick={handleSend}
-              disabled={loading || sending || recipients.length === 0 || !subject.trim()}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition disabled:opacity-40"
+              disabled={loading || sending || !preview?.final_count || !subject.trim()}
+              className="min-h-11 flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold hover:bg-blue-600 transition disabled:opacity-40"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               Send reminder

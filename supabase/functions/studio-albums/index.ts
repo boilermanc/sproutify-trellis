@@ -7,12 +7,15 @@ const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const LEGACY_TRACK_WORKER = "generate-session-track";
+const MAX_CONCURRENT_STUDIO_TRACKS = 3;
+const STALE_STUDIO_TRACK_MS = 25 * 60 * 1000;
 const MUSIC_STITCH_WEBHOOK = "https://n8n.sproutify.app/webhook/trellis-music-stitch";
 const VIDEO_RENDER_WEBHOOK = Deno.env.get("STUDIO_VIDEO_RENDER_WEBHOOK") || Deno.env.get("STUDIO_VIDEO_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-episode-video";
 const STUDIO_PUBLISH_WEBHOOK = Deno.env.get("STUDIO_PUBLISH_WEBHOOK") || "https://n8n.sproutify.app/webhook/trellis-studio-album-publish";
-const IMAGE_MODEL = Deno.env.get("IMAGE_MODEL") || "imagen-4.0-generate-001";
+const configuredImageModel = Deno.env.get("IMAGE_MODEL") || "";
+const IMAGE_MODEL = configuredImageModel.startsWith("imagen-") ? "gemini-3.1-flash-image" : configuredImageModel || "gemini-3.1-flash-image";
 const IMAGE_EDIT_MODEL = Deno.env.get("IMAGE_EDIT_MODEL") || "gemini-3.1-flash-image";
-const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains"]);
+const VALID_COVER_FONTS = new Set(["cormorant", "abril", "bebas", "playfair", "oswald", "montserrat", "inter", "jetbrains", "dm_serif", "libre_baskerville", "cinzel", "anton", "league_spartan", "poppins", "raleway", "caveat"]);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const cleanText = (value: unknown, limit: number) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
@@ -96,6 +99,31 @@ async function invokeLegacyWorker(sessionId: string, branch: string | null) {
   if (!response.ok) throw new Error(`Legacy music worker failed to start: ${await response.text()}`);
 }
 
+async function recoverStudioTrackQueue(db: any, albumId: string) {
+  const { data: studioTracks, error: studioError } = await db.from("studio_tracks")
+    .select("legacy_generation_id")
+    .eq("album_id", albumId)
+    .eq("review_status", "regenerating")
+    .not("legacy_generation_id", "is", null);
+  if (studioError) throw new Error(studioError.message);
+  const legacyIds = (studioTracks || []).map((track: any) => track.legacy_generation_id).filter(Boolean);
+  if (!legacyIds.length) return 0;
+
+  const { data: legacyTracks, error: legacyError } = await db.from("trellis_music_tracks")
+    .select("id,session_id,status,updated_at")
+    .in("id", legacyIds);
+  if (legacyError) throw new Error(legacyError.message);
+
+  const cutoff = Date.now() - STALE_STUDIO_TRACK_MS;
+  const active = (legacyTracks || []).filter((track: any) => track.status === "generating" && new Date(track.updated_at).getTime() >= cutoff);
+  const stale = (legacyTracks || []).filter((track: any) => track.status === "generating" && new Date(track.updated_at).getTime() < cutoff);
+  const queued = (legacyTracks || []).filter((track: any) => track.status === "queued");
+  const availableSlots = Math.max(0, MAX_CONCURRENT_STUDIO_TRACKS - active.length);
+  const dispatch = [...stale, ...queued].slice(0, availableSlots);
+  await Promise.all(dispatch.map((track: any) => invokeLegacyWorker(track.session_id, null)));
+  return dispatch.length;
+}
+
 async function trackWithAsset(db: any, trackId: string) {
   const { data: track, error } = await db.from("studio_tracks").select("*").eq("id", trackId).single();
   if (error) throw new Error(error.message);
@@ -132,7 +160,7 @@ async function syncLegacyTrack(db: any, studioTrackId: string) {
   return trackWithAsset(db, studioTrackId);
 }
 
-async function queueStudioTrackGeneration(db: any, album: any, userId: string, studioTrack: any) {
+async function queueStudioTrackGeneration(db: any, album: any, userId: string, studioTrack: any, startWorker = true) {
   const duration = Number(studioTrack.duration_seconds);
   const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Adapter] ${album.title} — ${studioTrack.title}`, target_duration_seconds: duration, genre: album.genre, mood: album.mood, track_count: 1, avg_track_length_seconds: duration, status: "planned" }).select("*").single();
   if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the legacy generation adapter.");
@@ -142,19 +170,7 @@ async function queueStudioTrackGeneration(db: any, album: any, userId: string, s
   if (updateError) throw new Error(updateError.message);
   const { error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, track_id: studioTrack.id, job_type: "track_generation", status: "processing", progress: 5, provider: "legacy_lyria_adapter", attempt_count: 1, input_json: { legacy_session_id: legacySession.id, legacy_generation_id: legacyTrack.id } });
   if (jobError) throw new Error(jobError.message);
-  try {
-    await invokeLegacyWorker(legacySession.id, null);
-  } catch (startError) {
-    // The track and job rows above are already committed as "regenerating"/"processing".
-    // If the worker never actually started, leaving them that way strands the track with a
-    // permanent spinner and no retry path (only planned/failed/rejected tracks are editable).
-    // Unwind to "failed" so the normal edit-and-retry flow in the UI can recover it.
-    const message = startError instanceof Error ? startError.message : "Could not start the generation worker.";
-    await db.from("studio_tracks").update({ review_status: "failed", rejection_reason: message.slice(0, 500), updated_at: new Date().toISOString() }).eq("id", studioTrack.id);
-    await db.from("studio_jobs").update({ status: "failed", error_message: message.slice(0, 700), completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("track_id", studioTrack.id).eq("job_type", "track_generation").eq("status", "processing");
-    await db.from("trellis_music_tracks").update({ status: "failed", error_message: message.slice(0, 700), updated_at: new Date().toISOString() }).eq("id", legacyTrack.id);
-    throw startError;
-  }
+  if (startWorker) await invokeLegacyWorker(legacySession.id, null);
   await db.from("studio_albums").update({ status: "track_generation", music_generation_status: "processing", updated_at: new Date().toISOString() }).eq("id", album.id);
   return trackWithAsset(db, studioTrack.id);
 }
@@ -173,6 +189,23 @@ async function clearCoverSelections(db: any, albumId: string) {
 
 function buildCoverPrompt(aspectLabel: string, params: { stylePrompt: string; styleSetting: string; customDirection: string; subjectConstraint: string; locationConstraint: string; genreLabel: string; moodLabel: string }) {
   return `${aspectLabel} IMAGE-ONLY album artwork plate for an original music release. Typography will be added later with real fonts.\nSTYLE / MEDIUM: ${params.stylePrompt}\nSCENE SETTING: ${params.styleSetting || "an evocative, geographically specific setting"}.\nUSER DIRECTION — HIGHEST PRIORITY: ${params.customDirection || "Create one elegant focal subject and a restrained editorial composition"}.\n${params.subjectConstraint}\n${params.locationConstraint}\nALBUM CONTEXT: Genre ${params.genreLabel}; mood ${params.moodLabel}.\nABSOLUTE EXCLUSIONS: no title, no words, no letters, no numbers, no signage, no labels, no logos, no watermark, no signature, no readable writing, no real artists, and no copyrighted characters. Do not invent extra people, vehicles, or narrative props that conflict with the user direction.`;
+}
+
+async function generateNativeImage(key: string, prompt: string, aspectRatio: "1:1" | "16:9", errorLabel: string) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio } },
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`${errorLabel}: ${JSON.stringify(payload).slice(0, 240)}`);
+  const imagePart = payload?.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData?.data || part.inline_data?.data);
+  const encoded = imagePart?.inlineData?.data || imagePart?.inline_data?.data;
+  if (!encoded) throw new Error("The image provider returned no image data.");
+  return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
 }
 
 async function generateStudioCover(db: any, album: any, input: any) {
@@ -197,12 +230,7 @@ async function generateStudioCover(db: any, album: any, input: any) {
   const genreLabel = album.subgenre || album.genre || "instrumental";
   const moodLabel = album.mood || "cinematic";
   const prompt = buildCoverPrompt("Square", { stylePrompt, styleSetting: styleSetting || album.theme, customDirection, subjectConstraint, locationConstraint, genreLabel, moodLabel });
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "1:1" } }) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Cover concept generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
-  const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
-  if (!b64) throw new Error("The image provider returned no cover image.");
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const bytes = await generateNativeImage(key, prompt, "1:1", "Cover concept generation failed");
   const { data: prior } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (prior?.version || 0) + 1;
   const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}.png`;
@@ -255,12 +283,7 @@ async function generateStudioVideoSource(db: any, album: any, sourceConcept: any
     genreLabel: album.subgenre || album.genre || "instrumental",
     moodLabel: album.mood || "cinematic",
   });
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:predict`, { method: "POST", headers: { "x-goog-api-key": key, "Content-Type": "application/json" }, body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "16:9" } }) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Video source generation failed: ${JSON.stringify(payload).slice(0, 240)}`);
-  const b64 = payload?.predictions?.[0]?.bytesBase64Encoded || payload?.predictions?.[0]?.image?.imageBytes;
-  if (!b64) throw new Error("The image provider returned no video source image.");
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const bytes = await generateNativeImage(key, prompt, "16:9", "Video source generation failed");
   return storeVideoSource(db, album, sourceConcept, bytes, { prompt, model: IMAGE_MODEL, method: "fresh_scene" });
 }
 
@@ -390,7 +413,7 @@ Rules:
   }
 }
 
-async function preparePublicationDraft(db: any, album: any, userId: string) {
+async function preparePublicationDraft(db: any, album: any, userId: string, youtubeAccountId: string) {
   if (album.video_status !== "approved") throw new Error("Approve the final video before preparing publishing metadata.");
   const existing = await publicationForAlbum(db, album.id);
   if (existing?.status === "live") throw new Error("This album is already published.");
@@ -401,7 +424,7 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
   // to the approved square cover only if no thumbnail was designed.
   const { data: thumbnail } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
   const { data: cover } = await db.from("studio_assets").select("id").eq("album_id", album.id).eq("asset_type", "cover_art").eq("status", "active").contains("metadata_json", { selection_status: "approved" }).maybeSingle();
-  const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("track_number,title,duration_seconds").eq("album_id", album.id).eq("review_status", "approved").order("track_number");
+  const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("track_number,title,duration_seconds").eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "approved").order("track_number");
   if (tracksError) throw new Error(tracksError.message);
   let elapsed = 0;
   const chapters = (tracks || []).map((track: any) => {
@@ -428,6 +451,7 @@ async function preparePublicationDraft(db: any, album: any, userId: string) {
   const tags = publicationTags([album.artist_name, album.genre, album.subgenre, album.mood, album.series_name, ...(meta?.hashtags || []).map((h: string) => h.replace(/^#/, "")), "instrumental music", "full album"]);
   const draft = {
     album_id: album.id, created_by: userId, platform: "youtube", status: "draft",
+    youtube_account_id: youtubeAccountId,
     title: cleanText(`${album.artist_name} — ${album.title}`, 95) || "Untitled Album",
     description, tags, chapters, visibility: existing?.visibility || "private", made_for_kids: false,
     scheduled_for: existing?.scheduled_for || null, video_asset_id: video.id, thumbnail_asset_id: thumbnail?.id || cover?.id || null,
@@ -483,23 +507,24 @@ async function syncStudioMaster(db: any, albumId: string) {
 async function queueStudioMaster(db: any, album: any, userId: string) {
   const { data: tracks, error: tracksError } = await db.from("studio_tracks").select("*").eq("album_id", album.id).order("track_number");
   if (tracksError) throw new Error(tracksError.message);
-  if (!tracks?.length) throw new Error("Add and approve at least one generated track before building the full MP3.");
-  const unapproved = tracks.filter((track: any) => track.review_status !== "approved");
+  const includedTracks = (tracks || []).filter((track: any) => track.included_in_master !== false);
+  if (!includedTracks.length) throw new Error("Include and approve at least one generated track before building the full MP3.");
+  const unapproved = includedTracks.filter((track: any) => track.review_status !== "approved");
   if (unapproved.length) throw new Error(`Approve all generated tracks before building the full MP3 (${unapproved.length} remaining).`);
-  if (tracks.some((track: any) => !track.legacy_generation_id)) throw new Error("Every approved track needs a completed generation before the full MP3 can be built.");
-  const legacyIds = tracks.map((track: any) => track.legacy_generation_id);
+  if (includedTracks.some((track: any) => !track.legacy_generation_id)) throw new Error("Every included track needs a completed generation before the full MP3 can be built.");
+  const legacyIds = includedTracks.map((track: any) => track.legacy_generation_id);
   const { data: legacyTracks, error: legacyError } = await db.from("trellis_music_tracks").select("*").in("id", legacyIds);
   if (legacyError) throw new Error(legacyError.message);
   const legacyById = new Map<string, any>((legacyTracks || []).map((track: any) => [track.id, track]));
-  const stitchTracks = await Promise.all(tracks.map(async (track: any) => {
+  const stitchTracks = await Promise.all(includedTracks.map(async (track: any) => {
     const legacy = legacyById.get(track.legacy_generation_id);
     if (!legacy || legacy.status !== "completed" || !legacy.storage_bucket || !legacy.storage_path) throw new Error(`“${track.title}” is not ready for mastering.`);
     const { data: signed, error: signError } = await db.storage.from(legacy.storage_bucket).createSignedUrl(legacy.storage_path, 60 * 60);
     if (signError || !signed?.signedUrl) throw new Error(signError?.message || `Could not prepare “${track.title}” for mastering.`);
     return { id: legacy.id, track_number: track.track_number, audio_url: signed.signedUrl };
   }));
-  const totalDuration = tracks.reduce((total: number, track: any) => total + Number(track.duration_seconds || 0), 0);
-  const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Master] ${album.title}`, target_duration_seconds: totalDuration, actual_duration_seconds: null, genre: album.genre, mood: album.mood, track_count: tracks.length, avg_track_length_seconds: Math.round(totalDuration / tracks.length), status: "stitching", final_audio_url: null, error_message: null }).select("*").single();
+  const totalDuration = includedTracks.reduce((total: number, track: any) => total + Number(track.duration_seconds || 0), 0);
+  const { data: legacySession, error: sessionError } = await db.from("trellis_music_sessions").insert({ created_by: userId, title: `[Studio Master] ${album.title}`, target_duration_seconds: totalDuration, actual_duration_seconds: null, genre: album.genre, mood: album.mood, track_count: includedTracks.length, avg_track_length_seconds: Math.round(totalDuration / includedTracks.length), status: "stitching", final_audio_url: null, error_message: null }).select("*").single();
   if (sessionError || !legacySession) throw new Error(sessionError?.message || "Could not initialize the master adapter.");
   const { data: render, error: renderError } = await db.from("trellis_music_renders").insert({ session_id: legacySession.id, render_type: "master", status: "queued", track_ids: legacyIds }).select("*").single();
   if (renderError || !render) throw new Error(renderError?.message || "Could not queue the master render.");
@@ -562,11 +587,13 @@ Deno.serve(async (req) => {
     }
     if (body.action === "tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
+      await recoverStudioTrackQueue(db, album.id);
       const { data, error } = await db.from("studio_tracks").select("*").eq("album_id", body.album_id).order("track_number");
       if (error) throw new Error(error.message);
       const tracks = await Promise.all((data || []).map((track: any) => syncLegacyTrack(db, track.id)));
-      const statuses = tracks.map((track: any) => track.review_status);
-      if (tracks.length && statuses.every((status: string) => status === "approved")) await db.from("studio_albums").update({ music_generation_status: "complete", status: album.master_status === "approved" ? album.status : "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
+      const includedTracks = tracks.filter((track: any) => track.included_in_master !== false);
+      const statuses = includedTracks.map((track: any) => track.review_status);
+      if (includedTracks.length && statuses.every((status: string) => status === "approved")) await db.from("studio_albums").update({ music_generation_status: "complete", status: album.master_status === "approved" ? album.status : "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
       else if (statuses.some((status: string) => status === "regenerating")) await db.from("studio_albums").update({ music_generation_status: "processing", status: "track_generation", updated_at: new Date().toISOString() }).eq("id", album.id);
       else if (statuses.some((status: string) => ["pending_review", "rejected", "failed"].includes(status))) await db.from("studio_albums").update({ status: "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
       return json({ tracks, master: await syncStudioMaster(db, album.id), video: await videoWithAsset(db, album), publication: await publicationForAlbum(db, album.id) });
@@ -633,6 +660,18 @@ Deno.serve(async (req) => {
       const { data: tracks } = await db.from("studio_tracks").select("*").eq("album_id", album.id).order("track_number");
       return json({ tracks: await Promise.all((tracks || []).map((track: any) => trackWithAsset(db, track.id))) });
     }
+    if (body.action === "set_track_master_inclusion") {
+      const { data: track, error: trackError } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
+      if (trackError || !track) throw new Error("Track not found.");
+      const album = await getOwnedAlbum(db, track.album_id, user.id);
+      if (!["not_started", "failed"].includes(album.master_status)) throw new Error("Track inclusion is locked after the master build begins.");
+      if (track.review_status === "regenerating") throw new Error("Wait for this track to finish generating before changing its master inclusion.");
+      const included = body.included === true;
+      const { error: updateError } = await db.from("studio_tracks").update({ included_in_master: included, updated_at: new Date().toISOString() }).eq("id", track.id);
+      if (updateError) throw new Error(updateError.message);
+      await db.from("studio_albums").update({ music_generation_status: included ? "processing" : album.music_generation_status, status: "track_review", updated_at: new Date().toISOString() }).eq("id", album.id);
+      return json({ track: await trackWithAsset(db, track.id) });
+    }
     if (body.action === "approve_planned_track") {
       const { data: studioTrack, error } = await db.from("studio_tracks").select("*").eq("id", body.track_id).single();
       if (error || !studioTrack) throw new Error("Track not found.");
@@ -644,7 +683,7 @@ Deno.serve(async (req) => {
     }
     if (body.action === "approve_all_planned_tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "locked", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("review_status", "planned").is("legacy_generation_id", null).select("*");
+      const { data: tracks, error } = await db.from("studio_tracks").update({ review_status: "locked", updated_at: new Date().toISOString() }).eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "planned").is("legacy_generation_id", null).select("*");
       if (error) throw new Error(error.message);
       return json({ tracks: tracks || [] });
     }
@@ -658,7 +697,7 @@ Deno.serve(async (req) => {
     }
     if (body.action === "generate_all_approved_tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      const { data: approvedPlans, error } = await db.from("studio_tracks").select("*").eq("album_id", album.id).eq("review_status", "locked").is("legacy_generation_id", null).order("track_number");
+      const { data: approvedPlans, error } = await db.from("studio_tracks").select("*").eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "locked").is("legacy_generation_id", null).order("track_number");
       if (error) throw new Error(error.message);
       if (!approvedPlans?.length) throw new Error("Approve at least one planned track before generating.");
       const tracks: any[] = [];
@@ -668,7 +707,7 @@ Deno.serve(async (req) => {
         const batch = approvedPlans.slice(index, index + concurrency);
         const results = await Promise.all(batch.map(async (track: any) => {
           try {
-            return { track: await queueStudioTrackGeneration(db, album, user.id, track) };
+            return { track: await queueStudioTrackGeneration(db, album, user.id, track, false) };
           } catch (generationError) {
             return { failure: { track_id: track.id, title: track.title, error: generationError instanceof Error ? generationError.message : "Could not queue generation." } };
           }
@@ -679,6 +718,7 @@ Deno.serve(async (req) => {
         }
       }
       if (!tracks.length) throw new Error(failures[0]?.error || "No approved tracks could be queued.");
+      await recoverStudioTrackQueue(db, album.id);
       return json({ tracks, failures }, failures.length ? 207 : 201);
     }
     if (body.action === "generate_one") {
@@ -707,18 +747,18 @@ Deno.serve(async (req) => {
     if (body.action === "approve_all_generated_tracks") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const now = new Date().toISOString();
-      const { data: readyTracks, error: readyError } = await db.from("studio_tracks").select("id").eq("album_id", album.id).eq("review_status", "pending_review").not("studio_asset_id", "is", null);
+      const { data: readyTracks, error: readyError } = await db.from("studio_tracks").select("id").eq("album_id", album.id).eq("included_in_master", true).eq("review_status", "pending_review").not("studio_asset_id", "is", null);
       if (readyError) throw new Error(readyError.message);
       const readyIds = (readyTracks || []).map((track: any) => track.id);
       if (!readyIds.length) {
-        const { count } = await db.from("studio_tracks").select("id", { count: "exact", head: true }).eq("album_id", album.id).neq("review_status", "approved");
+        const { count } = await db.from("studio_tracks").select("id", { count: "exact", head: true }).eq("album_id", album.id).eq("included_in_master", true).neq("review_status", "approved");
         return json({ tracks: [], remaining_review_count: count || 0 });
       }
       const { error } = await db.from("studio_tracks").update({ review_status: "approved", approved_at: now, rejection_reason: null, updated_at: now }).in("id", readyIds);
       if (error) throw new Error(error.message);
       const tracks = await Promise.all(readyIds.map((trackId: string) => trackWithAsset(db, trackId)));
-      const { data: remaining } = await db.from("studio_tracks").select("id, review_status").eq("album_id", album.id);
-      const remainingReviewCount = (remaining || []).filter((track: any) => track.review_status !== "approved").length;
+      const { data: remaining } = await db.from("studio_tracks").select("id, review_status, included_in_master").eq("album_id", album.id);
+      const remainingReviewCount = (remaining || []).filter((track: any) => track.included_in_master !== false && track.review_status !== "approved").length;
       if (remainingReviewCount === 0) await db.from("studio_albums").update({ music_generation_status: "complete", status: "track_review", updated_at: now }).eq("id", album.id);
       return json({ tracks, remaining_review_count: remainingReviewCount });
     }
@@ -789,6 +829,13 @@ Deno.serve(async (req) => {
       if (binary.length > 15 * 1024 * 1024) throw new Error("The titled cover is larger than 15 MB.");
       const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
       if (bytes.length < 8 || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) throw new Error("The titled cover PNG is invalid.");
+      const titleFont = String(body.typography?.title_font || "");
+      const subtitleFont = String(body.typography?.subtitle_font || "");
+      const seriesFont = String(body.typography?.series_font || "");
+      const textV = String(body.typography?.text_v || "");
+      const textH = String(body.typography?.text_h || "");
+      if (!VALID_COVER_FONTS.has(titleFont) || !VALID_COVER_FONTS.has(subtitleFont) || !VALID_COVER_FONTS.has(seriesFont)) throw new Error("A selected cover font is not supported. Refresh Trellis and choose the font again.");
+      if (!["top", "middle", "bottom"].includes(textV) || !["left", "center", "right"].includes(textH)) throw new Error("The title position is invalid. Choose a position and save again.");
       const { data: previous } = await db.from("studio_assets").select("version").eq("album_id", album.id).eq("asset_type", "cover_art").order("version", { ascending: false }).limit(1).maybeSingle();
       const version = Number(previous?.version || 0) + 1;
       const path = `studio/${ORG_ID}/albums/${album.id}/cover-concepts/cover-v${version}-titled.png`;
@@ -801,11 +848,13 @@ Deno.serve(async (req) => {
         treatment: cleanText(body.typography?.treatment, 80) || "riviera_editorial",
         vintage_border: body.typography?.vintage_border !== false,
         title_color: HEX_COLOR_RE.test(String(body.typography?.title_color || "")) ? body.typography.title_color : undefined,
-        title_font: VALID_COVER_FONTS.has(String(body.typography?.title_font || "")) ? body.typography.title_font : undefined,
+        title_font: titleFont,
         subtitle_color: HEX_COLOR_RE.test(String(body.typography?.subtitle_color || "")) ? body.typography.subtitle_color : undefined,
-        subtitle_font: VALID_COVER_FONTS.has(String(body.typography?.subtitle_font || "")) ? body.typography.subtitle_font : undefined,
+        subtitle_font: subtitleFont,
         series_color: HEX_COLOR_RE.test(String(body.typography?.series_color || "")) ? body.typography.series_color : undefined,
-        series_font: VALID_COVER_FONTS.has(String(body.typography?.series_font || "")) ? body.typography.series_font : undefined,
+        series_font: seriesFont,
+        text_v: textV,
+        text_h: textH,
       };
       if (!typography.title) throw new Error("Add the album title before saving the cover.");
       await clearCoverSelections(db, album.id);
@@ -1075,7 +1124,9 @@ Deno.serve(async (req) => {
     }
     if (body.action === "prepare_publication") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
-      return json({ publication: await preparePublicationDraft(db, album, user.id) });
+      const youtubeAccountId = String(body.youtube_account_id || "").trim();
+      if (!youtubeAccountId) throw new Error("Choose an active YouTube channel before preparing publishing metadata.");
+      return json({ publication: await preparePublicationDraft(db, album, user.id, youtubeAccountId) });
     }
     if (body.action === "save_publication") {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
@@ -1090,8 +1141,10 @@ Deno.serve(async (req) => {
       const visibility = ["private", "unlisted", "public"].includes(input.visibility) ? input.visibility : "private";
       if (input.scheduled_for) throw new Error("Scheduled YouTube publishing is not enabled yet. Leave the schedule blank and submit explicitly when ready.");
       const scheduledFor: string | null = null;
+      const youtubeAccountId = String(body.youtube_account_id || "").trim();
+      if (!youtubeAccountId) throw new Error("Choose an active YouTube channel before saving publishing metadata.");
       if (!title || !description) throw new Error("A publishing title and description are required.");
-      const { data, error } = await db.from("studio_publications").update({ title, description, tags, visibility, made_for_kids: input.made_for_kids === true, scheduled_for: scheduledFor, status: "draft", error_message: null, updated_at: new Date().toISOString() }).eq("id", existing.id).select("*").single();
+      const { data, error } = await db.from("studio_publications").update({ youtube_account_id: youtubeAccountId, title, description, tags, visibility, made_for_kids: input.made_for_kids === true, scheduled_for: scheduledFor, status: "draft", error_message: null, updated_at: new Date().toISOString() }).eq("id", existing.id).select("*").single();
       if (error || !data) throw new Error(error?.message || "Could not save publishing metadata.");
       await db.from("studio_albums").update({ metadata_status: "pending_review", publishing_status: "not_started", status: "metadata_review", updated_at: new Date().toISOString() }).eq("id", album.id);
       return json({ publication: data });
@@ -1112,6 +1165,15 @@ Deno.serve(async (req) => {
       const album = await getOwnedAlbum(db, body.album_id, user.id);
       const publication = await publicationForAlbum(db, album.id);
       if (!publication || !["ready", "failed"].includes(publication.status) || album.metadata_status !== "approved" || album.video_status !== "approved") throw new Error("Approve the video and publishing metadata before submission.");
+      const youtubeAccountId = String(body.youtube_account_id || "").trim();
+      if (!youtubeAccountId) throw new Error("Choose an active YouTube channel before submission.");
+      const { data: youtubeAccount } = await db.from("branch_social_accounts").select("id,branch_id,platform,status").eq("id", youtubeAccountId).maybeSingle();
+      const { data: youtubeBranch } = youtubeAccount?.branch_id
+        ? await db.from("branches").select("slug").eq("id", youtubeAccount.branch_id).maybeSingle()
+        : { data: null };
+      if (!youtubeAccount || youtubeAccount.platform !== "youtube" || youtubeAccount.status !== "active" || youtubeBranch?.slug !== "rekkrd") {
+        throw new Error("The selected YouTube channel is not active for Rekkrd.");
+      }
       // Resolve the CURRENT active video and thumbnail, not the ids captured when
       // the draft was prepared — re-rendering after prepare archives the old ones,
       // and the stored reference would otherwise point at an archived asset.
@@ -1122,14 +1184,14 @@ Deno.serve(async (req) => {
       const { data: thumbnail } = await db.from("studio_assets").select("storage_bucket,storage_path").eq("album_id", album.id).eq("asset_type", "thumbnail").eq("status", "active").order("version", { ascending: false }).limit(1).maybeSingle();
       if (thumbnail) thumbnailUrl = (await db.storage.from(thumbnail.storage_bucket).createSignedUrl(thumbnail.storage_path, 60 * 60 * 6)).data?.signedUrl || null;
       if (videoSignError || !signedVideo?.signedUrl) throw new Error("Could not prepare the private video for publishing.");
-      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "publishing_handoff", status: "queued", progress: 0, provider: "n8n_youtube", attempt_count: 1, input_json: { publication_id: publication.id, video_asset_id: video.id } }).select("*").single();
+      const { data: job, error: jobError } = await db.from("studio_jobs").insert({ album_id: album.id, job_type: "publishing_handoff", status: "queued", progress: 0, provider: "n8n_youtube", attempt_count: 1, input_json: { publication_id: publication.id, video_asset_id: video.id, youtube_account_id: youtubeAccountId } }).select("*").single();
       if (jobError || !job) throw new Error(jobError?.message || "Could not register the publishing handoff.");
       const now = new Date().toISOString();
-      const { data: submitting } = await db.from("studio_publications").update({ status: "submitting", submitted_at: now, error_message: null, updated_at: now }).eq("id", publication.id).select("*").single();
+      const { data: submitting } = await db.from("studio_publications").update({ youtube_account_id: youtubeAccountId, status: "submitting", submitted_at: now, error_message: null, updated_at: now }).eq("id", publication.id).select("*").single();
       await db.from("studio_albums").update({ publishing_status: "submitted", status: "publishing", updated_at: now }).eq("id", album.id);
       let response: Response;
       try {
-        response = await fetch(STUDIO_PUBLISH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", publication_id: publication.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, platform: "youtube", video_url: signedVideo.signedUrl, thumbnail_url: thumbnailUrl, visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for, metadata: { title: publication.title, description: publication.description, tags: publication.tags, chapters: [] } }) });
+        response = await fetch(STUDIO_PUBLISH_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipeline: "studio", publication_id: publication.id, job_id: job.id, album_id: album.id, organization_id: ORG_ID, platform: "youtube", youtube_account_id: youtubeAccountId, video_url: signedVideo.signedUrl, thumbnail_url: thumbnailUrl, visibility: publication.visibility, made_for_kids: publication.made_for_kids, scheduled_for: publication.scheduled_for, metadata: { title: publication.title, description: publication.description, tags: publication.tags, chapters: [] } }) });
       } catch (dispatchError) {
         const message = `Could not reach the publishing workflow: ${dispatchError instanceof Error ? dispatchError.message : "network error"}`;
         await Promise.all([db.from("studio_publications").update({ status: "failed", error_message: message, updated_at: new Date().toISOString() }).eq("id", publication.id), db.from("studio_jobs").update({ status: "failed", error_message: message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id), db.from("studio_albums").update({ publishing_status: "failed", status: "ready_to_publish", updated_at: new Date().toISOString() }).eq("id", album.id)]);

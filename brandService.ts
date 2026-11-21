@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from '@google/genai';
+import { createBackendGemini } from './services/aiBackend';
 import { BrandIdentity, BrandColorPalette, BrandTypography, GeneratedBrandAsset } from './types';
 import { supabase as hubClient } from './lib/supabase';
 
@@ -15,11 +16,11 @@ const MODELS = {
 // HELPERS
 // ═══════════════════════════════════════════════════════════════
 
-function getAIClient(apiKey: string): GoogleGenAI {
+function getAIClient(apiKey: string) {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured. Add it in Settings > Secrets.');
   }
-  return new GoogleGenAI({ apiKey });
+  return createBackendGemini();
 }
 
 function formatUrl(input: string): string {

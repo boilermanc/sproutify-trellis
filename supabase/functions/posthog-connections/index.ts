@@ -13,16 +13,7 @@ import {
   requireTrellisUser,
   runPosthogQuery,
 } from "../_shared/posthog.ts";
-
-const DEFAULT_EVENTS = [
-  "user_signed_up",
-  "account_created",
-  "onboarding_completed",
-  "activation_milestone_reached",
-  "core_feature_milestone",
-  "meaningful_return",
-];
-const DEFAULT_PROPERTIES = ["platform", "feature", "milestone", "app_version", "return_interval_bucket"];
+import { getPosthogBranchDefaults } from "../_shared/posthog-contract.mjs";
 
 function publicConnection(row: Record<string, any>) {
   return {
@@ -76,7 +67,7 @@ Deno.serve(async (req: Request) => {
     if (!/^[0-9]+$/.test(projectId)) return json({ error: "A numeric PostHog project ID is required" }, 400);
     if (!hostUrl) return json({ error: "A valid HTTPS PostHog host is required" }, 400);
 
-    const { data: branch } = await db.from("branches").select("id").eq("id", branchId).eq("is_active", true).maybeSingle();
+    const { data: branch } = await db.from("branches").select("id,slug").eq("id", branchId).eq("is_active", true).maybeSingle();
     if (!branch) return json({ error: "Active branch not found" }, 404);
 
     const { data: existing } = await db
@@ -97,8 +88,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const webhookSecret = existing ? null : newWebhookSecret();
-    const allowedEvents = normalizeNameList(body.allowed_events, DEFAULT_EVENTS);
-    const allowedProperties = normalizeNameList(body.allowed_properties, DEFAULT_PROPERTIES);
+    const defaults = getPosthogBranchDefaults(branch.slug);
+    const allowedEvents = normalizeNameList(body.allowed_events, defaults.allowed_events);
+    const allowedProperties = normalizeNameList(body.allowed_properties, defaults.allowed_properties);
     const now = new Date().toISOString();
     const row = {
       organization_id: ORG_ID,

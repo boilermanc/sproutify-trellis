@@ -1,0 +1,214 @@
+{
+  "name": "Sweetwater Lead Email Alerts",
+  "active": false,
+  "nodes": [
+    {
+      "id": "check-pending-alerts",
+      "name": "Check Pending Alerts",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "claim-notification",
+      "name": "Claim Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/claim_sweetwater_notification",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "name": "Sproutify Trellis"
+        }
+      }
+    },
+    {
+      "id": "build-lead-alert",
+      "name": "Build Lead Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const inquiry = $input.first().json;\nif (!inquiry.id) return [];\nconst escape = value => String(value ?? '').replace(/[&<>\"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[char]));\nconst labels = {'ai-help':'Business AI inquiry','app-idea':'App idea','greenhouse-interest':'AI After Hours interest','legacy-card':'Business card conversation','website-contact':'Website contact'};\nconst title = labels[inquiry.intent] || 'New inquiry';\nconst url = 'https://trellis.sproutify.app/?view=sweetwater-leads';\nconst context = Object.entries(inquiry.context || {});\nconst label = key => ({firstVersion:'First version',summary:'Message',task:'Task',business:'Business',result:'Desired result',idea:'Idea',audience:'Audience',problem:'Problem'}[key] || key);\nconst detail = (name,value) => `<tr><td style=\"padding:13px 0;border-bottom:1px solid #e2e8f0;vertical-align:top;width:130px;font-size:13px;color:#64748b\">${escape(name)}</td><td style=\"padding:13px 0;border-bottom:1px solid #e2e8f0;font-size:15px;line-height:23px;color:#0f172a;overflow-wrap:anywhere\">${escape(value || 'Not provided').replace(/\\n/g,'<br>')}</td></tr>`;\nconst test = inquiry.is_test ? '<div style=\"padding:12px 18px;background:#fff7ed;color:#9a3412;font-size:13px;font-weight:bold;text-align:center\">TEST INQUIRY · No prospect should be contacted</div>' : '';\nconst note = inquiry.intent==='greenhouse-interest' ? 'Event interest only. No RSVP or seat has been reserved.' : 'A follow-up request. No appointment has been booked.';\nconst html = `<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>${escape(title)} | Sweetwater Technology</title></head><body style=\"margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a\">\n<div lang=\"en\" dir=\"ltr\" style=\"display:none;max-height:0;overflow:hidden;opacity:0\">${escape(inquiry.name)} submitted a new ${escape(title.toLowerCase())}. Saved in Trellis and ready for follow-up.</div>\n<table lang=\"en\" dir=\"ltr\" role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background:#f1f5f9\"><tr><td align=\"center\" style=\"padding:32px 12px\">\n<table role=\"presentation\" width=\"600\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%;max-width:600px;background:#ffffff;border:1px solid #dbe3ef;border-radius:16px;overflow:hidden\">\n<tr><td style=\"padding:28px 28px 24px;border-top:6px solid #2563eb\"><div style=\"font-size:25px;font-weight:800;letter-spacing:-1px;color:#0f172a\">SWEETWATER</div><div style=\"margin-top:5px;font-size:11px;font-weight:bold;letter-spacing:4px;color:#2563eb\">TECHNOLOGY</div></td></tr>\n<tr><td>${test}<div style=\"padding:28px;background:#eff6ff;border-top:1px solid #dbeafe;border-bottom:1px solid #dbeafe\"><div style=\"font-size:11px;font-weight:bold;letter-spacing:2px;color:#1d4ed8\">NEW LEAD · SAVED IN TRELLIS</div><h1 style=\"margin:12px 0 8px;font-size:28px;line-height:34px;letter-spacing:-.7px;color:#0f172a\">${escape(title)}</h1><p style=\"margin:0;color:#475569;font-size:16px;line-height:25px\">${escape(inquiry.name)} is ready for a conversation.</p></div></td></tr>\n<tr><td style=\"padding:16px 28px 28px\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">${detail('Name',inquiry.name)}${detail('Email',inquiry.email)}${detail('Phone',inquiry.phone)}${detail('Contact via',inquiry.contact_method==='callback'?'Phone callback':'Email')}</table>\n<h2 style=\"font-size:17px;margin:28px 0 4px\">What they have in mind</h2><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">${context.map(([key,value])=>detail(label(key),value)).join('')}</table>\n<p style=\"font-size:13px;line-height:21px;color:#64748b;margin:20px 0\">${escape(note)} Marketing consent: ${inquiry.consent?.marketing?'Yes':'No'}.</p>\n<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\"><tr><td bgcolor=\"#2563eb\" style=\"border-radius:8px\"><a href=\"${url}\" style=\"display:inline-block;padding:16px 24px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none\">Open lead in Trellis &rarr;</a></td></tr></table>\n<p style=\"margin:16px 0 0;color:#64748b;font-size:12px;line-height:19px\">Review the conversation, add notes, and track your follow-up in the inbox.</p></td></tr>\n<tr><td style=\"padding:20px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:20px\"><strong style=\"color:#475569\">${escape(inquiry.entry_page)}</strong> · ${escape(inquiry.source)}<br>Sweetwater Technology · Internal lead notification<br><span style=\"font-size:10px\">Reference: ${escape(inquiry.request_id)}</span></td></tr></table>\n<p style=\"max-width:560px;margin:18px auto 0;color:#64748b;font-size:11px;line-height:18px\">Sweetwater Technology alerts are delivered by Sproutify. The inquiry stays in Trellis even if an email is delayed.</p>\n</td></tr></table></body></html>`;\nconst text = [inquiry.is_test?'TEST INQUIRY — no prospect should be contacted.':'SWEETWATER TECHNOLOGY',title,'','Name: '+inquiry.name,'Email: '+(inquiry.email||'Not provided'),'Phone: '+(inquiry.phone||'Not provided'),'Preferred contact: '+inquiry.contact_method,'',...context.map(([key,value])=>label(key)+': '+(value||'Not provided')),'',note,'Marketing consent: '+(inquiry.consent?.marketing?'Yes':'No'),'','Open lead in Trellis: '+url,'Entry page: '+inquiry.entry_page,'Source: '+inquiry.source,'Request: '+inquiry.request_id].join('\\n');\nreturn [{json:{id:inquiry.id,requestId:inquiry.request_id,email:{from:'Sweetwater Tech <notifications@sproutify.app>',to:['clint@sweetwater.technology'],subject:(inquiry.is_test?'[TEST] ':'')+title+' — Sweetwater Tech',html,text}}}];\n"
+      }
+    },
+    {
+      "id": "email-clint",
+      "name": "Email Clint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "resendApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ \"sweetwater-inquiry/\" + $json.requestId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.email }}",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json",
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "resendApi": {
+          "name": "Resend account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "record-provider-result",
+      "name": "Record Provider Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const result=$input.first().json;\nconst accepted=result.statusCode>=200 && result.statusCode<300 && typeof result.body?.id==='string';\nreturn [{json:{p_id:$('Build Lead Alert').first().json.id,p_message_id:accepted?result.body.id:null,p_error:accepted?null:'Email provider did not confirm sending (status '+(result.statusCode || 'network error')+'). Review n8n execution.'}}];"
+      }
+    },
+    {
+      "id": "save-notification-result",
+      "name": "Save Notification Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/finish_sweetwater_notification",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "name": "Sproutify Trellis"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Check Pending Alerts": {
+      "main": [
+        [
+          {
+            "node": "Claim Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Notification": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Lead Alert": {
+      "main": [
+        [
+          {
+            "node": "Email Clint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Clint": {
+      "main": [
+        [
+          {
+            "node": "Record Provider Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Provider Result": {
+      "main": [
+        [
+          {
+            "node": "Save Notification Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "tags": []
+}

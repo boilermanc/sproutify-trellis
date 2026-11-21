@@ -1,5 +1,6 @@
 flask>=3.0
 requests>=2.31
 pydub>=0.25
+tuspy==1.1.0
 # System dependency (NOT pip): ffmpeg must be installed and on PATH.
 #   Debian/Ubuntu (IONOS):  sudo apt-get install -y ffmpeg

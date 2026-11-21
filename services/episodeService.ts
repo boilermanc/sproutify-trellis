@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import {
   Episode, EpisodeAsset, EpisodeMetadata, EpisodePublication,
   CreateEpisodeConfig, EpisodeStatus, AssetType, PublishPlatform, MusicSession, YouTubeDailyMetric, EpisodeChapter,
@@ -318,7 +318,7 @@ export async function generateMetadata(episode: Episode, session: MusicSession |
   let title = cleanEpisodeTitle, description = '', tags: string[] = [], hashtags: string[] = [];
   if (geminiApiKey) {
     try {
-      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const ai = createBackendGemini();
       const prompt = `Write YouTube publishing metadata for a ${cleanGenre} ${cleanMood} session titled "${cleanEpisodeTitle}"${cleanShowName ? ` for the show "${cleanShowName}"` : ''}. Theme: ${cleanTheme || 'n/a'}.
 Keep the title readable and do not repeat the show name twice.
 Avoid smoking references and avoid the words smoky, romantic, sensual, and intimate.
@@ -362,9 +362,11 @@ export async function publishEpisode(
   videoUrl: string | null,
   metadata: EpisodeMetadata | null,
   thumbnailUrl?: string | null,
+  youtubeAccountId?: string | null,
 ): Promise<EpisodePublication> {
+  if (platform === 'youtube' && !youtubeAccountId) throw new Error('Choose an active YouTube channel before publishing.');
   const { data: pub, error } = await supabase.from('trellis_episode_publications').insert({
-    episode_id: episode.id, platform, status: 'pending',
+    episode_id: episode.id, platform, status: 'pending', youtube_account_id: platform === 'youtube' ? youtubeAccountId : null,
   }).select('*').single();
   if (error || !pub) throw new Error(`Could not create publication: ${error?.message}`);
 
@@ -372,6 +374,7 @@ export async function publishEpisode(
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       publication_id: pub.id, episode_id: episode.id, branch: episode.branch, platform,
+      youtube_account_id: platform === 'youtube' ? youtubeAccountId : null,
       video_url: videoUrl,
       thumbnail_url: thumbnailUrl || null,
       made_for_kids: false,

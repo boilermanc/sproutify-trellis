@@ -1,0 +1,260 @@
+{
+  "name": "Trellis: Chief-channel rooms and morning summary",
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Every five minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Test shared room",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "members",
+      "name": "Check chief-channel audience",
+      "position": [
+        250,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackOAuth2Api",
+        "url": "https://slack.com/api/conversations.members",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "channel",
+              "value": "C0C0UUF8P2T"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "KFLz5xO2rHw2YBFb",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "id": "sync",
+      "name": "Prepare authorized jobs",
+      "position": [
+        500,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/project-room-slack",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "timeout": 30000
+        },
+        "jsonBody": "={{ JSON.stringify({action: [\"manual\",\"test\"].includes($execution.mode) ? \"test\" : \"sync\", room_id:\"a96d8291-a318-4b35-a375-83c444e264a8\", membership:$json}) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Z5ipO5Gv5XRbxei1",
+          "name": "Trellis Supabase Secret Key"
+        }
+      }
+    },
+    {
+      "id": "split",
+      "name": "Split jobs",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        750,
+        0
+      ],
+      "parameters": {
+        "fieldToSplitOut": "jobs",
+        "options": {}
+      }
+    },
+    {
+      "id": "slack",
+      "name": "Deliver or read thread",
+      "position": [
+        1000,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackOAuth2Api",
+        "method": "={{ $json.kind === \"poll\" ? \"GET\" : \"POST\" }}",
+        "url": "={{ \"https://slack.com/api/\" + $json.method }}",
+        "sendQuery": "={{ $json.kind === \"poll\" }}",
+        "specifyQuery": "json",
+        "jsonQuery": "={{ JSON.stringify($json.payload) }}",
+        "sendBody": "={{ $json.kind === \"post\" }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1200
+            }
+          }
+        }
+      },
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "KFLz5xO2rHw2YBFb",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "id": "complete",
+      "name": "Save receipt or room notes",
+      "position": [
+        1250,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/project-room-slack",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "timeout": 30000
+        },
+        "jsonBody": "={{ JSON.stringify({action:\"complete\",job_id:$(\"Split jobs\").item.json.job_id,kind:$(\"Split jobs\").item.json.kind,result:$json}) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Z5ipO5Gv5XRbxei1",
+          "name": "Trellis Supabase Secret Key"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every five minutes": {
+      "main": [
+        [
+          {
+            "node": "Check chief-channel audience",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test shared room": {
+      "main": [
+        [
+          {
+            "node": "Check chief-channel audience",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check chief-channel audience": {
+      "main": [
+        [
+          {
+            "node": "Prepare authorized jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare authorized jobs": {
+      "main": [
+        [
+          {
+            "node": "Split jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split jobs": {
+      "main": [
+        [
+          {
+            "node": "Deliver or read thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deliver or read thread": {
+      "main": [
+        [
+          {
+            "node": "Save receipt or room notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "errorWorkflow": "qGfWOu2f3TBfg-vqL7y38",
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}

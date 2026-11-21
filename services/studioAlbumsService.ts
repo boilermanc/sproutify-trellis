@@ -98,6 +98,10 @@ export async function reorderStudioTracks(albumId: string, trackIds: string[]): 
   return (await callStudio('reorder_tracks', { album_id: albumId, track_ids: trackIds })).tracks as StudioTrack[];
 }
 
+export async function setStudioTrackMasterInclusion(trackId: string, included: boolean): Promise<StudioTrack> {
+  return (await callStudio('set_track_master_inclusion', { track_id: trackId, included })).track as StudioTrack;
+}
+
 export async function generatePlannedStudioTrack(trackId: string): Promise<StudioTrack> {
   return (await callStudio('generate_planned_track', { track_id: trackId })).track as StudioTrack;
 }
@@ -148,7 +152,7 @@ export interface StudioCoverDirection {
   custom_direction: string;
 }
 export async function generateStudioCoverConcept(albumId: string, direction: StudioCoverDirection): Promise<StudioCoverConcept> { return (await callStudio('generate_cover_concept', { album_id: albumId, ...direction })).concept as StudioCoverConcept; }
-export interface StudioCoverTypography { title: string; subtitle: string; series: string; treatment: string; vintage_border: boolean; title_color?: string; title_font?: string; subtitle_color?: string; subtitle_font?: string; series_color?: string; series_font?: string; }
+export interface StudioCoverTypography { title: string; subtitle: string; series: string; treatment: string; vintage_border: boolean; title_color?: string; title_font?: string; subtitle_color?: string; subtitle_font?: string; series_color?: string; series_font?: string; text_v?: string; text_h?: string; }
 export async function saveStudioCoverComposite(albumId: string, sourceAssetId: string, imageBase64: string, typography: StudioCoverTypography): Promise<StudioCoverConcept> { return (await callStudio('save_cover_composite', { album_id: albumId, source_asset_id: sourceAssetId, image_base64: imageBase64, typography })).concept as StudioCoverConcept; }
 export async function enhanceStudioCoverConcept(albumId: string, sourceAssetId: string, direction: string): Promise<StudioCoverConcept> { return (await callStudio('enhance_cover_concept', { album_id: albumId, source_asset_id: sourceAssetId, direction })).concept as StudioCoverConcept; }
 export async function deleteStudioCoverConcept(assetId: string): Promise<void> { await callStudio('delete_cover_concept', { asset_id: assetId }); }
@@ -166,10 +170,10 @@ export async function getStudioThumbnail(albumId: string): Promise<StudioCoverCo
 export async function saveStudioThumbnailComposite(albumId: string, imageBase64: string, typography: StudioThumbnailTypography): Promise<StudioCoverConcept> { return (await callStudio('save_thumbnail_composite', { album_id: albumId, image_base64: imageBase64, typography })).concept as StudioCoverConcept; }
 export async function prepareStudioVisualProduction(albumId: string, motion: string, direction: string, useThumbnail = false): Promise<StudioAlbum> { return (await callStudio('prepare_visual_production', { album_id: albumId, motion, direction, use_thumbnail: useThumbnail })).album as StudioAlbum; }
 export async function approveStudioVideo(albumId: string): Promise<StudioAlbum> { return (await callStudio('approve_video', { album_id: albumId })).album as StudioAlbum; }
-export async function prepareStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('prepare_publication', { album_id: albumId })).publication as StudioPublication; }
-export async function saveStudioPublication(albumId: string, publication: StudioPublicationDraft): Promise<StudioPublication> { return (await callStudio('save_publication', { album_id: albumId, publication })).publication as StudioPublication; }
+export async function prepareStudioPublication(albumId: string, youtubeAccountId: string): Promise<StudioPublication> { return (await callStudio('prepare_publication', { album_id: albumId, youtube_account_id: youtubeAccountId })).publication as StudioPublication; }
+export async function saveStudioPublication(albumId: string, publication: StudioPublicationDraft, youtubeAccountId: string): Promise<StudioPublication> { return (await callStudio('save_publication', { album_id: albumId, publication, youtube_account_id: youtubeAccountId })).publication as StudioPublication; }
 export async function approveStudioPublication(albumId: string): Promise<StudioPublication> { return (await callStudio('approve_publication', { album_id: albumId })).publication as StudioPublication; }
-export async function publishStudioAlbum(albumId: string): Promise<StudioPublication> { return (await callStudio('publish_album', { album_id: albumId })).publication as StudioPublication; }
+export async function publishStudioAlbum(albumId: string, youtubeAccountId: string): Promise<StudioPublication> { return (await callStudio('publish_album', { album_id: albumId, youtube_account_id: youtubeAccountId })).publication as StudioPublication; }
 export async function getStudioYouTubeMetrics(albumId: string, limit = 30): Promise<YouTubeDailyMetric[]> { return (await callStudio('get_youtube_metrics', { album_id: albumId, limit })).metrics as YouTubeDailyMetric[]; }
 
 export async function generateStudioTrack(albumId: string, track: { title: string; prompt: string; duration_seconds: number }): Promise<StudioTrack> {

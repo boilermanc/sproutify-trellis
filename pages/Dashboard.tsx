@@ -13,18 +13,30 @@ import { getVideoAdJobs } from '../services/videoAdService';
 import { fetchBrandInsights, MetaInsights } from '../services/metaInsightsService';
 import { EmailEventRow } from '../services/emailReportingService';
 import {
-  computeWindowTotals, fetchWebhookHealth, buildSystemRows, buildTimeline,
+  computeWindowTotals, buildTimeline,
   buildQueue, buildBranchCards, getWhatWorked, fetchSnoozes, snoozeItem,
 } from '../services/dashboardService';
 import {
-  DashboardTab, TimeWindow, WebhookHealth, WhatWorked, QueueItem, QueueOutcome,
+  DashboardTab, TimeWindow, WhatWorked, QueueItem, QueueOutcome, SystemHealthReport, SystemRow,
 } from '../components/dashboard/types';
 import ControlRoom from '../components/dashboard/ControlRoom';
 import MorningStandup from '../components/dashboard/MorningStandup';
 import BranchBoard from '../components/dashboard/BranchBoard';
 import EmailPulse from '../components/dashboard/EmailPulse';
+import BusinessOverview from '../components/dashboard/BusinessOverview';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { fetchOpenLeadCountsByBranch } from '../leadService';
+import { fetchDashboardEmailEvents } from '../supabase/functions/_shared/system-health.mjs';
+import { fetchCampaigns, Campaign } from '../supabaseService';
+import { listTrellisUsers } from '../trellisUsersService';
+import { TrellisUser } from '../types';
+import WeeklyActions from '../components/dashboard/WeeklyActions';
+import { WeeklyActionCandidate, WeeklyActionState, WeeklyActionStateStatus } from '../components/dashboard/types';
+import {
+  DEFAULT_WEEKLY_ACTION_BUDGET, buildWeeklyActionCandidates, fetchWeeklyActionStates,
+  saveWeeklyActionState, selectWeeklyActions,
+} from '../services/weeklyActionsService';
+import type { BusinessOverviewResult } from '../services/businessOverviewService';
 
 // The three tabs replace the old overview page wholesale. Sage is deliberately
 // absent here (no briefing, no "strategic action" banner) — the floating chat in
@@ -50,6 +62,7 @@ interface DashboardProps {
   onToggleFavorite?: unknown;
   scheduledPosts?: unknown;
   setScheduledPosts?: unknown;
+  onOpenCampaignDraft?: (id: string) => void;
 }
 
 const TABS: { id: DashboardTab; label: string }[] = [
@@ -72,7 +85,7 @@ function initialWindow(): TimeWindow {
 const SPROUTIFY_ORG_ID = '00000000-0000-0000-0000-000000000001';
 
 const Dashboard: React.FC<DashboardProps> = ({
-  onViewChange, spokeConnections, onSpokeConnectionsChange, branchStats, branches = [], branchContext,
+  onViewChange, onOpenCampaignDraft, spokeConnections, onSpokeConnectionsChange, branchStats, branches = [], branchContext,
 }) => {
   const [tab, setTab] = useState<DashboardTab>(initialTab);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>(initialWindow);
@@ -87,11 +100,20 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [dbScheduled, setDbScheduled] = useState<ScheduledPost[]>([]);
   const [videoAdJobs, setVideoAdJobs] = useState<VideoAdJob[]>([]);
   const [metaInsights, setMetaInsights] = useState<Record<string, MetaInsights>>({});
-  const [webhooks, setWebhooks] = useState<WebhookHealth[]>([]);
+  const [health, setHealth] = useState<SystemHealthReport | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const webhooks = useMemo(() => health?.webhooks ?? [], [health]);
   const [whatWorked, setWhatWorked] = useState<WhatWorked | null>(null);
   const [snoozed, setSnoozed] = useState<Record<string, string>>({});
   const [recentEvents, setRecentEvents] = useState<MarketingEvent[]>([]);
   const [openLeadCounts, setOpenLeadCounts] = useState<Record<string, number>>({});
+  const [businessRefreshKey, setBusinessRefreshKey] = useState(0);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [team, setTeam] = useState<TrellisUser[]>([]);
+  const [actionStates, setActionStates] = useState<Record<string, WeeklyActionState>>({});
+  const [actionsLoading, setActionsLoading] = useState(true);
+  const [actionsRefreshedAt, setActionsRefreshedAt] = useState<string | null>(null);
+  const [businessOverviewResult, setBusinessOverviewResult] = useState<BusinessOverviewResult | null>(null);
 
   // Tab lives in the URL so a reload or a shared link lands on the same view.
   const selectTab = useCallback((next: DashboardTab) => {
@@ -124,21 +146,12 @@ const Dashboard: React.FC<DashboardProps> = ({
           if (res.errors?.length) console.error('[dashboard] some spokes failed:', res.errors);
           return res.orders || [];
         }),
-        'orders', [] as NormalizedOrder[],
+'orders', [] as NormalizedOrder[],
       ),
       settle(getPublishedPosts(), 'published posts', [] as PublishedPost[]),
       settle(
-        (async () => {
-          const { data, error } = await supabase
-            .from('email_events')
-            .select('id,email,event_type,campaign_subject,campaign_id,resend_email_id,occurred_at,metadata')
-            .gte('occurred_at', since)
-            .order('occurred_at', { ascending: false })
-            .range(0, 9999);
-          if (error) throw error;
-          return (data || []) as EmailEventRow[];
-        })(),
-        'email events', [] as EmailEventRow[],
+        fetchDashboardEmailEvents(supabase, since, new Date().toISOString()),
+'email events', [] as EmailEventRow[],
       ),
       settle(fetchScheduledPosts(), 'scheduled posts', [] as ScheduledPost[]),
       settle(getVideoAdJobs(undefined, 100), 'creative jobs', [] as VideoAdJob[]),
@@ -178,33 +191,53 @@ const Dashboard: React.FC<DashboardProps> = ({
     return () => { cancelled = true; };
   }, [loadAll]);
 
-  // Webhook health is probed SERVER-SIDE against n8n (webhook-health edge fn
-  // POSTs an empty body to every webhook). Keep it OUT of loadAll: loadAll's
-  // deps (spokeConnections, branches, timeWindow) stream in on mount and each
-  // change re-ran the whole loader, so several overlapping runs would all miss
-  // the 5-min health cache at once and stampede n8n with redundant probes.
-  // Here it runs exactly once on mount, and again only on an explicit refresh,
-  // with an in-flight guard so rapid refreshes coalesce into one probe.
+  useEffect(() => {
+    let cancelled = false;
+    setActionsLoading(true);
+    Promise.all([fetchCampaigns(), listTrellisUsers(), fetchWeeklyActionStates()])
+      .then(([campaignRows, usersResult, states]) => {
+        if (cancelled) return;
+        setCampaigns(campaignRows);
+        setTeam(usersResult.data || []);
+        setActionStates(states);
+        setActionsRefreshedAt(new Date().toISOString());
+      })
+      .catch(error => console.error('[dashboard] weekly actions failed:', error))
+      .finally(() => { if (!cancelled) setActionsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // One shared report powers the dashboard and GitHub's daily repair queue.
+  // It uses safe reads, exact email counts, and fresh spoke access checks.
   const healthInFlight = useRef<Promise<void> | null>(null);
   const loadWebhookHealth = useCallback((force = false): Promise<void> => {
     if (healthInFlight.current) return healthInFlight.current;
+    setHealthLoading(true);
     const p = (async () => {
       try {
-        setWebhooks(await fetchWebhookHealth(force));
+        const { data, error } = await supabase.functions.invoke('system-health', { body: {} });
+        if (error || data?.version !== 1 || !Array.isArray(data?.systems)) throw new Error('Health report unavailable');
+        setHealth(data as SystemHealthReport);
       } catch (err) {
-        console.error('[dashboard] webhook health failed:', err);
+        setHealth(null);
+        console.error('[dashboard] system health failed:', err);
       }
-    })().finally(() => { healthInFlight.current = null; });
+    })().finally(() => { healthInFlight.current = null; setHealthLoading(false); });
     healthInFlight.current = p;
     return p;
   }, []);
 
-  useEffect(() => { loadWebhookHealth(false); }, [loadWebhookHealth]);
+  useEffect(() => {
+    loadWebhookHealth(false);
+    const timer = setInterval(() => loadWebhookHealth(false), 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [loadWebhookHealth]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([loadAll(), loadWebhookHealth(true), branchStats.refresh?.()]);
+      setBusinessRefreshKey(value => value + 1);
     } finally {
       setIsRefreshing(false);
     }
@@ -261,8 +294,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (persist) await upsertSpokeConnection(SPROUTIFY_ORG_ID, persist);
       if (result.success) {
         // Re-tested clean → pull fresh federated data, then mark the card done.
-        await Promise.all([loadAll(), branchStats.refresh?.()]);
-        setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'success', message: 'Synced just now', at: nowIso } }));
+        await Promise.all([loadAll(), branchStats.refresh?.(), loadWebhookHealth(true)]);
+        setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'success', message: 'Connection re-tested just now', at: nowIso } }));
       } else {
         setOutcomes(prev => ({ ...prev, [item.key]: { item, status: 'error', message: result.error || 'Sync failed — check the connection.', at: nowIso } }));
       }
@@ -272,7 +305,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     } finally {
       setSyncingConnIds(prev => prev.filter(id => id !== connectionId));
     }
-  }, [spokeConnections, onSpokeConnectionsChange, loadAll, branchStats, handleRefresh, dismissOutcome]);
+  }, [spokeConnections, onSpokeConnectionsChange, loadAll, branchStats, handleRefresh, dismissOutcome, loadWebhookHealth]);
 
   const selectBranch = useCallback((slug: string) => {
     branchContext?.setActiveBranchSlugs([slug]);
@@ -293,10 +326,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     [orders, branchStats.enrichedProfiles, publishedPosts, emailEvents, timeWindow],
   );
 
-  const systems = useMemo(
-    () => buildSystemRows(webhooks, spokeConnections, emailEvents),
-    [webhooks, spokeConnections, emailEvents],
-  );
+  const systems = useMemo<SystemRow[]>(() => health?.systems ?? [{
+    key: 'monitor:unavailable', name: 'System health check', status: 'unknown',
+    code: healthLoading ? 'CHECKING' : 'UNAVAILABLE',
+    detail: healthLoading ? 'Checking live sources…' : 'Health data could not be verified. Refresh to retry; see the daily GitHub health workflow for diagnostics.',
+  }], [health, healthLoading]);
+
+  // Connection checks are live observations; never persist them as a data sync.
+  const checkedConnections = useMemo(() => spokeConnections.map(conn => {
+    const check = health?.spokes.find(s => s.id === conn.id);
+    if (!check || check.status === 'unknown') return conn;
+    return { ...conn, status: check.status === 'ok' ? 'active' as const : 'error' as const,
+      last_tested_at: check.checked_at, last_error: check.status === 'ok' ? undefined : check.detail };
+  }), [health, spokeConnections]);
 
   const timeline = useMemo(
     // Email events and creative jobs are the densest live signals in the app;
@@ -311,23 +353,64 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const queue = useMemo(() => {
     const now = Date.now();
-    return buildQueue(spokeConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats)
+    return buildQueue(checkedConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats)
       .filter(item => {
         const until = snoozed[item.key];
         return !until || new Date(until).getTime() <= now;
       });
-  }, [spokeConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats, snoozed]);
+  }, [checkedConnections, dbScheduled, webhooks, videoAdJobs, scopedBranches, branchStats, snoozed]);
+
+  const weeklyCandidates = useMemo(() => buildWeeklyActionCandidates({
+    queue,
+    campaigns,
+    users: team,
+    branchIdsBySlug: Object.fromEntries(branches.map(branch => [branch.slug, branch.id])),
+    activeBranchSlugs: scopedBranches.map(branch => branch.slug),
+    businessOverview: businessOverviewResult,
+  }), [queue, campaigns, team, branches, scopedBranches, businessOverviewResult]);
+  const weeklyActions = useMemo(() => {
+    const withPersistedOwners = weeklyCandidates.map(candidate => {
+      const persistedOwnerId = actionStates[candidate.key]?.ownerId;
+      if (!persistedOwnerId || !candidate.eligibleOwnerIds.includes(persistedOwnerId)) return candidate;
+      const owner = team.find(user => user.id === persistedOwnerId);
+      return { ...candidate, ownerId: persistedOwnerId, ownerName: owner?.full_name || owner?.email || 'Unassigned' };
+    });
+    return selectWeeklyActions(withPersistedOwners, actionStates, DEFAULT_WEEKLY_ACTION_BUDGET);
+  }, [weeklyCandidates, actionStates, team]);
+
+  const updateWeeklyAction = useCallback(async (
+    action: WeeklyActionCandidate,
+    status: WeeklyActionStateStatus,
+    ownerId = action.ownerId,
+    deferredUntil: string | null = null,
+  ) => {
+    try {
+      await saveWeeklyActionState(action, status, ownerId, deferredUntil);
+      setActionStates(previous => ({ ...previous, [action.key]: {
+        actionKey: action.key, status, ownerId, deferredUntil,
+        sourceUpdatedAt: action.sourceUpdatedAt,
+        completedAt: status === 'completed' ? new Date().toISOString() : null,
+      } }));
+    } catch (error) {
+      console.error('[dashboard] weekly action state failed:', error);
+    }
+  }, []);
+
+  const openWeeklyAction = useCallback((action: WeeklyActionCandidate) => {
+    if (action.destination === 'campaign-builder' && action.destinationId) onOpenCampaignDraft?.(action.destinationId);
+    else onViewChange?.(action.destination);
+  }, [onOpenCampaignDraft, onViewChange]);
 
   const branchCards = useMemo(
-    () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow)
+    () => buildBranchCards(scopedBranches, branchStats, orders, metaInsights, publishedPosts, checkedConnections, timeWindow)
       .map(card => ({
         ...card,
         openLeads: openLeadCounts[scopedBranches.find(branch => branch.slug === card.slug)?.id || ''] || 0,
       })),
-    [scopedBranches, branchStats, orders, metaInsights, publishedPosts, spokeConnections, timeWindow, openLeadCounts],
+    [scopedBranches, branchStats, orders, metaInsights, publishedPosts, checkedConnections, timeWindow, openLeadCounts],
   );
 
-  const degradedCount = useMemo(() => systems.filter(s => s.status !== 'ok').length, [systems]);
+  const degradedCount = useMemo(() => systems.filter(s => s.status !== 'ok' && s.status !== 'optional').length, [systems]);
 
   const badgeFor = (id: DashboardTab) =>
     id === 'control' ? timeline.length : id === 'standup' ? queue.length : branchCards.length;
@@ -336,13 +419,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const goToBranches = useCallback(() => onViewChange?.('branches' as ViewState), [onViewChange]);
 
   return (
-    <div className="-m-4 lg:-m-8 min-h-full bg-[#F6F7F9]">
+    <div className="-m-3 min-h-full overflow-x-hidden bg-[#F6F7F9] sm:-m-4 lg:-m-8">
       {/* The page title and branch picker already live in Layout's header, so
           the window toggle and status pill ride with the tab bar rather than
           splicing into that shared header. */}
-      <div className="bg-white border-b border-[#E5E7EB] px-5 lg:px-8">
-        <div className="flex items-center justify-between gap-4 overflow-x-auto">
-          <nav className="flex gap-7" role="tablist" aria-label="Dashboard views">
+      <div className="border-b border-[#E5E7EB] bg-white px-3 sm:px-5 lg:px-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <nav className="grid w-full grid-cols-3 gap-1 sm:flex sm:w-auto sm:gap-7" role="tablist" aria-label="Dashboard views">
             {TABS.map(t => {
               const active = tab === t.id;
               const count = badgeFor(t.id);
@@ -353,13 +436,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                   role="tab"
                   aria-selected={active}
                   onClick={() => selectTab(t.id)}
-                  className={`flex items-center gap-2 py-3.5 px-0.5 text-[13px] font-bold whitespace-nowrap border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
+                  className={`flex min-w-0 items-center justify-center gap-1 py-3 px-0.5 text-[12px] font-bold whitespace-nowrap border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 sm:justify-start sm:gap-2 sm:py-3.5 sm:text-[13px] ${
                     active
                       ? 'text-[#0B4A6B] border-[#0B4A6B]'
                       : 'text-[#6B7280] border-transparent hover:text-[#374151] hover:border-[#E5E7EB]'
                   }`}
                 >
-                  {t.label}
+                  <span className="sm:hidden">{t.id === 'control' ? 'Overview' : t.id === 'standup' ? 'Actions' : 'Branches'}</span>
+                  <span className="hidden sm:inline">{t.label}</span>
                   <span
                     className={`rounded-full px-[7px] py-0.5 text-[10px] font-extrabold ${
                       alert ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#F1F5F9] text-[#64748B]'
@@ -372,13 +456,13 @@ const Dashboard: React.FC<DashboardProps> = ({
             })}
           </nav>
 
-          <div className="flex items-center gap-2.5 py-2 shrink-0">
+          <div className="flex w-full items-center justify-between gap-2 border-t border-[#F1F5F9] py-2 sm:w-auto sm:justify-start sm:border-t-0 sm:gap-2.5 sm:shrink-0">
             <div className="flex items-center gap-1.5">
               {(['7d', '30d'] as TimeWindow[]).map(w => (
                 <button
                   key={w}
                   onClick={() => selectWindow(w)}
-                  className={`px-3 py-[7px] rounded-[7px] text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
+                  className={`px-3 py-[7px] rounded-sm text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
                     timeWindow === w
                       ? 'bg-[#111827] text-white'
                       : 'bg-white border border-[#E5E7EB] text-[#6B7280] hover:text-[#374151]'
@@ -391,24 +475,27 @@ const Dashboard: React.FC<DashboardProps> = ({
 
             <button
               onClick={() => selectTab('control')}
-              title={degradedCount ? 'Jump to system health' : 'All monitored systems responding'}
-              className={`flex items-center gap-2 px-3 py-[7px] rounded-lg text-[12px] font-bold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
+              title={degradedCount ? 'Jump to system health' : 'Required health checks passed'}
+              className={`flex items-center gap-2 px-3 py-[7px] rounded-sm text-[12px] font-bold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2 ${
                 degradedCount
                   ? 'bg-[#FEF2F2] border-[#FECACA] text-[#B91C1C]'
                   : 'bg-[#ECFDF5] border-[#A7F3D0] text-[#047857]'
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${degradedCount ? 'bg-[#EF4444]' : 'bg-[#10B981]'}`} />
-              {degradedCount
-                ? `${degradedCount} system${degradedCount === 1 ? '' : 's'} degraded`
-                : 'All systems healthy'}
+              <span className="sm:hidden">{healthLoading ? 'Checking…' : degradedCount ? `${degradedCount} issues` : 'Healthy'}</span>
+              <span className="hidden sm:inline">
+                {healthLoading ? 'Checking health…' : degradedCount
+                  ? `${degradedCount} health item${degradedCount === 1 ? '' : 's'} need attention`
+                  : 'Required checks passed'}
+              </span>
             </button>
 
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
               aria-label="Refresh dashboard"
-              className="p-2 rounded-lg border border-[#E5E7EB] text-[#6B7280] hover:text-[#374151] hover:border-[#CBD5E1] transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
+              className="p-2 rounded-sm border border-[#E5E7EB] text-[#6B7280] hover:text-[#374151] hover:border-[#CBD5E1] transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2"
             >
               {isRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             </button>
@@ -430,9 +517,38 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      <div className="px-5 lg:px-7 py-5">
+      <div className="px-3 py-3 sm:px-5 sm:py-5 lg:px-7">
+        {tab === 'control' && (
+          <BusinessOverview
+            branches={branches}
+            branchContext={branchContext}
+            spokeConnections={spokeConnections}
+            orders={orders}
+            profiles={branchStats.enrichedProfiles || []}
+            window={timeWindow}
+            refreshKey={businessRefreshKey}
+            onResult={setBusinessOverviewResult}
+            weeklyActions={(
+              <WeeklyActions
+                actions={weeklyActions}
+                users={team}
+                scopeLabel={isAllBranches ? 'All brands' : scopedBranches.map(branch => branch.name).join(', ')}
+                refreshedAt={businessOverviewResult?.refreshedAt || actionsRefreshedAt}
+                budgetMinutes={DEFAULT_WEEKLY_ACTION_BUDGET}
+                isLoading={isLoading || actionsLoading}
+                onOpen={openWeeklyAction}
+                onComplete={action => updateWeeklyAction(action, 'completed')}
+                onDismiss={action => updateWeeklyAction(action, 'dismissed')}
+                onDefer={(action, until) => updateWeeklyAction(action, 'deferred', action.ownerId, until)}
+                onAssign={(action, ownerId) => updateWeeklyAction(action, 'active', ownerId || null)}
+              />
+            )}
+          />
+        )}
+
         {tab === 'control' && (
           <ControlRoom
+            healthLoading={healthLoading}
             branchCards={branchCards}
             timeline={timeline}
             systems={systems}

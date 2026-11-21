@@ -3,7 +3,8 @@
 // one minimal authenticated call to the platform API. The decrypted token is read
 // server-side via get_social_credential and never reaches the browser.
 //
-// Call: POST /test-social-connection  { "branch_id": "<uuid>", "platform": "instagram|facebook|x|linkedin|tiktok" }
+// Call: POST /test-social-connection
+//   { "branch_id": "<uuid>", "platform": "...", "branch_social_account_id"?: "<uuid>" }
 //
 // Returns: { ok: boolean, username?: string, error?: string }
 //
@@ -29,10 +30,10 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const VALID_PLATFORMS = ["instagram", "facebook", "x", "linkedin", "tiktok"];
+const VALID_PLATFORMS = ["instagram", "facebook", "x", "linkedin", "tiktok", "youtube"];
 
 // One minimal authenticated read per platform → { ok, username?, error? }.
-async function probe(platform: string, token: string, meta: any): Promise<{ ok: boolean; username?: string; error?: string }> {
+async function probe(platform: string, token: string, meta: any, expectedExternalId?: string): Promise<{ ok: boolean; username?: string; error?: string }> {
   try {
     if (platform === "instagram") {
       const igId = meta?.instagram_business_account_id;
@@ -97,6 +98,21 @@ async function probe(platform: string, token: string, meta: any): Promise<{ ok: 
       return { ok: true, username: user.username ?? user.display_name ?? undefined };
     }
 
+    if (platform === "youtube") {
+      const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      const channel = data?.items?.[0];
+      if (!res.ok || !channel?.id) {
+        return { ok: false, error: data?.error?.message || `YouTube API returned ${res.status}` };
+      }
+      if (expectedExternalId && channel.id !== expectedExternalId) {
+        return { ok: false, error: `Connected channel ${channel.id} does not match expected channel ${expectedExternalId}` };
+      }
+      return { ok: true, username: channel.snippet?.customUrl ?? channel.snippet?.title ?? channel.id };
+    }
+
     return { ok: false, error: `Unsupported platform: ${platform}` };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Request failed" };
@@ -110,10 +126,12 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     let branchId = url.searchParams.get("branch_id");
     let platform = url.searchParams.get("platform");
+    let branchSocialAccountId = url.searchParams.get("branch_social_account_id");
     if ((!branchId || !platform) && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       branchId = branchId || body?.branch_id || null;
       platform = platform || body?.platform || null;
+      branchSocialAccountId = branchSocialAccountId || body?.branch_social_account_id || null;
     }
     if (!branchId) return json({ ok: false, error: "branch_id is required" }, 400);
     if (!platform || !VALID_PLATFORMS.includes(platform)) {
@@ -121,17 +139,22 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
-    const { data: cred, error } = await supabase.rpc("get_social_credential", {
-      p_branch_id: branchId,
-      p_platform: platform,
-    });
+    if (platform === "youtube" && !branchSocialAccountId) {
+      return json({ ok: false, error: "branch_social_account_id is required for YouTube" }, 400);
+    }
+
+    const rpcName = branchSocialAccountId ? "get_social_account_credential" : "get_social_credential";
+    const rpcParams = branchSocialAccountId
+      ? { p_branch_id: branchId, p_platform: platform, p_branch_social_account_id: branchSocialAccountId }
+      : { p_branch_id: branchId, p_platform: platform };
+    const { data: cred, error } = await supabase.rpc(rpcName, rpcParams);
     if (error) return json({ ok: false, error: `Credential lookup failed: ${error.message}` });
     if (!cred?.success) return json({ ok: false, error: cred?.error || "No credential found for this branch/platform" });
     if (!cred?.access_token) {
       return json({ ok: false, error: "No access token stored — save app credentials and connect the account first." });
     }
 
-    const result = await probe(platform, cred.access_token, cred.platform_metadata);
+    const result = await probe(platform, cred.access_token, cred.platform_metadata, cred.expected_external_account_id);
     return json(result);
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : "Unknown error" });

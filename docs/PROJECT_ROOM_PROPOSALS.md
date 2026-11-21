@@ -1,0 +1,60 @@
+# Project Room proposals and sales pipeline
+
+Status: automatic drafting deployed on 2026-11-08 in backend version 15 and frontend release 9b6d64d. StyleBAR's reviewed draft is saved at room version 16 with 10 discovery hours and 16 optional implementation hours; research is unchanged. Projects finish with verification, customer ownership and handoff; no recurring services are offered.
+
+## Automatic draft after research
+
+When company research reaches its final review checkpoint, the backend prepares a proposal and client-specific task estimate at the suggested, unapproved $150/hour rate. It saves stage `proposal_drafted` for shared room members to review. This uses one additional Gemini call outside the research-round budget; model and available usage are stored in `state.proposal_generation`. No proposal is sent and no decision is approved. Imported chief responses use the same completion hook.
+
+Existing proposals, feature ideas, unfinished rounds and previous automatic attempts prevent generation. Completed research and the attempt marker are checkpointed before spending tokens. Version checks prevent an in-flight result from overwriting concurrent edits or cancellation. Failed estimates keep research intact, record an activity entry and emit `proposal_generation_failed` through the existing alert webhook. Interrupted attempts are not retried automatically: open Proposal & pricing and generate/estimate manually. No schema migration is needed. Roll back the function/frontend to disable automation while retaining saved drafts.
+
+## User workflow
+
+Open a company room, then **Proposal & pricing**. **Generate proposal draft** uses the saved recommendation, discovery and improvement sections in an editable proposal template. The initial draft is unpriced. **Estimate work from this client's research** makes one authenticated Gemini request through the existing ai-generate service, outside the research-round request budget. It uses the current research, intake, edited scope, deliverables and exclusions. Scope, deliverables, timing, assumptions, exclusions, payment terms and next steps are editable. The outcome and completion checks appear before pricing. The Word proposal leads with “What success looks like,” then scope and handoff, with a project-price table and internal estimating notes at the end. **Save proposal** updates the pipeline; **Download proposal Word** uses the approved assessment design and labels the document as an internal planning draft. Existing assessment exports remain available.
+
+There are no default project fees or default hours. The editable $150/hour field is labeled as a suggested planning rate, not an approved rate card. AI proposes bounded tasks with whole estimated hours, assumptions, phase, optional status and a numbered reference to supplied evidence. Code copies the original source text into the breakdown. Code validates the result and calculates hours × entered rate; it rejects incomplete responses, invented source references and missing testing/handoff. The preview requires **Use estimated breakdown** before replacing fee items and estimating notes; other scope edits remain intact. A failed request leaves the existing proposal unchanged. These are planning estimates, not measured time or guarantees. Review every assumption before quoting.
+
+The editor and Word export show task hours, hourly rates, totals, assumptions and evidence. Legacy fixed-fee rows remain units and are never represented as hours. Optional fees remain outside base pipeline totals. Blank fees remain unpriced. These are proposed customer fees, not provider token costs, invoices or collected cash. Existing saved proposals are not automatically regenerated.
+
+**Sales pipeline** shows Prospect, Discovery, Proposal drafted, Proposal sent, Won and Lost. A company research room is one opportunity; several rooms for the same company count separately and must represent separate scopes. No company-name merging occurs. Open totals exclude Won, Lost, archived clients, and cancelled research rooms. The pipeline displays one-time project value only, with no assumed win probability. Legacy recurring amounts are excluded and flagged for review. Marking Won does not automatically convert the client to Customer. Stage changes do not send a proposal to anyone. The list is limited to 100 recently updated accessible rooms and discloses partial totals when capped.
+
+## Persistence and access
+
+`state.proposal` stores validated fields in the existing protected `project_rooms` row. No schema migration or new browser database grant is needed. `proposal_save` runs after the existing active-operator check, room membership check, version check and running-provider lock check. Only allowlisted proposal fields are accepted; text passes through the existing PII sanitizer, new saves accept one-time fees only, money uses integer cents, and dates, quantities, line counts and stage values are bounded. Research and decisions are preserved. The source summary is snapshotted server-side when the proposal is first saved; later research changes produce a review notice without overwriting the proposal. Unsaved edits retain their original version so concurrent changes cause a conflict instead of silently overwriting a teammate.
+
+The list endpoint selects only the proposal JSON alongside room identifiers, then returns compact stage/value metadata. It does not include the proposal source snapshot in list responses. The room's regular membership rules protect full proposals. Provider handoffs are unchanged and do not include commercial pricing fields.
+
+## Verification
+
+- `npm run test:project-rooms`: includes proposal pricing, validation, text sanitization, research preservation, pipeline exclusions, Word structure and existing research tests.
+- `node tests/project-room-proposal-browser.mjs`: local synthetic fixture, creation/save/download, pipeline values, Won transition, responsive width and console errors.
+- `node tests/project-room-workspace-browser.mjs`: existing company archive/sharing/search/notes/Word/features regression.
+- `npx tsc --noEmit`, `npm run build`, and `deno check --no-config supabase/functions/project-rooms/index.ts`.
+- `tests/project-room-live-auth.mjs` now includes anonymous rejection for `proposal_save`; run after deployment.
+
+Word content and native editable structure are verified. The usual document renderer is unavailable on this Windows host and the native Word preview could not be controlled, so the proposal's final page breaks have not been visually verified.
+
+## Release and recovery
+
+After explicit approval, resolve Switchboard for the Trellis repository and capture the current `project-rooms` function version and deployed frontend commit. Deploy the function with the new `_shared/project-room-proposal.mjs` included, preserving all current imports (including AEO) and its existing custom-auth configuration. Publish the matching frontend through the existing GitHub deployment workflow. Verify unauthenticated saves fail, member saves succeed, list totals match the saved proposal, and the live Word download works. Check shared member and outsider access as available; do not claim real-session coverage from synthetic fixture tests.
+
+Seed the painting company's proposal only if explicitly approved, using the latest room summary and a version-checked update, preserving all other state and research. No customer message or proposal send is authorized by this release. Recovery is the previous frontend/function; retain proposal JSON so any saved work survives rollback.
+
+
+## One-time project policy
+
+New drafts start unpriced; a client-specific estimate replaces that placeholder only after review. All tasks are one-time work and hours remain editable. Scope must state the result, acceptance checks, handoff, customer account ownership and finish date. Additional work requires a separately approved project. Existing proposals are not silently rewritten; recurring items must be explicitly removed before saving or downloading. The painting company draft is updated separately with version and state-hash checks.
+
+## Automatic-draft production verification (2026-11-08)
+
+A clearly labeled synthetic company was seeded at the chief step with bounded research inputs. The live scheduled worker completed the chief response and automatically saved a 12-task proposal at `proposal_drafted`, with estimated hours, $150/hour suggested rate, basis and evidence. No proposal-generation or estimate button was pressed. Both Clint and Sheree were confirmed as room members in the UI; a separate Sheree sign-in was not tested. No decisions were approved and no customer message was sent. The test prospect was archived afterward to exclude its values from the active pipeline. Existing customer drafts were untouched. This tests the real completion-to-draft path, not a fresh end-to-end Manus research run. Local validation: 51 tests, TypeScript, Deno check and production build passed.
+
+## Estimate reconciliation safeguards
+
+Release approved 2026-11-08; backend version 16 includes these safeguards. Validation: 58 tests, TypeScript, Deno checks, build and browser comparison preview passed.
+
+Reruns must receive the existing task/hour baseline, not estimate independently from scratch. Each prior task ID must appear exactly once in a proposed task or an explicit removal. Changes/additions/removals require explanations. The preview shows current/proposed total hours and dollars (including optional work) and reconciliation lines; each retained task basis saves its explanation. Existing legacy fixed-fee units cannot silently become hours. Generated estimates reject exact duplicate descriptions and require consolidated testing, handoff/acceptance/training and contingency tasks.
+
+These deterministic checks enforce task accounting, not semantic proof: a source reference establishes relevance, not effort, and a supplied explanation can still be weak. Review task ownership, work quantities and excluded work before accepting. No task may charge again for a meeting, test pass, page edit or deliverable budgeted elsewhere. Do not use contingency for excluded development/recovery or ordinary QA already priced. Changed hours also require checking narrative schedules.
+
+StyleBAR was independently reconciled on 2026-11-08 to a provisional 10h discovery +16h optional implementation baseline at the suggested $150/h. The 48h replacement was not supported by documented scope expansion. One combined owner training/acceptance session replaces separate finishing charges; analytics is deferred/unpriced pending access and scope. Production proposal version 19 remains a draft; research hash was unchanged. No claim of measured effort or a firm customer quote is made.

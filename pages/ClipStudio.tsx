@@ -6,7 +6,7 @@ import {
   Trophy, Pencil, Download, Send, ExternalLink, Layers, Video, Music,
 } from 'lucide-react';
 import {
-  ClipProject, ClipSource, ClipGeneration, ClipFormat, CreateClipConfig,
+  Branch, BranchSocialAccountsMap, ClipProject, ClipSource, ClipGeneration, ClipFormat, CreateClipConfig,
   ClipBrollBeat, ClipRenderJob, ClipPublication, ClipTriage,
   ClipAudioConfig, MusicGeneration,
 } from '../types';
@@ -20,15 +20,19 @@ import {
   queueAssemble, getClipPublications, generateClipMetadata, publishClip, setClipStatus,
   generateClipMusic, pollClipMusic, clearClipMusic,
 } from '../services/clipService';
+import YouTubeAccountSelector, { youtubeAccountLabel } from '../components/YouTubeAccountSelector';
+import ClipVideoEditor from '../components/ClipVideoEditor';
 
 interface Props {
-  branches: Array<{ slug: string; name: string }>;
+  selectedBranchSlug: string;
+  branches: Branch[];
+  branchSocialAccounts: BranchSocialAccountsMap;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   userId?: string | null;
   geminiApiKey?: string;
 }
 
-const card = 'bg-white p-5 rounded-[1.75rem] border border-slate-100 shadow-sm';
+const card = 'bg-white p-5 border border-slate-200';
 const labelCls = 'block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2';
 const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:bg-white focus:border-emerald-500 outline-none transition';
 const panelHead = 'text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2';
@@ -67,8 +71,8 @@ const TRIAGE_META: Record<ClipTriage, { label: string; cls: string }> = {
   edited: { label: 'Made the edit', cls: 'bg-blue-100 text-blue-700' },
 };
 
-const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey }) => {
-  const [mode, setMode] = useState<'library' | 'create' | 'project'>('library');
+const ClipStudio: React.FC<Props> = ({ selectedBranchSlug, branches, branchSocialAccounts, addToast, userId, geminiApiKey }) => {
+  const [mode, setMode] = useState<'library' | 'create' | 'project' | 'video'>('library');
   const [projects, setProjects] = useState<ClipProject[]>([]);
   const [selected, setSelected] = useState<ClipProject | null>(null);
   const [sources, setSources] = useState<ClipSource[]>([]);
@@ -76,6 +80,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [brollBeats, setBrollBeats] = useState<ClipBrollBeat[]>([]);
   const [renderJobs, setRenderJobs] = useState<ClipRenderJob[]>([]);
   const [publications, setPublications] = useState<ClipPublication[]>([]);
+  const [youtubeAccountId, setYoutubeAccountId] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [tab, setTab] = useState<'script' | 'broll' | 'runs' | 'publish'>('script');
@@ -96,7 +101,8 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [audioVocals, setAudioVocals] = useState<string>(MUSIC_VOCALS[0]); // Instrumental only
 
   // Create form
-  const [branch, setBranch] = useState(branches[0]?.slug || '');
+  const branch = selectedBranchSlug;
+  const [sourceInput, setSourceInput] = useState<'url' | 'text' | 'files'>('url');
   const [urls, setUrls] = useState('');
   const [pasted, setPasted] = useState('');
   const [files, setFiles] = useState<Array<{ name: string; text: string }>>([]);
@@ -107,13 +113,12 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
   const [talkingPoints, setTalkingPoints] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (!branch && branches[0]) setBranch(branches[0].slug); }, [branches, branch]);
 
   const loadProjects = useCallback(async () => {
-    try { setLoading(true); setProjects(await getClipProjects()); }
+    try { setLoading(true); setProjects((await getClipProjects()).filter(project => project.branch === selectedBranchSlug)); }
     catch (e) { addToast(`Failed to load clips: ${msg(e)}`, 'error'); }
     finally { setLoading(false); }
-  }, [addToast]);
+  }, [addToast, selectedBranchSlug]);
   useEffect(() => { loadProjects(); }, [loadProjects]);
 
   const openProject = useCallback(async (p: ClipProject) => {
@@ -141,11 +146,11 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
   const refreshProject = useCallback(async (id: string) => {
     const list = await getClipProjects();
-    setProjects(list);
+    setProjects(list.filter(project => project.branch === selectedBranchSlug));
     const p = list.find(x => x.id === id);
     if (p) setSelected(p);
     setGenerations(await getClipGenerations(id));
-  }, []);
+  }, [selectedBranchSlug]);
 
   // Latest render job per beat (jobs come back newest-first)
   const latestJobForBeat = useCallback((beatId: string): ClipRenderJob | undefined =>
@@ -172,7 +177,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
     pollRef.current = window.setInterval(async () => {
       try {
         const [j, pubs, list] = await Promise.all([getRenderJobs(id), getClipPublications(id), getClipProjects()]);
-        setRenderJobs(j); setPublications(pubs); setProjects(list);
+        setRenderJobs(j); setPublications(pubs); setProjects(list.filter(project => project.branch === selectedBranchSlug));
         const p = list.find(x => x.id === id);
         if (p) {
           // Music job finished → persist its track URL onto the clip.
@@ -188,7 +193,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
       } catch { /* transient poll errors are fine */ }
     }, 5000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [selected?.id, pollActive]);
+  }, [selected?.id, pollActive, selectedBranchSlug]);
 
   // ─── Create flow: save project + sources, then generate v1 ─────────
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -315,6 +320,8 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
     </div>
   );
 
+  if (mode === 'video') return <div key={selectedBranchSlug}><ClipVideoEditor branchName={branches.find(b => b.slug === selectedBranchSlug)?.name || selectedBranchSlug} onBack={() => setMode('library')} addToast={addToast}/></div>;
+
   if (mode === 'create') {
     return (
       <div className="max-w-3xl mx-auto space-y-6 pb-20">
@@ -332,13 +339,15 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
           {/* 01 Sources */}
           <div className="space-y-3">
             <p className={panelHead}><span className="text-emerald-600 font-black">01</span> Sources</p>
-            <div><label className={labelCls}>URL or URLs</label>
+            <p className="text-sm text-slate-500">Step 1: add a source. Then choose the length and generate a script.</p>
+            <div className="flex flex-wrap gap-2">{(['url', 'text', 'files'] as const).map(kind => <button key={kind} type="button" onClick={() => setSourceInput(kind)} aria-pressed={sourceInput === kind} className={`rounded-xl px-4 py-2 text-sm font-bold ${sourceInput === kind ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{kind === 'url' ? 'Web link' : kind === 'text' ? 'Paste text' : 'Upload files'}</button>)}</div>
+            {sourceInput === 'url' && <div><label className={labelCls}>URL or URLs</label>
               <textarea className={`${inputCls} h-20 resize-none`} value={urls} onChange={e => setUrls(e.target.value)} placeholder="https://…  (one per line, or comma-separated)" />
-            </div>
-            <div><label className={labelCls}>Copied text</label>
+            </div>}
+            {sourceInput === 'text' && <div><label className={labelCls}>Copied text</label>
               <textarea className={`${inputCls} h-28 resize-none`} value={pasted} onChange={e => setPasted(e.target.value)} placeholder="Paste article text, notes, transcript, or source excerpts" />
-            </div>
-            <div>
+            </div>}
+            {sourceInput === 'files' && <div>
               <label className={labelCls}>Source files</label>
               <button type="button" onClick={() => fileRef.current?.click()}
                 className="w-full py-6 border-2 border-dashed border-slate-200 rounded-2xl text-xs font-bold text-slate-400 hover:border-emerald-400 hover:text-emerald-600 transition flex flex-col items-center gap-1">
@@ -355,9 +364,11 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
+            {(urls.trim() || pasted.trim() || files.length > 0) && <p className="text-xs text-emerald-700">Sources added: {[urls.trim() && "web links", pasted.trim() && "pasted text", files.length > 0 && `${files.length} files`].filter(Boolean).join(", ")}. Switch the source buttons to review or remove them.</p>}
           </div>
 
+          {(urls.trim() || pasted.trim() || files.length > 0) && <>
           {/* 02 Steering */}
           <div className="space-y-3">
             <p className={panelHead}><span className="text-emerald-600 font-black">02</span> Steering</p>
@@ -398,16 +409,14 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
 
           {/* 04 Branch + create */}
           <div className="space-y-3">
-            <p className={panelHead}><span className="text-emerald-600 font-black">04</span> Branch</p>
-            <select className={inputCls} value={branch} onChange={e => setBranch(e.target.value)}>
-              {branches.map(b => <option key={b.slug} value={b.slug}>{b.name}</option>)}
-            </select>
+            <p className={panelHead}>Generate your script</p>
             <button type="button" onClick={handleCreate} disabled={busy === 'create'}
               className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition disabled:opacity-50">
               {busy === 'create' ? <><Loader2 size={16} className="animate-spin" /> Writing script…</> : <><Wand2 size={16} /> Generate Script</>}
             </button>
             <p className="text-[10px] text-slate-400 text-center">Uses Gemini. Sources are PII-scrubbed before the model sees them.</p>
           </div>
+          </>}
         </div>
       </div>
     );
@@ -940,14 +949,16 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                 </button>
               ) : (
                 <div className="mt-3 space-y-3">
+                  <YouTubeAccountSelector branchSlug={selected.branch} branches={branches} accountsByBranch={branchSocialAccounts} value={youtubeAccountId} onChange={setYoutubeAccountId} disabled={!!busy} />
+                  <p className="text-[10px] font-medium text-slate-500">You can change the channel until you click Publish. The destination locks when upload begins.</p>
                   <div><label className={labelCls}>Title</label>
                     <input className={inputCls} value={pubMeta.title} onChange={e => setPubMeta({ ...pubMeta, title: e.target.value })} /></div>
                   <div><label className={labelCls}>Description</label>
                     <textarea className={`${inputCls} h-24 resize-none`} value={pubMeta.description} onChange={e => setPubMeta({ ...pubMeta, description: e.target.value })} /></div>
                   <p className="text-[11px] font-bold text-cyan-600">{pubMeta.hashtags.join(' ')}</p>
                   <div className="flex flex-wrap gap-1">{pubMeta.tags.slice(0, 20).map((t, i) => <span key={i} className="px-2 py-0.5 rounded bg-slate-100 text-[9px] font-bold text-slate-500">{t}</span>)}</div>
-                  <button type="button" disabled={!!busy} onClick={() => run('publish', async () => {
-                    await publishClip(selected, videoForPublish!, pubMeta);
+                  <button type="button" disabled={!!busy || !youtubeAccountId} onClick={() => run('publish', async () => {
+                    await publishClip(selected, videoForPublish!, pubMeta, youtubeAccountId);
                     setPublications(await getClipPublications(selected.id));
                     await refreshProject(selected.id);
                     addToast('Publishing — n8n uploads to YouTube', 'success');
@@ -962,7 +973,10 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                 <div className="mt-4 space-y-1.5">
                   {publications.map(p => (
                     <div key={p.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-xl px-3 py-2">
-                      <span className="font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                      <span>
+                        <span className="block font-black text-slate-700 uppercase tracking-widest text-[10px]">{p.platform}</span>
+                        {p.platform === 'youtube' && <span className="mt-0.5 block text-[10px] font-bold text-slate-500">Channel: {youtubeAccountLabel(p.youtube_account_id, branchSocialAccounts)}</span>}
+                      </span>
                       <span className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${p.status === 'live' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{p.status}</span>
                         {p.external_url && <a href={p.external_url} target="_blank" rel="noreferrer" className="text-emerald-600"><ExternalLink size={13} /></a>}
@@ -1009,6 +1023,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
                 className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition ${(id === 'archive') === showArchived ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'}`}>{label}</button>
             ))}
           </div>
+          <button type="button" onClick={() => setMode('video')} className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-2"><Video size={14}/> Edit a video</button>
           <button type="button" onClick={() => setMode('create')}
             className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 hover:bg-emerald-700 transition">
             <Plus size={14} /> Create a Short
@@ -1016,6 +1031,7 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
         </div>
       </div>
 
+      {projects.length > 0 && <>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         {([['Active scripts', kpis.active], ['In production', kpis.production], ['Archived', kpis.archived]] as const).map(([label, n]) => (
           <div key={label} className={card}><p className={labelCls}>{label}</p><p className="text-2xl font-black text-slate-800">{n}</p></div>
@@ -1033,11 +1049,12 @@ const ClipStudio: React.FC<Props> = ({ branches, addToast, userId, geminiApiKey 
         <button type="button" onClick={loadProjects} className="p-2.5 text-slate-400 hover:text-emerald-600 transition shrink-0"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
       </div>
 
+      </>}
       {visible.length === 0 && !loading ? (
         <div className={`${card} py-16 text-center`}>
           <Film size={36} className="text-slate-300 mx-auto mb-3" />
           <p className="text-sm font-bold text-slate-600">{showArchived ? 'Nothing archived' : 'No shorts yet'}</p>
-          {!showArchived && <p className="text-xs text-slate-400 mt-1">Feed it a transcript, article, or interview and it writes the script.</p>}
+          {!showArchived && <p className="text-xs text-slate-400 mt-1">Choose Create a Short above, then add a transcript, article, or interview. We will guide you through the script, clips, and publishing.</p>}
         </div>
       ) : (
         <div className="space-y-3">

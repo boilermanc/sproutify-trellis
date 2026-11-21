@@ -1,0 +1,34 @@
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+const load=name=>JSON.parse(readFileSync(new URL('../n8n-blueprints/'+name,import.meta.url),'utf8').replace(/^\uFEFF/,''));
+const worker=load('sweetwater-lead-alerts.json');
+const contact=load('sweetwater-website-contact.json');
+const run=(workflow,name,json)=>new Function('$input',workflow.nodes.find(n=>n.name===name).parameters.jsCode)({first:()=>({json})});
+test('branded alerts escape visitor content and retain plain text and correct recipient',()=>{
+ const email=run(worker,'Build Lead Alert',{id:'test',request_id:'test-id',intent:'ai-help',name:'<img src=x onerror=alert(1)>',email:null,phone:'2025550101',contact_method:'callback',context:{task:'A & B <script>bad</script>'},consent:{marketing:false},is_test:true,source:'test',entry_page:'/ai-help'})[0].json.email;
+ assert.deepEqual(email.to,['clint@sweetwater.technology']);
+ assert.match(email.from,/notifications@sproutify\.app/);
+ assert.match(email.html,/SWEETWATER/);
+ assert.match(email.html,/Open lead in Trellis/);
+ assert.doesNotMatch(email.html,/<script>|<img src=x/);
+ assert.match(email.html,/&lt;script&gt;/);
+ assert.match(email.text,/Phone: 2025550101/);
+ assert.match(email.subject,/^\[TEST\]/);
+ assert.match(email.html,/<html lang="en" dir="ltr">/);
+});
+test('empty queue does not generate an email',()=>assert.deepEqual(run(worker,'Build Lead Alert',{}),[]));
+test('original contact retries share identity and preserve complete message',()=>{
+ const body={name:'Test',email:'test@example.invalid',subject:'Test subject',message:'Hello '.repeat(220),testMode:true};
+ const a=run(contact,'Validate Inquiry',{body})[0].json.p_payload;
+ const b=run(contact,'Validate Inquiry',{body})[0].json.p_payload;
+ assert.equal(a.requestId,b.requestId);
+ assert.equal(a.intent,'website-contact');
+ assert.equal(a.messages[0].content,body.message);
+ assert.equal(a.context.summary.length,1000);
+ assert.equal(a.consent.marketing,false);
+ assert.equal(a.testMode,true);
+ assert.throws(()=>run(contact,'Validate Inquiry',{body:{...body,message:''}}));
+ const changed=run(contact,'Validate Inquiry',{body:{...body,message:'Different message'}})[0].json.p_payload;
+ assert.notEqual(a.requestId,changed.requestId);
+});

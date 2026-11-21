@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+const { chromium } = process.env.PLAYWRIGHT_MODULE ? await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href) : await import('playwright');
+const base = process.env.STUDIO_TEST_URL || 'http://127.0.0.1:3015';
+const browser = await chromium.launch({headless:true});
+try {
+ const page = await browser.newPage({viewport:{width:1280,height:900}});
+ const errors=[]; page.on('pageerror', error => errors.push(error.message));
+ await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+ const open = state => page.goto(`${base}/tests/fixtures/app-store.html${state ? `?state=${state}` : ''}`, {waitUntil:'domcontentloaded',timeout:90000});
+ await open();
+ await page.getByRole('heading',{name:'Rekkrd · App Store',exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Daily downloads'}).waitFor();
+ assert.equal(await page.getByRole('cell',{name:'1',exact:true}).count(),1);
+ await page.getByRole('button',{name:'7 days',exact:true}).click();
+ await page.getByRole('heading',{name:'Daily downloads'}).waitFor();
+ await page.getByRole('button',{name:'Sync Rekkrd',exact:true}).click();
+ await page.getByText('Synced fixture',{exact:true}).waitFor();
+ await page.getByLabel('App Store app').selectOption('6478242429');
+ await page.getByRole('heading',{name:'Sproutify Home · App Store',exact:true}).waitFor();
+ assert.equal(await page.getByRole('cell',{name:'10',exact:true}).count(),1);
+ assert.equal(await page.getByRole('cell',{name:'1',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Sync Sproutify Home',exact:true}).click();
+ await page.getByText('Synced home-fixture',{exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Daily downloads'}).waitFor();
+ await page.getByLabel('App Store app').selectOption('6754806358');
+ await page.getByRole('heading',{name:'Rejoice · App Store',exact:true}).waitFor();
+ assert.equal(await page.getByRole('cell',{name:'100',exact:true}).count(),1);
+ assert.equal(await page.getByRole('cell',{name:'10',exact:true}).count(),0);
+ assert.equal(await page.getByRole('cell',{name:'1',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Sync Rejoice',exact:true}).click();
+ await page.getByText('Synced rejoice-fixture',{exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Daily downloads'}).waitFor();
+ if(process.env.APP_STORE_SCREENSHOT) await page.screenshot({path:process.env.APP_STORE_SCREENSHOT,fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+ await page.getByLabel('Fixture branch').selectOption('rejoice');
+ await page.getByRole('heading',{name:'Rejoice · App Store',exact:true}).waitFor();
+ await page.getByRole('cell',{name:'100',exact:true}).waitFor();
+ assert.equal(await page.getByLabel('App Store app').count(),0);
+ await page.getByLabel('Fixture branch').selectOption('home');
+ await page.getByRole('heading',{name:'Sproutify Home · App Store',exact:true}).waitFor();
+ assert.equal(await page.getByLabel('App Store app').count(),0);
+ await page.getByLabel('Fixture branch').selectOption('rekkrd');
+ await page.getByRole('heading',{name:'Rekkrd · App Store',exact:true}).waitFor();
+ await page.getByRole('cell',{name:'1',exact:true}).waitFor();
+ for(const [state,text] of [['pending','No download report data for this period.'],['disconnected','App Store reporting is not connected in this view.'],['error','Fixture: reporting unavailable']]) {
+  await open(state); await page.getByText(text,{exact:false}).waitFor();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+ }
+ await open('slow-sync');
+ await page.getByRole('button',{name:'Sync Rekkrd',exact:true}).click();
+ await page.getByLabel('App Store app').selectOption('6478242429');
+ await page.getByRole('button',{name:'Sync Sproutify Home',exact:true}).waitFor();
+ assert.equal(await page.getByText('Old app sync failed',{exact:false}).count(),0);
+ assert.deepEqual(errors,[]);
+ console.log('PASS App Store browser: separate Rekkrd/Home/Rejoice data, app/branch selection, scoped sync, stale sync isolation, period and error states, mobile layout; no page errors.');
+} finally {await browser.close();}

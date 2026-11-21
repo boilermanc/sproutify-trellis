@@ -1,0 +1,14 @@
+{
+  "name": "Trellis: Shared X Account Tracking",
+  "active": false,
+  "nodes": [
+    { "id": "schedule", "name": "Every 30 Minutes", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0], "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 30 }] } } },
+    { "id": "manual", "name": "Manual Collection", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 200], "parameters": {} },
+    { "id": "sync", "name": "Collect Shared X", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [260, 0], "parameters": { "method": "POST", "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/x-tracking", "authentication": "predefinedCredentialType", "nodeCredentialType": "supabaseApi", "sendBody": true, "specifyBody": "json", "jsonBody": "{\"action\":\"sync\"}", "options": { "timeout": 180000 } }, "notes": "Select the Trellis Hub server credential after import. Requires Authorization: Bearer service-role key. Never use a browser credential. This workflow only reads X; it does not publish. Set an X Developer Console spending limit before activation." }
+  ],
+  "connections": {
+    "Every 30 Minutes": { "main": [[{ "node": "Collect Shared X", "type": "main", "index": 0 }]] },
+    "Manual Collection": { "main": [[{ "node": "Collect Shared X", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveExecutionProgress": false, "saveManualExecutions": false }
+}

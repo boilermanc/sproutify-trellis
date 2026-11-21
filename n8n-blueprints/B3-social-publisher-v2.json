@@ -485,6 +485,9 @@
         1220,
         120
       ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
       "onError": "continueErrorOutput"
     },
     {

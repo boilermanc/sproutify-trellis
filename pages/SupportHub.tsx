@@ -72,7 +72,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
 
   return (
     <div className="flex flex-col space-y-8 h-full pb-10">
-      <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col lg:flex-row gap-6 items-center">
+      <div className="bg-white p-6 border border-slate-200 flex flex-col lg:flex-row gap-6 items-center">
           <div className="relative flex-1 w-full lg:w-auto">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-inner" placeholder="Triage by ID or subject..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
@@ -113,7 +113,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
                 </button>
                );
             }) : (
-              <div className="py-20 text-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem]">
+              <div className="py-20 text-center bg-slate-50 border border-dashed border-slate-300">
                  <Inbox size={32} className="mx-auto text-slate-300 mb-2" />
                  <p className="text-[10px] font-black text-slate-400 uppercase">Queue Clear</p>
               </div>
@@ -122,7 +122,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
         </div>
 
         {selectedTicket ? (
-          <div className="flex-1 flex flex-col bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
+          <div className="flex-1 flex flex-col bg-white border border-slate-200 overflow-hidden animate-in fade-in duration-300">
              <div className="p-4 sm:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/20 gap-3">
                 <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
                    <button onClick={() => setSelectedTicketId(null)} className="lg:hidden p-2 -ml-1 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0" aria-label="Back to tickets"><ChevronLeft size={20} /></button>
@@ -239,7 +239,7 @@ const SupportHub: React.FC<SupportHubProps> = ({ tickets, setTickets, profiles, 
              </div>
           </div>
         ) : (
-          <div className="flex-1 hidden lg:flex flex-col items-center justify-center bg-white rounded-[2.5rem] border-4 border-dashed border-slate-100 opacity-40">
+          <div className="flex-1 hidden lg:flex flex-col items-center justify-center bg-white border border-dashed border-slate-300 opacity-60">
              <LifeBuoy size={64} className="text-slate-200 mb-6" />
              <p className="text-xl font-black text-slate-300 uppercase tracking-tighter">Select a ticket to orchestrate</p>
           </div>

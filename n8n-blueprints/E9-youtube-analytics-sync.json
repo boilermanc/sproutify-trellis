@@ -251,7 +251,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nconst chunkSize = 500;\nconst chunks = [];\nfor (let i = 0; i < items.length; i += chunkSize) {\n  chunks.push({ json: { rows: items.slice(i, i + chunkSize).map(it => it.json) } });\n}\nreturn chunks;"
+        "jsCode": "const rowsByKey = new Map();\nfor (const item of $input.all()) {\n  const row = item.json;\n  if (!row?.youtube_video_id || !row?.metric_date) {\n    throw new Error('Metric rows require youtube_video_id and metric_date');\n  }\n  // A video may occur in both publication sources or repeated analytics rows.\n  // Postgres cannot upsert the same key twice in one statement. Keep the last\n  // row, matching the previous sequential update behavior, before chunking.\n  rowsByKey.set(JSON.stringify([row.youtube_video_id, row.metric_date]), row);\n}\nconst rows = [...rowsByKey.values()];\nconst chunkSize = 500;\nconst chunks = [];\nfor (let i = 0; i < rows.length; i += chunkSize) {\n  chunks.push({ json: { rows: rows.slice(i, i + chunkSize) } });\n}\nreturn chunks;"
       },
       "name": "Batch Metric Rows",
       "type": "n8n-nodes-base.code",

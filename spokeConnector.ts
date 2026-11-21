@@ -1,7 +1,11 @@
+import { profileText } from './services/profileIdentity.mjs';
+import { isRekkrdConnection } from './supabase/functions/_shared/rekkrd-profile-metrics.mjs';
+import { attachProfileSubscriptions } from './services/profileSubscriptions.mjs';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { supabase as hubClient } from './lib/supabase';
-import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress } from './types';
+import { SpokeConnection, SpokeTableConfig, NormalizedSpokeProfile, EnrichedProfile, ProfileOrderStats, ProductPurchase, ProfileAddress, ProfileSubscription } from './types';
 import { loadNameCache, predictDemographicsSync } from './demographicsService';
+import { EventRegistrationRecord, fetchEventAudience, isEventNoticeEligibleStatus } from './services/eventAudienceService';
 
 // ── Server-side spoke reads ─────────────────────────────────────────
 // All runtime data reads go through the `spoke-query` Edge Function so the
@@ -125,18 +129,7 @@ export interface NormalizedOrderItem {
   _spoke_name: string;
 }
 
-export interface NormalizedSubscription {
-  id: string;
-  customer_id?: string;
-  email?: string;
-  status?: string;
-  plan?: string;
-  started_at?: string;
-  expires_at?: string;
-  created_at?: string;
-  _spoke_id: string;
-  _spoke_name: string;
-}
+export type NormalizedSubscription = ProfileSubscription;
 
 // Pagination helper to fetch all records from a Supabase table
 const BATCH_SIZE = 1000; // Supabase default max rows per request
@@ -266,7 +259,10 @@ export const autoMapFields = (
       last_name: ['last_name', 'lastname', 'lname', 'surname', 'family_name'],
       phone: ['phone', 'phone_number', 'mobile', 'cell', 'telephone'],
       subscribed: ['subscribed', 'is_subscribed', 'newsletter_subscribed', 'opted_in', 'newsletter'],
+      email_digest_optin: ['email_digest_optin'],
+      email_updates_optin: ['email_updates_optin'],
       created_at: ['created_at', 'created', 'createdat', 'signup_date', 'registered_at'],
+      last_login_at: ['last_login_at', 'last_sign_in_at', 'last_seen_at', 'last_logged_in_at'],
     },
     orders: {
       id: ['id', 'order_id', 'uuid'],
@@ -307,8 +303,8 @@ export const autoMapFields = (
       email: ['email', 'user_email'],
       status: ['status', 'subscription_status', 'state'],
       plan: ['plan', 'plan_name', 'tier', 'subscription_tier'],
-      started_at: ['started_at', 'start_date', 'subscribed_at'],
-      expires_at: ['expires_at', 'expiry_date', 'end_date', 'subscription_expires_at'],
+      started_at: ['started_at', 'start_date', 'subscribed_at', 'current_period_start'],
+      expires_at: ['expires_at', 'expiry_date', 'end_date', 'subscription_expires_at', 'current_period_end'],
       created_at: ['created_at', 'created'],
     },
   };
@@ -357,19 +353,32 @@ export async function fetchSpokeProfiles(
           profile.id = String(row[mapping.id]);
         }
         if (mapping.first_name && row[mapping.first_name] !== undefined) {
-          profile.first_name = String(row[mapping.first_name]);
+          profile.first_name = profileText(row[mapping.first_name]);
         }
         if (mapping.last_name && row[mapping.last_name] !== undefined) {
-          profile.last_name = String(row[mapping.last_name]);
+          profile.last_name = profileText(row[mapping.last_name]);
         }
         if (mapping.phone && row[mapping.phone] !== undefined) {
-          profile.phone = String(row[mapping.phone]);
+          profile.phone = profileText(row[mapping.phone]);
         }
-        if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
-          profile.subscribed = Boolean(row[mapping.subscribed]);
+        const toBoolean = (value: unknown): boolean => value === true || value === 1 || value === 'true' || value === '1';
+        const hasDigestOptIn = !!mapping.email_digest_optin && row[mapping.email_digest_optin] !== undefined;
+        const hasUpdatesOptIn = !!mapping.email_updates_optin && row[mapping.email_updates_optin] !== undefined;
+        if (hasDigestOptIn) profile.email_digest_optin = toBoolean(row[mapping.email_digest_optin]);
+        if (hasUpdatesOptIn) profile.email_updates_optin = toBoolean(row[mapping.email_updates_optin]);
+        if (hasDigestOptIn || hasUpdatesOptIn) {
+          // Rekkrd's signup promise covers collecting tips and product updates,
+          // but its profile stores those as two toggles. Either opt-in is valid
+          // branch consent; unsubscribe write-back clears both.
+          profile.subscribed = profile.email_digest_optin === true || profile.email_updates_optin === true;
+        } else if (mapping.subscribed && row[mapping.subscribed] !== undefined) {
+          profile.subscribed = toBoolean(row[mapping.subscribed]);
         }
         if (mapping.created_at && row[mapping.created_at] !== undefined) {
-          profile.created_at = String(row[mapping.created_at]);
+          profile.created_at = profileText(row[mapping.created_at]);
+        }
+        if (mapping.last_login_at && row[mapping.last_login_at] !== undefined) {
+          profile.last_login_at = profileText(row[mapping.last_login_at]);
         }
         // Classification tags (e.g. ATL "School Partner"). PostgREST returns a
         // text[] column as a JSON array; keep only string members, drop nulls.
@@ -502,6 +511,8 @@ export interface FetchAllSpokesOrdersResult {
   errors: string[];
 }
 
+const allOrdersCache = new Map<string, { expiresAt: number; promise: Promise<FetchAllSpokesOrdersResult> }>();
+
 export const fetchAllSpokesOrders = async (
   connections: SpokeConnection[]
 ): Promise<FetchAllSpokesOrdersResult> => {
@@ -510,22 +521,26 @@ export const fetchAllSpokesOrders = async (
     c.tables.some(t => t.table_type === 'orders' && t.enabled)
   );
 
-  const results = await Promise.allSettled(
-    activeConnections.map(conn => fetchSpokeOrders(conn))
-  );
+  const cacheKey = activeConnections.map(connection => `${connection.id}:${connection.last_tested_at || connection.created_at}`).sort().join('|');
+  const cached = allOrdersCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
 
-  const orders: NormalizedOrder[] = [];
-  const errors: string[] = [];
+  const promise = (async () => {
+    const results = await Promise.allSettled(activeConnections.map(conn => fetchSpokeOrders(conn)));
 
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      orders.push(...result.value);
-    } else {
-      errors.push(`${activeConnections[index].name}: ${result.reason}`);
-    }
-  });
+    const orders: NormalizedOrder[] = [];
+    const errors: string[] = [];
 
-  return { orders, errors };
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') orders.push(...result.value);
+      else errors.push(`${activeConnections[index].name}: ${result.reason}`);
+    });
+
+    return { orders, errors };
+  })();
+  allOrdersCache.set(cacheKey, { expiresAt: Date.now() + 60_000, promise });
+  promise.catch(() => allOrdersCache.delete(cacheKey));
+  return promise;
 };
 
 // Order items fetching - supports multiple order_items tables
@@ -616,7 +631,8 @@ export const fetchSpokeSubscriptions = async (
 
   try {
     // Server-side read — the spoke key never touches the browser.
-    const { tables } = await spokeFetch(connection.id, 'subscriptions');
+    const { tables, errors } = await spokeFetch(connection.id, 'subscriptions');
+    if (errors.length) throw new Error(errors.join('; '));
     const data = tables.flatMap(t =>
       t.rows.map(row => ({ row, mapping: t.field_mapping })),
     );
@@ -631,13 +647,17 @@ export const fetchSpokeSubscriptions = async (
       plan: row[mapping.plan],
       started_at: row[mapping.started_at],
       expires_at: row[mapping.expires_at],
+      trial_start: row[mapping.trial_start],
+      trial_end: row[mapping.trial_end],
+      provider: row[mapping.provider],
+      iap_status: row[mapping.iap_status],
+      iap_current_period_end: row[mapping.iap_current_period_end],
       created_at: row[mapping.created_at],
       _spoke_id: connection.id,
       _spoke_name: connection.name,
     }));
   } catch (err) {
-    console.error(`Error fetching subscriptions from ${connection.name}:`, err);
-    return [];
+    throw new Error(`${connection.name}: subscription data unavailable (${err instanceof Error ? err.message : "read failed"})`);
   }
 };
 
@@ -889,15 +909,21 @@ export const fetchEnrichedProfiles = async (
   connections: SpokeConnection[]
 ): Promise<{ profiles: EnrichedProfile[]; errors: string[] }> => {
   const newsletterConnections = connections.filter(c => c.status === 'active' && supportsAtlNewsletterAudience(c));
+  const eventConnections = newsletterConnections;
 
-  // Fetch profiles, orders, order items, and authoritative ATL newsletter audience in parallel.
-  const [profilesResult, ordersResult, itemsResult, newsletterResults] = await Promise.all([
+  // Fetch profiles, commerce, newsletter consent, and ATL event intent in parallel.
+  const [profilesResult, ordersResult, itemsResult, subscriptionsResult, newsletterResults, eventResults] = await Promise.all([
     fetchAllSpokesProfiles(connections),
     fetchAllSpokesOrders(connections),
     fetchAllSpokesOrderItems(connections),
+    fetchAllSpokesSubscriptions(connections),
     Promise.allSettled(newsletterConnections.map(async connection => ({
       connection,
       rows: await fetchNewsletterAudience(connection.id),
+    }))),
+    Promise.allSettled(eventConnections.map(async connection => ({
+      connection,
+      rows: await fetchEventAudience(connection.id),
     }))),
   ]);
 
@@ -906,12 +932,14 @@ export const fetchEnrichedProfiles = async (
     ...profilesResult.errors,
     ...ordersResult.errors,
     ...itemsResult.errors,
+    ...subscriptionsResult.errors,
   ];
 
   const activeNewsletterKeys = new Set<string>();
   const newsletterRowsByKey = new Map<string, NewsletterAudienceRow>();
   const newsletterConnectionIds = new Set(newsletterConnections.map(c => c.id));
   const authoritativeNewsletterConnectionIds = new Set<string>();
+  const eventRowsByKey = new Map<string, EventRegistrationRecord[]>();
 
   newsletterResults.forEach((result, index) => {
     if (result.status === 'rejected') {
@@ -925,6 +953,20 @@ export const fetchEnrichedProfiles = async (
       if (!key) continue;
       activeNewsletterKeys.add(key);
       newsletterRowsByKey.set(key, row);
+    }
+  });
+
+  eventResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      errors.push(`${eventConnections[index].name}: ${result.reason?.message || 'Failed to fetch event audience'}`);
+      return;
+    }
+    for (const row of result.value.rows) {
+      const key = audienceKey(result.value.connection.id, row.email);
+      if (!key) continue;
+      const existing = eventRowsByKey.get(key) || [];
+      existing.push(row);
+      eventRowsByKey.set(key, existing);
     }
   });
 
@@ -971,6 +1013,31 @@ export const fetchEnrichedProfiles = async (
     profilesByEmail.set(key, profile);
   }
 
+  // Include event-only people without turning event consent into newsletter
+  // consent. Today ATL's five registrants all resolve to another identity
+  // source, but this protects future event-only signups.
+  const eventOnlyProfiles: NormalizedSpokeProfile[] = [];
+  for (const [key, rows] of eventRowsByKey) {
+    if (profilesByEmail.has(key)) continue;
+    const [spokeId] = key.split(':');
+    const connection = eventConnections.find(c => c.id === spokeId);
+    if (!connection || rows.length === 0) continue;
+    const fullName = rows.find(row => row.name)?.name.trim() || '';
+    const [firstName, ...lastParts] = fullName.split(/\s+/).filter(Boolean);
+    const email = rows[0].email.toLowerCase().trim();
+    const profile: NormalizedSpokeProfile = {
+      id: generateIdFromEmail(email, spokeId),
+      email,
+      first_name: firstName || undefined,
+      last_name: lastParts.join(' ') || undefined,
+      subscribed: false,
+      _spoke_id: spokeId,
+      _spoke_name: connection.name,
+    };
+    eventOnlyProfiles.push(profile);
+    profilesByEmail.set(key, profile);
+  }
+
   // Extract unique identities from orders
   const orderIdentities = extractOrderIdentities(ordersResult.orders);
 
@@ -1001,18 +1068,32 @@ export const fetchEnrichedProfiles = async (
   }
 
   // Combine customer profiles + active subscriber-only profiles + order-only profiles
-  const allProfiles = [...profilesResult.profiles, ...newsletterOnlyProfiles, ...orderOnlyProfiles];
+  const allProfiles = [...profilesResult.profiles, ...newsletterOnlyProfiles, ...eventOnlyProfiles, ...orderOnlyProfiles];
+
+  // Attach event intent to the matching federated identity. This stays
+  // transient/client-side and is never copied into Hub profile storage.
+  for (const profile of allProfiles) {
+    const key = audienceKey(profile._spoke_id, profile.email);
+    const registrations = key ? eventRowsByKey.get(key) || [] : [];
+    if (registrations.length === 0) continue;
+    profile.event_registrations = registrations;
+    profile.event_notice_consent = registrations.some(row => isEventNoticeEligibleStatus(row.status));
+    profile.event_titles = Array.from(new Set(registrations.map(row => row.event?.title).filter(Boolean) as string[]));
+    profile.event_statuses = Array.from(new Set(registrations.map(row => row.status).filter(Boolean)));
+    profile.last_event_registration_at = registrations
+      .map(row => row.created_at)
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+  }
 
   // Enrich profiles with order data and order items
-  const enrichedProfiles = enrichProfilesWithOrders(
-    allProfiles,
-    ordersResult.orders,
-    itemsResult.items
-  );
+  const enrichedProfiles: EnrichedProfile[] = attachProfileSubscriptions(enrichProfilesWithOrders(allProfiles, ordersResult.orders, itemsResult.items), subscriptionsResult.subscriptions);
 
   // Mark order-only profiles with special tags/metadata
   const orderOnlyEmails = new Set(orderOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
   const newsletterOnlyEmails = new Set(newsletterOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
+  const eventOnlyEmails = new Set(eventOnlyProfiles.map(p => `${p._spoke_id}:${p.email.toLowerCase()}`));
 
   enrichedProfiles.forEach(profile => {
     const key = `${profile._spoke_id}:${profile.email.toLowerCase()}`;
@@ -1027,6 +1108,30 @@ export const fetchEnrichedProfiles = async (
       (profile as any)._subscriber_only = true;
       (profile as any)._source = 'newsletter_subscribers';
     }
+    if (eventOnlyEmails.has(key)) {
+      (profile as any)._event_only = true;
+      (profile as any)._source = 'event_registrations';
+    }
+  });
+
+  // Aggregate collection counts server-side; failed reads remain unknown, never zero.
+  const collectionConnections = connections.filter(c => c.status === 'active' && isRekkrdConnection(c.supabase_url));
+  const collectionResults = await Promise.allSettled(collectionConnections.map(async connection => {
+    const { data, error } = await hubClient.functions.invoke('spoke-query', { body: { op: 'collection_counts', connection_id: connection.id } });
+    if (error || data?.error || !Array.isArray(data?.counts) || !data?.fetched_at) throw new Error('Collection counts unavailable');
+    const counts = new Map<string, number>();
+    for (const row of data.counts) {
+      if (typeof row.customer_id !== 'string' || !Number.isSafeInteger(row.record_count) || row.record_count < 0) throw new Error('Invalid collection counts');
+      counts.set(row.customer_id, row.record_count);
+    }
+    for (const profile of enrichedProfiles) {
+      if (profile._spoke_id !== connection.id || !profile.id) continue;
+      profile.collection_record_count = counts.get(profile.id) ?? 0;
+      profile.collection_count_checked_at = data.fetched_at;
+    }
+  }));
+  collectionResults.forEach((result, index) => {
+    if (result.status === 'rejected') errors.push(collectionConnections[index].name + ': collection counts unavailable');
   });
 
   // Enrich with predicted demographics

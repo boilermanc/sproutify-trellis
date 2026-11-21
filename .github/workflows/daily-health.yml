@@ -1,0 +1,32 @@
+name: Daily Trellis Health
+
+on:
+  schedule:
+    - cron: '17 12 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: trellis-daily-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Verify health and repair queue rules
+        run: node --test tests/system-health.test.mjs tests/daily-health.test.mjs
+      - name: Check health and reconcile GitHub repair issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          TRELLIS_HEALTH_TOKEN: ${{ secrets.TRELLIS_HEALTH_TOKEN }}
+        run: node scripts/daily-health.mjs

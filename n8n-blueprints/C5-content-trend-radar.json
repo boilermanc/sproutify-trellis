@@ -1,0 +1,25 @@
+{
+  "name": "Trellis: Native Content Trend Radar",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] } },
+      "name": "Check Due Brands", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [-300, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST", "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/content-trend-radar",
+        "authentication": "predefinedCredentialType", "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true, "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] },
+        "sendBody": true, "contentType": "json", "specifyBody": "json", "jsonBody": "{\"action\":\"tick\"}",
+        "options": { "timeout": 300000, "response": { "response": { "fullResponse": true } } }
+      },
+      "name": "Research One Due Brand", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [0, 200],
+      "credentials": { "supabaseApi": { "id": "IkIpi5m4OmJ9DvBS", "name": "Sproutify Trellis" } },
+      "notes": "Use the existing Hub service-role credential. Daily/weekly frequency and the automatic draft setting are configured per brand inside Content Intelligence → Trend Radar. One brand is processed per tick; no publication or outreach occurs."
+    }
+  ],
+  "connections": { "Check Due Brands": { "main": [[{ "node": "Research One Due Brand", "type": "main", "index": 0 }]] } },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "America/New_York" },
+  "tags": []
+}

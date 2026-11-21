@@ -49,22 +49,20 @@
     },
     {
       "parameters": {
-        "resource": "video",
-        "operation": "upload",
-        "title": "={{ $('Build Metadata').item.json.title }}",
-        "categoryId": "22",
-        "binaryProperty": "data",
-        "options": {
-          "description": "={{ $('Build Metadata').item.json.description }}",
-          "privacyStatus": "public",
-          "tags": "={{ $('Build Metadata').item.json.tags }}"
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "const m = $('Build Metadata').item.json;\nconst youtubeAccountId = $('Publish Webhook').item.json.body?.youtube_account_id || $('Publish Webhook').item.json.youtube_account_id;\nif (!youtubeAccountId) throw new Error('Missing youtube_account_id');\nreturn { json: { ...m, youtube_account_id: youtubeAccountId, category_id: '22', visibility: 'public', made_for_kids: false }, binary: $binary };"
       },
+      "name": "Prepare Account Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 340]
+    },
+    {
+      "parameters": { "workflowId": "REPLACE_WITH_E11_WORKFLOW_ID", "options": { "waitForSubWorkflow": true } },
       "name": "YouTube Upload",
-      "type": "n8n-nodes-base.youTube",
-      "typeVersion": 1,
-      "position": [1080, 340],
-      "credentials": { "youTubeOAuth2Api": { "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL", "name": "YouTube account" } }
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1300, 340]
     },
     {
       "parameters": {
@@ -117,7 +115,7 @@
     },
     {
       "parameters": {
-        "content": "## Trellis: Clip Publish (YouTube Shorts)\n\nLast phase of the Clip Studio pipeline. Downloads the stitched final Short, uploads it to YouTube, then writes the URL back and marks the publication **live**.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-clip-publish` (= `CLIP_PUBLISH_WEBHOOK` in constants.ts)\n**Fired by:** `clipService.publishClip` with `{ publication_id, project_id, branch, platform:'youtube', video_url, metadata:{title,description,tags,hashtags} }`.\n\n### FLOW\nWebhook → **Build Metadata** (title / description+hashtags / tags trimmed to YT limits) → **Mark Uploading** → **Download Video** → **YouTube Upload** (category 22 = People & Blogs) → **Mark Live** (publication live + shorts URL) → **Update Project** (status published).\n\n### SETUP (mirrors E4-episode-publish — same credentials)\n1. **YouTube Upload node** → set **Credential → the same Google/YouTube OAuth2 account** you connected for Episode publish.\n2. **The 3 Supabase nodes** → set **Credential → your Trellis (Hub) Supabase account** (`trellis_clip_publications` / `trellis_clip_projects` live on the Hub).\n3. Verify the YouTube node field names after import (they vary by n8n version) — same caveat as E4.\n\n### NOTES\n- Vertical video ≤3 minutes is auto-classified as a Short; `#Shorts` is appended to the description as a belt-and-braces signal.\n- Same unverified-app caveat as E4: while the Google OAuth app is in Testing, uploads are forced private+locked until verified.\n- Add an error branch setting the publication to `failed` if you want upload errors surfaced in the Clip Studio UI.",
+        "content": "## Trellis: Clip Publish (YouTube Shorts)\\n\\nAccount-aware Shorts publisher. The payload must include `youtube_account_id`. Video upload is delegated to E11 so Clips follow the exact branch/channel selected in Trellis.\\n\\n### Setup\\n1. Import and activate E11-youtube-account-upload first.\\n2. Replace `REPLACE_WITH_E11_WORKFLOW_ID` on the YouTube Upload node with E11's workflow ID.\\n3. Map all Supabase nodes to the Hub service-role credential.\\n4. Keep the first upload private while validating the channel destination.\\n\\nVertical video up to YouTube's current Shorts limit is classified by YouTube. Google credentials remain in Trellis.",
         "width": 620,
         "height": 620
       },
@@ -131,7 +129,8 @@
     "Publish Webhook": { "main": [[{ "node": "Build Metadata", "type": "main", "index": 0 }]] },
     "Build Metadata": { "main": [[{ "node": "Mark Uploading", "type": "main", "index": 0 }]] },
     "Mark Uploading": { "main": [[{ "node": "Download Video", "type": "main", "index": 0 }]] },
-    "Download Video": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
+    "Download Video": { "main": [[{ "node": "Prepare Account Upload", "type": "main", "index": 0 }]] },
+    "Prepare Account Upload": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
     "YouTube Upload": { "main": [[{ "node": "Extract Video ID", "type": "main", "index": 0 }]] },
     "Extract Video ID": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] },
     "Mark Live": { "main": [[{ "node": "Update Project", "type": "main", "index": 0 }]] }

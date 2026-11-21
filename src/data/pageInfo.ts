@@ -11,6 +11,9 @@ export const PAGE_INFO: Partial<Record<ViewState, string>> = {
   leads:
     "Tracks prospects who haven't converted into paying customers yet — inquiries and sign-ups that live only in Trellis, not federated from a spoke. Use it to run a pipeline: log where a lead came from, move them through stages, and follow their timeline before they graduate into a Profile.",
 
+  prospecting:
+    "A founder-only acquisition workspace for SpectIQ inspection-company prospects. It keeps territory research, evidence, verification, follow-ups, and sales progress isolated from Farm Leads and tenant profiles; your trusted Trellis administrator login and explicit founder approvals protect sensitive actions.",
+
   segments:
     "A rule-based audience builder over the federated profile data (order value, LTV, location, engagement, and more), with ready-made presets plus your own saved segments. Use it to define an audience once, then send it straight to Campaign Builder instead of rebuilding the same filter every time you launch.",
 
@@ -34,6 +37,9 @@ export const PAGE_INFO: Partial<Record<ViewState, string>> = {
 
   'social-hub':
     "An AI content lab for Facebook, Instagram, X, and LinkedIn: generate on-brand post copy, plan it on a content calendar, and export it — text plus images — ready to paste into Meta Business Suite. It's intentionally content-only and doesn't auto-publish, so use it to plan and write your social calendar, then post manually on the day (or send finished creative to Post Scheduler for platforms that do publish automatically).",
+
+  'content-intelligence':
+    "The durable learning layer for content work — project-specific topics, published assets, hypotheses, append-only performance snapshots, and promoted lessons. Rejoice, Rekkrd, and future branches share one workflow without mixing their audiences or strategic memory.",
 
   'reddit-growth':
     "A dedicated workspace for Reddit ad campaigns — AI-drafted strategy (objective, target communities, budget), creative generation and review, and performance tracking, all in one place. Use it to plan and manage Reddit-specific paid campaigns separately from organic Social Hub content.",

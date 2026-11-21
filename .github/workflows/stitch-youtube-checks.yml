@@ -1,0 +1,40 @@
+name: Stitch and YouTube regressions
+
+on:
+  pull_request:
+    paths:
+      - 'workers/stitch_worker.py'
+      - 'n8n-blueprints/E9-youtube-analytics-sync.json'
+      - 'tests/test_stitch_memory.py'
+      - 'tests/youtube-metric-batches.test.mjs'
+      - '.github/workflows/stitch-youtube-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: python -m unittest discover -s tests -p test_stitch_memory.py -v
+      - run: node --test tests/youtube-metric-batches.test.mjs tests/youtube-publication-targeting.test.mjs tests/youtube-oauth-contract.test.mjs
+
+  production-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build

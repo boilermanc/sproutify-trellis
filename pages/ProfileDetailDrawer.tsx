@@ -1,3 +1,5 @@
+import { profileDisplayName } from '../services/profileIdentity.mjs';
+import { ProfileMembership } from '../components/ProfileMembership';
 import React from 'react';
 import { X, Mail, Phone, Calendar, DollarSign, ShoppingBag, Package, Layers, TrendingUp, MapPin, User, Brain, Link2, ExternalLink } from 'lucide-react';
 import { EnrichedProfile, SocialActivity } from '../types';
@@ -34,20 +36,18 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
       />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 overflow-y-auto">
+      <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white  z-50 overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">
-              {profile.first_name || profile.last_name
-                ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
-                : 'Customer Profile'}
+              {profileDisplayName(profile)}
             </h2>
             <p className="text-sm text-gray-500">{profile.email}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-sm transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -67,8 +67,8 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
           </div>
 
           {/* Contact Info */}
-          <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contact</h3>
+          <div className="bg-gray-50 rounded-sm p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-700">Contact</h3>
             <div className="space-y-2">
               <div className="flex items-center gap-3 text-sm">
                 <Mail className="w-4 h-4 text-gray-400" />
@@ -89,13 +89,19 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
             </div>
           </div>
 
+          <section className="bg-gray-50 rounded-sm p-4 space-y-3" aria-label="Signup and subscriptions">
+            <h3 className="text-sm font-semibold text-gray-700">Signup & subscriptions</h3>
+            <ProfileMembership profile={profile} history />
+            <p className="text-xs text-slate-500">Period ends may renew; these dates do not confirm cancellation.</p>
+          </section>
+
           {/* Email Activity — per-contact engagement timeline (Hub email_events, keyed by email) */}
           <EmailActivitySection email={profile.email} />
 
           {/* Social Presence */}
           {handleEntries.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+            <div className="bg-gray-50 rounded-sm p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700   flex items-center gap-2">
                 <Link2 className="w-4 h-4 text-purple-600" />
                 Social Presence
               </h3>
@@ -107,7 +113,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
                   const signalCount = signalCountByHandle(platform, handle);
 
                   return (
-                    <div key={platform} className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-gray-100">
+                    <div key={platform} className="flex items-center justify-between bg-white rounded-sm px-3 py-2.5 border border-gray-100">
                       <div className="flex items-center gap-3">
                         <Icon className={`w-4 h-4 ${colorClass}`} />
                         <span className="text-sm font-medium text-gray-900">@{handle}</span>
@@ -141,8 +147,8 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
 
           {/* Address Info */}
           {(profile.billing_address?.city || profile.shipping_address?.city) && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Location</h3>
+            <div className="bg-gray-50 rounded-sm p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Location</h3>
               <div className="space-y-3">
                 {profile.billing_address && (profile.billing_address.city || profile.billing_address.state) && (
                   <div className="flex items-start gap-3 text-sm">
@@ -182,8 +188,8 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
 
           {/* Demographics */}
           {profile._predicted_demographics && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+            <div className="bg-gray-50 rounded-sm p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">
                 Predicted Demographics
               </h3>
               <div className="grid grid-cols-2 gap-4">
@@ -225,7 +231,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
           {profile.order_stats && profile.order_stats.order_count > 0 ? (
             <>
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-emerald-50 rounded-xl p-4">
+                <div className="bg-emerald-50 rounded-sm p-4">
                   <div className="flex items-center gap-2 text-emerald-600 mb-1">
                     <DollarSign className="w-4 h-4" />
                     <span className="text-xs font-semibold uppercase">Lifetime Value</span>
@@ -235,7 +241,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
                   </p>
                 </div>
 
-                <div className="bg-blue-50 rounded-xl p-4">
+                <div className="bg-blue-50 rounded-sm p-4">
                   <div className="flex items-center gap-2 text-blue-600 mb-1">
                     <ShoppingBag className="w-4 h-4" />
                     <span className="text-xs font-semibold uppercase">Orders</span>
@@ -245,7 +251,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
                   </p>
                 </div>
 
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="bg-gray-50 rounded-sm p-4">
                   <div className="flex items-center gap-2 text-gray-600 mb-1">
                     <TrendingUp className="w-4 h-4" />
                     <span className="text-xs font-semibold uppercase">Avg Order</span>
@@ -255,7 +261,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
                   </p>
                 </div>
 
-                <div className="bg-gray-50 rounded-xl p-4">
+                <div className="bg-gray-50 rounded-sm p-4">
                   <div className="flex items-center gap-2 text-gray-600 mb-1">
                     <Calendar className="w-4 h-4" />
                     <span className="text-xs font-semibold uppercase">Last Order</span>
@@ -271,7 +277,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
               {/* Products Purchased */}
               {profile.order_stats.products_purchased && profile.order_stats.products_purchased.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-gray-700   mb-3 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-purple-600" />
                     Products Purchased ({profile.order_stats.products_purchased.length})
                   </h3>
@@ -279,7 +285,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
                     {profile.order_stats.products_purchased.map((product, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between bg-white border border-gray-100 rounded-lg px-4 py-3"
+                        className="flex items-center justify-between bg-white border border-gray-100 rounded-sm px-4 py-3"
                       >
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">
@@ -304,7 +310,7 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
               )}
             </>
           ) : (
-            <div className="bg-gray-50 rounded-xl p-6 text-center">
+            <div className="bg-gray-50 rounded-sm p-6 text-center">
               <Package className="w-8 h-8 text-gray-300 mx-auto mb-2" />
               <p className="text-gray-500">No purchase history</p>
             </div>
@@ -312,17 +318,17 @@ export const ProfileDetailDrawer: React.FC<ProfileDetailDrawerProps> = ({ profil
 
           {/* Marketing Actions */}
           <div className="border-t border-gray-100 pt-6">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+            <h3 className="text-sm font-semibold text-gray-700   mb-3">
               Quick Actions
             </h3>
             <div className="flex flex-wrap gap-2">
-              <button className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+              <button className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-sm hover:bg-emerald-700 transition-colors">
                 Send Email
               </button>
-              <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+              <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-sm hover:bg-gray-50 transition-colors">
                 Add to Segment
               </button>
-              <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+              <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-sm hover:bg-gray-50 transition-colors">
                 View Orders
               </button>
             </div>

@@ -4,10 +4,22 @@ import { createServer } from 'vite';
 
 let server;
 let calculateLeadMetrics;
+let countUnsubscribedLeads;
 
 before(async () => {
   server = await createServer({ appType: 'custom', configFile: false, logLevel: 'silent', root: process.cwd(), server: { middlewareMode: true } });
-  ({ calculateLeadMetrics } = await server.ssrLoadModule('/components/leads/LeadMetrics.tsx'));
+  ({ calculateLeadMetrics, countUnsubscribedLeads } = await server.ssrLoadModule('/components/leads/LeadMetrics.tsx'));
+});
+
+test('counts unique current-pipeline leads with an unsubscribe suppression', () => {
+  const leads = [
+    { profile: { email: 'One@Example.com' } },
+    { profile: { email: 'one@example.com' } },
+    { profile: { email: 'two@example.com' } },
+    { profile: { email: null } },
+  ];
+  const unsubscribed = new Set(['one@example.com', 'someone-else@example.com']);
+  assert.equal(countUnsubscribedLeads(leads, unsubscribed), 1);
 });
 
 after(async () => { await server?.close(); });

@@ -210,6 +210,141 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has-generated-source",
+"leftValue": "={{ $json.source_media_asset_id || $json.source_promo_asset_id || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has Private Generated Media?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        0
+      ],
+      "notes": "Generated media stays in the private media-generation bucket. Resolve and sign it immediately before publishing; ordinary uploaded posts continue directly to platform routing.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/resolve_scheduled_generated_media",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_scheduled_post_id: $json.id }) }}",
+        "options": {}
+      },
+      "name": "Fetch Generated Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        180,
+        -260
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Calls a service-role-only resolver that verifies the claimed post, approved output, completed generation job, private asset, and original owner all match before returning a storage path.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $input.item.json;\nconst asset = Array.isArray(raw) ? raw[0] : raw;\nif (!asset?.storage_bucket || !asset?.storage_path) throw new Error('Generated media asset could not be resolved');\nif (asset.status !== 'ready') throw new Error('Generated media asset is not ready for publishing');\nreturn { json: asset };"
+      },
+      "name": "Validate Generated Asset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -260
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1/object/sign/{{ $json.storage_bucket }}/{{ $json.storage_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ expiresIn: 3600 }) }}",
+        "options": {}
+      },
+      "name": "Sign Generated Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        620,
+        -260
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Creates a one-hour URL only when the scheduled post is claimed. The private asset is never made public and no long-lived signed URL is stored."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const source = $('Drop Unclaimed Posts').item.json;\nconst signed = $input.item.json || {};\nconst rawUrl = signed.signedURL || signed.signedUrl;\nif (!rawUrl) throw new Error('Supabase returned no signed generated-media URL');\nconst base = 'https://horvjqqifgrzxesuxtfm.supabase.co/storage/v1';\nconst mediaUrl = String(rawUrl).startsWith('http') ? String(rawUrl) : base + String(rawUrl);\nreturn { json: { ...source, media_urls: [mediaUrl] } };"
+      },
+      "name": "Attach Generated Media URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        -260
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
         "rules": {
           "values": [
             {
@@ -444,7 +579,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Three outcomes, not two. Treating \"we couldn't read the reply\" as a failure is\n// dangerous: 'failed' invites a retry, and a retry double-posts to a real account.\n// Only an explicit success or an explicit failure is trusted; anything else goes\n// to a human as needs_review.\nconst res = $input.item.json || {};\nconst status = Number(res.statusCode || res.status || 0);\nconst rawBody = typeof res.body === 'string' ? res.body : JSON.stringify(res.body ?? '');\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\n\nlet parsed = null;\ntry { parsed = rawBody ? JSON.parse(rawBody) : null; } catch (e) { parsed = null; }\n\nif (parsed && parsed.success === true) {\n  return { json: { id: claimedId, outcome: 'published', post_id: parsed.post_id || null, last_error: null } };\n}\n// A publisher can explicitly say \"I could not confirm this\" -- the TikTok one\n// does that when it stops polling while the post is still processing. That is\n// needs_review, NOT failed: a retry could double-post.\nif (parsed && parsed.success === false && parsed.needs_review === true) {\n  return { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n    last_error: String(parsed.error || 'Publisher could not confirm the post').slice(0, 500) } };\n}\nif (parsed && parsed.success === false) {\n  return { json: { id: claimedId, outcome: 'failed', post_id: null,\n    last_error: String(parsed.error || 'Publish webhook reported failure').slice(0, 500) } };\n}\nconst detail = rawBody ? rawBody.slice(0, 300) : ('HTTP ' + status + ' with empty body');\nreturn { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n  last_error: ('Publish reply could not be parsed (HTTP ' + status + '). CHECK THE ACCOUNT - this may already be live. Reply was: ' + detail).slice(0, 500) } };"
+        "jsCode": "// Three outcomes, not two. Treating \"we couldn't read the reply\" as a failure is\n// dangerous: 'failed' invites a retry, and a retry double-posts to a real account.\n// Only an explicit success or an explicit failure is trusted; anything else goes\n// to a human as needs_review.\nconst res = $input.item.json || {};\nconst status = Number(res.statusCode || res.status || 0);\nconst responsePayload = res.body ?? res.data ?? '';\nconst rawBody = typeof responsePayload === 'string' ? responsePayload : JSON.stringify(responsePayload);\nconst claimedId = $('Drop Unclaimed Posts').item.json.id;\n\nlet parsed = null;\ntry { parsed = rawBody ? JSON.parse(rawBody) : null; } catch (e) { parsed = null; }\n\nif (parsed && parsed.success === true) {\n  return { json: { id: claimedId, outcome: 'published', post_id: parsed.post_id || null, last_error: null } };\n}\n// A publisher can explicitly say \"I could not confirm this\" -- the TikTok one\n// does that when it stops polling while the post is still processing. That is\n// needs_review, NOT failed: a retry could double-post.\nif (parsed && parsed.success === false && parsed.needs_review === true) {\n  return { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n    last_error: String(parsed.error || 'Publisher could not confirm the post').slice(0, 500) } };\n}\nif (parsed && parsed.success === false) {\n  return { json: { id: claimedId, outcome: 'failed', post_id: null,\n    last_error: String(parsed.error || 'Publish webhook reported failure').slice(0, 500) } };\n}\nconst detail = rawBody ? rawBody.slice(0, 300) : ('HTTP ' + status + ' with empty body');\nreturn { json: { id: claimedId, outcome: 'needs_review', post_id: null,\n  last_error: ('Publish reply could not be parsed (HTTP ' + status + '). CHECK THE ACCOUNT - this may already be live. Reply was: ' + detail).slice(0, 500) } };"
       },
       "name": "Interpret Publish Result",
       "type": "n8n-nodes-base.code",
@@ -674,7 +809,97 @@
       "main": [
         [
           {
+            "node": "Has Private Generated Media?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Private Generated Media?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Generated Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Generated Asset": {
+      "main": [
+        [
+          {
+            "node": "Validate Generated Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Generated Asset": {
+      "main": [
+        [
+          {
+            "node": "Sign Generated Asset",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign Generated Asset": {
+      "main": [
+        [
+          {
+            "node": "Attach Generated Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Generated Media URL": {
+      "main": [
+        [
+          {
+            "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Failure",
             "type": "main",
             "index": 0
           }

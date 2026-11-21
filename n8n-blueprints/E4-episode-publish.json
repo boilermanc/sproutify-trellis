@@ -49,23 +49,20 @@
     },
     {
       "parameters": {
-        "resource": "video",
-        "operation": "upload",
-        "title": "={{ $('Build Metadata').item.json.title }}",
-        "categoryId": "10",
-        "binaryProperty": "data",
-        "options": {
-          "description": "={{ $('Build Metadata').item.json.description }}",
-          "privacyStatus": "public",
-          "tags": "={{ $('Build Metadata').item.json.tags }}",
-          "selfDeclaredMadeForKids": "={{ $('Build Metadata').item.json.made_for_kids }}"
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "const m = $('Build Metadata').item.json;\nconst youtubeAccountId = $('Publish Webhook').item.json.body?.youtube_account_id || $('Publish Webhook').item.json.youtube_account_id;\nif (!youtubeAccountId) throw new Error('Missing youtube_account_id');\nreturn { json: { ...m, youtube_account_id: youtubeAccountId, category_id: '10', visibility: 'public' }, binary: $binary };"
       },
+      "name": "Prepare Account Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 340]
+    },
+    {
+      "parameters": { "workflowId": "REPLACE_WITH_E11_WORKFLOW_ID", "options": { "waitForSubWorkflow": true } },
       "name": "YouTube Upload",
-      "type": "n8n-nodes-base.youTube",
-      "typeVersion": 1,
-      "position": [1080, 340],
-      "credentials": { "youTubeOAuth2Api": { "id": "REPLACE_WITH_YOUR_YOUTUBE_CREDENTIAL", "name": "YouTube account" } }
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1300, 340]
     },
     {
       "parameters": {
@@ -119,7 +116,7 @@
     },
     {
       "parameters": {
-        "content": "## Trellis: Episode Publish (YouTube)\n\nLast phase of the Episode pipeline. Downloads the rendered `video.mp4`, uploads it to YouTube, then writes the URL back to Trellis and marks the publication **live**.\n\n**Webhook:** `https://n8n.sproutify.app/webhook/trellis-episode-publish` (= `EPISODE_PUBLISH_WEBHOOK`)\n**Fired by:** `episodeService.publishEpisode` with `{ publication_id, episode_id, branch, platform:'youtube', video_url, thumbnail_url, made_for_kids:false, metadata:{title,description,tags,chapters,hashtags} }`.\n\n### FLOW\nWebhook → **Build Metadata** (Code: title / description+chapters+hashtags / safe tags / thumbnail_url / made_for_kids) → **Mark Uploading** → **Download Video** (GET video_url → binary `data`) → **YouTube Upload** (category 10 = Music, selfDeclaredMadeForKids=false) → optional **Download Thumbnail** + **Set Thumbnail** → **Mark Live** (publication → live + external_url) → **Update Episode** (youtube_url + status published).\n\n### SETUP\n1. **YouTube Upload node** → set **Credential → your Google/YouTube OAuth2 account** (the one you connected). Category is 10 (Music). Audience must map to `selfDeclaredMadeForKids` from Build Metadata; Trellis sends false.\n2. **The 3 Supabase nodes** (Mark Uploading / Mark Live / Update Episode) → set **Credential → your existing Trellis (Hub) Supabase account**. No key to paste — these tables (`trellis_episode_publications`, `trellis_episodes`) live on the Hub, the same project your music-session nodes already write to.\n3. **Custom thumbnail:** n8n's YouTube node may not expose `thumbnails.set`. If not, add an HTTP Request node after Extract Video ID: POST `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={{ $('Extract Video ID').item.json.video_id }}&uploadType=media`, send binary thumbnail data downloaded from `{{ $('Build Metadata').item.json.thumbnail_url }}`, authenticated with the same Google/YouTube OAuth credential/scope.\n4. **Verify node fields after import** — the YouTube node's field names can vary by n8n version (title / categoryId / binaryProperty / options.privacyStatus / options.description / options.tags / options.selfDeclaredMadeForKids). Re-map any that didn't import.\n\n### NOTES\n- **Unverified app caveat:** while your Google OAuth app is in Testing / unverified, uploads using the `youtube.upload` scope are forced **private and locked** by YouTube regardless of `privacyStatus`, until the app is verified. For your own channel you can flip them public in YouTube Studio, or submit the app for verification.\n- The whole video is buffered in memory for the upload — fine for short/medium tracks; very long (multi-hour) renders may need a resumable-upload approach.\n- Add a failure branch that sets the publication to `status:'failed'` + `response.reason` so Trellis does not sit in uploading forever.",
+        "content": "## Trellis: Episode Publish (YouTube)\\n\\nAccount-aware Episode publisher. The payload must include `youtube_account_id`. Video upload is delegated to E11, which resolves the selected Trellis credential and performs a resumable YouTube upload.\\n\\n### Setup\\n1. Import and activate E11-youtube-account-upload first.\\n2. Replace `REPLACE_WITH_E11_WORKFLOW_ID` on the YouTube Upload node with E11's workflow ID.\\n3. Map all Supabase nodes to the Hub service-role credential.\\n4. Keep the first upload private while validating the channel destination.\\n\\nGoogle tokens and client secrets stay in Trellis; this workflow must not contain a static YouTube credential.",
         "width": 620,
         "height": 680
       },
@@ -133,7 +130,8 @@
     "Publish Webhook": { "main": [[{ "node": "Build Metadata", "type": "main", "index": 0 }]] },
     "Build Metadata": { "main": [[{ "node": "Mark Uploading", "type": "main", "index": 0 }]] },
     "Mark Uploading": { "main": [[{ "node": "Download Video", "type": "main", "index": 0 }]] },
-    "Download Video": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
+    "Download Video": { "main": [[{ "node": "Prepare Account Upload", "type": "main", "index": 0 }]] },
+    "Prepare Account Upload": { "main": [[{ "node": "YouTube Upload", "type": "main", "index": 0 }]] },
     "YouTube Upload": { "main": [[{ "node": "Extract Video ID", "type": "main", "index": 0 }]] },
     "Extract Video ID": { "main": [[{ "node": "Mark Live", "type": "main", "index": 0 }]] },
     "Mark Live": { "main": [[{ "node": "Update Episode", "type": "main", "index": 0 }]] }

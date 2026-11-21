@@ -19,7 +19,10 @@ import {
   SuppressionSummary,
 } from '../services/emailReportingService';
 import { CampaignRecipientsModal } from './CampaignRecipientsModal';
+import { LinkClickSummaryModal } from './LinkClickSummaryModal';
 import { SuppressionListModal } from './SuppressionListModal';
+import EmailEngagementCohorts from './EmailEngagementCohorts';
+import { BranchInfo, EnrichedProfile } from '../types';
 
 const pct = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
 const CAMPAIGNS_PER_PAGE = 10;
@@ -29,15 +32,21 @@ const fmtDate = (iso: string | null) => {
   catch { return '—'; }
 };
 
-// Live email delivery + engagement reporting, sourced from Resend webhook events
-// (email_events) and the Hub suppression list. Self-contained; safe to drop anywhere.
-export const EmailPerformancePanel: React.FC = () => {
+interface EmailPerformancePanelProps {
+  branches: BranchInfo[];
+  profiles: EnrichedProfile[];
+}
+
+// Live email delivery + engagement reporting, sourced from Resend webhook events,
+// the Hub suppression list, and federated order summaries for correlation.
+export const EmailPerformancePanel: React.FC<EmailPerformancePanelProps> = ({ branches, profiles }) => {
   const [stats, setStats] = useState<CampaignEmailStat[]>([]);
   const [suppression, setSuppression] = useState<SuppressionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [viewingSubject, setViewingSubject] = useState<string | null>(null);
+  const [viewingCampaign, setViewingCampaign] = useState<CampaignEmailStat | null>(null);
+  const [linkCampaign, setLinkCampaign] = useState<CampaignEmailStat | null>(null);
   const [suppressionView, setSuppressionView] = useState<{ reason?: string; title: string } | null>(null);
 
   const load = async () => {
@@ -65,7 +74,7 @@ export const EmailPerformancePanel: React.FC = () => {
   const filteredStats = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase();
     if (!query) return stats;
-    return stats.filter((row) => row.campaign_subject.toLocaleLowerCase().includes(query));
+    return stats.filter((row) => `${row.campaign_name} ${row.campaign_subject}`.toLocaleLowerCase().includes(query));
   }, [searchQuery, stats]);
   const pageCount = Math.max(1, Math.ceil(filteredStats.length / CAMPAIGNS_PER_PAGE));
   const currentPage = Math.min(page, pageCount);
@@ -81,14 +90,14 @@ export const EmailPerformancePanel: React.FC = () => {
   }, [page, pageCount]);
 
   return (
-    <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8">
+    <div className="bg-white border border-slate-200 p-6 sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-11 h-11 bg-emerald-600 flex items-center justify-center border border-emerald-700">
             <Mail size={22} className="text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Email Performance</h2>
+            <h2 className="text-lg font-bold text-slate-900">Email performance</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live from Resend delivery events</p>
           </div>
         </div>
@@ -102,6 +111,8 @@ export const EmailPerformancePanel: React.FC = () => {
           Refresh
         </button>
       </div>
+
+      <EmailEngagementCohorts branches={branches} profiles={profiles} />
 
       {/* Suppression summary — click any tile to see who's in it */}
       {suppression && (
@@ -160,7 +171,7 @@ export const EmailPerformancePanel: React.FC = () => {
           {/* Aggregate rate strip */}
           <div className="grid grid-cols-3 gap-3 mb-5">
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 text-center">
-              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 flex items-center justify-center gap-1"><TrendingUp size={11} /> Open Rate</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500 flex items-center justify-center gap-1"><TrendingUp size={11} /> Tracked Open Rate</p>
               <p className="text-2xl font-black text-emerald-600 mt-1">{pct(totals.opened, totals.delivered || totals.sent)}%</p>
             </div>
             <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-center">
@@ -199,7 +210,7 @@ export const EmailPerformancePanel: React.FC = () => {
                   <th className="py-2 pr-3">Campaign (subject)</th>
                   <th className="py-2 px-2 text-right">Sent</th>
                   <th className="py-2 px-2 text-right">Delivered</th>
-                  <th className="py-2 px-2 text-right">Opened</th>
+                  <th className="py-2 px-2 text-right">Tracked opens</th>
                   <th className="py-2 px-2 text-right">Clicked</th>
                   <th className="py-2 px-2 text-right">Bounced</th>
                   <th className="py-2 pl-2 text-right">Last event</th>
@@ -208,18 +219,34 @@ export const EmailPerformancePanel: React.FC = () => {
               </thead>
               <tbody>
                 {paginatedStats.map((r) => (
-                  <tr key={r.campaign_subject} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    <td className="py-3 pr-3 text-xs font-bold text-slate-700 max-w-[240px] truncate" title={r.campaign_subject}>{r.campaign_subject}</td>
+                  <tr key={r.campaign_id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                    <td className="py-3 pr-3 max-w-[240px]" title={`${r.campaign_name}: ${r.campaign_subject}`}>
+                      <p className="text-xs font-bold text-slate-700 truncate">{r.campaign_name}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{r.campaign_subject}</p>
+                    </td>
                     <td className="py-3 px-2 text-right text-xs text-slate-500">{r.sent}</td>
                     <td className="py-3 px-2 text-right text-xs text-slate-500">{r.delivered}</td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-emerald-600">{r.opened} <span className="text-slate-300 font-normal">({pct(r.opened, r.delivered || r.sent)}%)</span></td>
-                    <td className="py-3 px-2 text-right text-xs font-bold text-blue-600">{r.clicked}</td>
+                    <td className="py-3 px-2 text-right text-xs font-bold text-blue-600">
+                      {r.clicked > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setLinkCampaign(r)}
+                          title="See which links were clicked, and who clicked them"
+                          className="underline decoration-dotted underline-offset-4 hover:text-violet-600 transition"
+                        >
+                          {r.clicked}
+                        </button>
+                      ) : (
+                        r.clicked
+                      )}
+                    </td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-rose-600">{r.bounced}</td>
                     <td className="py-3 pl-2 text-right text-[10px] text-slate-400">{fmtDate(r.last_event_at)}</td>
                     <td className="py-3 pl-2 text-right">
                       <button
                         type="button"
-                        onClick={() => setViewingSubject(r.campaign_subject)}
+                        onClick={() => setViewingCampaign(r)}
                         className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 text-[9px] font-black uppercase tracking-widest whitespace-nowrap"
                       >
                         Recipients
@@ -267,14 +294,18 @@ export const EmailPerformancePanel: React.FC = () => {
             </div>
           )}
           <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">
-            Campaigns are matched by subject line. Batch sends can't tag individual messages, so if two campaigns share a subject their
-            events combine here. Every count is unique recipients, not raw events — a retried send or repeat open only counts once.
+            Campaigns are matched by their exact campaign ID. Sent counts provider-accepted sends; engagement counts unique recipients,
+            so webhook retries and repeated opens do not inflate the totals. Tracked opens remain estimates because privacy tools and
+            security scanners can load the tracking image without a confirmed read.
           </p>
         </>
       )}
 
-      {viewingSubject && (
-        <CampaignRecipientsModal campaignSubject={viewingSubject} onClose={() => setViewingSubject(null)} />
+      {viewingCampaign && (
+        <CampaignRecipientsModal campaignId={viewingCampaign.campaign_id} campaignSubject={viewingCampaign.campaign_subject} branches={viewingCampaign.branches} onClose={() => setViewingCampaign(null)} />
+      )}
+      {linkCampaign && (
+        <LinkClickSummaryModal campaignId={linkCampaign.campaign_id} campaignSubject={linkCampaign.campaign_subject} onClose={() => setLinkCampaign(null)} />
       )}
       {suppressionView && (
         <SuppressionListModal

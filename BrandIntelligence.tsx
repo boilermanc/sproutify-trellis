@@ -1,3 +1,4 @@
+import { createBackendGemini } from './services/aiBackend';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrandIdentity, BrandAnalysisState, GeneratedBrandAsset, BranchContext, EmailTemplate } from './types';
 import { MOCK_BRAND_IDENTITIES } from './constants';
@@ -55,11 +56,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     const b = branchContext?.allBranches.find(x => norm(x.slug) === target);
     return { color: b?.primary_color || '#64748b', logo: b?.logo_url || null };
   };
-  const BrandAvatar: React.FC<{ brand: BrandIdentity; className: string; rounded?: string }> = ({ brand, className, rounded = 'rounded-xl' }) => {
+  const BrandAvatar: React.FC<{ brand: BrandIdentity; className: string; rounded?: string }> = ({ brand, className, rounded = 'rounded-none' }) => {
     const { color, logo } = getBranchAvatar(brand.branch_id);
     return (
       <div
-        className={`${className} ${rounded} flex items-center justify-center text-white font-black shadow-sm flex-shrink-0 overflow-hidden`}
+        className={`${className} ${rounded} flex items-center justify-center text-white font-black shadow-none flex-shrink-0 overflow-hidden`}
         style={{ backgroundColor: color }}
       >
         {logo ? <img src={logo} alt="" className="w-full h-full object-contain" /> : (brand.name.charAt(0) || 'B').toUpperCase()}
@@ -87,7 +88,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     primary: '#3B82F6',
     secondary: '#6B7280',
     accent: '#F59E0B',
-    neutral: '#F3F4F6'
+    neutral: '#F3F4F6',
+    extra: [] as string[]
   });
   const [manualFonts, setManualFonts] = useState({
     heading: 'Inter',
@@ -127,11 +129,10 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const emailEditorRef = useRef<EditorRef>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryImages, setGalleryImages] = useState<{ url: string; name: string }[]>([]);
+  const [galleryImages, setGalleryImages] = useState<{ url: string; name: string; kind: 'image' | 'pdf' }[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
-  const [isDraggingAsset, setIsDraggingAsset] = useState(false);
-  const dragCounterRef = useRef(0);
+  const [galleryDragActive, setGalleryDragActive] = useState(false);
 
   // Load brands from Supabase on mount
   useEffect(() => {
@@ -481,7 +482,10 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           const { data: urlData } = supabase.storage
             .from('email-assets')
             .getPublicUrl(`${templateBranchFilter}/gallery/${f.name}`);
-          return { url: urlData.publicUrl, name: f.name };
+          const kind = f.metadata?.mimetype === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+            ? 'pdf' as const
+            : 'image' as const;
+          return { url: urlData.publicUrl, name: f.name, kind };
         });
       setGalleryImages(images);
     } catch (err) {
@@ -498,73 +502,68 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
     if (activeTab === 'assets' && templateBranchFilter) loadGallery();
   }, [activeTab, templateBranchFilter]);
 
-  const uploadGalleryFile = async (file: File) => {
+  const uploadGalleryFiles = async (files: File[]) => {
+    if (files.length === 0) return;
     if (!templateBranchFilter) {
-      addToast?.('Pick a branch before uploading an image.', 'error');
+      addToast?.('Pick a branch before uploading an asset.', 'error');
       return;
     }
-    if (!file.type.startsWith('image/')) {
-      addToast?.(`"${file.name}" isn't an image.`, 'error');
+
+    const acceptedFiles = files.filter(file =>
+      file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    );
+    if (acceptedFiles.length === 0) {
+      addToast?.('Brand assets must be images or PDF files.', 'error');
       return;
     }
+
     setGalleryUploading(true);
+    let uploadedCount = 0;
+    const failedNames: string[] = [];
     try {
       // Same path the visual editor's upload callback writes to, so both routes
       // populate one gallery per branch.
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `${templateBranchFilter}/gallery/${Date.now()}_${safeName}`;
-      const { error } = await supabase.storage
-        .from('email-assets')
-        .upload(path, file, { upsert: true, contentType: file.type || undefined });
-      if (error) throw error;
-      await loadGallery();
-      addToast?.(`"${file.name}" added to the gallery.`, 'success');
-    } catch (err) {
-      // This used to fail silently — the image simply never appeared.
-      const message = err instanceof Error ? err.message : 'Upload failed';
-      console.error('Gallery upload failed:', err);
-      addToast?.(`Couldn't upload "${file.name}": ${message}`, 'error');
+      for (const file of acceptedFiles) {
+        try {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const unique = Math.random().toString(36).slice(2, 8);
+          const path = `${templateBranchFilter}/gallery/${Date.now()}_${unique}_${safeName}`;
+          const { error } = await supabase.storage
+            .from('email-assets')
+            .upload(path, file, { upsert: false, contentType: file.type || undefined });
+          if (error) throw error;
+          uploadedCount += 1;
+        } catch (err) {
+          failedNames.push(file.name);
+          console.error(`Gallery upload failed for ${file.name}:`, err);
+        }
+      }
+
+      if (uploadedCount > 0) {
+        await loadGallery();
+        addToast?.(`${uploadedCount} ${uploadedCount === 1 ? 'asset' : 'assets'} added to the gallery.`, 'success');
+      }
+      if (failedNames.length > 0) {
+        addToast?.(`Couldn't upload: ${failedNames.join(', ')}`, 'error');
+      }
+      if (files.length > acceptedFiles.length) {
+        addToast?.('Some files were skipped. Brand assets must be images or PDFs.', 'info');
+      }
     } finally {
       setGalleryUploading(false);
     }
   };
 
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await uploadGalleryFile(file);
+    await uploadGalleryFiles(Array.from(e.target.files || []));
     e.target.value = '';
   };
 
-  const handleGalleryDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounterRef.current = 0;
-    setIsDraggingAsset(false);
-    const fileList: FileList | null = e.dataTransfer.files;
-    const files: File[] = fileList ? Array.from(fileList).filter(f => f.type.startsWith('image/')) : [];
-    if (files.length === 0) {
-      addToast?.('Drop an image file to upload it.', 'error');
-      return;
-    }
-    for (const file of files) {
-      await uploadGalleryFile(file);
-    }
-  };
-
-  const handleGalleryDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
-
-  const handleGalleryDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounterRef.current += 1;
-    setIsDraggingAsset(true);
-  };
-
-  const handleGalleryDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-    if (dragCounterRef.current === 0) setIsDraggingAsset(false);
+  const handleGalleryDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setGalleryDragActive(false);
+    if (galleryUploading) return;
+    void uploadGalleryFiles(Array.from(event.dataTransfer.files));
   };
 
   const handleGalleryDeleteImage = async (name: string) => {
@@ -778,9 +777,15 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       setParsedColors(parsed.colors);
       setParsedFonts(parsed.fonts);
 
-      // Auto-suggest color roles
+      // Auto-suggest color roles. Any detected colors not chosen for one of the
+      // 4 named roles get parked in `extra` so the sweep never silently drops a
+      // brand color — you can promote or delete them below.
       const suggested = suggestColorRoles(parsed.colors);
-      setManualColors(suggested);
+      const namedRoles = [suggested.primary, suggested.secondary, suggested.accent, suggested.neutral]
+        .map(c => c.toLowerCase());
+      const leftover = parsed.colors.filter(c => !namedRoles.includes(c.toLowerCase()));
+      const uniqueLeftover = Array.from(new Set(leftover.map(c => c.toLowerCase())));
+      setManualColors({ ...suggested, extra: uniqueLeftover });
 
       // Use first parsed font for headings, second for body
       if (parsed.fonts.length > 0) {
@@ -825,9 +830,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       };
 
       if (messagingUrl.trim()) {
-        const ai = new (await import('@google/genai')).GoogleGenAI({
-          apiKey: geminiApiKey
-        });
+        const ai = createBackendGemini();
 
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
@@ -890,7 +893,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
   const ColorSwatch = ({ color, label }: { color: string; label: string }) => (
     <div className="flex items-center gap-3">
       <div
-        className="w-10 h-10 rounded-xl shadow-inner border border-white/20"
+        className="w-10 h-10 rounded-none shadow-inner border border-white/20"
         style={{ backgroundColor: color }}
       />
       <div>
@@ -905,7 +908,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="p-4 bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl shadow-lg">
+          <div className="p-4 bg-white from-violet-500 to-purple-600 rounded-none shadow-none">
             <Dna className="w-8 h-8 text-white" />
           </div>
           <div>
@@ -918,7 +921,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* Loading Overlay */}
       {isLoading && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl p-8 shadow-2xl flex items-center gap-4">
+          <div className="bg-white rounded-none p-8 shadow-none flex items-center gap-4">
             <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
             <span className="text-lg font-bold text-slate-700">Processing...</span>
           </div>
@@ -927,12 +930,12 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
       {/* Tab Navigation */}
       {analysisState === 'idle' && (
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit">
+        <div className="flex bg-slate-100 p-1.5 rounded-none w-fit">
           <button
             onClick={() => { handleReset(); setActiveTab('create'); setViewingBrand(null); }}
-            className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+            className={`px-8 py-3 rounded-none text-sm font-bold tracking-wider transition-all ${
               activeTab === 'create'
-                ? 'bg-white text-violet-600 shadow-md'
+                ? 'bg-white text-violet-600 shadow-none'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -941,9 +944,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           </button>
           <button
             onClick={() => { setActiveTab('manage'); setViewingBrand(null); }}
-            className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+            className={`px-8 py-3 rounded-none text-sm font-bold tracking-wider transition-all ${
               activeTab === 'manage'
-                ? 'bg-white text-violet-600 shadow-md'
+                ? 'bg-white text-violet-600 shadow-none'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -952,9 +955,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           </button>
           <button
             onClick={() => { setActiveTab('templates'); setViewingBrand(null); }}
-            className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+            className={`px-8 py-3 rounded-none text-sm font-bold tracking-wider transition-all ${
               activeTab === 'templates'
-                ? 'bg-white text-violet-600 shadow-md'
+                ? 'bg-white text-violet-600 shadow-none'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -963,9 +966,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           </button>
           <button
             onClick={() => { setActiveTab('assets'); setViewingBrand(null); }}
-            className={`px-8 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+            className={`px-8 py-3 rounded-none text-sm font-bold tracking-wider transition-all ${
               activeTab === 'assets'
-                ? 'bg-white text-violet-600 shadow-md'
+                ? 'bg-white text-violet-600 shadow-none'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -982,19 +985,19 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left: Input Form */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8">
+            <div className="bg-white rounded-none border border-slate-200 shadow-none p-8">
               <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3">
                 <Sparkles className="w-6 h-6 text-violet-500" />
                 Extract Brand DNA
               </h2>
 
               {/* Mode Toggle */}
-              <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit mb-8">
+              <div className="flex bg-slate-100 p-1.5 rounded-none w-fit mb-8">
                 <button
                   onClick={() => setInputMode('url')}
-                  className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                  className={`px-6 py-2.5 rounded-none text-xs font-semibold tracking-wider transition-all ${
                     inputMode === 'url'
-                      ? 'bg-white text-violet-600 shadow-md'
+                      ? 'bg-white text-violet-600 shadow-none'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
@@ -1003,9 +1006,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </button>
                 <button
                   onClick={() => setInputMode('description')}
-                  className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                  className={`px-6 py-2.5 rounded-none text-xs font-semibold tracking-wider transition-all ${
                     inputMode === 'description'
-                      ? 'bg-white text-violet-600 shadow-md'
+                      ? 'bg-white text-violet-600 shadow-none'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
@@ -1014,9 +1017,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </button>
                 <button
                   onClick={() => setInputMode('manual')}
-                  className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                  className={`px-6 py-2.5 rounded-none text-xs font-semibold tracking-wider transition-all ${
                     inputMode === 'manual'
-                      ? 'bg-white text-violet-600 shadow-md'
+                      ? 'bg-white text-violet-600 shadow-none'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
@@ -1033,7 +1036,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <select
                   value={targetBranch}
                   onChange={(e) => setTargetBranch(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
                 >
                   {branchSlugs.map(site => (
                     <option key={site} value={site}>
@@ -1055,13 +1058,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
                       placeholder="https://example.com"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-lg font-medium text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-4 text-lg font-medium text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
                     />
                   </div>
                   <button
                     onClick={handleAnalyzeUrl}
                     disabled={!urlInput.trim()}
-                    className="w-full py-5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-5 bg-white from-violet-600 to-purple-600 text-white rounded-none font-black text-lg flex items-center justify-center gap-3 shadow-none shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Analyze & Extract <ArrowRight className="w-5 h-5" />
                   </button>
@@ -1080,13 +1083,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       onChange={(e) => setDescriptionInput(e.target.value)}
                       placeholder="A sustainable urban farming company focused on community education..."
                       rows={5}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-base font-medium text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none resize-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-4 text-base font-medium text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none resize-none"
                     />
                   </div>
                   <button
                     onClick={handleGenerateFromDescription}
                     disabled={!descriptionInput.trim()}
-                    className="w-full py-5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-5 bg-white from-violet-600 to-purple-600 text-white rounded-none font-black text-lg flex items-center justify-center gap-3 shadow-none shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Generate Brand DNA <Sparkles className="w-5 h-5" />
                   </button>
@@ -1107,7 +1110,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                         value={manualName}
                         onChange={(e) => setManualName(e.target.value)}
                         placeholder="Your Brand"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
                       />
                     </div>
                     <div>
@@ -1119,7 +1122,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                         value={manualTagline}
                         onChange={(e) => setManualTagline(e.target.value)}
                         placeholder="Your catchy tagline"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
                       />
                     </div>
                   </div>
@@ -1131,7 +1134,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                         CSS File
                       </label>
-                      <label className="flex flex-col items-center justify-center h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all">
+                      <label className="flex flex-col items-center justify-center h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-none cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all">
                         <Upload className="w-6 h-6 text-slate-400 mb-2" />
                         <span className="text-xs text-slate-500 font-medium">
                           {parsedColors.length > 0 ? `${parsedColors.length} colors found` : 'Upload CSS'}
@@ -1145,7 +1148,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                         Logo
                       </label>
-                      <label className="flex flex-col items-center justify-center h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all overflow-hidden">
+                      <label className="flex flex-col items-center justify-center h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-none cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all overflow-hidden">
                         {uploadedLogo ? (
                           <img src={uploadedLogo} alt="Logo" className="w-full h-full object-contain p-2" />
                         ) : (
@@ -1163,7 +1166,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                         Icon/Favicon
                       </label>
-                      <label className="flex flex-col items-center justify-center h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all overflow-hidden">
+                      <label className="flex flex-col items-center justify-center h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-none cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all overflow-hidden">
                         {uploadedIcon ? (
                           <img src={uploadedIcon} alt="Icon" className="w-full h-full object-contain p-2" />
                         ) : (
@@ -1179,9 +1182,19 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
                   {/* Color Palette */}
                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                      Color Palette {parsedColors.length > 0 && <span className="text-violet-500">(auto-detected)</span>}
-                    </label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Color Palette {parsedColors.length > 0 && <span className="text-violet-500">(auto-detected)</span>}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setManualColors(prev => ({ ...prev, extra: [...prev.extra, '#000000'] }))}
+                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-3 h-3" /> Add color
+                      </button>
+                    </div>
+                    {/* 4 named roles + any extras render as one continuous list. */}
                     <div className="grid grid-cols-4 gap-4">
                       {(['primary', 'secondary', 'accent', 'neutral'] as const).map((role) => (
                         <div key={role} className="space-y-2">
@@ -1191,33 +1204,71 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                               type="color"
                               value={manualColors[role]}
                               onChange={(e) => setManualColors(prev => ({ ...prev, [role]: e.target.value }))}
-                              className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200"
+                              className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
                             />
                             <input
                               type="text"
                               value={manualColors[role]}
                               onChange={(e) => setManualColors(prev => ({ ...prev, [role]: e.target.value }))}
-                              className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      {manualColors.extra.map((color, i) => (
+                        <div key={`extra-${i}`} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[10px] font-bold text-slate-500">Extra {i + 1}</label>
+                            <button
+                              type="button"
+                              onClick={() => setManualColors(prev => ({ ...prev, extra: prev.extra.filter((_, j) => j !== i) }))}
+                              className="text-slate-300 hover:text-red-500 transition-colors"
+                              title="Remove"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={color}
+                              onChange={(e) => setManualColors(prev => ({
+                                ...prev,
+                                extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
+                              }))}
+                              className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={color}
+                              onChange={(e) => setManualColors(prev => ({
+                                ...prev,
+                                extra: prev.extra.map((c, j) => j === i ? e.target.value : c)
+                              }))}
+                              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
                             />
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    {/* Parsed colors preview */}
+                    {/* Parsed colors preview — click a swatch to add it to the
+                        palette (deduped against the 4 named roles + extras). */}
                     {parsedColors.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="text-[10px] text-slate-400 font-medium">All detected:</span>
-                        {parsedColors.slice(0, 12).map((color, i) => (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-medium">All detected (click to add):</span>
+                        {parsedColors.slice(0, 24).map((color, i) => (
                           <button
                             key={i}
-                            onClick={() => {
-                              // Click to set as primary
-                              setManualColors(prev => ({ ...prev, primary: color }));
-                            }}
+                            onClick={() => setManualColors(prev => {
+                              const used = [prev.primary, prev.secondary, prev.accent, prev.neutral, ...prev.extra]
+                                .map(c => c.toLowerCase());
+                              if (used.includes(color.toLowerCase())) return prev;
+                              return { ...prev, extra: [...prev.extra, color] };
+                            })}
                             className="w-6 h-6 rounded border border-slate-200 hover:scale-110 transition-transform"
                             style={{ backgroundColor: color }}
-                            title={color}
+                            title={`Add ${color}`}
                           />
                         ))}
                       </div>
@@ -1237,7 +1288,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                           value={manualFonts.heading}
                           onChange={(e) => setManualFonts(prev => ({ ...prev, heading: e.target.value }))}
                           placeholder="Inter"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-2 text-sm font-medium"
                         />
                       </div>
                       <div>
@@ -1247,7 +1298,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                           value={manualFonts.body}
                           onChange={(e) => setManualFonts(prev => ({ ...prev, body: e.target.value }))}
                           placeholder="Inter"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-medium"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-2 text-sm font-medium"
                         />
                       </div>
                     </div>
@@ -1278,7 +1329,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       value={messagingUrl}
                       onChange={(e) => setMessagingUrl(e.target.value)}
                       placeholder="https://yoursite.com"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-violet-500 outline-none"
                     />
                     <p className="text-[10px] text-slate-400 mt-1">AI will scan this URL to extract mission, values, and marketing copy</p>
                   </div>
@@ -1287,7 +1338,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <button
                     onClick={handleManualSubmit}
                     disabled={!manualName.trim()}
-                    className="w-full py-5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-xl shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-5 bg-white from-violet-600 to-purple-600 text-white rounded-none font-black text-lg flex items-center justify-center gap-3 shadow-none shadow-violet-500/20 hover:shadow-violet-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {messagingUrl ? 'Build Brand DNA with AI Messaging' : 'Build Brand DNA'}
                     <ArrowRight className="w-5 h-5" />
@@ -1299,7 +1350,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
           {/* Right: Existing Brands */}
           <div className="space-y-6">
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6">
+            <div className="bg-white rounded-none border border-slate-200 shadow-none p-6">
               <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 Active Brand DNA
@@ -1309,7 +1360,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <div
                     key={brand.id}
                     onClick={() => { setActiveTab('manage'); setViewingBrand(brand); }}
-                    className="p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-violet-300 transition-all cursor-pointer group"
+                    className="p-4 bg-slate-50 rounded-none border border-slate-100 hover:border-violet-300 transition-all cursor-pointer group"
                   >
                     <div className="flex items-center gap-3 mb-2">
                       <BrandAvatar brand={brand} className="w-8 h-8 text-sm" rounded="rounded-lg" />
@@ -1328,7 +1379,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             </div>
 
             {branchesWithoutBrands.length > 0 && (
-              <div className="bg-amber-50 rounded-2xl border border-amber-200 p-4">
+              <div className="bg-amber-50 rounded-none border border-amber-200 p-4">
                 <p className="text-xs font-bold text-amber-800 mb-2">Missing Brand DNA:</p>
                 <div className="flex flex-wrap gap-2">
                   {branchesWithoutBrands.map(site => (
@@ -1349,7 +1400,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {analysisState === 'idle' && activeTab === 'manage' && !viewingBrand && (
         <div className="space-y-8">
           {/* Active Brands */}
-          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8">
+          <div className="bg-white rounded-none border border-slate-200 shadow-none p-8">
             <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3">
               <CheckCircle2 className="w-6 h-6 text-emerald-500" />
               Active Brand DNA
@@ -1361,7 +1412,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <p className="text-slate-500">No active brands. Create one to get started.</p>
                 <button
                   onClick={() => setActiveTab('create')}
-                  className="mt-4 px-6 py-2 bg-violet-600 text-white rounded-xl font-bold text-sm"
+                  className="mt-4 px-6 py-2 bg-violet-600 text-white rounded-none font-bold text-sm"
                 >
                   Create Brand
                 </button>
@@ -1372,7 +1423,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <div
                     key={brand.id}
                     onClick={() => setViewingBrand(brand)}
-                    className="p-6 bg-slate-50 rounded-2xl border border-slate-100 hover:border-violet-300 transition-all group cursor-pointer"
+                    className="p-6 bg-slate-50 rounded-none border border-slate-100 hover:border-violet-300 transition-all group cursor-pointer"
                   >
                     <div className="flex items-start gap-4 mb-4">
                       <BrandAvatar brand={brand} className="w-12 h-12 text-lg" />
@@ -1389,13 +1440,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     <div className="flex items-center gap-2 pt-4 border-t border-slate-200">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleEditBrand(brand); }}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:border-violet-300 hover:text-violet-600 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-none text-xs font-bold hover:border-violet-300 hover:text-violet-600 transition-colors"
                       >
                         <Edit3 className="w-3 h-3" /> Edit
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleArchiveBrand(brand.id); }}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:border-amber-300 hover:text-amber-600 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-none text-xs font-bold hover:border-amber-300 hover:text-amber-600 transition-colors"
                       >
                         <Archive className="w-3 h-3" /> Archive
                       </button>
@@ -1408,7 +1459,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
           {/* Archived Brands */}
           {brands.filter(b => b.status === 'archived').length > 0 && (
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8">
+            <div className="bg-white rounded-none border border-slate-200 shadow-none p-8">
               <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3">
                 <Archive className="w-6 h-6 text-slate-400" />
                 Archived Brands
@@ -1418,7 +1469,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 {brands.filter(b => b.status === 'archived').map(brand => (
                   <div
                     key={brand.id}
-                    className="p-6 bg-slate-100 rounded-2xl border border-slate-200 opacity-75 hover:opacity-100 transition-all"
+                    className="p-6 bg-slate-100 rounded-none border border-slate-200 opacity-75 hover:opacity-100 transition-all"
                   >
                     <div className="flex items-start gap-4 mb-4">
                       <div className="grayscale">
@@ -1433,13 +1484,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     <div className="flex items-center gap-2 pt-4 border-t border-slate-200">
                       <button
                         onClick={() => handleReactivateBrand(brand.id, brand.branch_id)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:border-emerald-300 hover:text-emerald-600 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-none text-xs font-bold hover:border-emerald-300 hover:text-emerald-600 transition-colors"
                       >
                         <RotateCcw className="w-3 h-3" /> Reactivate
                       </button>
                       <button
                         onClick={() => setShowDeleteConfirm(brand.id)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:border-red-300 hover:text-red-600 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-none text-xs font-bold hover:border-red-300 hover:text-red-600 transition-colors"
                       >
                         <Trash2 className="w-3 h-3" /> Delete
                       </button>
@@ -1458,7 +1509,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {analysisState === 'idle' && activeTab === 'manage' && viewingBrand && (
         <div className="space-y-6 animate-in fade-in duration-300">
           {/* Actions Bar */}
-          <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between bg-white rounded-none border border-slate-200 p-4 shadow-none">
             <button
               onClick={() => setViewingBrand(null)}
               className="flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-slate-700 font-bold text-sm transition-colors"
@@ -1471,13 +1522,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </span>
               <button
                 onClick={() => handleEditBrand(viewingBrand)}
-                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:border-violet-300 hover:text-violet-600 transition-colors"
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-none text-sm font-bold hover:border-violet-300 hover:text-violet-600 transition-colors"
               >
                 <Edit3 className="w-4 h-4" /> Edit
               </button>
               <button
                 onClick={() => { handleArchiveBrand(viewingBrand.id); setViewingBrand(null); }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:border-amber-300 hover:text-amber-600 transition-colors"
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-none text-sm font-bold hover:border-amber-300 hover:text-amber-600 transition-colors"
               >
                 <Archive className="w-4 h-4" /> Archive
               </button>
@@ -1489,9 +1540,9 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             {/* Left Column */}
             <div className="lg:col-span-7 space-y-6">
               {/* Name & Tagline */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                 <div className="flex items-center gap-4 mb-3">
-                  <BrandAvatar brand={viewingBrand} className="w-14 h-14 text-2xl" rounded="rounded-2xl" />
+                  <BrandAvatar brand={viewingBrand} className="w-14 h-14 text-2xl" rounded="rounded-none" />
                   <div>
                     <h2 className="text-4xl font-black text-slate-800">{viewingBrand.name}</h2>
                     {viewingBrand.tagline && (
@@ -1513,7 +1564,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
 
               {/* Mission & Values */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Target className="w-4 h-4" /> Mission & Values
                 </h3>
@@ -1538,13 +1589,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
               {/* Marketing Hooks */}
               {viewingBrand.marketing_hooks && viewingBrand.marketing_hooks.length > 0 && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+                <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <Megaphone className="w-4 h-4" /> Marketing Hooks
                   </h3>
                   <div className="space-y-4">
                     {viewingBrand.marketing_hooks.map((hook, i) => (
-                      <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div key={i} className="p-4 bg-slate-50 rounded-none border border-slate-100">
                         <span className="text-[10px] font-mono text-violet-500 mb-1 block">HOOK_{String(i + 1).padStart(2, '0')}</span>
                         <p className="text-slate-700 font-medium italic">"{hook}"</p>
                       </div>
@@ -1555,11 +1606,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
               {/* Image Prompt */}
               {viewingBrand.image_prompt && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+                <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <ImageIcon className="w-4 h-4" /> Image Generation Prompt
                   </h3>
-                  <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100 font-mono">
+                  <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-none border border-slate-100 font-mono">
                     {viewingBrand.image_prompt}
                   </p>
                 </div>
@@ -1569,7 +1620,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             {/* Right Column */}
             <div className="lg:col-span-5 space-y-6">
               {/* Color Palette */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Palette className="w-4 h-4" /> Color Palette
                 </h3>
@@ -1578,11 +1629,16 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <ColorSwatch color={viewingBrand.color_palette.secondary} label="Secondary" />
                   <ColorSwatch color={viewingBrand.color_palette.accent} label="Accent" />
                   <ColorSwatch color={viewingBrand.color_palette.neutral} label="Neutral" />
+                  {viewingBrand.color_palette.extra?.map((color, i) => (
+                    <React.Fragment key={i}>
+                      <ColorSwatch color={color} label={`Extra ${i + 1}`} />
+                    </React.Fragment>
+                  ))}
                 </div>
               </div>
 
               {/* Typography */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Type className="w-4 h-4" /> Typography
                 </h3>
@@ -1599,7 +1655,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
 
               {/* Voice & Audience */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4">Brand Voice</h3>
                 {viewingBrand.voice ? (
                   <p className="text-sm text-slate-600 leading-relaxed mb-4">{viewingBrand.voice}</p>
@@ -1616,7 +1672,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
 
               {/* Extracted Images */}
               {viewingBrand.extracted_images && viewingBrand.extracted_images.length > 0 && (
-                <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+                <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                     <ImageIcon className="w-4 h-4" /> Extracted Images
                   </h3>
@@ -1626,7 +1682,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                         key={i}
                         src={img}
                         alt={`Extracted ${i + 1}`}
-                        className="w-full h-24 object-cover rounded-xl border border-slate-100"
+                        className="w-full h-24 object-cover rounded-none border border-slate-100"
                       />
                     ))}
                   </div>
@@ -1634,7 +1690,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               )}
 
               {/* Metadata */}
-              <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6">
+              <div className="bg-slate-50 rounded-none border border-slate-100 p-6">
                 <div className="grid grid-cols-2 gap-4 text-sm font-mono text-slate-500">
                   <div>
                     <span className="font-bold uppercase">Created</span>
@@ -1666,7 +1722,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Panel — Template List */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6">
+            <div className="bg-white rounded-none border border-slate-200 shadow-none p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
                   <Mail className="w-5 h-5 text-violet-500" />
@@ -1674,7 +1730,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </h2>
                 <button
                   onClick={handleNewTemplate}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 text-white rounded-xl text-xs font-black hover:bg-violet-500 transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 text-white rounded-none text-xs font-black hover:bg-violet-500 transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" /> New Template
                 </button>
@@ -1687,7 +1743,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <select
                     value={templateBranchFilter}
                     onChange={(e) => handleTemplateBranchChange(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold appearance-none cursor-pointer focus:border-violet-400 outline-none"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-2.5 text-sm font-bold appearance-none cursor-pointer focus:border-violet-400 outline-none"
                   >
                     {branchSlugs.map(slug => (
                       <option key={slug} value={slug}>{slug}</option>
@@ -1719,7 +1775,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     <button
                       key={tmpl.id}
                       onClick={() => handleSelectTemplate(tmpl)}
-                      className={`w-full text-left p-4 rounded-xl border transition-all ${
+                      className={`w-full text-left p-4 rounded-none border transition-all ${
                         selectedTemplate?.id === tmpl.id
                           ? 'border-violet-400 bg-violet-50'
                           : 'border-slate-100 bg-slate-50 hover:border-slate-200'
@@ -1762,19 +1818,19 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
           {/* Right Panel — Template Editor */}
           <div className="lg:col-span-8 space-y-4">
             {!templateName && !templateHtml && !selectedTemplate ? (
-              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-12 text-center">
+              <div className="bg-white rounded-none border border-slate-200 shadow-none p-12 text-center">
                 <Code className="w-12 h-12 text-slate-300 mx-auto mb-4" />
                 <h3 className="text-xl font-black text-slate-800 mb-2">Template Editor</h3>
                 <p className="text-sm text-slate-500 mb-6">Select a template from the list or create a new one to start editing.</p>
                 <button
                   onClick={handleNewTemplate}
-                  className="px-6 py-3 bg-violet-600 text-white rounded-xl font-bold text-sm hover:bg-violet-500 transition-colors"
+                  className="px-6 py-3 bg-violet-600 text-white rounded-none font-bold text-sm hover:bg-violet-500 transition-colors"
                 >
                   <Plus className="w-4 h-4 inline mr-2" /> New Template
                 </button>
               </div>
             ) : (
-              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 shadow-none">
                 {/* Template Name & Description */}
                 <div className="p-6 border-b border-slate-100 space-y-3">
                   <input
@@ -1782,14 +1838,14 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     placeholder="Template name"
                     value={templateName}
                     onChange={(e) => { setTemplateName(e.target.value); setTemplateDirty(true); }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:bg-white focus:border-violet-400 outline-none transition-all"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold focus:bg-white focus:border-violet-400 outline-none transition-all"
                   />
                   <input
                     type="text"
                     placeholder="Description (optional)"
                     value={templateDescription}
                     onChange={(e) => { setTemplateDescription(e.target.value); setTemplateDirty(true); }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:bg-white focus:border-violet-400 outline-none transition-all"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-2.5 text-xs focus:bg-white focus:border-violet-400 outline-none transition-all"
                   />
                 </div>
 
@@ -1919,7 +1975,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <button
                     onClick={handleSaveTemplate}
                     disabled={!templateName.trim() || templateSaving}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black hover:bg-violet-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 text-white rounded-none text-xs font-black hover:bg-violet-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Save className="w-3.5 h-3.5" /> Save Template
                   </button>
@@ -1934,11 +1990,11 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* IDLE STATE - BRAND ASSETS TAB */}
       {/* ══════════════════════════════════════════════════════════════ */}
       {analysisState === 'idle' && activeTab === 'assets' && (
-        <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-none border border-slate-200 shadow-none overflow-hidden">
           <div className="flex flex-wrap items-start justify-between gap-5 p-7 border-b border-slate-100">
             <div>
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center">
+                <div className="w-11 h-11 rounded-none bg-violet-100 text-violet-600 flex items-center justify-center">
                   <ImageIcon className="w-5 h-5" />
                 </div>
                 <div>
@@ -1954,35 +2010,44 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <select
                     value={templateBranchFilter}
                     onChange={(event) => setTemplateBranchFilter(event.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 pr-10 text-sm font-bold appearance-none cursor-pointer focus:border-violet-400 outline-none"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-2.5 pr-10 text-sm font-bold appearance-none cursor-pointer focus:border-violet-400 outline-none"
                   >
                     {branchSlugs.map(slug => <option key={slug} value={slug}>{slug}</option>)}
                   </select>
                   <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
-              <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
+              <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-none text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
                 {galleryUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 Upload Assets
-                <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
+                <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
               </label>
             </div>
           </div>
 
           <div
-            className="p-7"
-            onDragEnter={handleGalleryDragEnter}
-            onDragOver={handleGalleryDragOver}
-            onDragLeave={handleGalleryDragLeave}
+            className={`relative p-7 transition-colors ${galleryDragActive ? 'bg-violet-50/70' : ''}`}
+            onDragEnter={(event) => { event.preventDefault(); if (!galleryUploading) setGalleryDragActive(true); }}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) setGalleryDragActive(false);
+            }}
             onDrop={handleGalleryDrop}
           >
+            {galleryDragActive && (
+              <div className="pointer-events-none absolute inset-3 z-20 rounded-none border-2 border-dashed border-violet-500 bg-violet-50/95 flex flex-col items-center justify-center text-center">
+                <Upload className="w-10 h-10 text-violet-500 mb-3" />
+                <p className="text-base font-black text-violet-700">Drop assets to upload</p>
+                <p className="text-xs font-bold text-violet-500 mt-1">Images and PDFs are accepted</p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{templateBranchFilter}</p>
-                <p className="text-sm font-bold text-slate-700 mt-1">{galleryImages.length} reusable {galleryImages.length === 1 ? 'image' : 'images'}</p>
+                <p className="text-sm font-bold text-slate-700 mt-1">{galleryImages.length} reusable {galleryImages.length === 1 ? 'asset' : 'assets'}</p>
               </div>
               <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 text-[9px] font-black uppercase tracking-widest text-emerald-700">
-                Available in Campaign Builder
+                Images available in Campaign Builder
               </div>
             </div>
 
@@ -1991,34 +2056,29 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <Loader2 className="w-7 h-7 text-violet-500 animate-spin" />
               </div>
             ) : galleryImages.length === 0 ? (
-              <div
-                className={`min-h-64 rounded-[2rem] border-2 border-dashed flex flex-col items-center justify-center text-center p-8 transition-colors ${
-                  isDraggingAsset ? 'border-violet-400 bg-violet-50' : 'border-slate-200 bg-slate-50'
-                }`}
-              >
-                {galleryUploading ? (
-                  <Loader2 className="w-12 h-12 text-violet-400 mb-4 animate-spin" />
-                ) : (
-                  <ImageIcon className={`w-12 h-12 mb-4 ${isDraggingAsset ? 'text-violet-400' : 'text-slate-300'}`} />
-                )}
-                <h3 className="text-base font-black text-slate-700">
-                  {isDraggingAsset ? 'Drop to upload' : galleryUploading ? 'Uploading…' : 'No brand assets yet'}
-                </h3>
-                <p className="text-sm text-slate-400 mt-1 mb-5">
-                  {isDraggingAsset ? 'Release to add this image to the library.' : 'Drag and drop images here, or upload photography, banners, product images, and approved campaign creative.'}
-                </p>
-                <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-xl text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
+              <div className="min-h-64 rounded-none border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-center p-8">
+                <ImageIcon className="w-12 h-12 text-slate-300 mb-4" />
+                <h3 className="text-base font-black text-slate-700">No brand assets yet</h3>
+                <p className="text-sm text-slate-400 mt-1 mb-5">Drag images or PDFs here, or browse for photography, banners, product images, and approved creative.</p>
+                <label className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-none text-xs font-black cursor-pointer hover:bg-violet-500 transition-all">
                   {galleryUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                   Upload First Asset
-                  <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
+                  <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
                 </label>
               </div>
             ) : (
-              <div className={`grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 rounded-[2rem] transition-colors ${isDraggingAsset ? 'ring-2 ring-violet-400 ring-offset-4 bg-violet-50/40' : ''}`}>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                 {galleryImages.map(img => (
-                  <div key={img.name} className="group rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 hover:border-violet-300 hover:shadow-md transition-all">
-                    <div className="aspect-video bg-slate-100 overflow-hidden">
-                      <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                  <div key={img.name} className="group rounded-none overflow-hidden border border-slate-200 bg-slate-50 hover:border-violet-300 hover:shadow-none transition-all">
+                    <div className="aspect-video bg-slate-100 overflow-hidden flex items-center justify-center">
+                      {img.kind === 'pdf' ? (
+                        <div className="flex flex-col items-center text-rose-500">
+                          <FileText className="w-10 h-10" />
+                          <span className="mt-2 text-[9px] font-black uppercase tracking-widest">PDF document</span>
+                        </div>
+                      ) : (
+                        <img src={img.url} alt={img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                      )}
                     </div>
                     <div className="p-3">
                       <p className="text-[10px] font-bold text-slate-600 truncate" title={img.name}>{img.name}</p>
@@ -2028,7 +2088,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                           onClick={() => { navigator.clipboard.writeText(img.url); addToast?.('Asset URL copied.', 'success'); }}
                           className="flex-1 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-wide hover:border-violet-300 hover:text-violet-600 transition-all"
                         >
-                          Copy URL
+                          {img.kind === 'pdf' ? 'Copy PDF URL' : 'Copy URL'}
                         </button>
                         <button
                           type="button"
@@ -2052,14 +2112,14 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {galleryOpen && (
         <div className="fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/40" onClick={() => setGalleryOpen(false)} />
-          <div className="relative ml-auto w-full max-w-md bg-white h-full shadow-2xl flex flex-col">
+          <div className="relative ml-auto w-full max-w-md bg-white h-full shadow-none flex flex-col">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Brand Gallery</h3>
                 <p className="text-[10px] text-slate-400 mt-1">{templateBranchFilter}</p>
               </div>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white rounded-xl text-[10px] font-black cursor-pointer hover:bg-violet-500 transition-all">
+                <label className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white rounded-none text-[10px] font-black cursor-pointer hover:bg-violet-500 transition-all">
                   {galleryUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
                   Upload
                   <input type="file" accept="image/*" className="hidden" onChange={handleGalleryUpload} disabled={galleryUploading} />
@@ -2074,7 +2134,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 <div className="flex items-center justify-center h-40">
                   <Loader2 className="w-6 h-6 text-violet-500 animate-spin" />
                 </div>
-              ) : galleryImages.length === 0 ? (
+              ) : galleryImages.filter(asset => asset.kind === 'image').length === 0 ? (
                 <div className="text-center py-16">
                   <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                   <p className="text-sm text-slate-400 font-bold">No images yet</p>
@@ -2082,8 +2142,8 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
-                  {galleryImages.map(img => (
-                    <div key={img.name} className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 aspect-video">
+                  {galleryImages.filter(asset => asset.kind === 'image').map(img => (
+                    <div key={img.name} className="group relative rounded-none overflow-hidden border border-slate-200 bg-slate-50 aspect-video">
                       <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
                         <button
@@ -2114,7 +2174,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* ══════════════════════════════════════════════════════════════ */}
       {(analysisState === 'analyzing_site' || analysisState === 'generating_strategy') && (
         <div className="flex items-center justify-center min-h-[600px]">
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-[3rem] p-12 max-w-2xl w-full text-center shadow-2xl">
+          <div className="bg-white from-slate-800 to-slate-900 rounded-none p-12 max-w-2xl w-full text-center shadow-none">
             <div className="space-y-6 mb-10">
               <h2 className="text-4xl font-black text-white">
                 {analysisState === 'analyzing_site' ? 'Analyzing Website' : 'Generating Brand'}
@@ -2128,7 +2188,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             </div>
 
             {analysisState === 'analyzing_site' && (
-              <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+              <div className="relative rounded-none overflow-hidden border border-white/10 shadow-none">
                 <div className="h-10 bg-slate-700 flex items-center px-4 gap-2">
                   <div className="w-3 h-3 rounded-full bg-red-400" />
                   <div className="w-3 h-3 rounded-full bg-yellow-400" />
@@ -2140,7 +2200,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   </div>
                 </div>
                 {/* Branded scanning panel — no external screenshot service */}
-                <div className="relative aspect-video bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center overflow-hidden">
+                <div className="relative aspect-video bg-white from-slate-800 to-slate-900 flex items-center justify-center overflow-hidden">
                   <Globe className="w-16 h-16 text-violet-500/40 animate-pulse" />
                   <div className="absolute inset-x-0 top-0 h-1 bg-violet-500/60"
                        style={{ animation: 'scan 2s linear infinite' }} />
@@ -2156,7 +2216,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* ══════════════════════════════════════════════════════════════ */}
       {analysisState === 'error' && (
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="bg-white rounded-[2rem] border border-red-200 p-12 max-w-md text-center shadow-lg">
+          <div className="bg-white rounded-none border border-red-200 p-12 max-w-md text-center shadow-none">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <AlertCircle className="w-8 h-8 text-red-500" />
             </div>
@@ -2164,7 +2224,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             <p className="text-slate-500 mb-6">{error}</p>
             <button
               onClick={handleReset}
-              className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors"
+              className="px-8 py-3 bg-slate-900 text-white rounded-none font-bold hover:bg-slate-800 transition-colors"
             >
               Try Again
             </button>
@@ -2178,7 +2238,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {analysisState === 'results' && previewBrand && (
         <div className="space-y-8 animate-in fade-in duration-500">
           {/* Actions Bar */}
-          <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between bg-white rounded-none border border-slate-200 p-4 shadow-none">
             <div className="flex items-center gap-4">
               <button
                 onClick={handleReset}
@@ -2193,7 +2253,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </span>
               <button
                 onClick={handleSaveBrand}
-                className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-black shadow-lg hover:bg-emerald-500 transition-colors"
+                className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-none font-black shadow-none hover:bg-emerald-500 transition-colors"
               >
                 <Save className="w-4 h-4" /> Save & Activate
               </button>
@@ -2205,7 +2265,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             {/* Left Column */}
             <div className="lg:col-span-7 space-y-6">
               {/* Name & Tagline */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                 <h2 className="text-4xl font-black text-slate-800 mb-2">{previewBrand.name}</h2>
                 <p className="text-xl text-slate-500 italic">"{previewBrand.tagline}"</p>
                 {previewBrand.website_url && (
@@ -2222,7 +2282,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
 
               {/* Mission & Values */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Target className="w-4 h-4" /> Mission & Values
                 </h3>
@@ -2240,13 +2300,13 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
 
               {/* Marketing Hooks */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-8 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Megaphone className="w-4 h-4" /> Marketing Hooks
                 </h3>
                 <div className="space-y-4">
                   {previewBrand.marketing_hooks.map((hook, i) => (
-                    <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div key={i} className="p-4 bg-slate-50 rounded-none border border-slate-100">
                       <span className="text-[10px] font-mono text-violet-500 mb-1 block">HOOK_{String(i + 1).padStart(2, '0')}</span>
                       <p className="text-slate-700 font-medium italic">"{hook}"</p>
                     </div>
@@ -2258,7 +2318,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
             {/* Right Column */}
             <div className="lg:col-span-5 space-y-6">
               {/* Color Palette */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Palette className="w-4 h-4" /> Color Palette
                 </h3>
@@ -2267,11 +2327,16 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   <ColorSwatch color={previewBrand.color_palette.secondary} label="Secondary" />
                   <ColorSwatch color={previewBrand.color_palette.accent} label="Accent" />
                   <ColorSwatch color={previewBrand.color_palette.neutral} label="Neutral" />
+                  {previewBrand.color_palette.extra?.map((color, i) => (
+                    <React.Fragment key={i}>
+                      <ColorSwatch color={color} label={`Extra ${i + 1}`} />
+                    </React.Fragment>
+                  ))}
                 </div>
               </div>
 
               {/* Typography */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Type className="w-4 h-4" /> Typography
                 </h3>
@@ -2288,7 +2353,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </div>
 
               {/* Voice & Audience */}
-              <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <div className="bg-white rounded-none border border-slate-200 p-6 shadow-none">
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-4">Brand Voice</h3>
                 <p className="text-sm text-slate-600 leading-relaxed mb-4">{previewBrand.voice}</p>
                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 mt-6">Target Audience</h3>
@@ -2304,7 +2369,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* ══════════════════════════════════════════════════════════════ */}
       {editingBrand && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-[2rem] max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-none max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-none">
             <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between rounded-t-[2rem]">
               <h2 className="text-xl font-black text-slate-800">Edit Brand: {editingBrand.name}</h2>
               <button
@@ -2326,7 +2391,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     type="text"
                     value={editingBrand.name}
                     onChange={(e) => setEditingBrand({ ...editingBrand, name: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-bold"
                   />
                 </div>
                 <div>
@@ -2337,7 +2402,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                     type="text"
                     value={editingBrand.tagline}
                     onChange={(e) => setEditingBrand({ ...editingBrand, tagline: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm"
                   />
                 </div>
               </div>
@@ -2351,15 +2416,31 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   value={editingBrand.mission}
                   onChange={(e) => setEditingBrand({ ...editingBrand, mission: e.target.value })}
                   rows={3}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm resize-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm resize-none"
                 />
               </div>
 
               {/* Colors */}
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                  Color Palette
-                </label>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Color Palette
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBrand({
+                      ...editingBrand,
+                      color_palette: {
+                        ...editingBrand.color_palette,
+                        extra: [...(editingBrand.color_palette.extra || []), '#000000']
+                      }
+                    })}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-3 h-3" /> Add color
+                  </button>
+                </div>
+                {/* 4 named roles + any extras render as one continuous list. */}
                 <div className="grid grid-cols-4 gap-4">
                   {(['primary', 'secondary', 'accent', 'neutral'] as const).map((role) => (
                     <div key={role} className="space-y-2">
@@ -2372,7 +2453,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                             ...editingBrand,
                             color_palette: { ...editingBrand.color_palette, [role]: e.target.value }
                           })}
-                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200"
+                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
                         />
                         <input
                           type="text"
@@ -2381,7 +2462,54 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                             ...editingBrand,
                             color_palette: { ...editingBrand.color_palette, [role]: e.target.value }
                           })}
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                          className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {(editingBrand.color_palette.extra || []).map((color, i) => (
+                    <div key={`extra-${i}`} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-500">Extra {i + 1}</label>
+                        <button
+                          type="button"
+                          onClick={() => setEditingBrand({
+                            ...editingBrand,
+                            color_palette: {
+                              ...editingBrand.color_palette,
+                              extra: editingBrand.color_palette.extra!.filter((_, j) => j !== i)
+                            }
+                          })}
+                          className="text-slate-300 hover:text-red-500 transition-colors"
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => setEditingBrand({
+                            ...editingBrand,
+                            color_palette: {
+                              ...editingBrand.color_palette,
+                              extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
+                            }
+                          })}
+                          className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 flex-shrink-0"
+                        />
+                        <input
+                          type="text"
+                          value={color}
+                          onChange={(e) => setEditingBrand({
+                            ...editingBrand,
+                            color_palette: {
+                              ...editingBrand.color_palette,
+                              extra: editingBrand.color_palette.extra!.map((c, j) => j === i ? e.target.value : c)
+                            }
+                          })}
+                          className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono"
                         />
                       </div>
                     </div>
@@ -2402,7 +2530,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       ...editingBrand,
                       typography: { ...editingBrand.typography, heading: e.target.value }
                     })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm"
                   />
                 </div>
                 <div>
@@ -2416,7 +2544,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                       ...editingBrand,
                       typography: { ...editingBrand.typography, body: e.target.value }
                     })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm"
                   />
                 </div>
               </div>
@@ -2430,7 +2558,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   value={editingBrand.voice}
                   onChange={(e) => setEditingBrand({ ...editingBrand, voice: e.target.value })}
                   rows={2}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm resize-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm resize-none"
                 />
               </div>
 
@@ -2443,7 +2571,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   value={editingBrand.target_audience}
                   onChange={(e) => setEditingBrand({ ...editingBrand, target_audience: e.target.value })}
                   rows={2}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm resize-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm resize-none"
                 />
               </div>
 
@@ -2457,7 +2585,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
                   value={editingBrand.unsubscribe_url || ''}
                   onChange={(e) => setEditingBrand({ ...editingBrand, unsubscribe_url: e.target.value })}
                   placeholder="https://<spoke>.supabase.co/functions/v1/newsletter-unsubscribe?token={{token}}"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-none px-4 py-3 text-sm font-mono"
                 />
                 <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed">
                   Put <span className="font-mono text-violet-500">{'{{token}}'}</span> where each subscriber's unsubscribe token goes — it's filled in per recipient at send. Leave blank to use the default email-based unsubscribe.
@@ -2474,7 +2602,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </button>
               <button
                 onClick={handleUpdateBrand}
-                className="px-8 py-3 bg-violet-600 text-white rounded-xl font-bold shadow-lg hover:bg-violet-500 transition-colors flex items-center gap-2"
+                className="px-8 py-3 bg-violet-600 text-white rounded-none font-bold shadow-none hover:bg-violet-500 transition-colors flex items-center gap-2"
               >
                 <Save className="w-4 h-4" /> Save Changes
               </button>
@@ -2488,7 +2616,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* ══════════════════════════════════════════════════════════════ */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+          <div className="bg-white rounded-none p-8 max-w-md w-full shadow-none text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Trash2 className="w-8 h-8 text-red-500" />
             </div>
@@ -2505,7 +2633,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               </button>
               <button
                 onClick={() => handleDeleteBrand(showDeleteConfirm)}
-                className="px-8 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-500 transition-colors"
+                className="px-8 py-3 bg-red-600 text-white rounded-none font-bold shadow-none hover:bg-red-500 transition-colors"
               >
                 Delete Forever
               </button>
@@ -2519,7 +2647,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
       {/* ══════════════════════════════════════════════════════════════ */}
       {templateToDelete && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+          <div className="bg-white rounded-none p-8 max-w-md w-full shadow-none text-center">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Trash2 className="w-8 h-8 text-red-500" />
             </div>
@@ -2538,7 +2666,7 @@ const BrandIntelligence: React.FC<BrandIntelligenceProps> = ({ onBrandUpdate, ge
               <button
                 onClick={() => handleDeleteTemplate(templateToDelete.id)}
                 disabled={templateDeleting}
-                className="px-8 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg hover:bg-red-500 transition-colors disabled:opacity-60 flex items-center gap-2"
+                className="px-8 py-3 bg-red-600 text-white rounded-none font-bold shadow-none hover:bg-red-500 transition-colors disabled:opacity-60 flex items-center gap-2"
               >
                 {templateDeleting ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Deleting...</>

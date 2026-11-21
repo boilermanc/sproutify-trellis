@@ -47,7 +47,7 @@ test('Brand Intelligence exposes the shared asset gallery as a first-class tab',
   assert.match(brandIntelligence, /'templates' \| 'assets'/);
   assert.match(brandIntelligence, /Brand Asset Library/);
   assert.match(brandIntelligence, /Upload Assets/);
-  assert.match(brandIntelligence, /Available in Campaign Builder/);
+  assert.match(brandIntelligence, /available in Campaign Builder/i);
   assert.match(brandIntelligence, /activeTab === 'assets'/);
 });
 
@@ -57,6 +57,18 @@ test('campaign list exposes the resume handoff', () => {
   assert.match(campaigns, /Continue Editing/);
   assert.match(campaigns, /onEditDraft\(c\.id\)/);
   assert.match(app, /setCampaignDraftId\(id\); setActiveView\('campaign-builder'\)/);
+});
+
+test('a completed launch navigates to and opens the persisted campaign', () => {
+  const builder = read('pages/CampaignBuilder.tsx');
+  const campaigns = read('pages/Campaigns.tsx');
+  const app = read('App.tsx');
+
+  assert.match(builder, /onCampaignLaunch\(\{\s*id:\s*newCampaign\.id,/);
+  assert.match(app, /setFocusedCampaignId\(campaign\.id\);\s*setActiveView\('campaigns'\)/);
+  assert.match(app, /focusedCampaignId=\{focusedCampaignId\}/);
+  assert.match(campaigns, /allCampaigns\.find\(campaign => campaign\.id === focusedCampaignId\)/);
+  assert.match(campaigns, /setSelected\(focusedCampaign\)/);
 });
 
 test('migration removes anonymous campaign access and scopes writes', () => {

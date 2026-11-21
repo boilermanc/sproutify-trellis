@@ -1,0 +1,84 @@
+{
+  "name": "Trellis: Content Experiment Review Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "name": "Daily Review Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-360, 240],
+      "notes": "Runs once each morning. The worker is idempotent: only one Slack reminder is queued per experiment."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/content-review-reminders",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "name": "Deliver Due Reminders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [-100, 240],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IkIpi5m4OmJ9DvBS",
+          "name": "Sproutify Trellis"
+        }
+      },
+      "notes": "Calls the JWT-protected Edge Function with the existing Hub service-role credential. Never paste a key into this workflow."
+    },
+    {
+      "parameters": {
+        "content": "## Trellis: Content Experiment Review Reminders\n\nRuns daily at 08:00 and calls the deployed `content-review-reminders` Edge Function. The worker queues due Hub-native experiments, posts one Slack reminder, and retries failed deliveries up to three times.\n\n### Setup after import\n1. Confirm **Sproutify Trellis** is selected on **Deliver Due Reminders**.\n2. Run once manually. With no due experiments the expected response is `{ enqueued: 0, claimed: 0, delivered: 0, failed: 0 }`.\n3. Activate the workflow.\n\nThe Slack destination comes from Hub `tenant_secrets.slack_webhook`; no webhook or service-role secret belongs in this JSON.",
+        "height": 400,
+        "width": 500
+      },
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-400, -240]
+    }
+  ],
+  "connections": {
+    "Daily Review Check": {
+      "main": [[{ "node": "Deliver Due Reminders", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York"
+  },
+  "tags": []
+}

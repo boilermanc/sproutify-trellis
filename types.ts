@@ -26,6 +26,19 @@ export interface AuthContextType {
   updatePassword: (password: string) => Promise<{ error: string | null }>;
 }
 
+export interface PromoCaptureRun {
+  id: string;
+  project_id: string;
+  revision_id: string;
+  scenario_id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'stale';
+  video_asset_id: string | null;
+  still_asset_ids: string[];
+  trace_asset_id: string | null;
+  evidence: Record<string, unknown>;
+  created_at: string;
+}
+
 // DEPRECATED: Use BrandIdentity instead. Keeping for backwards compatibility during migration.
 export interface Brand {
   id: string;
@@ -56,6 +69,32 @@ export interface BranchContext {
   activeBranchSlugs: string[];
   setActiveBranchSlugs: (slugs: string[]) => void;
   isAllSelected: boolean;
+}
+
+export interface XTrackedPost {
+  id: string;
+  post_id: string;
+  is_own: boolean;
+  is_mention: boolean;
+  text: string;
+  published_at: string;
+  project_tags: string[];
+  mention_status: 'new' | 'done';
+  metrics: Record<string, number | null>;
+  last_synced_at: string;
+  last_error: string | null;
+}
+export interface XDailySnapshot {
+  snapshot_date: string;
+  captured_at: string;
+  metrics: Record<string, number | null>;
+}
+export interface XTrackingResult {
+  account: { handle: string; connected: boolean; connected_at: string | null; last_synced_at: string | null; last_error: string | null };
+  posts: XTrackedPost[];
+  projects: { id: string; name: string }[];
+  total: number;
+  page: number;
 }
 
 export interface Integration {
@@ -174,20 +213,20 @@ export interface PostHogConnection {
 }
 
 export interface PostHogAnalyticsSummary {
+  coverage?: { signup: boolean; paid: boolean; ordered_funnel: boolean; note: string; started_at?: string; activity_split?: boolean };
+  paid_conversions?: number | null;
   window_days: 7 | 30 | 90;
   active_users: { daily: number; weekly: number; monthly: number };
   sessions: number;
   users: { total_in_window: number; new: number; returning: number };
   lifecycle_funnel: {
+    labels?: { signed_up: string; onboarded: string; activated: string };
+    conversion_labels?: { signup_to_onboarding: string; onboarding_to_activation: string };
     signed_up: number;
     onboarded: number;
     activated: number;
     signup_to_onboarding_pct: number;
     onboarding_to_activation_pct: number;
-    // Server-provided display labels for the funnel steps + conversions. Optional so
-    // the panel keeps working against older cached snapshots (falls back to defaults).
-    labels?: { signed_up: string; onboarded: string; activated: string };
-    conversion_labels?: { signup_to_onboarding: string; onboarding_to_activation: string };
   };
   retention: {
     day_7_pct: number;
@@ -219,6 +258,29 @@ export interface ProfileAddress {
   country?: string;
 }
 
+export interface FederatedEventRegistration {
+  id: string;
+  event_id: string;
+  name: string;
+  email: string;
+  status: string;
+  amount_paid: number | null;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
+  event: {
+    id: string;
+    title: string;
+    event_type?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+    start_time?: string | null;
+    end_time?: string | null;
+    location?: string | null;
+    is_active?: boolean | null;
+  } | null;
+}
+
 export interface NormalizedSpokeProfile {
   id?: string;           // Customer ID for linking to orders
   email: string;
@@ -226,10 +288,17 @@ export interface NormalizedSpokeProfile {
   last_name?: string;
   phone?: string;
   subscribed?: boolean;
+  // Rekkrd keeps these preferences separately. `subscribed` is their union for
+  // Trellis targeting, while the originals remain available for audit/display.
+  email_digest_optin?: boolean;
+  email_updates_optin?: boolean;
   created_at?: string;
   referral_source?: string;
   email_notifications?: boolean;
   sms_notifications?: boolean;
+  // Customer-auth timestamp when the spoke exposes one. This is deliberately
+  // optional because commerce/newsletter-only profiles may have no login.
+  last_login_at?: string;
   billing_address?: ProfileAddress;
   shipping_address?: ProfileAddress;
   // Per-subscriber token for the spoke's native newsletter unsubscribe link
@@ -241,6 +310,13 @@ export interface NormalizedSpokeProfile {
   // present when the connection's customers feed exposes a `tags` column.
   // Segmentable via the 'customer_tags' field (see segmentTypes.ts).
   tags?: string[];
+  // ATL event intent remains spoke-owned. These fields are populated by the
+  // read-only event_audience gateway and never written into the Hub database.
+  event_notice_consent?: boolean;
+  event_registrations?: FederatedEventRegistration[];
+  event_titles?: string[];
+  event_statuses?: string[];
+  last_event_registration_at?: string;
   _spoke_id: string;
   _spoke_name: string;
 }
@@ -261,7 +337,28 @@ export interface ProfileOrderStats {
   products_purchased?: ProductPurchase[];  // Products this customer has bought
 }
 
+export interface ProfileSubscription {
+  trial_start?: string;
+  trial_end?: string;
+  provider?: string;
+  iap_status?: string;
+  iap_current_period_end?: string;
+  id: string;
+  customer_id?: string;
+  email?: string;
+  status?: string;
+  plan?: string;
+  started_at?: string;
+  expires_at?: string;
+  created_at?: string;
+  _spoke_id: string;
+  _spoke_name: string;
+}
+
 export interface EnrichedProfile extends NormalizedSpokeProfile {
+  subscription_records?: ProfileSubscription[];
+  collection_record_count?: number;
+  collection_count_checked_at?: string;
   order_stats?: ProfileOrderStats;
   metadata?: Record<string, any>;
   _predicted_demographics?: {
@@ -311,9 +408,11 @@ export interface N8nWebhooks {
 
 export interface ApiKeyConfig {
   active_llm: LlmProvider;
+  /** Server configuration markers; plaintext is accepted only in the Settings save form. */
   gemini_api_key: string;
   openai_api_key: string;
   anthropic_api_key: string;
+  xai_api_key?: string;
   n8n_webhooks: N8nWebhooks;
   slack_webhook?: string;
   woo_consumer_key: string;
@@ -481,6 +580,7 @@ export type LeadActivityType =
   | 'lead_note'
   | 'lead_call'
   | 'lead_email'
+  | 'lead_reply'
   | 'lead_meeting'
   | 'lead_quote'
   | 'lead_converted';
@@ -499,6 +599,50 @@ export interface LeadEmailEligibility {
   hardBlockReasons: string[];
   marketingUnsubscribed: boolean;
   fieldsChecked: Array<'profiles.is_subscribed' | 'profiles.marketing_pause' | 'email_suppressions.reason'>;
+}
+
+export type LeadSequenceMode = 'approval' | 'automatic';
+export type LeadSequenceStatus = 'active' | 'awaiting_approval' | 'paused' | 'completed' | 'exited';
+
+export interface LeadEmailSequenceStep {
+  id: string;
+  step_number: number;
+  delay_days: number;
+  name: string;
+  subject_template: string;
+  template_key: string;
+}
+
+export interface LeadEmailMessage {
+  id: string;
+  enrollment_id: string | null;
+  step_id: string | null;
+  direction: 'outbound' | 'inbound';
+  status: string;
+  subject: string;
+  resend_email_id: string | null;
+  body_preview: string | null;
+  created_at: string;
+  sent_at: string | null;
+  provider_event_at: string | null;
+  last_error: string | null;
+}
+
+export interface LeadEmailSequenceEnrollment {
+  id: string;
+  sequence_id: string;
+  lead_id: string;
+  profile_id: string;
+  mode: LeadSequenceMode;
+  status: LeadSequenceStatus;
+  next_step_number: number;
+  next_run_at: string | null;
+  exit_reason: string | null;
+  started_at: string;
+  completed_at: string | null;
+  sequence: { id: string; name: string; slug: string };
+  steps: LeadEmailSequenceStep[];
+  messages: LeadEmailMessage[];
 }
 
 export type TaskType = 'copywriting' | 'design' | 'audience' | 'technical' | 'analysis' | 'social';
@@ -520,7 +664,44 @@ export interface MarketingTask {
   audit_log?: AuditLogEntry[];
 }
 
-export type ViewState = 'dashboard' | 'profiles' | 'leads' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+export type ViewState = 'project-rooms' | 'sweetwater-leads' | 'dashboard' | 'profiles' | 'leads' | 'prospecting' | 'segments' | 'intelligence' | 'branches' | 'automations' | 'tasks' | 'email-preview' | 'dev-tools' | 'campaign-builder' | 'campaigns' | 'social-hub' | 'content-intelligence' | 'brand-intelligence' | 'settings' | 'support-hub' | 'reports' | 'knowledge-base' | 'help-center' | 'team' | 'user-profile' | 'platform-wizard' | 'marketing-wizard' | 'marketing-brands' | 'reddit-growth' | 'video-ad-lab' | 'media-generation' | 'motion-posts' | 'promo-studio' | 'trellis-studio' | 'studio-albums' | 'trellis-episodes' | 'clip-studio' | 'transcriptions' | 'ad-performance' | 'post-scheduler' | 'card-studio' | 'post-performance';
+
+export interface TranscriptionSegment {
+  id?: string;
+  speaker?: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptionWord {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface TranscriptionJob {
+  id: string;
+  created_by: string;
+  title: string;
+  original_filename: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  file_size_bytes: number;
+  mode: 'standard' | 'diarized';
+  provider: 'openai' | 'elevenlabs' | 'gemini';
+  model: string;
+  language: string | null;
+  status: 'uploaded' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  transcript_text: string | null;
+  segments: TranscriptionSegment[];
+  words: TranscriptionWord[];
+  duration_seconds: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface StudioAlbum {
   id: string;
@@ -566,6 +747,7 @@ export interface StudioTrack {
   prompt: string | null;
   duration_seconds: number | null;
   review_status: 'planned' | 'generated' | 'pending_review' | 'approved' | 'rejected' | 'regenerating' | 'locked' | 'failed';
+  included_in_master: boolean;
   rejection_reason: string | null;
   narrative_purpose?: string | null;
   energy?: number | null;
@@ -596,6 +778,7 @@ export interface StudioVideo {
 export interface StudioPublication {
   id: string;
   album_id: string;
+  youtube_account_id: string | null;
   platform: 'youtube';
   status: 'draft' | 'ready' | 'submitting' | 'live' | 'failed' | 'cancelled';
   title: string;
@@ -700,19 +883,32 @@ export interface SocialActivity {
 export type SocialPlatform = 'instagram' | 'x' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube';
 
 export interface SocialAccount {
+  id?: string;
+  branch_id?: string;
   platform: SocialPlatform;
+  external_account_id?: string;
   handle: string;
+  display_name?: string;
   profile_url?: string;
+  purpose?: string;
+  is_primary?: boolean;
+  status?: 'registered' | 'pending' | 'active' | 'error' | 'revoked';
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
   is_connected: boolean;
 }
 
-/** localStorage sidecar shape: branchId → social accounts */
+/** Supabase-backed registry shape: branchId → public social account identities */
 export type BranchSocialAccountsMap = Record<string, SocialAccount[]>;
 
 /** Non-sensitive connection status returned by Supabase RPC */
 export interface SocialConnectionStatus {
+  credential_id?: string;
+  branch_social_account_id?: string;
   platform: SocialPlatform;
   is_connected: boolean;
+  platform_user_id?: string;
   platform_username?: string;
   connected_at?: string;
   // Whether the App Secret is stored (the boolean only, never the secret). A
@@ -957,6 +1153,10 @@ export interface BrandColorPalette {
   secondary: string;
   accent: string;
   neutral: string;
+  // Additional brand/marketing colors beyond the 4 core roles. Optional so
+  // existing records (and every consumer that reads only the named roles) keep
+  // working unchanged. Populated by the CSS sweep's leftover colors and by hand.
+  extra?: string[];
 }
 
 export interface BrandTypography {
@@ -1090,6 +1290,11 @@ export interface BranchStatsResult {
     activeIn90Days: number;
     profilesWithOrders: number;
   };
+
+  // Branches with no spoke database, whose subscribers live Hub-side in
+  // profiles.branches. Surfaced as pseudo-spokes (`hub:<slug>`) so they can be
+  // picked as a data source alongside real connections.
+  hubSources: { id: string; name: string; slug: string }[];
 
   isLoading: boolean;
   errors: string[];
@@ -1251,6 +1456,28 @@ export type VideoAdStatus = 'queued' | 'generating_script' | 'generating_frame' 
 
 export type VideoAdFormat = 'video' | 'static' | 'carousel';
 
+export interface CreativeStudioIdea {
+  id: string;
+  title: string;
+  hook: string;
+  brief: string;
+  rationale: string;
+  format: VideoAdFormat;
+}
+
+export interface CreativeStudioIdeaContext {
+  format: VideoAdFormat;
+  branch: string;
+  name: string;
+  summary: string;
+  audience: string;
+  voice: string;
+  website: string;
+  hooks: string[];
+  historyAvailable: boolean;
+  recent: { title: string; format: VideoAdFormat; status: string; createdAt: string; brief: string }[];
+}
+
 export interface VideoAdConfig {
   branch: string;
   product_description: string;
@@ -1260,13 +1487,14 @@ export interface VideoAdConfig {
   actor_style: string;
   actor_gender: 'male' | 'female';
   voice_style: string;
-  video_duration: 15 | 30 | 60;
+  video_duration: 5 | 10;
   pipeline: 'talking_head' | 'full_scene';
   platform: 'general' | 'tiktok' | 'instagram_reels' | 'youtube_shorts';
 }
 
 export interface VideoAdJob {
   id: string;
+  archived_at?: string | null;
   campaign_id: string | null;
   branch: string;
   script: string | null;
@@ -1503,6 +1731,88 @@ export interface MusicGeneration {
   updated_at: string;
 }
 
+// ─── Motion Posts (still image → AI motion → Rekkrd audio → Reel) ───
+export type MotionPostStatus =
+  | 'queued' | 'generating' | 'mixing' | 'ready' | 'failed'
+  | 'publishing' | 'published' | 'cancelled';
+
+export type MotionPostAudioSourceType = 'studio_track' | 'studio_master' | 'music_generation';
+
+export interface MotionPostAudioOption {
+  id: string;
+  source_type: MotionPostAudioSourceType;
+  title: string;
+  artist?: string | null;
+  duration_seconds?: number | null;
+  audio_url: string;
+}
+
+export interface MotionPostJob {
+  id: string;
+  organization_id: string;
+  created_by: string;
+  branch_id: string | null;
+  branch_slug: string;
+  title: string;
+  prompt: string;
+  provider: 'xai';
+  model: string;
+  duration_seconds: number;
+  aspect_ratio: '9:16';
+  resolution: '480p' | '720p' | '1080p';
+  status: MotionPostStatus;
+  progress: number;
+  source_bucket: string;
+  source_path: string;
+  source_url: string | null;
+  provider_request_id: string | null;
+  generated_video_url: string | null;
+  audio_source_type: MotionPostAudioSourceType | null;
+  audio_source_id: string | null;
+  audio_title: string | null;
+  audio_url: string | null;
+  audio_start_seconds: number;
+  caption: string | null;
+  output_bucket: string;
+  output_path: string | null;
+  output_url: string | null;
+  cost_estimate: number;
+  cost_actual: number | null;
+  error_message: string | null;
+  published_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  latest_finish?: MotionPostFinishingJob | null;
+  latest_publication?: ScheduledPost | null;
+}
+
+export type MotionPostFinishingStatus =
+  | 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel_requested' | 'cancelled';
+
+export interface MotionPostFinishingJob {
+  id: string;
+  motion_post_job_id: string;
+  created_by: string;
+  status: MotionPostFinishingStatus;
+  progress: number;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  source_bucket: string;
+  source_path: string;
+  output_bucket: string;
+  output_path: string | null;
+  output_url: string | null;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MusicGenConfig {
   branch: string;
   title: string;
@@ -1654,6 +1964,7 @@ export interface EpisodeMetadata {
 export interface EpisodePublication {
   id: string;
   episode_id: string;
+  youtube_account_id: string | null;
   platform: PublishPlatform;
   status: PublishStatus;
   external_id: string | null;
@@ -1901,6 +2212,7 @@ export interface ClipRenderJob {
 export interface ClipPublication {
   id: string;
   project_id: string;
+  youtube_account_id: string | null;
   platform: 'youtube' | 'social';
   status: 'pending' | 'uploading' | 'processing' | 'live' | 'failed';
   external_id: string | null;
@@ -2030,12 +2342,14 @@ export interface ScheduledPost {
   media_type: 'image' | 'video' | 'carousel';
   media_urls: string[];
   scheduled_for: string;
-  status: 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
+  status: 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled' | 'needs_review';
   attempts: number | null;
   last_error: string | null;
   post_id: string | null;
   published_at: string | null;
   source: string | null;
+  source_motion_post_id?: string | null;
+  source_motion_finish_id?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -2050,5 +2364,529 @@ export interface NewScheduledPost {
   media_urls: string[];
   scheduled_for: string;
   source?: string;
+  source_motion_post_id?: string | null;
+  source_motion_finish_id?: string | null;
   created_by?: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEDIA GENERATION (provider-agnostic GPU jobs)
+// ═══════════════════════════════════════════════════════════════
+
+export type MediaGenerationTaskType =
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'audio_driven_avatar'
+  | 'video_continuation';
+
+export type MediaGenerationJobStatus =
+  | 'validating'
+  | 'queued'
+  | 'submitted'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancel_requested'
+  | 'cancelled';
+
+export type MediaGenerationInputRole =
+  | 'reference_image'
+  | 'reference_video'
+  | 'driving_audio'
+  | 'source_image'
+  | 'source_video'
+  | 'first_frame'
+  | 'last_frame';
+
+export type MediaTextAnimation = 'fade' | 'slide_up' | 'word_reveal';
+export type MediaTextPosition = 'top' | 'center' | 'bottom';
+export type MediaFontId = 'cormorant' | 'abril' | 'bebas' | 'playfair' | 'oswald' | 'montserrat' | 'inter' | 'jetbrains';
+
+export interface MediaTextCue {
+  id: string;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+  position: MediaTextPosition;
+  animation: MediaTextAnimation;
+}
+
+export interface MediaTextStyle {
+  font_id: MediaFontId;
+  font_size: number;
+  font_weight: 400 | 600 | 700 | 800 | 900;
+  color: string;
+  background_color: string;
+  background_opacity: number;
+  uppercase: boolean;
+  shadow: boolean;
+}
+
+export type MediaFinishingJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel_requested' | 'cancelled';
+
+export interface MediaFinishingJob {
+  id: string;
+  project_id: string;
+  source_output_id: string;
+  source_asset_id: string;
+  created_by: string;
+  status: MediaFinishingJobStatus;
+  progress: number;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  output_asset_id: string | null;
+  output_id: string | null;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MediaPlatformExportStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancel_requested' | 'cancelled';
+export type MediaPlatformExportFraming = 'blur_background' | 'center_crop' | 'fit';
+
+export interface MediaPlatformExport {
+  id: string;
+  project_id: string;
+  source_output_id: string;
+  source_asset_id: string;
+  created_by: string;
+  platform: 'instagram_reel';
+  framing: MediaPlatformExportFraming;
+  status: MediaPlatformExportStatus;
+  progress: number;
+  output_asset_id: string | null;
+  output_asset?: MediaAsset | null;
+  signed_url?: string | null;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaGenerationProject {
+  id: string;
+  organization_id: string;
+  branch_id: string | null;
+  created_by: string;
+  name: string;
+  description: string | null;
+  status: 'active' | 'archived';
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaModelCatalogEntry {
+  id: string;
+  display_name: string;
+  family: string;
+  provider_hint: string | null;
+  task_types: MediaGenerationTaskType[];
+  capabilities: Record<string, unknown>;
+  runtime: Record<string, unknown>;
+  default_parameters: Record<string, unknown>;
+  active: boolean;
+}
+
+export interface MediaAsset {
+  id: string;
+  project_id: string;
+  character_id: string | null;
+  asset_type: string;
+  role: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  status: 'uploading' | 'ready' | 'processing' | 'failed' | 'archived';
+  metadata: Record<string, unknown>;
+  created_at: string;
+  signed_url?: string | null;
+}
+
+export interface MediaGenerationJobInput {
+  asset_id: string;
+  input_role: MediaGenerationInputRole;
+  position?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MediaGenerationJob {
+  id: string;
+  project_id: string;
+  scene_id: string | null;
+  created_by: string;
+  model_id: string;
+  provider: string;
+  task_type: MediaGenerationTaskType;
+  status: MediaGenerationJobStatus;
+  progress: number;
+  provider_job_id: string | null;
+  prompt: string;
+  negative_prompt: string | null;
+  parameters: Record<string, unknown>;
+  max_attempts: number;
+  attempt_count: number;
+  retry_of: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  queued_at: string;
+  submitted_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  last_heartbeat_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaGenerationLibraryItem {
+  output_id: string;
+  output_role: string;
+  approved: boolean;
+  approved_at: string | null;
+  asset: MediaAsset;
+  job: MediaGenerationJob;
+  project: MediaGenerationProject | null;
+  attempt: {
+    execution_seconds?: number | null;
+    actual_cost_usd?: number | null;
+    gpu_count?: number | null;
+  } | null;
+  publishing: ScheduledPost[];
+  signed_url: string | null;
+  source_output_id?: string | null;
+  finishing: MediaFinishingJob | null;
+  platform_export: MediaPlatformExport | null;
+}
+
+export interface CreateMediaFinishingJob {
+  source_output_id: string;
+  text_cues: MediaTextCue[];
+  style: MediaTextStyle;
+  idempotency_key: string;
+}
+
+export interface CreateMediaPlatformExport {
+  source_output_id: string;
+  platform: 'instagram_reel';
+  framing: MediaPlatformExportFraming;
+  idempotency_key: string;
+}
+
+export interface ScheduleMediaGenerationOutput {
+  output_id: string;
+  branch_id: string;
+  platform: 'instagram' | 'tiktok';
+  caption: string;
+  scheduled_for: string;
+  idempotency_key: string;
+}
+
+export interface CreateMediaGenerationJob {
+  project_id: string;
+  scene_id?: string | null;
+  model_id: string;
+  provider?: string;
+  task_type: MediaGenerationTaskType;
+  prompt: string;
+  negative_prompt?: string;
+  parameters?: Record<string, unknown>;
+  inputs?: MediaGenerationJobInput[];
+  idempotency_key?: string;
+}
+
+export interface AppStoreApp {
+  id: string;
+  branch_id: string;
+  apple_app_id: string;
+  name: string;
+  status: 'active' | 'pending' | 'error' | 'disconnected';
+  last_synced_at: string | null;
+  last_error: string | null;
+  branches?: { name?: string | null; slug?: string | null } | null;
+}
+
+export interface AppStoreMetricSnapshot {
+  app_id: string;
+  branch_id: string;
+  metric_date: string;
+  report_name: string;
+  category: 'APP_USAGE' | 'APP_STORE_ENGAGEMENT' | 'COMMERCE' | 'PERFORMANCE';
+  metrics: Record<string, number>;
+  fetched_at: string;
+}
+
+export interface AppStoreAnalyticsResult {
+  apps: AppStoreApp[];
+  snapshots: AppStoreMetricSnapshot[];
+  window_days: 7 | 30 | 90;
+}
+
+// ---------------------------------------------------------------------------
+// SpectIQ founder prospecting (isolated from tenant profiles and Farm leads)
+// ---------------------------------------------------------------------------
+
+export type ProspectingWebsiteState =
+  | 'official_website_confirmed'
+  | 'official_website_not_identified'
+  | 'website_unreachable_at_scan_time'
+  | 'social_or_directory_only_observed'
+  | 'needs_human_verification';
+
+export type ProspectingSalesStage =
+  | 'new'
+  | 'audited'
+  | 'review_pending'
+  | 'pitch_ready'
+  | 'contacted'
+  | 'engaged'
+  | 'demo_booked'
+  | 'won'
+  | 'nurture'
+  | 'not_a_fit';
+
+export type ProspectingVerificationState =
+  | 'unreviewed'
+  | 'evidence_reviewed'
+  | 'identity_verified'
+  | 'contact_verified'
+  | 'outreach_approved';
+
+export type ProspectingTerritoryStatus = 'draft' | 'active' | 'archived';
+export type ProspectingContactVerificationStatus =
+  | 'unknown'
+  | 'unverified'
+  | 'verified'
+  | 'invalid'
+  | 'bounced'
+  | 'complained'
+  | 'unsubscribed';
+export type ProspectingTaskStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+export type ProspectingEvidenceDecision = 'pending' | 'approved' | 'corrected' | 'rejected';
+export type ProspectingClaimType =
+  | 'company_identity'
+  | 'official_website'
+  | 'contact_identity'
+  | 'contact_email'
+  | 'services'
+  | 'service_area'
+  | 'opportunity'
+  | 'outreach_angle'
+  | 'other';
+export type ProspectingEvidenceSourceType =
+  | 'official_website'
+  | 'government_registry'
+  | 'professional_directory'
+  | 'social_profile'
+  | 'search_result'
+  | 'founder_observation'
+  | 'document'
+  | 'other';
+export type ProspectingActivityType =
+  | 'territory_created'
+  | 'territory_updated'
+  | 'territory_archived'
+  | 'prospect_created'
+  | 'prospect_updated'
+  | 'prospect_archived'
+  | 'contact_added'
+  | 'contact_updated'
+  | 'stage_changed'
+  | 'verification_changed'
+  | 'claim_added'
+  | 'claim_updated'
+  | 'claim_reviewed'
+  | 'note_added'
+  | 'note_updated'
+  | 'task_created'
+  | 'task_completed'
+  | 'task_cancelled'
+  | 'exported';
+
+export interface ProspectingTerritory {
+  id: string;
+  name: string;
+  kind: 'city' | 'county' | 'state' | 'multi_market';
+  city: string | null;
+  county: string | null;
+  state_code: string | null;
+  country_code: string;
+  status: ProspectingTerritoryStatus;
+  target_count: number;
+  metadata: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ProspectingProspect {
+  id: string;
+  territory_id: string;
+  company_name: string;
+  normalized_company_name: string;
+  official_domain: string | null;
+  website_url: string | null;
+  website_state: ProspectingWebsiteState;
+  phone: string | null;
+  summary: string | null;
+  address_line_1: string | null;
+  city: string | null;
+  state_code: string | null;
+  postal_code: string | null;
+  sales_state: ProspectingSalesStage;
+  verification_state: ProspectingVerificationState;
+  opportunity_category: string | null;
+  source: string;
+  metadata: Record<string, unknown>;
+  identity_verified_at: string | null;
+  evidence_reviewed_at: string | null;
+  outreach_approved_at: string | null;
+  pitch_ready_approved_by: string | null;
+  pitch_ready_approved_at: string | null;
+  next_follow_up_at: string | null;
+  last_contacted_at: string | null;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface ProspectingContact {
+  id: string;
+  prospect_id: string;
+  full_name: string | null;
+  title: string | null;
+  email: string | null;
+  email_normalized: string | null;
+  phone: string | null;
+  phone_normalized: string | null;
+  is_primary: boolean;
+  email_status: ProspectingContactVerificationStatus;
+  email_verified_at: string | null;
+  suppressed_at: string | null;
+  suppression_reason: string | null;
+  source_url: string | null;
+  metadata: Record<string, unknown>;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingClaim {
+  id: string;
+  prospect_id: string;
+  research_run_id: string | null;
+  claim_type: ProspectingClaimType;
+  normalized_value: string;
+  display_value: string;
+  source_url: string;
+  source_type: ProspectingEvidenceSourceType;
+  source_excerpt: string | null;
+  artifact_ref: string | null;
+  retrieved_at: string;
+  confidence: number;
+  prompt_version: string | null;
+  rubric_version: string | null;
+  verification_decision: ProspectingEvidenceDecision;
+  founder_correction: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProspectingEvidence = ProspectingClaim;
+
+export interface ProspectingNote {
+  id: string;
+  prospect_id: string;
+  body: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingTask {
+  id: string;
+  prospect_id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: ProspectingTaskStatus;
+  completed_at: string | null;
+  assigned_to: string;
+  created_by: string;
+  updated_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProspectingActivity {
+  id: number;
+  prospect_id: string | null;
+  territory_id: string | null;
+  activity_type: ProspectingActivityType | string;
+  actor_id: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ProspectingProspectDetail extends ProspectingProspect {
+  territory: ProspectingTerritory | null;
+  contacts: ProspectingContact[];
+  claims: ProspectingClaim[];
+  notes: ProspectingNote[];
+  tasks: ProspectingTask[];
+  activity: ProspectingActivity[];
+}
+
+export interface ProspectingStats {
+  total: number;
+  due_follow_up: number;
+  pitch_ready: number;
+  contacted: number;
+  engaged: number;
+  demo_booked: number;
+  won: number;
+  needs_verification: number;
+  by_stage: Partial<Record<ProspectingSalesStage, number>>;
+  by_verification: Partial<Record<ProspectingVerificationState, number>>;
+}
+
+export interface ProspectingListFilters {
+  territoryId?: string;
+  search?: string;
+  stage?: ProspectingSalesStage;
+  verificationState?: ProspectingVerificationState;
+  limit?: number;
+}
+
+export interface SocialIdeaWorkspace {
+  messages: { role: 'user' | 'sage'; text: string }[];
+  input: string;
+  brief: string;
+  notes: string;
+}
+
+export interface ProspectingExportOptions {
+  prospectIds?: string[];
+  territoryId?: string;
+  redacted?: boolean;
 }

@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import {
   MusicSession, MusicTrack, MusicRender, CreateSessionConfig, SessionStatus,
 } from '../types';
@@ -142,7 +142,7 @@ async function generateTrackPlan(
   if (!geminiApiKey) return fallback();
 
   try {
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+    const ai = createBackendGemini();
     const instruction = `You are curating a cohesive ${Math.round((trackCount * avgLen) / 60)}-minute music session.
 Title: "${config.title}"
 Genre: ${config.genre || 'any'}

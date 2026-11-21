@@ -1,0 +1,124 @@
+{
+  "name": "Sweetwater Website Contact Capture",
+  "active": false,
+  "nodes": [
+    {
+      "id": "sweetwater-inquiry-webhook",
+      "name": "Sweetwater Inquiry Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "4a7ce38b-f497-424f-9936-f636f5b68514",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "4a7ce38b-f497-424f-9936-f636f5b68514"
+    },
+    {
+      "id": "validate-inquiry",
+      "name": "Validate Inquiry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body=$input.first().json.body;\nif(!body || typeof body!=='object' || body.website)throw new Error('Invalid contact request');\nfor(const key of ['name','email','subject','message'])if(typeof body[key]!=='string' || !body[key].trim())throw new Error('Missing contact details');\nif(body.message.length>4000 || body.subject.length>200)throw new Error('Message is too long');\n// Content-derived retry key, not a security token. Database compares the full payload on reuse.\nconst seed=JSON.stringify([new Date().toISOString().slice(0,10),body.name,body.email.toLowerCase(),body.subject,body.message]);\nconst hash=[2166136261,2246822519,3266489917,668265263].map(start=>{let h=start;for(let i=0;i<seed.length;i++){h=Math.imul(h^seed.charCodeAt(i),16777619);}return (h>>>0).toString(16).padStart(8,'0');}).join('');\nconst requestId=body.requestId || `${hash.slice(0,8)}-${hash.slice(8,12)}-${hash.slice(12,16)}-${hash.slice(16,20)}-${hash.slice(20)}`;\nconst scrub=value=>String(value).replace(/\\b\\d{3}-\\d{2}-\\d{4}\\b/g,'[redacted]').replace(/\\b(?:\\d[ -]*?){13,19}\\b/g,'[redacted]').replace(/\\b(?:sk-|sb_secret_)[a-zA-Z0-9_-]{16,}\\b/g,'[redacted]');\nreturn [{json:{p_payload:{requestId,event:'intro_contact_request',intent:'website-contact',source:'sweetwater-website-contact',contactMethod:'email',contact:{name:body.name.trim(),email:body.email.trim(),phone:null},context:{summary:scrub(body.subject+' — '+body.message).slice(0,1000)},messages:[{role:'user',content:scrub(body.message)}],consent:{marketing:false},testMode:body.testMode===true}}}];\n"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "save-inquiry",
+      "name": "Save Inquiry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/rest/v1/rpc/capture_sweetwater_inquiry",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "name": "Sproutify Trellis"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "confirm-saved-inquiry",
+      "name": "Confirm Saved Inquiry",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {accepted:$json.accepted === true,requestId:$json.requestId} }}",
+        "options": {
+          "responseCode": "={{ $json.accepted === true ? 200 : 503 }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Sweetwater Inquiry Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Save Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Confirm Saved Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "tags": []
+}

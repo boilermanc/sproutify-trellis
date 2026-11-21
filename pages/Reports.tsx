@@ -4,19 +4,25 @@ import { SpokeConnection, EnrichedProfile, BranchStatsResult, BranchContext, Tre
 import { Article } from '../src/data/helpContent';
 import EmailPerformancePanel from '../components/EmailPerformancePanel';
 import PostHogAnalyticsPanel from '../components/PostHogAnalyticsPanel';
+import AppStoreAnalyticsPanel from '../components/AppStoreAnalyticsPanel';
 import YouTubePerformancePanel from '../components/YouTubePerformancePanel';
+import SocialPerformancePanel from '../components/SocialPerformancePanel';
+import EventRegistrationPanel from '../components/EventRegistrationPanel';
 import {
-  BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity,
+  BarChart3, Users, DollarSign, Tag, Mail, Youtube, Activity, Share2,
   ShieldCheck, AlertTriangle, Crown,
-  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe
+  Heart, UserX, PauseCircle, Loader2, Radio, FileText, Globe, CalendarDays, Smartphone
 } from 'lucide-react';
 
-type ReportsTab = 'audience' | 'email' | 'youtube' | 'product' | 'blueprints';
+type ReportsTab = 'audience' | 'social' | 'email' | 'events' | 'youtube' | 'product' | 'app-store' | 'blueprints';
 const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
   { id: 'audience', label: 'Audience', icon: Users },
+  { id: 'social', label: 'Social', icon: Share2 },
   { id: 'email', label: 'Email', icon: Mail },
+  { id: 'events', label: 'Events', icon: CalendarDays },
   { id: 'youtube', label: 'YouTube', icon: Youtube },
-  { id: 'product', label: 'Product', icon: Activity },
+  { id: 'product', label: 'PostHog', icon: Activity },
+  { id: 'app-store', label: 'App Store', icon: Smartphone },
   { id: 'blueprints', label: 'Blueprints', icon: FileText },
 ];
 
@@ -27,8 +33,8 @@ const REPORTS_TABS: { id: ReportsTab; label: string; icon: typeof Users }[] = [
 const REPORT_BLUEPRINTS: TrellisReport[] = [
   { id: 'rep_1', name: 'Audience Growth & Segmentation', type: 'system', metrics: ['Profile Growth Rate', 'Segment Distribution', 'Subscription Trends'], spokes: ['All Spokes'] },
   { id: 'rep_2', name: 'Revenue & LTV Distribution', type: 'system', metrics: ['Total Revenue', 'Avg LTV', 'VIP Identification', 'Purchase Frequency'], spokes: ['All Spokes'] },
-  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Open Rate', 'Click Rate', 'Bounce Rate', 'Audience Reach'], spokes: ['All Spokes'] },
-  { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
+  { id: 'rep_3', name: 'Campaign Performance Overview', type: 'system', metrics: ['Tracked Open Rate', 'Click Rate', 'Bounce Rate', 'Audience Reach'], spokes: ['All Spokes'] },
+  { id: 'rep_4', name: 'Per-Campaign Email Breakdown', type: 'system', metrics: ['Per-Campaign Tracked Open Rate', 'Per-Campaign Click Rate', 'Delivery Volume', 'Recent Campaign Trend'], spokes: ['All Spokes'] },
   { id: 'rep_5', name: 'Product Adoption & Retention', type: 'system', metrics: ['DAU / WAU / MAU', 'Lifecycle Funnel', '7-Day Retention', '30-Day Retention', 'Feature Milestones'], spokes: ['PostHog-Connected Branches'] },
 ];
 
@@ -37,7 +43,7 @@ const PercentBar = ({ value, max, color }: { value: number; max: number; color: 
   const pct = max > 0 ? (value / max) * 100 : 0;
   return (
     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-      <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+      <div className={`h-full ${color} rounded-full transition-colors`} style={{ width: `${pct}%` }} />
     </div>
   );
 };
@@ -211,11 +217,11 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       {/* Section Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
+          <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-sm flex items-center justify-center ">
             <BarChart3 size={28} className="text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Ecosystem Analytics</h1>
+            <h1 className="text-2xl font-black text-slate-800">Ecosystem Analytics</h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Federated Spoke Intelligence</p>
           </div>
         </div>
@@ -234,13 +240,13 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       </div>
 
       {/* Tab bar */}
-      <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm w-fit overflow-x-auto max-w-full">
+      <div className="flex bg-white p-1.5 rounded-sm border border-slate-200  w-fit overflow-x-auto max-w-full">
         {REPORTS_TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center space-x-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-              activeTab === tab.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'
+            className={`flex items-center space-x-2 px-6 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors whitespace-nowrap ${
+              activeTab === tab.id ? 'bg-slate-900 text-white ' : 'text-slate-400 hover:text-slate-800'
             }`}
           >
             <tab.icon size={14} />
@@ -260,9 +266,35 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* SOCIAL AUDIENCE (Meta live followers + brand_daily_metrics trend) */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'social' && (
+        <SocialPerformancePanel
+          branches={branchContext?.allBranches || []}
+          branchContext={branchContext}
+        />
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
       {/* LIVE EMAIL PERFORMANCE (Resend delivery events + suppression)    */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'email' && <EmailPerformancePanel />}
+      {activeTab === 'email' && (
+        <EmailPerformancePanel
+          branches={branchContext?.allBranches || []}
+          profiles={profiles}
+        />
+      )}
+
+      {activeTab === 'app-store' && (
+        <AppStoreAnalyticsPanel
+          branches={branchContext?.allBranches || []}
+          branchContext={branchContext}
+        />
+      )}
+
+      {activeTab === 'events' && (
+        <EventRegistrationPanel spokeConnections={spokeConnections} branchContext={branchContext} />
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* YOUTUBE PERFORMANCE (Episodes + Studio Albums, E9 sync)          */}
@@ -275,7 +307,7 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       {activeTab === 'audience' && (
         <>
           {federationError && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start space-x-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-sm p-4 flex items-start space-x-3">
               <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
               <p className="text-xs font-bold text-amber-700">{federationError}</p>
             </div>
@@ -292,10 +324,10 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
         {/* Card 1: Audience Composition */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+        <div className="bg-white rounded-sm border border-slate-200  p-8 space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-sm flex items-center justify-center">
                 <Users size={20} />
               </div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Audience Composition</p>
@@ -352,10 +384,10 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
         </div>
 
         {/* Card 2: LTV & Revenue Distribution */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+        <div className="bg-white rounded-sm border border-slate-200  p-8 space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-sm flex items-center justify-center">
                 <DollarSign size={20} />
               </div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">LTV & Revenue</p>
@@ -364,11 +396,11 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
 
           {/* LTV Stats */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+            <div className="bg-slate-50 rounded-sm p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg LTV</p>
               <p className="text-2xl font-black text-slate-800">${ltvData.avg.toFixed(2)}</p>
             </div>
-            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+            <div className="bg-slate-50 rounded-sm p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Median LTV</p>
               <p className="text-2xl font-black text-slate-800">${ltvData.median.toFixed(2)}</p>
             </div>
@@ -412,9 +444,9 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
         </div>
 
         {/* Card 3: Subscription & Order Health */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+        <div className="bg-white rounded-sm border border-slate-200  p-8 space-y-6">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-sm flex items-center justify-center">
               <ShieldCheck size={20} />
             </div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Subscription & Order Health</p>
@@ -422,17 +454,17 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
 
           {/* Subscription Stats */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-emerald-50 rounded-2xl p-4 text-center">
+            <div className="bg-emerald-50 rounded-sm p-4 text-center">
               <Heart size={16} className="mx-auto text-emerald-600 mb-1" />
               <p className="text-xl font-black text-emerald-700">{subscriptionData.subscribed}</p>
               <p className="text-[8px] font-black uppercase tracking-widest text-emerald-500">Subscribed</p>
             </div>
-            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+            <div className="bg-slate-50 rounded-sm p-4 text-center">
               <UserX size={16} className="mx-auto text-slate-500 mb-1" />
               <p className="text-xl font-black text-slate-700">{subscriptionData.unsubscribed}</p>
               <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Unsubscribed</p>
             </div>
-            <div className="bg-amber-50 rounded-2xl p-4 text-center">
+            <div className="bg-amber-50 rounded-sm p-4 text-center">
               <PauseCircle size={16} className="mx-auto text-amber-600 mb-1" />
               <p className="text-xl font-black text-amber-700">{subscriptionData.unknown}</p>
               <p className="text-[8px] font-black uppercase tracking-widest text-amber-500">Unknown</p>
@@ -472,10 +504,10 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
         </div>
 
         {/* Card 4: Product & Spoke Intelligence */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 space-y-6">
+        <div className="bg-white rounded-sm border border-slate-200  p-8 space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-sm flex items-center justify-center">
                 <Tag size={20} />
               </div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Product & Spoke Intelligence</p>
@@ -484,11 +516,11 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
 
           {/* Averages */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+            <div className="bg-slate-50 rounded-sm p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Unique Products</p>
               <p className="text-2xl font-black text-slate-800">{productData.totalProducts}</p>
             </div>
-            <div className="bg-slate-50 rounded-2xl p-4 text-center">
+            <div className="bg-slate-50 rounded-sm p-4 text-center">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Avg Products/Buyer</p>
               <p className="text-2xl font-black text-slate-800">{productData.avgProductsPerBuyer.toFixed(1)}</p>
             </div>
@@ -535,7 +567,7 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
       {activeTab === 'blueprints' && (
       <div className="space-y-6">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-cyan-50 text-cyan-600 rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-cyan-50 text-cyan-600 rounded-sm flex items-center justify-center">
             <FileText size={20} />
           </div>
           <div>
@@ -545,7 +577,7 @@ const Reports: React.FC<ReportsProps> = ({ spokeConnections, branchStats, branch
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {REPORT_BLUEPRINTS.map(report => (
-            <div key={report.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div key={report.id} className="bg-white rounded-sm border border-slate-200  p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-black text-slate-800">{report.name}</h4>
               </div>

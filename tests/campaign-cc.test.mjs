@@ -4,13 +4,14 @@ import { test } from 'node:test';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('all send_resend_email call sites use named parameter objects', async () => {
+test('the remaining campaign send_resend_email call uses named parameters and leads use the attributable Edge Function', async () => {
   const files = ['leadService.ts', 'src/services/resendService.ts'];
   const sources = await Promise.all(files.map(read));
   const callSites = sources.flatMap(source => [...source.matchAll(/\.rpc\(['"]send_resend_email['"],\s*([^\n]+)/g)]);
 
-  assert.equal(callSites.length, 2);
+  assert.equal(callSites.length, 1);
   for (const callSite of callSites) assert.match(callSite[1], /^\{/);
+  assert.match(sources[0], /functions\.invoke\('lead-email-send'/);
 });
 
 test('campaign CC reaches both test RPC and durable batch sends', async () => {
@@ -26,10 +27,12 @@ test('campaign CC reaches both test RPC and durable batch sends', async () => {
   assert.match(worker, /\.\.\.\(cc \? \{ cc: \[cc\] \} : \{\}\)/);
 });
 
-test('lead email keeps its Resend id and exposes delivery activity in lead details', async () => {
-  const leads = await read('pages/Leads.tsx');
+test('campaign sends use one recipient-specific URL for the footer and RFC 8058 headers', async () => {
+  const worker = await read('supabase/functions/campaign-sender/index.ts');
 
-  assert.match(leads, /const sendResult = await sendLeadEmail/);
-  assert.match(leads, /resend_email_id:\s*sendResult\.id/);
-  assert.match(leads, /<EmailActivitySection email=\{lead\.profile\.email\}/);
+  assert.match(worker, /function buildUnsubscribeUrl\(/);
+  assert.match(worker, /const unsubscribeUrl = buildUnsubscribeUrl\(unsubTemplate, scope, r\)/);
+  assert.match(worker, /html: personalize\(template, unsubscribeUrl, r\)/);
+  assert.match(worker, /"List-Unsubscribe": `<\$\{unsubscribeUrl\}>`/);
+  assert.match(worker, /"List-Unsubscribe-Post": "List-Unsubscribe=One-Click"/);
 });

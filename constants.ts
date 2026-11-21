@@ -1,5 +1,183 @@
+import SWEETWATER_TRACE_SQL_SCHEMA from './supabase/migrations/20261119165427_sweetwater_trace_clients.sql?raw';
+import NEWSLETTER_SCHEDULER_AUTH_SQL_SCHEMA from './supabase/migrations/20261116151520_newsletter_scheduler_authorization.sql?raw';
+import NEWSLETTER_RESEND_SAFETY_SQL_SCHEMA from './supabase/migrations/20261115145257_newsletter_resend_safety.sql?raw';
+import PROJECT_ROOMS_SQL_SCHEMA from './supabase/migrations/20261106032348_project_rooms.sql?raw';
+import PROJECT_ROOM_CRM_SQL_SCHEMA from './supabase/migrations/20261113140728_project_room_crm.sql?raw';
+import PROJECT_ROOM_SLACK_SQL_SCHEMA from './supabase/migrations/20261109170937_project_room_slack.sql?raw';
+import PROJECT_ROOM_SHARED_SQL_SCHEMA from './supabase/migrations/20261107222523_project_room_shared_prospects.sql?raw';
+import SHARED_X_SQL_SCHEMA from './supabase/migrations/20261020140327_shared_x_tracking.sql?raw';
 
 import { MarketingEvent, MarketingTask, DailyBriefing, Ticket, Brand, Integration, FailedSync, BrandIdentity, GeneratedBrandAsset } from './types';
+import TIKTOK_METRICS_SQL_SCHEMA from './supabase/migrations/20261019175229_tiktok_readonly_metrics.sql?raw';
+import SWEETWATER_INQUIRY_SQL_SCHEMA from './supabase/migrations/20261015182234_sweetwater_inquiry_capture.sql?raw';
+import SWEETWATER_CONTACT_SQL_SCHEMA from './supabase/migrations/20261015190330_sweetwater_website_contact.sql?raw';
+import PROMO_STUDIO_SQL_SCHEMA from './supabase/migrations/20260825162352_add_promo_studio_foundation.sql?raw';
+import PROMO_BRANCH_SOURCES_SQL_SCHEMA from './supabase/migrations/20260825175823_add_promo_branch_sources.sql?raw';
+import PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA from './supabase/migrations/20260825191617_add_promo_claim_approval_gate.sql?raw';
+import PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA from './supabase/migrations/20260825201900_reserve_promo_voice_take_numbers.sql?raw';
+import PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA from './supabase/migrations/20260825203500_reserve_promo_music_take_numbers.sql?raw';
+import PROMO_RENDER_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260825211425_complete_promo_render_job.sql?raw';
+import PROMO_CAPTURE_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260826180018_complete_promo_capture_job.sql?raw';
+import PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA from './supabase/migrations/20260826183711_add_promo_revision_asset_bindings.sql?raw';
+import PROMO_AUDIO_COMPLETION_SQL_SCHEMA from './supabase/migrations/20260903160245_complete_promo_audio_jobs.sql?raw';
+import PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA from './supabase/migrations/20260903161325_link_promo_to_scheduled_publishing.sql?raw';
+import SPECTIQ_PROSPECTING_SQL_SCHEMA from './supabase/migrations/20260911202452_add_spectiq_prospecting_foundation.sql?raw';
+import SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA from './supabase/migrations/20260911222525_complete_spectiq_prospecting_crud.sql?raw';
+import SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA from './supabase/migrations/20260911233823_add_spectiq_prospect_research.sql?raw';
+import SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA from './supabase/migrations/20260912005803_add_spectiq_research_snapshot_contract.sql?raw';
+import APP_STORE_ANALYTICS_SQL_SCHEMA from './supabase/migrations/20260912124945_app_store_analytics.sql?raw';
+import APP_STORE_DOWNLOAD_SNAPSHOTS_SQL from './supabase/migrations/20261103135704_rekkrd_download_snapshot_storage.sql?raw';
+import HOME_APP_STORE_SQL from './supabase/migrations/20261103143958_home_app_store_downloads.sql?raw';
+import REJOICE_APP_STORE_SQL from './supabase/migrations/20261103150125_rejoice_app_store_downloads.sql?raw';
+import CONTENT_TREND_RADAR_SQL_SCHEMA from './supabase/migrations/20260912160554_content_trend_radar.sql?raw';
+import TRANSCRIPTION_STUDIO_SQL_SCHEMA from './supabase/migrations/20260915170335_transcription_studio.sql?raw';
+import HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA from './supabase/migrations/20260915171954_hyperframes_transcription_contract.sql?raw';
+import DASHBOARD_ACTION_STATES_SQL_SCHEMA from './supabase/migrations/20260920152407_add_dashboard_action_states.sql?raw';
+import KEYWORD_EXPLORER_SQL_SCHEMA from './supabase/migrations/20260922113126_keyword_explorer.sql?raw';
+import OPPORTUNITY_BRIEF_SQL_SCHEMA from './supabase/migrations/20260922143248_opportunity_brief_versions.sql?raw';
+
+export interface BriefAxis {
+  name: string;
+  instruction: string;
+  variants: string[];
+}
+
+export interface BriefRecipe {
+  brandVoice: string;
+  situations: string[];
+  axes: BriefAxis[];
+  bannedWords: string[];
+  footerGuidance: string;
+}
+
+export const BRIEF_RECIPES: Record<string, BriefRecipe> = {
+  rejoice: {
+    brandVoice: "Warm and direct, never chirpy, never solemn. Permission over instruction — 'You don't have to feel ready' beats 'Start your journey today.' Names a specific feeling instead of a category. No guilt, no shame, no implied spiritual scoreboard, no promises of transformation.",
+    situations: [
+      "the Sunday night before a week you're dreading",
+      "deciding you're too far behind to ever start",
+      'the week after a holiday — the letdown and the back-to-normal dread',
+      "lying awake at 2am with a mind that won't stop",
+      'sitting in church and feeling nothing',
+      'the argument you keep replaying',
+      'wanting to pray and not knowing what to say',
+      'opening the app after weeks away',
+    ],
+    axes: [
+      { name: 'objection', instruction: 'Give each headline a different objection to starting.', variants: ['no time', "won't understand it", 'tried apps like this', 'not religious enough', "don't want to be preached at", 'wrong season of life'] },
+      { name: 'entry point', instruction: 'Give each headline a different relationship to scripture.', variants: ['never opened a Bible', 'raised in it and left', 'reads daily already', 'only prays in emergencies'] },
+      { name: 'emotional state', instruction: 'Give each headline a different precise emotional state.', variants: ['behind', 'numb', 'restless', 'grateful', 'angry', 'relieved'] },
+      { name: 'moment in the day', instruction: 'Anchor each headline in a different moment of the day.', variants: ['first alarm', 'the commute', 'the 3pm slump', 'after the kids are down', '2am'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a permission', 'a confession', 'a plain statement', 'an invitation'] },
+      { name: 'what the card refuses to do', instruction: 'Make each headline refuse a different familiar marketing move.', variants: ["doesn't promise", "doesn't instruct", "doesn't comfort — just names"] },
+    ],
+    bannedWords: ['journey', 'grace', 'peace', 'unlock', 'transform', 'dive in', 'your best life', 'let go and let God'],
+    footerGuidance: 'Each footer names a concrete first move, never repeats the headline.',
+  },
+  rekkrd: {
+    brandVoice: 'Low-lit and unhurried, like liner notes read aloud at closing time. Confident without hype. Speaks to people who listen on purpose. Understatement over exclamation.',
+    situations: [
+      'choosing one record from the shelf for the last listen of the night',
+      'rain on the window while a record spins',
+      'rediscovering a forgotten record while browsing your collection',
+      "the first listen of an album you already know you'll wear out",
+      'the B-side nobody skips',
+      'filing a new record beside the albums you return to most',
+      'the needle drop before anyone speaks',
+    ],
+    axes: [
+      { name: 'record ritual', instruction: 'Set each headline at a different moment of playing a physical record.', variants: ['choosing a sleeve', 'brushing the vinyl', 'lowering the needle', 'flipping to side B'] },
+      { name: 'collection ritual', instruction: 'Build each headline around a different physical record collecting ritual.', variants: ['browsing the crate', 'filing a new record', 'reading liner notes', 'logging a spin'] },
+      { name: "who's there", instruction: 'Change who shares or haunts the listening moment.', variants: ['alone', 'one other person', 'a full room gone quiet', 'the memory of someone'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a toast', 'a confession', 'a liner note', 'a question', 'a plain statement'] },
+      { name: 'what the room looks like', instruction: 'Anchor each headline in a different concrete room detail.', variants: ['neon through blinds', 'a half-finished drink', 'coats on chairs', "the amp's single red light"] },
+    ],
+    bannedWords: ['vibes', 'timeless', 'soundtrack to your life', 'banger', 'eclectic', 'curated', 'elevate'],
+    footerGuidance: 'Footers read like a track credit or an invitation to listen — never a sales line.',
+  },
+  // The live branches table uses `atlurbanfarms`; keep this key aligned with it.
+  atlurbanfarms: {
+    brandVoice: 'Neighborly and practical, proud without preaching. Talks about real food, real neighbors, and small wins. Sounds like the person at the market who actually grows the stuff.',
+    situations: [
+      "the first harvest off a tower you almost didn't buy",
+      'the neighbor who finally asks what that thing on your porch is',
+      'lettuce that never rode on a truck',
+      'teaching a kid where dinner actually comes from',
+      'the 15-minute dinner picked from the balcony',
+      "the week the grocery store greens went bad and yours didn't",
+    ],
+    axes: [
+      { name: 'grower type', instruction: 'Speak to a different kind of grower in each headline.', variants: ['total beginner', 'black-thumb convert', 'busy parent', 'retiree', 'teacher'] },
+      { name: 'objection', instruction: 'Answer a different practical objection in each headline.', variants: ['no space', 'no time', 'I kill everything', 'too expensive'] },
+      { name: 'moment', instruction: 'Put each headline at a different point in the growing cycle.', variants: ['planting day', 'first sprout', 'first harvest', 'sharing the surplus'] },
+      { name: 'crop', instruction: 'Make each headline specific to a different crop.', variants: ['lettuce', 'basil', 'strawberries', 'kale', 'peppers'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a dare', 'a plain fact', 'an overheard remark'] },
+    ],
+    bannedWords: ['farm to table', 'fresh picked', 'garden-fresh', 'locally sourced', 'sustainable'],
+    footerGuidance: 'Footers point at one small concrete action — see it, taste it, start one tower.',
+  },
+  // TODO: refine with Sheree — brand voice owner
+  'still-janes-daughter': {
+    brandVoice: 'Personal, reflective, unhurried. Speaks from lived experience rather than advice. Never performative.',
+    situations: ['the recipe card in her handwriting', "a Sunday that smells like someone else's kitchen", "keeping a tradition you didn't choose but won't drop", 'the ordinary object that carries the whole story'],
+    axes: [
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a memory', 'a question', 'a small confession', 'a plain statement'] },
+      { name: 'sense', instruction: 'Ground each headline in a different sense.', variants: ['smell', 'sound', 'touch', 'taste'] },
+      { name: 'time', instruction: 'Place each headline in a different kind of time.', variants: ['morning', 'holiday', 'ordinary Tuesday', 'anniversary'] },
+    ],
+    bannedWords: ['legacy', 'cherish', 'heartwarming', 'blessed'],
+    footerGuidance: 'Footers invite the reader into the story — read, remember, subscribe.',
+  },
+  'sproutify-farm': {
+    brandVoice: "Credible operator-to-operator. Numbers and outcomes over adjectives. Respects the reader's skepticism — every claim should survive a procurement meeting.",
+    situations: [
+      'the cafeteria that grows its own greens twenty feet from the serving line',
+      'the restaurant tired of the produce truck deciding the menu',
+      'the first commercial harvest that made the spreadsheet real',
+      'the empty corner of the building that could be producing',
+      "the board meeting where 'why not grow it ourselves' finally lands",
+    ],
+    axes: [
+      { name: 'buyer type', instruction: 'Address a different commercial buyer in each headline.', variants: ['school district', 'restaurant group', 'nonprofit', 'hotel', 'entrepreneur'] },
+      { name: 'objection', instruction: 'Address a different procurement objection in each headline.', variants: ['cost', 'labor', 'space', "we're not farmers"] },
+      { name: 'outcome', instruction: 'Center each headline on a different measurable or observable outcome.', variants: ['food cost line', 'freshness', 'story customers notice', 'waste reduction'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a stat framed plainly', 'a before/after', 'a challenge'] },
+    ],
+    bannedWords: ['revolutionary', 'game-changer', 'disrupt', 'cutting-edge', 'farm of the future'],
+    footerGuidance: 'Footers name the next business step — book a walkthrough, see the numbers, talk to a grower.',
+  },
+  spectiq: {
+    brandVoice: "Professional founder-to-operator language for skeptical home inspection company owners. Direct, operational, and evidence-led. Explain the path, the rule, and the next action. Separate verified capabilities from planned work, preserve human judgment, and make every claim auditable.",
+    situations: [
+      'the buyer asking for a price while still on the phone',
+      'the office team rebuilding the same estimate across disconnected tools',
+      'the signed agreement that still has no payment or booking attached',
+      'the inspection request whose next action is invisible to the team',
+      'the owner explaining why a company pricing rule changed the estimate',
+      'the booking that needs a human exception instead of a hidden automation decision',
+    ],
+    axes: [
+      { name: 'operator', instruction: 'Address a different inspection-company operator in each headline.', variants: ['owner-operator', 'office manager', 'multi-inspector team', 'solo inspector'] },
+      { name: 'workflow bottleneck', instruction: 'Anchor each headline in a different inquiry-to-booking bottleneck.', variants: ['estimate', 'agreement', 'payment', 'calendar', 'next action'] },
+      { name: 'objection', instruction: 'Respect and answer a different skeptical-buyer objection.', variants: ['our process is unique', 'automation hides mistakes', 'switching tools creates risk', 'the team will not adopt it'] },
+      { name: 'evidence', instruction: 'Use a different concrete form of proof without inventing a result.', variants: ['visible rule', 'audit trail', 'status history', 'human approval', 'explicit exception'] },
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a plain operational fact', 'a skeptical question', 'a before-and-after path', 'a concrete invitation'] },
+    ],
+    bannedWords: ['revolutionary', 'game-changer', 'disrupt', 'seamless', 'effortless', 'guaranteed', 'double conversions', 'supercharge', 'magic', 'AI-powered'],
+    footerGuidance: 'Footers offer one concrete, low-pressure next step. Never hard-sell or imply an unsupported outcome.',
+  },
+  default: {
+    brandVoice: 'Clear, specific, human. One idea per card.',
+    situations: ['the moment someone almost scrolls past but does not', 'the question a skeptical customer asks first', 'the small result that makes the value feel real'],
+    axes: [
+      { name: 'grammatical form', instruction: 'Write each headline in a different grammatical form.', variants: ['a question', 'a plain statement', 'an invitation', 'a challenge'] },
+      { name: 'emotional state', instruction: 'Address a different precise emotional state in each headline.', variants: ['curious', 'skeptical', 'frustrated', 'hopeful'] },
+      { name: 'objection', instruction: 'Address a different reason someone might hesitate.', variants: ['not enough time', 'too complicated', 'not for me', 'not worth the cost'] },
+    ],
+    bannedWords: ['elevate', 'unlock', 'seamless', 'empower'],
+    footerGuidance: 'Footers name one concrete next step.',
+  },
+};
 
 export const DEFAULT_BRAND: Brand = {
   id: 'b_1',
@@ -95,6 +273,26 @@ export const MOCK_BRAND_IDENTITIES: BrandIdentity[] = [
     status: 'active',
     created_at: '2024-01-15T10:00:00Z',
     updated_at: '2024-01-15T10:00:00Z'
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000010',
+    branch_id: 'spectiq',
+    name: 'SpectIQ',
+    tagline: 'Win the inspection while the buyer is still on the phone.',
+    mission: 'Help home inspection companies move inquiries through explainable estimates, agreements, payments, and booking while preserving company rules and human judgment.',
+    values: ['Transparency', 'Accountability', 'Control', 'Speed', 'Human judgment'],
+    target_audience: 'Owners, operators, and office teams at home inspection companies',
+    voice: 'Direct, evidence-led, operational, and respectful of skeptical buyers.',
+    website_url: 'https://spectiq.app',
+    color_palette: { primary: '#E56A2C', secondary: '#1B1F27', accent: '#FAF8F5', neutral: '#FAF8F5' },
+    typography: { heading: 'Public Sans', body: 'Public Sans' },
+    image_prompt: 'Professional home inspection workflow imagery with the official one-orange-room floor-plan mark; no gradients or lens imagery.',
+    marketing_hooks: ['Win the inspection while the buyer is still on the phone.', 'One clear path from inquiry to inspection.', 'Automation with an audit trail and a way out.'],
+    site_preview_description: 'Home inspection business software connecting inquiry, estimate, agreement, payment, and booking.',
+    extracted_images: ['/brands/spectiq-logo-lockup.svg', '/brands/spectiq-logo-mark.svg'],
+    status: 'active',
+    created_at: '2026-09-11T00:00:00Z',
+    updated_at: '2026-09-11T00:00:00Z'
   }
 ];
 
@@ -301,6 +499,40 @@ REVOKE ALL ON campaigns FROM anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON campaigns TO authenticated;
 GRANT ALL ON campaigns TO service_role;
 
+-- Shared audience definitions. These contain orchestration rules only; profile
+-- records and subscriber lists remain in their owning spokes.
+CREATE TABLE IF NOT EXISTS audience_segments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+  description TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('rules', 'link_interest', 'campaign_engagement')),
+  rule_groups JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(rule_groups) = 'array'),
+  link_interest JSONB,
+  campaign_engagement JSONB,
+  recommended_branches JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(recommended_branches) = 'array'),
+  icon TEXT,
+  color TEXT,
+  created_by UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (link_interest IS NULL OR jsonb_typeof(link_interest) = 'object'),
+  CHECK (campaign_engagement IS NULL OR jsonb_typeof(campaign_engagement) = 'object'),
+  CHECK (
+    (kind = 'rules' AND link_interest IS NULL AND campaign_engagement IS NULL)
+    OR (kind = 'link_interest' AND link_interest IS NOT NULL AND campaign_engagement IS NULL)
+    OR (kind = 'campaign_engagement' AND campaign_engagement IS NOT NULL AND link_interest IS NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS idx_audience_segments_created_by_updated ON audience_segments (created_by, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audience_segments_rule_groups ON audience_segments USING GIN (rule_groups jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS idx_audience_segments_link_interest ON audience_segments USING GIN (link_interest jsonb_path_ops) WHERE link_interest IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_audience_segments_campaign_engagement ON audience_segments USING GIN (campaign_engagement jsonb_path_ops) WHERE campaign_engagement IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_audience_segments_recommended_branches ON audience_segments USING GIN (recommended_branches jsonb_path_ops);
+ALTER TABLE audience_segments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON audience_segments FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON audience_segments TO authenticated;
+GRANT ALL ON audience_segments TO service_role;
+
 -- 6b. EMAIL REPORTING & SUPPRESSION
 -- Suppression list (do-not-email). Trellis reads consent live from spokes but keeps
 -- its own unsubscribe/bounce/complaint list here (never writes back to spokes).
@@ -410,28 +642,96 @@ GRANT SELECT ON campaign_sends TO authenticated;
 GRANT ALL ON campaign_sends TO service_role;
 
 -- Per-campaign rollup keyed by campaign_id (exact — no subject-collision risk).
--- Prefer this over campaign_email_stats once email_events.campaign_id is populated.
--- Same COUNT(DISTINCT email) treatment as campaign_email_stats above, for the
--- same reason — every column is unique recipients, not raw event rows.
+-- Sent is provider-accepted campaign_sends, so the count does not depend on a
+-- later webhook. Engagement remains distinct recipients from Resend events.
 CREATE OR REPLACE VIEW campaign_stats_by_id
 WITH (security_invoker = true) AS
+WITH send_stats AS (
+  SELECT campaign_id, COUNT(DISTINCT lower(email)) AS sent
+  FROM campaign_sends
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+), event_stats AS (
+  SELECT
+    campaign_id,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'delivered')  AS delivered,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'opened')     AS opened,
+    COUNT(DISTINCT lower(email)) FILTER (
+      WHERE event_type = 'clicked'
+        AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+    ) AS clicked,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'bounced')    AS bounced,
+    COUNT(DISTINCT lower(email)) FILTER (WHERE event_type = 'complained') AS complained,
+    MIN(occurred_at) AS first_event_at,
+    MAX(occurred_at) AS last_event_at
+  FROM email_events
+  WHERE campaign_id IS NOT NULL
+  GROUP BY campaign_id
+)
 SELECT
-  campaign_id,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'sent')       AS sent,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'delivered')  AS delivered,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'opened')     AS opened,
-  COUNT(DISTINCT email) FILTER (
-    WHERE event_type = 'clicked'
-      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
-  ) AS clicked,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounced')    AS bounced,
-  COUNT(DISTINCT email) FILTER (WHERE event_type = 'complained') AS complained,
-  MIN(occurred_at) AS first_event_at,
-  MAX(occurred_at) AS last_event_at
-FROM email_events
-WHERE campaign_id IS NOT NULL
-GROUP BY campaign_id;
+  c.id AS campaign_id,
+  COALESCE(s.sent, 0::bigint) AS sent,
+  COALESCE(e.delivered, 0::bigint) AS delivered,
+  COALESCE(e.opened, 0::bigint) AS opened,
+  COALESCE(e.clicked, 0::bigint) AS clicked,
+  COALESCE(e.bounced, 0::bigint) AS bounced,
+  COALESCE(e.complained, 0::bigint) AS complained,
+  e.first_event_at,
+  e.last_event_at
+FROM campaigns c
+LEFT JOIN send_stats s ON s.campaign_id = c.id
+LEFT JOIN event_stats e ON e.campaign_id = c.id
+WHERE c.launched_at IS NOT NULL OR c.send_status IS NOT NULL;
 GRANT SELECT ON campaign_stats_by_id TO anon, authenticated, service_role;
+
+-- Exact-ID recipient status. Start with campaign_sends so provider-accepted
+-- recipients remain visible before (or even without) a webhook callback.
+CREATE OR REPLACE VIEW campaign_recipient_status_by_id
+WITH (security_invoker = true) AS
+WITH identities AS (
+  SELECT campaign_id, lower(email) AS email FROM campaign_sends WHERE campaign_id IS NOT NULL
+  UNION
+  SELECT campaign_id, lower(email) AS email FROM email_events WHERE campaign_id IS NOT NULL
+), send_times AS (
+  SELECT campaign_id, lower(email) AS email, MAX(sent_at) AS sent_at
+  FROM campaign_sends WHERE campaign_id IS NOT NULL GROUP BY campaign_id, lower(email)
+), event_status AS (
+  SELECT campaign_id, lower(email) AS email,
+    bool_or(event_type = 'delivered') AS delivered,
+    bool_or(event_type = 'opened') AS opened,
+    bool_or(event_type = 'clicked' AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%') AS clicked,
+    bool_or(event_type = 'bounced') AS bounced,
+    bool_or(event_type = 'complained') AS complained,
+    array_remove(array_agg(DISTINCT COALESCE(link_url, metadata->'click'->>'link'))
+      FILTER (WHERE event_type = 'clicked' AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'), NULL) AS link_urls,
+    MAX(occurred_at) AS last_event_at
+  FROM email_events WHERE campaign_id IS NOT NULL GROUP BY campaign_id, lower(email)
+)
+SELECT i.campaign_id, i.email,
+  COALESCE(e.delivered, false) AS delivered, COALESCE(e.opened, false) AS opened,
+  COALESCE(e.clicked, false) AS clicked, COALESCE(e.bounced, false) AS bounced,
+  COALESCE(e.complained, false) AS complained, COALESCE(e.link_urls, ARRAY[]::text[]) AS link_urls,
+  COALESCE(e.last_event_at, s.sent_at) AS last_event_at
+FROM identities i
+LEFT JOIN send_times s USING (campaign_id, email)
+LEFT JOIN event_status e USING (campaign_id, email);
+REVOKE ALL ON campaign_recipient_status_by_id FROM PUBLIC;
+REVOKE ALL ON campaign_recipient_status_by_id FROM anon;
+GRANT SELECT ON campaign_recipient_status_by_id TO authenticated, service_role;
+
+CREATE OR REPLACE VIEW campaign_link_clicks_by_id
+WITH (security_invoker = true) AS
+SELECT campaign_id, COALESCE(link_url, metadata->'click'->>'link') AS link_url,
+  COUNT(*) AS clicks, COUNT(DISTINCT lower(email)) AS unique_clickers,
+  MIN(occurred_at) AS first_click_at, MAX(occurred_at) AS last_click_at
+FROM email_events
+WHERE event_type = 'clicked' AND campaign_id IS NOT NULL
+  AND COALESCE(link_url, metadata->'click'->>'link', '') <> ''
+  AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+GROUP BY campaign_id, COALESCE(link_url, metadata->'click'->>'link');
+REVOKE ALL ON campaign_link_clicks_by_id FROM PUBLIC;
+REVOKE ALL ON campaign_link_clicks_by_id FROM anon;
+GRANT SELECT ON campaign_link_clicks_by_id TO authenticated, service_role;
 
 -- Per-recipient status within one campaign — one row per (campaign_subject, email)
 -- instead of one row per raw event, so a campaign with thousands of delivery/open/
@@ -458,6 +758,83 @@ GROUP BY campaign_subject, email;
 -- Raw recipient addresses — authenticated-only, same as email_events itself.
 GRANT SELECT ON campaign_recipient_status TO authenticated, service_role;
 
+-- Per-link click rollup within one campaign — one row per (campaign_subject, link)
+-- instead of one row per raw click event. Backs the link click summary
+-- (LinkClickSummaryModal / fetchCampaignLinkClicks): "which link earned the
+-- clicks", then drill into who clicked it.
+--
+-- COALESCE(link_url, metadata->'click'->>'link') matches the other stats views:
+-- link_url wasn't captured before Aug 5, so the metadata fallback recovers the
+-- link for older events. Unsubscribe links are excluded for the same reason
+-- campaign_email_stats excludes them — otherwise the per-link rows would report
+-- clicks the rest of the UI deliberately doesn't count.
+--
+-- clicks is COUNT(*) (raw click events, so repeat clicks show) while
+-- unique_clickers is COUNT(DISTINCT email). Summing unique_clickers across links
+-- does NOT equal campaign_email_stats.clicked — one person clicking three links
+-- is one clicker there and three here. The UI labels these separately.
+CREATE OR REPLACE VIEW campaign_link_clicks
+WITH (security_invoker = true) AS
+SELECT
+  campaign_subject,
+  COALESCE(link_url, metadata->'click'->>'link') AS link_url,
+  COUNT(*)              AS clicks,
+  COUNT(DISTINCT email) AS unique_clickers,
+  MIN(occurred_at)      AS first_click_at,
+  MAX(occurred_at)      AS last_click_at
+FROM email_events
+WHERE event_type = 'clicked'
+  AND campaign_subject IS NOT NULL
+  AND COALESCE(link_url, metadata->'click'->>'link', '') <> ''
+  AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+GROUP BY campaign_subject, COALESCE(link_url, metadata->'click'->>'link');
+-- Derived from email_events (authenticated-only), so same audience. Supabase's
+-- default privileges hand anon SELECT on every new public object, so revoke it
+-- explicitly — from PUBLIC as well as anon, since a REVOKE from anon alone is a
+-- no-op against a privilege held by PUBLIC. security_invoker already blocks anon
+-- (it can't read email_events underneath); this is the second lock.
+REVOKE ALL ON campaign_link_clicks FROM PUBLIC;
+REVOKE ALL ON campaign_link_clicks FROM anon;
+GRANT SELECT ON campaign_link_clicks TO authenticated, service_role;
+
+-- Reusable link-interest audience source.
+--
+-- This is a live aggregate over the existing Resend click history, so deploying
+-- it automatically includes historical clickers; no profile copy or backfill is
+-- required. Daily buckets preserve accurate lookback windows while collapsing
+-- repeat clicks into a bounded audience/link/campaign/day result.
+CREATE INDEX IF NOT EXISTS idx_email_events_link_interest
+  ON email_events (email, occurred_at DESC)
+  INCLUDE (link_url, campaign_id, campaign_subject)
+  WHERE event_type = 'clicked';
+
+CREATE OR REPLACE VIEW link_interest_clicks
+WITH (security_invoker = true) AS
+SELECT
+  lower(email) AS email,
+  COALESCE(link_url, metadata->'click'->>'link') AS link_url,
+  campaign_id,
+  campaign_subject,
+  (occurred_at AT TIME ZONE 'UTC')::date AS click_date,
+  COUNT(*) AS clicks,
+  MIN(occurred_at) AS first_click_at,
+  MAX(occurred_at) AS last_click_at
+FROM email_events
+WHERE event_type = 'clicked'
+  AND COALESCE(link_url, metadata->'click'->>'link', '') <> ''
+  AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+GROUP BY
+  lower(email),
+  COALESCE(link_url, metadata->'click'->>'link'),
+  campaign_id,
+  campaign_subject,
+  (occurred_at AT TIME ZONE 'UTC')::date;
+
+REVOKE ALL ON link_interest_clicks FROM PUBLIC;
+REVOKE ALL ON link_interest_clicks FROM anon;
+GRANT SELECT ON link_interest_clicks TO authenticated, service_role;
+
+
 -- One row per email, all-time, instead of one row per open/click event —
 -- bounded by audience size, not by years of engagement history. Backs
 -- fetchEngagementByEmail/fetchEngagementIndex (churn risk, segment targeting).
@@ -468,9 +845,22 @@ SELECT
   COUNT(*) FILTER (WHERE event_type = 'opened')  AS opened,
   COUNT(*) FILTER (WHERE event_type = 'clicked') AS clicked,
   MAX(occurred_at) FILTER (WHERE event_type = 'opened')  AS last_opened_at,
-  MAX(occurred_at) FILTER (WHERE event_type = 'clicked') AS last_clicked_at
+  MAX(occurred_at) FILTER (WHERE event_type = 'clicked') AS last_clicked_at,
+  COUNT(DISTINCT campaign_id) FILTER (
+    WHERE event_type = 'delivered' AND campaign_id IS NOT NULL
+  ) AS campaigns_delivered,
+  COUNT(DISTINCT campaign_id) FILTER (
+    WHERE event_type = 'opened' AND campaign_id IS NOT NULL
+  ) AS campaigns_opened,
+  COUNT(DISTINCT campaign_id) FILTER (
+    WHERE event_type = 'clicked'
+      AND campaign_id IS NOT NULL
+      AND COALESCE(link_url, metadata->'click'->>'link', '') NOT ILIKE '%unsubscribe%'
+  ) AS campaigns_clicked
 FROM email_events
 GROUP BY email;
+REVOKE ALL ON email_engagement_summary FROM PUBLIC;
+REVOKE ALL ON email_engagement_summary FROM anon;
 GRANT SELECT ON email_engagement_summary TO authenticated, service_role;
 
 -- 7. PERFORMANCE INDEXING
@@ -576,17 +966,24 @@ CREATE TABLE IF NOT EXISTS social_credentials (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   branch_id TEXT NOT NULL,
   platform TEXT NOT NULL CHECK (platform IN ('instagram', 'x', 'linkedin', 'facebook', 'tiktok', 'youtube')),
-  access_token_encrypted BYTEA NOT NULL,
-  refresh_token_encrypted BYTEA,
+  app_id TEXT NOT NULL DEFAULT '',
+  app_secret_encrypted TEXT NOT NULL DEFAULT '',
+  access_token_encrypted TEXT,
+  refresh_token_encrypted TEXT,
+  token_expires_at TIMESTAMPTZ,
+  platform_metadata JSONB DEFAULT '{}'::jsonb,
+  granted_scopes JSONB DEFAULT '[]'::jsonb,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'expired', 'revoked', 'error')),
+  last_error TEXT,
+  last_refreshed_at TIMESTAMPTZ,
+  last_used_at TIMESTAMPTZ,
   platform_user_id TEXT,
   platform_username TEXT,
   scopes TEXT[],
   expires_at TIMESTAMPTZ,
-  last_refreshed_at TIMESTAMPTZ,
   is_valid BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(branch_id, platform)
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE social_credentials ENABLE ROW LEVEL SECURITY;
@@ -681,6 +1078,12 @@ BEGIN
   RETURN COALESCE(result, '{}'::json);
 END;
 $$;
+
+-- This returns DECRYPTED access tokens. Only the meta-insights Edge Function calls
+-- it, on service_role. Without these lines a fresh stamp leaves the default PUBLIC
+-- EXECUTE in place, which puts live Meta tokens behind the browser's anon key.
+REVOKE ALL ON FUNCTION get_meta_insight_credentials(TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_meta_insight_credentials(TEXT) TO service_role;
 
 -- ═══════════════════════════════════════════════════════════
 -- 10b. NEWSLETTER AUDIENCE RPC (ATL Spoke — launch-phase shortcut)
@@ -811,6 +1214,26 @@ GRANT ALL ON scheduled_social_posts TO anon, authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_ssp_due ON scheduled_social_posts (scheduled_for) WHERE status = 'scheduled';
 CREATE INDEX IF NOT EXISTS idx_ssp_branch_scheduled ON scheduled_social_posts (branch_slug, scheduled_for);
 
+-- Generated-media publishing provenance. The referenced media tables are
+-- created by the provider-agnostic media-generation foundation migration.
+ALTER TABLE scheduled_social_posts
+  ADD COLUMN IF NOT EXISTS source_media_asset_id UUID,
+  ADD COLUMN IF NOT EXISTS source_generation_job_id UUID,
+  ADD COLUMN IF NOT EXISTS source_generation_output_id UUID,
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_media_asset
+  ON scheduled_social_posts (source_media_asset_id)
+  WHERE source_media_asset_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_generation_job
+  ON scheduled_social_posts (source_generation_job_id, created_at DESC)
+  WHERE source_generation_job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_generation_output
+  ON scheduled_social_posts (source_generation_output_id)
+  WHERE source_generation_output_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ssp_created_by_idempotency
+  ON scheduled_social_posts (created_by, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION set_ssp_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -888,6 +1311,142 @@ REVOKE ALL ON FUNCTION private.can_manage_marketing() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION private.is_active_trellis_user() TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION private.can_manage_marketing() TO authenticated, service_role;
 
+-- 13c. CONTENT INTELLIGENCE REGISTRATIONS
+-- Immutable runtime approvals for successful Scheduler publications. Versioned
+-- project specs and research remain in .trellis; these tables are the Hub review log.
+CREATE TABLE IF NOT EXISTS content_intelligence_topics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id TEXT NOT NULL CHECK (project_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
+  topic_id TEXT NOT NULL CHECK (topic_id ~ '^[a-z0-9][a-z0-9_-]{2,127}$'),
+  title TEXT NOT NULL CHECK (char_length(btrim(title)) BETWEEN 3 AND 240),
+  cluster TEXT NOT NULL DEFAULT '',
+  intent TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'publication_review',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'retired')),
+  created_by UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, topic_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_intelligence_topics_project
+  ON content_intelligence_topics (project_id, status);
+
+CREATE TABLE IF NOT EXISTS content_intelligence_posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id TEXT NOT NULL CHECK (project_id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
+  post_id TEXT NOT NULL CHECK (post_id ~ '^[a-z0-9][a-z0-9_-]{2,127}$'),
+  topic_id TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('instagram', 'facebook')),
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status = 'published'),
+  canonical_url TEXT NOT NULL CHECK (canonical_url ~* '^https://[^[:space:]]+$'),
+  published_at TIMESTAMPTZ NOT NULL,
+  task_id TEXT,
+  title TEXT,
+  primary_query TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  source_record_id UUID NOT NULL REFERENCES scheduled_social_posts(id) ON DELETE RESTRICT,
+  external_post_id TEXT,
+  approved_by UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE RESTRICT,
+  approved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, post_id),
+  UNIQUE (source_record_id),
+  FOREIGN KEY (project_id, topic_id)
+    REFERENCES content_intelligence_topics(project_id, topic_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_intelligence_posts_project_published
+  ON content_intelligence_posts (project_id, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_intelligence_posts_topic
+  ON content_intelligence_posts (project_id, topic_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_intelligence_posts_external_identity
+  ON content_intelligence_posts (project_id, platform, external_post_id)
+  WHERE external_post_id IS NOT NULL AND btrim(external_post_id) <> '';
+
+ALTER TABLE content_intelligence_topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_intelligence_posts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON content_intelligence_topics FROM anon, authenticated;
+REVOKE ALL ON content_intelligence_posts FROM anon, authenticated;
+GRANT SELECT, INSERT ON content_intelligence_topics TO authenticated;
+GRANT SELECT, INSERT ON content_intelligence_posts TO authenticated;
+GRANT ALL ON content_intelligence_topics TO service_role;
+GRANT ALL ON content_intelligence_posts TO service_role;
+
+DROP POLICY IF EXISTS "Active Trellis users read content topics" ON content_intelligence_topics;
+CREATE POLICY "Active Trellis users read content topics"
+  ON content_intelligence_topics FOR SELECT TO authenticated
+  USING ((SELECT private.is_active_trellis_user()));
+
+DROP POLICY IF EXISTS "Marketing operators create content topics" ON content_intelligence_topics;
+CREATE POLICY "Marketing operators create content topics"
+  ON content_intelligence_topics FOR INSERT TO authenticated
+  WITH CHECK ((SELECT private.can_manage_marketing()) AND created_by = (SELECT auth.uid()));
+
+DROP POLICY IF EXISTS "Active Trellis users read content registrations" ON content_intelligence_posts;
+CREATE POLICY "Active Trellis users read content registrations"
+  ON content_intelligence_posts FOR SELECT TO authenticated
+  USING ((SELECT private.is_active_trellis_user()));
+
+DROP POLICY IF EXISTS "Marketing operators approve content registrations" ON content_intelligence_posts;
+CREATE POLICY "Marketing operators approve content registrations"
+  ON content_intelligence_posts FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT private.can_manage_marketing())
+    AND approved_by = (SELECT auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM scheduled_social_posts scheduled
+      WHERE scheduled.id = source_record_id
+        AND scheduled.status = 'published'
+        AND scheduled.branch_slug = project_id
+        AND scheduled.platform = platform
+        AND scheduled.post_id IS NOT DISTINCT FROM external_post_id
+    )
+  );
+
+CREATE OR REPLACE FUNCTION approve_content_registration(
+  p_project_id TEXT,
+  p_topic_id TEXT,
+  p_topic_title TEXT,
+  p_post_id TEXT,
+  p_platform TEXT,
+  p_canonical_url TEXT,
+  p_published_at TIMESTAMPTZ,
+  p_source_record_id UUID,
+  p_external_post_id TEXT DEFAULT NULL,
+  p_task_id TEXT DEFAULT NULL,
+  p_title TEXT DEFAULT NULL
+)
+RETURNS content_intelligence_posts
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  approved public.content_intelligence_posts;
+BEGIN
+  INSERT INTO public.content_intelligence_topics (project_id, topic_id, title, created_by)
+  VALUES (p_project_id, p_topic_id, p_topic_title, (SELECT auth.uid()))
+  ON CONFLICT (project_id, topic_id) DO NOTHING;
+
+  INSERT INTO public.content_intelligence_posts (
+    project_id, post_id, topic_id, platform, canonical_url, published_at,
+    source_record_id, external_post_id, task_id, title, approved_by
+  ) VALUES (
+    p_project_id, p_post_id, p_topic_id, p_platform, p_canonical_url, p_published_at,
+    p_source_record_id, NULLIF(p_external_post_id, ''), NULLIF(p_task_id, ''),
+    NULLIF(p_title, ''), (SELECT auth.uid())
+  ) RETURNING * INTO approved;
+  RETURN approved;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION approve_content_registration(
+  TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, UUID, TEXT, TEXT, TEXT
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION approve_content_registration(
+  TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, UUID, TEXT, TEXT, TEXT
+) TO authenticated, service_role;
+
 DROP POLICY IF EXISTS "campaigns_app_access" ON campaigns;
 DROP POLICY IF EXISTS "Active Trellis users read campaigns" ON campaigns;
 CREATE POLICY "Active Trellis users read campaigns" ON campaigns FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));
@@ -897,6 +1456,15 @@ DROP POLICY IF EXISTS "Campaign owners manage campaigns" ON campaigns;
 CREATE POLICY "Campaign owners manage campaigns" ON campaigns FOR UPDATE TO authenticated USING (owner_id = (SELECT auth.uid()) OR (SELECT private.can_manage_marketing())) WITH CHECK (owner_id = (SELECT auth.uid()) OR (SELECT private.can_manage_marketing()));
 DROP POLICY IF EXISTS "Campaign owners delete drafts" ON campaigns;
 CREATE POLICY "Campaign owners delete drafts" ON campaigns FOR DELETE TO authenticated USING (status = 'draft' AND (owner_id = (SELECT auth.uid()) OR (SELECT private.can_manage_marketing())));
+
+DROP POLICY IF EXISTS "Active Trellis users read audience segments" ON audience_segments;
+CREATE POLICY "Active Trellis users read audience segments" ON audience_segments FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));
+DROP POLICY IF EXISTS "Marketing operators create audience segments" ON audience_segments;
+CREATE POLICY "Marketing operators create audience segments" ON audience_segments FOR INSERT TO authenticated WITH CHECK ((SELECT private.can_manage_marketing()) AND created_by = (SELECT auth.uid()));
+DROP POLICY IF EXISTS "Marketing operators update audience segments" ON audience_segments;
+CREATE POLICY "Marketing operators update audience segments" ON audience_segments FOR UPDATE TO authenticated USING ((SELECT private.can_manage_marketing())) WITH CHECK ((SELECT private.can_manage_marketing()));
+DROP POLICY IF EXISTS "Marketing operators delete audience segments" ON audience_segments;
+CREATE POLICY "Marketing operators delete audience segments" ON audience_segments FOR DELETE TO authenticated USING ((SELECT private.can_manage_marketing()));
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON marketing_brands TO authenticated;
 
@@ -910,6 +1478,549 @@ DROP POLICY IF EXISTS "Marketing operators update brand profiles" ON marketing_b
 CREATE POLICY "Marketing operators update brand profiles" ON marketing_brands FOR UPDATE TO authenticated USING ((SELECT private.can_manage_marketing())) WITH CHECK ((SELECT private.can_manage_marketing()));
 DROP POLICY IF EXISTS "Marketing operators delete brand profiles" ON marketing_brands;
 CREATE POLICY "Marketing operators delete brand profiles" ON marketing_brands FOR DELETE TO authenticated USING ((SELECT private.can_manage_marketing()));
+
+-- 10B. BRANCH SOCIAL ACCOUNT IDENTITY REGISTRY
+-- Public account metadata only. OAuth tokens remain in social_credentials.
+CREATE TABLE IF NOT EXISTS branch_social_accounts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('instagram', 'x', 'linkedin', 'facebook', 'tiktok', 'youtube')),
+  external_account_id TEXT,
+  handle TEXT NOT NULL,
+  display_name TEXT,
+  profile_url TEXT,
+  purpose TEXT,
+  is_primary BOOLEAN NOT NULL DEFAULT false,
+  status TEXT NOT NULL DEFAULT 'registered' CHECK (status IN ('registered', 'pending', 'active', 'error', 'revoked')),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (branch_id, platform, external_account_id),
+  UNIQUE (branch_id, platform, handle)
+);
+
+CREATE INDEX IF NOT EXISTS idx_branch_social_accounts_branch_platform ON branch_social_accounts (branch_id, platform);
+CREATE INDEX IF NOT EXISTS idx_branch_social_accounts_metadata_gin ON branch_social_accounts USING GIN (metadata jsonb_path_ops);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_social_accounts_one_primary ON branch_social_accounts (branch_id, platform) WHERE is_primary;
+ALTER TABLE branch_social_accounts ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON branch_social_accounts FROM anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON branch_social_accounts TO authenticated;
+GRANT ALL ON branch_social_accounts TO service_role;
+
+DROP POLICY IF EXISTS "Service Role Full Access" ON branch_social_accounts;
+CREATE POLICY "Service Role Full Access" ON branch_social_accounts FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Active Trellis users read branch social accounts" ON branch_social_accounts;
+CREATE POLICY "Active Trellis users read branch social accounts" ON branch_social_accounts FOR SELECT TO authenticated USING ((SELECT private.is_active_trellis_user()));
+DROP POLICY IF EXISTS "Marketing operators create branch social accounts" ON branch_social_accounts;
+CREATE POLICY "Marketing operators create branch social accounts" ON branch_social_accounts FOR INSERT TO authenticated WITH CHECK ((SELECT private.can_manage_marketing()));
+DROP POLICY IF EXISTS "Marketing operators update branch social accounts" ON branch_social_accounts;
+CREATE POLICY "Marketing operators update branch social accounts" ON branch_social_accounts FOR UPDATE TO authenticated USING ((SELECT private.can_manage_marketing())) WITH CHECK ((SELECT private.can_manage_marketing()));
+DROP POLICY IF EXISTS "Marketing operators delete branch social accounts" ON branch_social_accounts;
+CREATE POLICY "Marketing operators delete branch social accounts" ON branch_social_accounts FOR DELETE TO authenticated USING ((SELECT private.can_manage_marketing()));
+
+INSERT INTO branch_social_accounts (
+  branch_id, platform, external_account_id, handle, display_name,
+  profile_url, purpose, is_primary, status, metadata
+)
+SELECT
+  b.id, seed.platform, seed.external_account_id, seed.handle, seed.display_name,
+  seed.profile_url, seed.purpose, seed.is_primary, 'registered',
+  jsonb_build_object('ownership', 'brand_account', 'source', 'youtube')
+FROM branches b
+CROSS JOIN (VALUES
+  ('youtube', 'UCwk6PPLPh_txSnDf-pzPCJA', '@RekkrdAfterDark', 'Rekkrd After Dark', 'https://www.youtube.com/@RekkrdAfterDark', 'after_dark', true),
+  ('youtube', 'UC-O8IHGO4buM4NkOPmc59mw', '@RekkrdListeningRoom', 'Rekkrd Listening Room', 'https://www.youtube.com/@RekkrdListeningRoom', 'listening_room', false)
+) AS seed(platform, external_account_id, handle, display_name, profile_url, purpose, is_primary)
+WHERE b.slug = 'rekkrd'
+ON CONFLICT (branch_id, platform, external_account_id) DO UPDATE SET
+  handle = EXCLUDED.handle,
+  display_name = EXCLUDED.display_name,
+  profile_url = EXCLUDED.profile_url,
+  purpose = EXCLUDED.purpose,
+  is_primary = EXCLUDED.is_primary,
+  metadata = EXCLUDED.metadata,
+  updated_at = now();
+
+-- 10C. ACCOUNT-SCOPED SOCIAL CREDENTIALS
+-- Keep this master schema block aligned with the production migration.
+-- Bind credentials to a specific public account identity. Existing Facebook,
+-- Instagram, X, LinkedIn, and TikTok credentials remain unscoped (NULL) and
+-- keep their one-row-per-branch/platform behavior.
+ALTER TABLE public.social_credentials
+  ADD COLUMN IF NOT EXISTS branch_social_account_id UUID
+  REFERENCES public.branch_social_accounts(id) ON DELETE CASCADE;
+
+ALTER TABLE public.social_credentials
+  DROP CONSTRAINT IF EXISTS unique_branch_platform;
+ALTER TABLE public.social_credentials
+  DROP CONSTRAINT IF EXISTS unique_branch_platform_account;
+ALTER TABLE public.social_credentials
+  ADD CONSTRAINT unique_branch_platform_account
+  UNIQUE NULLS NOT DISTINCT (branch_id, platform, branch_social_account_id);
+
+CREATE INDEX IF NOT EXISTS idx_social_credentials_branch_account
+  ON public.social_credentials (branch_social_account_id)
+  WHERE branch_social_account_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION private.can_manage_social_credentials()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT COALESCE((SELECT auth.jwt()->>'role') = 'service_role', false)
+    OR EXISTS (
+      SELECT 1
+      FROM public.trellis_users
+      WHERE auth_user_id = (SELECT auth.uid())
+        AND role IN ('owner', 'admin', 'operator')
+        AND status = 'active'
+    );
+$$;
+
+REVOKE ALL ON FUNCTION private.can_manage_social_credentials() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.can_manage_social_credentials() TO authenticated, service_role;
+
+-- Preserve the deployed unscoped RPC contract while targeting the NULL account
+-- slot in the new three-column uniqueness constraint.
+CREATE OR REPLACE FUNCTION public.upsert_social_credential(
+  p_branch_id text,
+  p_platform text,
+  p_access_token text,
+  p_app_id text DEFAULT NULL,
+  p_app_secret text DEFAULT NULL,
+  p_refresh_token text DEFAULT NULL,
+  p_token_expires_at TIMESTAMPTZ DEFAULT NULL,
+  p_platform_user_id text DEFAULT NULL,
+  p_platform_username text DEFAULT NULL,
+  p_platform_metadata jsonb DEFAULT NULL,
+  p_granted_scopes jsonb DEFAULT NULL,
+  p_status text DEFAULT 'active'
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public', 'extensions'
+AS $$
+DECLARE
+  v_result public.social_credentials%ROWTYPE;
+  v_key text := public.get_encryption_key();
+  v_enc_secret text;
+  v_enc_access text;
+  v_enc_refresh text;
+BEGIN
+  IF NOT private.can_manage_social_credentials() THEN
+    RAISE EXCEPTION 'Not authorized to manage social credentials' USING ERRCODE = '42501';
+  END IF;
+  IF p_platform NOT IN ('instagram','facebook','x','linkedin','tiktok','youtube') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid platform: ' || p_platform);
+  END IF;
+
+  IF p_app_secret IS NOT NULL THEN
+    v_enc_secret := encode(pgp_sym_encrypt(p_app_secret, v_key), 'base64');
+  END IF;
+  IF p_access_token IS NOT NULL THEN
+    v_enc_access := encode(pgp_sym_encrypt(p_access_token, v_key), 'base64');
+  END IF;
+  IF p_refresh_token IS NOT NULL THEN
+    v_enc_refresh := encode(pgp_sym_encrypt(p_refresh_token, v_key), 'base64');
+  END IF;
+
+  INSERT INTO public.social_credentials (
+    branch_id, platform, branch_social_account_id, app_id, app_secret_encrypted,
+    access_token_encrypted, refresh_token_encrypted, token_expires_at,
+    platform_user_id, platform_username, platform_metadata, granted_scopes,
+    status, is_valid, updated_at
+  ) VALUES (
+    p_branch_id, p_platform, NULL, COALESCE(p_app_id, ''), COALESCE(v_enc_secret, ''),
+    v_enc_access, v_enc_refresh, p_token_expires_at,
+    p_platform_user_id, p_platform_username,
+    COALESCE(p_platform_metadata, '{}'::jsonb), COALESCE(p_granted_scopes, '[]'::jsonb),
+    COALESCE(p_status, 'active'), true, now()
+  )
+  ON CONFLICT (branch_id, platform, branch_social_account_id) DO UPDATE SET
+    app_id = COALESCE(NULLIF(p_app_id, ''), public.social_credentials.app_id),
+    app_secret_encrypted = CASE WHEN v_enc_secret IS NOT NULL THEN v_enc_secret ELSE public.social_credentials.app_secret_encrypted END,
+    access_token_encrypted = CASE WHEN v_enc_access IS NOT NULL THEN v_enc_access ELSE public.social_credentials.access_token_encrypted END,
+    refresh_token_encrypted = CASE WHEN v_enc_refresh IS NOT NULL THEN v_enc_refresh ELSE public.social_credentials.refresh_token_encrypted END,
+    token_expires_at = COALESCE(p_token_expires_at, public.social_credentials.token_expires_at),
+    platform_user_id = COALESCE(p_platform_user_id, public.social_credentials.platform_user_id),
+    platform_username = COALESCE(p_platform_username, public.social_credentials.platform_username),
+    platform_metadata = CASE WHEN p_platform_metadata IS NOT NULL THEN public.social_credentials.platform_metadata || p_platform_metadata ELSE public.social_credentials.platform_metadata END,
+    granted_scopes = COALESCE(p_granted_scopes, public.social_credentials.granted_scopes),
+    status = COALESCE(p_status, public.social_credentials.status),
+    is_valid = true,
+    last_refreshed_at = CASE WHEN p_access_token IS NOT NULL THEN now() ELSE public.social_credentials.last_refreshed_at END,
+    updated_at = now()
+  RETURNING * INTO v_result;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'credential_id', v_result.id,
+    'branch_id', v_result.branch_id,
+    'platform', v_result.platform,
+    'status', v_result.status
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_social_credential(text,text,text,text,text,text,timestamptz,text,text,jsonb,jsonb,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.upsert_social_credential(text,text,text,text,text,text,timestamptz,text,text,jsonb,jsonb,text) TO authenticated, service_role;
+
+-- Account-scoped write path used by YouTube OAuth. The immutable channel ID in
+-- branch_social_accounts is the expected identity for callback verification.
+CREATE OR REPLACE FUNCTION public.upsert_social_account_credential(
+  p_branch_id text,
+  p_platform text,
+  p_branch_social_account_id uuid,
+  p_access_token text DEFAULT NULL,
+  p_app_id text DEFAULT NULL,
+  p_app_secret text DEFAULT NULL,
+  p_refresh_token text DEFAULT NULL,
+  p_token_expires_at TIMESTAMPTZ DEFAULT NULL,
+  p_platform_user_id text DEFAULT NULL,
+  p_platform_username text DEFAULT NULL,
+  p_platform_metadata jsonb DEFAULT NULL,
+  p_granted_scopes jsonb DEFAULT NULL,
+  p_status text DEFAULT 'active'
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public', 'extensions'
+AS $$
+DECLARE
+  v_account public.branch_social_accounts%ROWTYPE;
+  v_result public.social_credentials%ROWTYPE;
+  v_key text := public.get_encryption_key();
+  v_enc_secret text;
+  v_enc_access text;
+  v_enc_refresh text;
+BEGIN
+  IF NOT private.can_manage_social_credentials() THEN
+    RAISE EXCEPTION 'Not authorized to manage social credentials' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_account
+  FROM public.branch_social_accounts
+  WHERE id = p_branch_social_account_id
+    AND branch_id::text = p_branch_id
+    AND platform = p_platform
+    AND status <> 'revoked';
+
+  IF v_account.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Social account does not belong to this branch/platform');
+  END IF;
+
+  IF p_platform <> 'youtube' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Account-scoped OAuth currently supports YouTube only');
+  END IF;
+
+  IF p_platform_user_id IS NOT NULL AND p_platform_user_id <> v_account.external_account_id THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Authorized YouTube channel does not match the selected account',
+      'expected_channel_id', v_account.external_account_id,
+      'actual_channel_id', p_platform_user_id
+    );
+  END IF;
+
+  IF p_app_secret IS NOT NULL THEN
+    v_enc_secret := encode(pgp_sym_encrypt(p_app_secret, v_key), 'base64');
+  END IF;
+  IF p_access_token IS NOT NULL THEN
+    v_enc_access := encode(pgp_sym_encrypt(p_access_token, v_key), 'base64');
+  END IF;
+  IF p_refresh_token IS NOT NULL THEN
+    v_enc_refresh := encode(pgp_sym_encrypt(p_refresh_token, v_key), 'base64');
+  END IF;
+
+  INSERT INTO public.social_credentials (
+    branch_id, platform, branch_social_account_id, app_id, app_secret_encrypted,
+    access_token_encrypted, refresh_token_encrypted, token_expires_at,
+    platform_user_id, platform_username, platform_metadata, granted_scopes,
+    status, is_valid, updated_at
+  ) VALUES (
+    p_branch_id, p_platform, p_branch_social_account_id,
+    COALESCE(p_app_id, ''), COALESCE(v_enc_secret, ''),
+    v_enc_access, v_enc_refresh, p_token_expires_at,
+    p_platform_user_id, p_platform_username,
+    COALESCE(p_platform_metadata, '{}'::jsonb), COALESCE(p_granted_scopes, '[]'::jsonb),
+    COALESCE(p_status, 'active'), true, now()
+  )
+  ON CONFLICT (branch_id, platform, branch_social_account_id) DO UPDATE SET
+    app_id = COALESCE(NULLIF(p_app_id, ''), public.social_credentials.app_id),
+    app_secret_encrypted = CASE WHEN v_enc_secret IS NOT NULL THEN v_enc_secret ELSE public.social_credentials.app_secret_encrypted END,
+    access_token_encrypted = CASE WHEN v_enc_access IS NOT NULL THEN v_enc_access ELSE public.social_credentials.access_token_encrypted END,
+    refresh_token_encrypted = CASE WHEN v_enc_refresh IS NOT NULL THEN v_enc_refresh ELSE public.social_credentials.refresh_token_encrypted END,
+    token_expires_at = COALESCE(p_token_expires_at, public.social_credentials.token_expires_at),
+    platform_user_id = COALESCE(p_platform_user_id, public.social_credentials.platform_user_id),
+    platform_username = COALESCE(p_platform_username, public.social_credentials.platform_username),
+    platform_metadata = CASE WHEN p_platform_metadata IS NOT NULL THEN public.social_credentials.platform_metadata || p_platform_metadata ELSE public.social_credentials.platform_metadata END,
+    granted_scopes = COALESCE(p_granted_scopes, public.social_credentials.granted_scopes),
+    status = COALESCE(p_status, public.social_credentials.status),
+    is_valid = true,
+    last_refreshed_at = CASE WHEN p_access_token IS NOT NULL THEN now() ELSE public.social_credentials.last_refreshed_at END,
+    updated_at = now()
+  RETURNING * INTO v_result;
+
+  UPDATE public.branch_social_accounts SET
+    status = CASE
+      WHEN v_result.status = 'active' THEN 'active'
+      WHEN v_result.status = 'error' THEN 'error'
+      ELSE 'pending'
+    END,
+    metadata = metadata || jsonb_build_object('credential_id', v_result.id),
+    updated_at = now()
+  WHERE id = p_branch_social_account_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'credential_id', v_result.id,
+    'branch_social_account_id', p_branch_social_account_id,
+    'branch_id', v_result.branch_id,
+    'platform', v_result.platform,
+    'expected_external_account_id', v_account.external_account_id,
+    'status', v_result.status
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_social_account_credential(text,text,uuid,text,text,text,text,timestamptz,text,text,jsonb,jsonb,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.upsert_social_account_credential(text,text,uuid,text,text,text,text,timestamptz,text,text,jsonb,jsonb,text) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.get_social_account_credential(
+  p_branch_id text,
+  p_platform text,
+  p_branch_social_account_id uuid,
+  p_encryption_key text DEFAULT public.get_encryption_key()
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public', 'extensions'
+AS $$
+DECLARE
+  v_row public.social_credentials%ROWTYPE;
+  v_account public.branch_social_accounts%ROWTYPE;
+  v_decrypted_secret text;
+  v_decrypted_access text;
+  v_decrypted_refresh text;
+BEGIN
+  IF COALESCE((SELECT auth.jwt()->>'role'), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Service role required' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.social_credentials
+  WHERE branch_id = p_branch_id
+    AND platform = p_platform
+    AND branch_social_account_id = p_branch_social_account_id;
+
+  SELECT * INTO v_account
+  FROM public.branch_social_accounts
+  WHERE id = p_branch_social_account_id
+    AND branch_id::text = p_branch_id
+    AND platform = p_platform;
+
+  IF v_row.id IS NULL OR v_account.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'No account-scoped credential found');
+  END IF;
+
+  IF v_row.app_secret_encrypted IS NOT NULL AND v_row.app_secret_encrypted <> '' THEN
+    v_decrypted_secret := pgp_sym_decrypt(decode(v_row.app_secret_encrypted, 'base64'), p_encryption_key);
+  END IF;
+  IF v_row.access_token_encrypted IS NOT NULL AND v_row.access_token_encrypted <> '' THEN
+    v_decrypted_access := pgp_sym_decrypt(decode(v_row.access_token_encrypted, 'base64'), p_encryption_key);
+  END IF;
+  IF v_row.refresh_token_encrypted IS NOT NULL AND v_row.refresh_token_encrypted <> '' THEN
+    v_decrypted_refresh := pgp_sym_decrypt(decode(v_row.refresh_token_encrypted, 'base64'), p_encryption_key);
+  END IF;
+
+  UPDATE public.social_credentials SET last_used_at = now() WHERE id = v_row.id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'credential_id', v_row.id,
+    'branch_social_account_id', v_row.branch_social_account_id,
+    'branch_id', v_row.branch_id,
+    'platform', v_row.platform,
+    'expected_external_account_id', v_account.external_account_id,
+    'expected_handle', v_account.handle,
+    'app_id', v_row.app_id,
+    'app_secret', v_decrypted_secret,
+    'access_token', v_decrypted_access,
+    'refresh_token', v_decrypted_refresh,
+    'token_expires_at', v_row.token_expires_at,
+    'platform_user_id', v_row.platform_user_id,
+    'platform_username', v_row.platform_username,
+    'platform_metadata', v_row.platform_metadata,
+    'granted_scopes', v_row.granted_scopes,
+    'status', v_row.status
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_social_account_credential(text,text,uuid,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_social_account_credential(text,text,uuid,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.revoke_social_account_credential(
+  p_branch_id text,
+  p_branch_social_account_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  IF NOT private.can_manage_social_credentials() THEN
+    RAISE EXCEPTION 'Not authorized to manage social credentials' USING ERRCODE = '42501';
+  END IF;
+
+  UPDATE public.social_credentials SET
+    access_token_encrypted = NULL,
+    refresh_token_encrypted = NULL,
+    token_expires_at = NULL,
+    status = 'revoked',
+    platform_metadata = COALESCE(platform_metadata, '{}'::jsonb) || jsonb_build_object('revoked_at', now()::text),
+    updated_at = now()
+  WHERE branch_id = p_branch_id
+    AND branch_social_account_id = p_branch_social_account_id
+  RETURNING id INTO v_id;
+
+  IF v_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'No account-scoped credential found to revoke');
+  END IF;
+
+  UPDATE public.branch_social_accounts SET
+    status = 'registered',
+    updated_at = now()
+  WHERE id = p_branch_social_account_id AND branch_id::text = p_branch_id;
+
+  RETURN jsonb_build_object('success', true, 'credential_id', v_id, 'status', 'revoked');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.revoke_social_account_credential(text,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.revoke_social_account_credential(text,uuid) TO authenticated, service_role;
+
+-- Non-secret status payload now carries account identity so the UI can
+-- distinguish two YouTube rows under the same branch.
+CREATE OR REPLACE FUNCTION public.list_social_connections(p_branch_id text)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $$
+BEGIN
+  IF NOT private.can_manage_social_credentials() THEN
+    RAISE EXCEPTION 'Not authorized to list social credentials' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN COALESCE(
+    (
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'id', sc.id,
+          'branch_social_account_id', sc.branch_social_account_id,
+          'platform', sc.platform,
+          'platform_user_id', sc.platform_user_id,
+          'platform_username', sc.platform_username,
+          'app_id', sc.app_id,
+          'status', sc.status,
+          'has_app_secret', (sc.app_secret_encrypted IS NOT NULL AND sc.app_secret_encrypted <> ''),
+          'platform_metadata', sc.platform_metadata,
+          'granted_scopes', sc.granted_scopes,
+          'last_used_at', sc.last_used_at,
+          'last_refreshed_at', sc.last_refreshed_at,
+          'token_expires_at', sc.token_expires_at,
+          'created_at', sc.created_at,
+          'updated_at', sc.updated_at
+        ) ORDER BY sc.platform, sc.created_at
+      )
+      FROM public.social_credentials sc
+      WHERE sc.branch_id = p_branch_id
+    ),
+    '[]'::jsonb
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.list_social_connections(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_social_connections(text) TO authenticated, service_role;
+
+
+-- 10D. NARROW ACCOUNT-CREDENTIAL WRITE SURFACE
+-- Browsers may save developer-app credentials, but only the service-role OAuth
+-- callback may write access/refresh tokens.
+REVOKE ALL ON FUNCTION public.upsert_social_account_credential(text,text,uuid,text,text,text,text,timestamptz,text,text,jsonb,jsonb,text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_social_account_credential(text,text,uuid,text,text,text,text,timestamptz,text,text,jsonb,jsonb,text)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.save_social_account_app_credentials(
+  p_branch_id text,
+  p_platform text,
+  p_branch_social_account_id uuid,
+  p_app_id text,
+  p_app_secret text
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public', 'extensions'
+AS $$
+DECLARE
+  v_account public.branch_social_accounts%ROWTYPE;
+  v_result public.social_credentials%ROWTYPE;
+  v_enc_secret text;
+BEGIN
+  IF NOT private.can_manage_social_credentials() THEN
+    RAISE EXCEPTION 'Not authorized to manage social credentials' USING ERRCODE = '42501';
+  END IF;
+  IF COALESCE(trim(p_app_id), '') = '' OR COALESCE(trim(p_app_secret), '') = '' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'OAuth Client ID and Client Secret are required');
+  END IF;
+
+  SELECT * INTO v_account
+  FROM public.branch_social_accounts
+  WHERE id = p_branch_social_account_id
+    AND branch_id::text = p_branch_id
+    AND platform = p_platform
+    AND status <> 'revoked';
+
+  IF v_account.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Social account does not belong to this branch/platform');
+  END IF;
+  IF p_platform <> 'youtube' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Account-scoped OAuth currently supports YouTube only');
+  END IF;
+
+  v_enc_secret := encode(pgp_sym_encrypt(trim(p_app_secret), public.get_encryption_key()), 'base64');
+
+  INSERT INTO public.social_credentials (
+    branch_id, platform, branch_social_account_id, app_id, app_secret_encrypted,
+    status, is_valid, updated_at
+  ) VALUES (
+    p_branch_id, p_platform, p_branch_social_account_id, trim(p_app_id), v_enc_secret,
+    'pending', true, now()
+  )
+  ON CONFLICT (branch_id, platform, branch_social_account_id) DO UPDATE SET
+    app_id = EXCLUDED.app_id,
+    app_secret_encrypted = EXCLUDED.app_secret_encrypted,
+    status = 'pending',
+    is_valid = true,
+    updated_at = now()
+  RETURNING * INTO v_result;
+
+  UPDATE public.branch_social_accounts SET
+    status = 'pending',
+    metadata = metadata || jsonb_build_object('credential_id', v_result.id),
+    updated_at = now()
+  WHERE id = p_branch_social_account_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'credential_id', v_result.id,
+    'branch_social_account_id', p_branch_social_account_id,
+    'platform', p_platform,
+    'status', 'pending'
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.save_social_account_app_credentials(text,text,uuid,text,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.save_social_account_app_credentials(text,text,uuid,text,text) TO authenticated, service_role;
+
 
 -- 11. MARKETING CAMPAIGN GENERATOR: AI GENERATION LOG
 CREATE TABLE IF NOT EXISTS marketing_generations (
@@ -1082,7 +2193,14 @@ CREATE TABLE IF NOT EXISTS email_templates (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE email_templates DISABLE ROW LEVEL SECURITY;
+-- RLS on: the anon key ships in the browser bundle, and template bodies are the
+-- content that goes out over the sending domain. Signed-in operators hit Postgres
+-- as the authenticated role, so it keeps full access; service_role bypasses RLS.
+ALTER TABLE email_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS trellis_operators_all ON email_templates;
+CREATE POLICY trellis_operators_all ON email_templates
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+REVOKE ALL ON email_templates FROM anon;
 
 CREATE INDEX IF NOT EXISTS idx_email_templates_branch ON email_templates (branch_id);
 CREATE INDEX IF NOT EXISTS idx_email_templates_brand ON email_templates (brand_identity_id);
@@ -1252,7 +2370,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION claim_trellis_music_track(UUID, UUID) TO anon, authenticated, service_role;
+-- Claimed only by the generate-session-track Edge Function (service_role). Functions
+-- grant EXECUTE to PUBLIC by default, so PUBLIC must be revoked explicitly — revoking
+-- anon alone is a no-op while PUBLIC still holds it.
+REVOKE ALL ON FUNCTION claim_trellis_music_track(UUID, UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION claim_trellis_music_track(UUID, UUID) TO service_role;
 
 -- 17b. STUDIO ALBUMS (isolated production pipeline; does not alter legacy sessions)
 CREATE TABLE IF NOT EXISTS studio_feature_flags (
@@ -1282,7 +2404,7 @@ CREATE TABLE IF NOT EXISTS studio_tracks (
   title TEXT NOT NULL, narrative_purpose TEXT, energy SMALLINT CHECK (energy BETWEEN 1 AND 10), instrumentation TEXT, vocal_direction TEXT, prompt TEXT, lyrics TEXT,
   generation_provider TEXT, generation_model TEXT, provider_generation_id TEXT, duration_seconds INTEGER, source_audio_path TEXT,
   review_status TEXT NOT NULL DEFAULT 'planned' CHECK (review_status IN ('planned','generated','pending_review','approved','rejected','regenerating','locked','failed')),
-  approved_at TIMESTAMPTZ, rejection_reason TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (album_id, track_number)
+  approved_at TIMESTAMPTZ, rejection_reason TEXT, included_in_master BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (album_id, track_number)
 );
 CREATE TABLE IF NOT EXISTS studio_assets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), album_id UUID NOT NULL REFERENCES studio_albums(id) ON DELETE CASCADE, track_id UUID REFERENCES studio_tracks(id) ON DELETE CASCADE,
@@ -1318,6 +2440,7 @@ ALTER TABLE studio_albums DROP CONSTRAINT IF EXISTS studio_albums_release_identi
 ALTER TABLE studio_albums ADD CONSTRAINT studio_albums_release_identity_status_check CHECK (release_identity_status IN ('not_started','draft','approved'));
 ALTER TABLE studio_assets ADD COLUMN IF NOT EXISTS error_message TEXT;
 ALTER TABLE studio_assets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE studio_tracks ADD COLUMN IF NOT EXISTS included_in_master BOOLEAN NOT NULL DEFAULT TRUE;
 CREATE INDEX IF NOT EXISTS idx_studio_albums_org_updated ON studio_albums (organization_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_studio_albums_style_preset ON studio_albums (style_preset_id);
 CREATE INDEX IF NOT EXISTS idx_studio_tracks_album_order ON studio_tracks (album_id, track_number);
@@ -1407,6 +2530,7 @@ CREATE TABLE IF NOT EXISTS trellis_episode_metadata (
 CREATE TABLE IF NOT EXISTS trellis_episode_publications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   episode_id UUID NOT NULL REFERENCES trellis_episodes(id) ON DELETE CASCADE,
+  youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT,
   platform TEXT NOT NULL CHECK (platform IN ('youtube','spotify','apple_podcasts','rekkrd','social')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','uploading','processing','live','failed')),
   external_id TEXT,
@@ -1592,6 +2716,7 @@ CREATE TABLE IF NOT EXISTS trellis_clip_render_jobs (
 CREATE TABLE IF NOT EXISTS trellis_clip_publications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID NOT NULL REFERENCES trellis_clip_projects(id) ON DELETE CASCADE,
+  youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT,
   platform TEXT NOT NULL CHECK (platform IN ('youtube','social')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','uploading','processing','live','failed')),
   external_id TEXT,
@@ -1601,6 +2726,84 @@ CREATE TABLE IF NOT EXISTS trellis_clip_publications (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE trellis_episode_publications ADD COLUMN IF NOT EXISTS youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT;
+ALTER TABLE trellis_clip_publications ADD COLUMN IF NOT EXISTS youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT;
+DO $$ BEGIN
+  IF to_regclass('public.studio_publications') IS NOT NULL THEN
+    ALTER TABLE studio_publications ADD COLUMN IF NOT EXISTS youtube_account_id UUID REFERENCES branch_social_accounts(id) ON DELETE RESTRICT;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_episode_publications_youtube_account ON trellis_episode_publications (youtube_account_id) WHERE youtube_account_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_clip_publications_youtube_account ON trellis_clip_publications (youtube_account_id) WHERE youtube_account_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION private.validate_youtube_publication_account()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, private AS $$
+DECLARE v_branch_slug TEXT; v_valid BOOLEAN;
+BEGIN
+  IF NEW.platform <> 'youtube' THEN RETURN NEW; END IF;
+  IF NEW.youtube_account_id IS NULL THEN RAISE EXCEPTION 'A YouTube account is required for YouTube publications' USING ERRCODE = '23514'; END IF;
+  IF TG_TABLE_NAME = 'trellis_episode_publications' THEN
+    SELECT episode.branch INTO v_branch_slug FROM trellis_episodes episode WHERE episode.id = NEW.episode_id;
+  ELSIF TG_TABLE_NAME = 'trellis_clip_publications' THEN
+    SELECT project.branch INTO v_branch_slug FROM trellis_clip_projects project WHERE project.id = NEW.project_id;
+  ELSIF TG_TABLE_NAME = 'studio_publications' THEN
+    v_branch_slug := 'rekkrd';
+  END IF;
+  SELECT EXISTS (
+    SELECT 1 FROM branch_social_accounts account JOIN branches branch ON branch.id = account.branch_id
+    WHERE account.id = NEW.youtube_account_id AND account.platform = 'youtube' AND account.status = 'active' AND branch.slug = v_branch_slug
+  ) INTO v_valid;
+  IF NOT COALESCE(v_valid, false) THEN RAISE EXCEPTION 'The selected YouTube account is not active for branch %', COALESCE(v_branch_slug, '(unknown)') USING ERRCODE = '23514'; END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION private.validate_youtube_publication_account() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.validate_youtube_publication_account() TO service_role;
+DROP TRIGGER IF EXISTS validate_episode_youtube_account ON trellis_episode_publications;
+CREATE TRIGGER validate_episode_youtube_account BEFORE INSERT OR UPDATE OF youtube_account_id, platform ON trellis_episode_publications FOR EACH ROW EXECUTE FUNCTION private.validate_youtube_publication_account();
+DROP TRIGGER IF EXISTS validate_clip_youtube_account ON trellis_clip_publications;
+CREATE TRIGGER validate_clip_youtube_account BEFORE INSERT OR UPDATE OF youtube_account_id, platform ON trellis_clip_publications FOR EACH ROW EXECUTE FUNCTION private.validate_youtube_publication_account();
+DO $$ BEGIN
+  IF to_regclass('public.studio_publications') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS validate_studio_youtube_account ON studio_publications;
+    CREATE TRIGGER validate_studio_youtube_account BEFORE INSERT OR UPDATE OF youtube_account_id, platform ON studio_publications FOR EACH ROW EXECUTE FUNCTION private.validate_youtube_publication_account();
+    CREATE INDEX IF NOT EXISTS idx_studio_publications_youtube_account ON studio_publications (youtube_account_id) WHERE youtube_account_id IS NOT NULL;
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION private.prevent_youtube_publication_retarget()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, private AS $$
+DECLARE v_can_retarget BOOLEAN := false;
+BEGIN
+  IF NEW.youtube_account_id IS NOT DISTINCT FROM OLD.youtube_account_id THEN RETURN NEW; END IF;
+  IF COALESCE(NEW.platform, OLD.platform) <> 'youtube' THEN RETURN NEW; END IF;
+  IF OLD.external_id IS NOT NULL OR OLD.published_at IS NOT NULL THEN
+    RAISE EXCEPTION 'YouTube destination is locked after submission; create a new publication instead' USING ERRCODE = '23514';
+  END IF;
+  IF TG_TABLE_NAME IN ('trellis_episode_publications', 'trellis_clip_publications') THEN
+    v_can_retarget := OLD.status = 'failed';
+  ELSIF TG_TABLE_NAME = 'studio_publications' THEN
+    v_can_retarget := OLD.status IN ('draft', 'ready', 'failed', 'cancelled');
+  END IF;
+  IF NOT v_can_retarget THEN
+    RAISE EXCEPTION 'YouTube destination is locked after submission; mark the attempt failed before choosing another channel' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION private.prevent_youtube_publication_retarget() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION private.prevent_youtube_publication_retarget() TO service_role;
+DROP TRIGGER IF EXISTS prevent_episode_youtube_retarget ON trellis_episode_publications;
+CREATE TRIGGER prevent_episode_youtube_retarget BEFORE UPDATE OF youtube_account_id ON trellis_episode_publications FOR EACH ROW EXECUTE FUNCTION private.prevent_youtube_publication_retarget();
+DROP TRIGGER IF EXISTS prevent_clip_youtube_retarget ON trellis_clip_publications;
+CREATE TRIGGER prevent_clip_youtube_retarget BEFORE UPDATE OF youtube_account_id ON trellis_clip_publications FOR EACH ROW EXECUTE FUNCTION private.prevent_youtube_publication_retarget();
+DO $$ BEGIN
+  IF to_regclass('public.studio_publications') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS prevent_studio_youtube_retarget ON studio_publications;
+    CREATE TRIGGER prevent_studio_youtube_retarget BEFORE UPDATE OF youtube_account_id ON studio_publications FOR EACH ROW EXECUTE FUNCTION private.prevent_youtube_publication_retarget();
+  END IF;
+END $$;
 
 ALTER TABLE trellis_clip_broll_beats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trellis_clip_render_jobs ENABLE ROW LEVEL SECURITY;
@@ -1683,6 +2886,9 @@ ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS caption TEXT;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS request_payload JSONB;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS revision_of UUID;
 ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS revision_notes TEXT;
+ALTER TABLE video_ad_jobs ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS video_ad_jobs_archived_branch_idx
+  ON public.video_ad_jobs (branch, archived_at DESC) WHERE archived_at IS NOT NULL;
 
 ALTER TABLE video_ad_jobs DROP CONSTRAINT IF EXISTS video_ad_jobs_status_check;
 ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_status_check
@@ -1694,6 +2900,138 @@ ALTER TABLE video_ad_jobs ADD CONSTRAINT video_ad_jobs_format_check
 
 CREATE INDEX IF NOT EXISTS video_ad_jobs_status_idx ON public.video_ad_jobs (status);
 CREATE INDEX IF NOT EXISTS video_ad_jobs_media_urls_idx ON public.video_ad_jobs USING GIN (media_urls jsonb_path_ops);
+
+-- 22. MOTION POSTS (still image → Grok motion → optional Rekkrd audio)
+ALTER TABLE IF EXISTS public.tenant_secrets ADD COLUMN IF NOT EXISTS xai_api_key TEXT;
+
+CREATE TABLE IF NOT EXISTS public.motion_post_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',
+  created_by UUID NOT NULL,
+  branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
+  branch_slug TEXT NOT NULL DEFAULT 'rekkrd',
+  title TEXT NOT NULL DEFAULT 'Untitled motion post',
+  prompt TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'xai' CHECK (provider IN ('xai')),
+  model TEXT NOT NULL DEFAULT 'grok-imagine-video-1.5',
+  duration_seconds INTEGER NOT NULL DEFAULT 7 CHECK (duration_seconds BETWEEN 3 AND 15),
+  aspect_ratio TEXT NOT NULL DEFAULT '9:16' CHECK (aspect_ratio IN ('9:16')),
+  resolution TEXT NOT NULL DEFAULT '720p' CHECK (resolution IN ('480p','720p','1080p')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','generating','mixing','ready','failed','publishing','published','cancelled')),
+  progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+  source_bucket TEXT NOT NULL DEFAULT 'motion-posts', source_path TEXT NOT NULL, source_url TEXT,
+  provider_request_id TEXT, generated_video_url TEXT,
+  audio_source_type TEXT CHECK (audio_source_type IN ('studio_track','studio_master','music_generation')),
+  audio_source_id UUID, audio_title TEXT, audio_url TEXT,
+  audio_start_seconds NUMERIC NOT NULL DEFAULT 0 CHECK (audio_start_seconds >= 0),
+  caption TEXT,
+  output_bucket TEXT NOT NULL DEFAULT 'motion-posts', output_path TEXT, output_url TEXT,
+  cost_estimate NUMERIC NOT NULL DEFAULT 0, cost_actual NUMERIC, error_message TEXT,
+  published_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_motion_post_jobs_owner_created ON public.motion_post_jobs (created_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_motion_post_jobs_status ON public.motion_post_jobs (status, updated_at DESC);
+ALTER TABLE public.motion_post_jobs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages motion posts" ON public.motion_post_jobs;
+CREATE POLICY "Service role manages motion posts" ON public.motion_post_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Motion post owner reads jobs" ON public.motion_post_jobs;
+CREATE POLICY "Motion post owner reads jobs" ON public.motion_post_jobs FOR SELECT TO authenticated USING ((select auth.uid()) = created_by);
+REVOKE ALL ON public.motion_post_jobs FROM anon, authenticated;
+GRANT SELECT ON public.motion_post_jobs TO authenticated;
+GRANT ALL ON public.motion_post_jobs TO service_role;
+
+CREATE TABLE IF NOT EXISTS public.motion_post_finishing_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  motion_post_job_id UUID NOT NULL REFERENCES public.motion_post_jobs(id) ON DELETE RESTRICT,
+  created_by UUID NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','succeeded','failed','cancel_requested','cancelled')),
+  progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+  text_cues JSONB NOT NULL DEFAULT '[]'::jsonb,
+  style JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source_bucket TEXT NOT NULL DEFAULT 'motion-posts', source_path TEXT NOT NULL,
+  output_bucket TEXT NOT NULL DEFAULT 'motion-posts', output_path TEXT, output_url TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts INTEGER NOT NULL DEFAULT 2 CHECK (max_attempts BETWEEN 1 AND 5),
+  idempotency_key TEXT NOT NULL, error_message TEXT,
+  queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (created_by, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_motion_post_finishing_owner_created ON public.motion_post_finishing_jobs (created_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_motion_post_finishing_queue ON public.motion_post_finishing_jobs (queued_at) WHERE status = 'queued';
+CREATE INDEX IF NOT EXISTS idx_motion_post_finishing_source ON public.motion_post_finishing_jobs (motion_post_job_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_motion_post_finishing_cues ON public.motion_post_finishing_jobs USING GIN (text_cues jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS idx_motion_post_finishing_style ON public.motion_post_finishing_jobs USING GIN (style jsonb_path_ops);
+ALTER TABLE public.motion_post_finishing_jobs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages motion post finishing" ON public.motion_post_finishing_jobs;
+CREATE POLICY "Service role manages motion post finishing" ON public.motion_post_finishing_jobs FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Motion post owner reads finishing" ON public.motion_post_finishing_jobs;
+CREATE POLICY "Motion post owner reads finishing" ON public.motion_post_finishing_jobs FOR SELECT TO authenticated USING ((select auth.uid()) = created_by);
+REVOKE ALL ON public.motion_post_finishing_jobs FROM anon, authenticated;
+GRANT SELECT ON public.motion_post_finishing_jobs TO authenticated;
+GRANT ALL ON public.motion_post_finishing_jobs TO service_role;
+
+ALTER TABLE public.scheduled_social_posts
+  ADD COLUMN IF NOT EXISTS source_motion_post_id UUID REFERENCES public.motion_post_jobs(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS source_motion_finish_id UUID REFERENCES public.motion_post_finishing_jobs(id) ON DELETE RESTRICT;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_motion_post ON public.scheduled_social_posts (source_motion_post_id, created_at DESC) WHERE source_motion_post_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ssp_source_motion_finish ON public.scheduled_social_posts (source_motion_finish_id) WHERE source_motion_finish_id IS NOT NULL;
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('motion-posts','motion-posts',true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+DROP POLICY IF EXISTS "Motion post owners upload assets" ON storage.objects;
+CREATE POLICY "Motion post owners upload assets" ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "Motion post owners read assets" ON storage.objects;
+CREATE POLICY "Motion post owners read assets" ON storage.objects FOR SELECT TO authenticated
+USING (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "Motion post owners delete assets" ON storage.objects;
+CREATE POLICY "Motion post owners delete assets" ON storage.objects FOR DELETE TO authenticated
+USING (bucket_id = 'motion-posts' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- PROMO STUDIO (PS-004)
+-- Kept as an exact raw import from the executable migration so the Schema
+-- Engine and deployment artifact cannot silently drift apart.
+${PROMO_STUDIO_SQL_SCHEMA}
+${PROMO_BRANCH_SOURCES_SQL_SCHEMA}
+${PROMO_CLAIM_APPROVAL_GATE_SQL_SCHEMA}
+${PROMO_VOICE_TAKE_RESERVATION_SQL_SCHEMA}
+${PROMO_MUSIC_TAKE_RESERVATION_SQL_SCHEMA}
+${PROMO_RENDER_COMPLETION_SQL_SCHEMA}
+${PROMO_CAPTURE_COMPLETION_SQL_SCHEMA}
+${PROMO_REVISION_ASSET_BINDINGS_SQL_SCHEMA}
+${PROMO_AUDIO_COMPLETION_SQL_SCHEMA}
+${PROMO_SCHEDULED_PUBLISHING_SQL_SCHEMA}
+
+-- SPECTIQ FOUNDER PROSPECTING (PHASE 1)
+-- Kept as an exact raw import from the executable migration so the Schema
+-- Engine and deployment artifact cannot silently drift apart.
+${SPECTIQ_PROSPECTING_SQL_SCHEMA}
+${SPECTIQ_PROSPECTING_CRUD_SQL_SCHEMA}
+${SPECTIQ_PROSPECTING_RESEARCH_SQL_SCHEMA}
+${SPECTIQ_RESEARCH_SNAPSHOT_SQL_SCHEMA}
+${APP_STORE_ANALYTICS_SQL_SCHEMA}
+${APP_STORE_DOWNLOAD_SNAPSHOTS_SQL}
+${HOME_APP_STORE_SQL}
+${REJOICE_APP_STORE_SQL}
+${CONTENT_TREND_RADAR_SQL_SCHEMA}
+${TRANSCRIPTION_STUDIO_SQL_SCHEMA}
+${HYPERFRAMES_TRANSCRIPTION_SQL_SCHEMA}
+${DASHBOARD_ACTION_STATES_SQL_SCHEMA}
+${KEYWORD_EXPLORER_SQL_SCHEMA}
+${OPPORTUNITY_BRIEF_SQL_SCHEMA}
+${SWEETWATER_INQUIRY_SQL_SCHEMA}
+${SWEETWATER_TRACE_SQL_SCHEMA}
+${SWEETWATER_CONTACT_SQL_SCHEMA}
+${TIKTOK_METRICS_SQL_SCHEMA}
+${SHARED_X_SQL_SCHEMA}
+${PROJECT_ROOMS_SQL_SCHEMA}
+${PROJECT_ROOM_SHARED_SQL_SCHEMA}
+${PROJECT_ROOM_SLACK_SQL_SCHEMA}
+${PROJECT_ROOM_CRM_SQL_SCHEMA}
+${NEWSLETTER_RESEND_SAFETY_SQL_SCHEMA}
+${NEWSLETTER_SCHEDULER_AUTH_SQL_SCHEMA}
 `;
 
 export const WEBHOOK_SPECS = {
@@ -2030,7 +3368,7 @@ export const VIDEO_SETTINGS = ['Studio', 'Outdoor', 'Kitchen', 'Garden', 'Office
 export const VIDEO_LIGHTING = ['Natural', 'Studio', 'Golden hour', 'Dramatic', 'Soft & warm'] as const;
 export const VIDEO_MOODS = ['Energetic', 'Calm', 'Luxurious', 'Fun', 'Inspirational', 'Cozy'] as const;
 
-export const DURATION_OPTIONS: (15 | 30 | 60)[] = [15, 30, 60];
+export const DURATION_OPTIONS: (5 | 10)[] = [5, 10];
 
 export const VIDEO_AD_COST_PER_VARIANT = 0.12;
 
@@ -2156,6 +3494,21 @@ export const EPISODE_ART_STYLES: EpisodeArtStyle[] = [
     id: 'photoreal_60s', name: 'Riviera Editorial Photo', desc: 'Sun-faded Kodachrome fashion photograph on the Côte d’Azur',
     setting: 'a real 1960s–1970s French Riviera terrace above Nice or Cannes, with deep blue Mediterranean water, yachts, palms, a curved coastline, and Belle Époque hotels',
     prompt: 'Photorealistic 1960s–1970s French Riviera luxury travel editorial, authentic Kodachrome color film photograph, one elegant summer traveler in period resort fashion, natural Mediterranean sunlight, vintage lens, subtle film grain, sun-faded postcard character, real Côte d’Azur architecture and coastline. Not an illustration, not a cartoon, not a screen-print, not a tropical fantasy.' + NO_TEXT + BRAND_SAFE_ART,
+  },
+  {
+    id: 'cinematic_architectural_minimalism', name: 'Cinematic Architectural Minimalism', desc: 'Monumental spaces, sculptural materials, warm shadows and quiet luxury.',
+    setting: 'a monumental minimalist interior of sculptural brutalist concrete, warm natural stone, dark wood, glass, and still water, with expansive negative space and one organic sculptural focal point',
+    prompt: 'Photorealistic cinematic architectural editorial photography of a monumental minimalist interior, sculptural brutalist concrete, warm natural stone, dark wood, enormous geometric walls, glass and still water, expansive negative space, minimal furniture, and one organic sculptural focal point. Warm directional sunlight from a concealed opening creates long deep shadows, soft atmospheric haze, and subtle volumetric light. Restrained charcoal, sand, warm gray, muted brown, and black palette; wide cinematic framing, precise geometry, soft filmic contrast, and subtle grain. Quiet, psychologically calming, sophisticated, mysterious, contemplative, and extremely high-end. No people by default; if scale is essential, use only one tiny distant figure. No bright colors, busy decor, ordinary living room, commercial office, excessive furniture, glossy CGI appearance, fantasy architecture, cyberpunk lighting, oversaturation, harsh HDR, or visual clutter.' + NO_TEXT + BRAND_SAFE_ART,
+  },
+  {
+    id: 'cinematic_vintage_noir', name: 'Cinematic Vintage Noir', desc: 'Shadowy interiors, elegant figures, rain, haze and late-night atmosphere.',
+    setting: 'an elegant 1940s–1960s-inspired late-night luxury lounge with a solitary formal figure beside a rain-streaked window, warm practical lamps, reflective surfaces, and carefully composed negative space',
+    prompt: 'Photorealistic cinematic vintage-noir editorial photograph in an elegant late-night interior, with one sophisticated solitary adult figure near a rain-streaked window in timeless formal clothing. Dramatic low-key lighting, deep directional shadows, pools of warm table-lamp light, atmospheric haze, reflective surfaces, and carefully composed negative space. Intimate, romantic, melancholic, and mysterious, like a beautifully restored frame from a 1950s film. Desaturated charcoal, tobacco brown, muted amber, and deep black palette; authentic analog film grain, gentle halation, soft highlights, shallow depth of field, and widescreen cinematic composition. No modern nightclub, neon or cyberpunk colors, theatrical costumes, exaggerated gangster imagery, visible weapons, bright daylight, smiling commercial models, glossy digital rendering, or clutter.' + NO_TEXT + BRAND_SAFE_ART,
+  },
+  {
+    id: 'sunlit_lifestyle_editorial', name: 'Sunlit Lifestyle Editorial', desc: 'Warm morning light, relaxed luxury and clean modern living.',
+    setting: 'a beautiful contemporary home on a quiet sunny morning, with enormous windows, pale walls, cream textiles, light oak, subtle greenery, and one naturally relaxed stylish adult',
+    prompt: 'Photorealistic cinematic lifestyle-editorial photograph in a beautiful contemporary home during a quiet sunny morning. One relaxed, stylish adult occupies the space naturally in understated modern clothing, appearing calm, confident, and unhurried. Enormous windows, warm natural sunlight, soft shadows, pale walls, cream textiles, light oak, subtle greenery, and a restrained neutral palette. Include only one or two purposeful lifestyle details such as coffee, headphones, a book, or a laptop. Fresh, optimistic, aspirational, believable, and effortlessly luxurious, with generous negative space for later typography or product overlays. Natural skin texture, gentle atmospheric softness, warm filmic color, subtle grain, and clean cinematic framing. No staged stock-photo smiles, exaggerated luxury, cluttered rooms, harsh white lighting, oversaturated colors, influencer posing, sterile showrooms, corporate offices, excessive decor, or glossy CGI appearance.' + NO_TEXT + BRAND_SAFE_ART,
   },
   {
     id: 'exotica_poster', name: 'Exotica Poster', desc: 'Retro screen-print tiki album cover',

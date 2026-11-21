@@ -10,29 +10,10 @@ import {
   rowObject,
   runPosthogQuery,
 } from "../_shared/posthog.ts";
+import { posthogLifecycleForBranch } from "../_shared/posthog-contract.mjs";
 
 const CACHE_MS = 60 * 60 * 1000;
 const WINDOWS = new Set([7, 30, 90]);
-
-// ── INTERIM MAPPING (2026-08-08) ───────────────────────────────────────────────
-// Rejoice currently emits ONLY PostHog defaults + mobile-lifecycle events; it has no
-// custom user_signed_up / onboarding_completed / activation_milestone_reached yet.
-// Until the app is instrumented we proxy the funnel with the mobile events that DO
-// exist, so the panel shows real acquisition instead of all-zeros. Labels are sent to
-// the client so nothing is mislabeled ("Installed"/"Identified", not "Signed up").
-//
-// TO REVERT once the app ships the canonical events, restore these values + redeploy:
-//   const SIGNUP_EVENTS = ["user_signed_up", "account_created"];
-//   const ONBOARDING_EVENTS = ["onboarding_completed"];
-//   const ACTIVATION_EVENTS = ["activation_milestone_reached"];
-//   const FUNNEL_LABELS = { signed_up: "Signed up", onboarded: "Onboarded", activated: "Activated" };
-//   const CONVERSION_LABELS = { signup_to_onboarding: "Signup → onboarding", onboarding_to_activation: "Onboarding → activation" };
-const SIGNUP_EVENTS = ["Application Installed"];
-const ONBOARDING_EVENTS = ["$identify"];
-const ACTIVATION_EVENTS = ["activation_milestone_reached"];
-const FUNNEL_LABELS = { signed_up: "Installed", onboarded: "Identified", activated: "Activated" };
-const CONVERSION_LABELS = { signup_to_onboarding: "Install → identified", onboarding_to_activation: "Identified → activated" };
-// ───────────────────────────────────────────────────────────────────────────────
 
 const n = (value: unknown): number => {
   const number = Number(value ?? 0);
@@ -40,7 +21,9 @@ const n = (value: unknown): number => {
 };
 const pct = (numerator: number, denominator: number): number =>
   denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : 0;
-const sqlList = (values: string[]): string => values.map((value) => `'${value.replaceAll("'", "''")}'`).join(",");
+const sqlList = (values: string[]): string => values.length
+  ? values.map((value) => `'${value.replaceAll("'", "''")}'`).join(",")
+  : "NULL";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -67,7 +50,7 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
   if (!connection) return json({ error: "Connection not found" }, 404);
 
-  const { data: latest } = await db
+  const { data: storedSnapshot } = await db
     .from("posthog_metric_snapshots")
     .select("result,fetched_at")
     .eq("connection_id", connectionId)
@@ -76,6 +59,10 @@ Deno.serve(async (req: Request) => {
     .order("fetched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  // Old Home snapshots contain misleading zero lifecycle counts. Do not serve
+  // them as a fresh cache hit or a stale fallback after introducing coverage.
+  const latest = connection.branches?.slug === 'sproutify-home' && !storedSnapshot?.result?.coverage
+    ? null : storedSnapshot;
 
   if (!force && latest && Date.now() - new Date(latest.fetched_at).getTime() < CACHE_MS) {
     return json({
@@ -91,9 +78,25 @@ Deno.serve(async (req: Request) => {
 
   try {
     const apiKey = await decryptSecret(connection.api_key_ciphertext);
+    let homeTrackingStart: string | undefined;
+    let homePaymentReady = false;
+    if (connection.branches?.slug === 'sproutify-home') {
+      const coverage = await runPosthogQuery(connection.host_url, connection.project_id, apiKey,
+        `SELECT properties.tracking_started_at, properties.payment_tracking_ready FROM events
+         WHERE event = 'home analytics synced' AND timestamp >= now() - INTERVAL 24 HOUR
+         ORDER BY timestamp DESC LIMIT 1`, "Trellis Home conversion export coverage");
+      const value = coverage.results?.[0]?.[0];
+      homePaymentReady = coverage.results?.[0]?.[1] === true;
+      if (typeof value === 'string' && Number.isFinite(Date.parse(value))) homeTrackingStart = value;
+    }
+    const lifecycle = posthogLifecycleForBranch(connection.branches?.slug, homeTrackingStart, homePaymentReady);
+    const SIGNUP_EVENTS = lifecycle.signup_events;
+    const ONBOARDING_EVENTS = lifecycle.onboarding_events;
+    const ACTIVATION_EVENTS = lifecycle.activation_events;
+    const PAID_EVENTS = lifecycle.paid_events || [];
     const allAllowedEvents = Array.isArray(connection.allowed_events) ? connection.allowed_events.map(String) : [];
     const milestoneEvents = allAllowedEvents.filter((event: string) =>
-      !SIGNUP_EVENTS.includes(event) && !ONBOARDING_EVENTS.includes(event) && !ACTIVATION_EVENTS.includes(event)
+      !SIGNUP_EVENTS.includes(event) && !ONBOARDING_EVENTS.includes(event) && !ACTIVATION_EVENTS.includes(event) && !PAID_EVENTS.includes(event)
     );
 
     const activityQuery = `
@@ -105,7 +108,7 @@ Deno.serve(async (req: Request) => {
         uniqIf(distinct_id, timestamp >= now() - INTERVAL ${windowDays} DAY) AS unique_users,
         uniqIf(distinct_id, timestamp >= now() - INTERVAL ${windowDays} DAY AND event IN (${sqlList(SIGNUP_EVENTS)})) AS new_users
       FROM events
-      WHERE timestamp >= now() - INTERVAL ${Math.max(30, windowDays)} DAY
+      WHERE timestamp >= now() - INTERVAL ${Math.max(30, windowDays)} DAY AND event NOT IN ('home analytics synced', 'home payment confirmed')
     `;
     const funnelQuery = `
       SELECT
@@ -129,7 +132,7 @@ Deno.serve(async (req: Request) => {
           countIf(timestamp >= now() - INTERVAL 30 DAY) AS active_current_30,
           countIf(timestamp >= now() - INTERVAL 60 DAY AND timestamp < now() - INTERVAL 30 DAY) AS active_previous_30
         FROM events
-        WHERE timestamp >= now() - INTERVAL 60 DAY
+        WHERE timestamp >= now() - INTERVAL 60 DAY AND event NOT IN ('home analytics synced', 'home payment confirmed')
         GROUP BY distinct_id
       )
     `;
@@ -143,6 +146,23 @@ Deno.serve(async (req: Request) => {
     const activity = rowObject(activityResult);
     const funnel = rowObject(funnelResult);
     const retention = rowObject(retentionResult);
+    let paidConversions: number | null = null;
+    if (lifecycle.coverage?.paid) {
+      // Find first payment over ALL tracked history before applying the report
+      // window. A renewal in this window must not turn an older payer into new.
+      // Home never exports receipts before tracking began. A timestamp predicate
+      // lets PostHog prune older partitions without discarding earlier renewals.
+      const trackingStartSeconds = Math.floor(Date.parse(homeTrackingStart!) / 1000);
+      const paidResult = await runPosthogQuery(connection.host_url, connection.project_id, apiKey,
+        `SELECT count() AS paid FROM (
+           SELECT distinct_id, min(timestamp) AS first_paid_at FROM events
+           WHERE timestamp >= toDateTime(${trackingStartSeconds})
+             AND event IN (${sqlList(PAID_EVENTS)}) AND properties.event_source = 'verified_server'
+           GROUP BY distinct_id
+         ) WHERE first_paid_at >= now() - INTERVAL ${windowDays} DAY`,
+        "Trellis first verified Home payments");
+      paidConversions = n(rowObject(paidResult).paid);
+    }
     let adoption: Array<{ event: string; users: number; events: number }> = [];
     if (milestoneEvents.length) {
       const adoptionResult = await runPosthogQuery(
@@ -169,18 +189,23 @@ Deno.serve(async (req: Request) => {
     const retained30 = n(retention.retained_30);
 
     const summary = {
+      coverage: lifecycle.coverage ? {
+        ...lifecycle.coverage,
+        activity_split: Boolean(homeTrackingStart && Date.parse(homeTrackingStart) <= Date.now() - windowDays * 86400000),
+      } : undefined,
+      paid_conversions: paidConversions,
       window_days: windowDays,
       active_users: { daily: n(activity.dau), weekly: n(activity.wau), monthly: n(activity.mau) },
       sessions: n(activity.sessions),
       users: { total_in_window: uniqueUsers, new: newUsers, returning: Math.max(0, uniqueUsers - newUsers) },
       lifecycle_funnel: {
+        labels: lifecycle.labels,
+        conversion_labels: lifecycle.conversion_labels,
         signed_up: signedUp,
         onboarded,
         activated,
         signup_to_onboarding_pct: pct(onboarded, signedUp),
         onboarding_to_activation_pct: pct(activated, onboarded),
-        labels: FUNNEL_LABELS,
-        conversion_labels: CONVERSION_LABELS,
       },
       retention: {
         day_7_pct: pct(retained7, cohort7),

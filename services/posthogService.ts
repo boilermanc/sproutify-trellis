@@ -1,5 +1,10 @@
 import { supabase } from '../lib/supabase';
 import { PostHogAnalyticsResult, PostHogConnection } from '../types';
+export {
+  DEFAULT_POSTHOG_EVENTS,
+  DEFAULT_POSTHOG_PROPERTIES,
+  getPosthogBranchDefaults,
+} from '../supabase/functions/_shared/posthog-contract.mjs';
 
 async function functionErrorMessage(error: unknown, fallback: string): Promise<string> {
   const context = (error as any)?.context;
@@ -11,23 +16,6 @@ async function functionErrorMessage(error: unknown, fallback: string): Promise<s
   }
   return (error as any)?.message || fallback;
 }
-
-export const DEFAULT_POSTHOG_EVENTS = [
-  'user_signed_up',
-  'account_created',
-  'onboarding_completed',
-  'activation_milestone_reached',
-  'core_feature_milestone',
-  'meaningful_return',
-];
-
-export const DEFAULT_POSTHOG_PROPERTIES = [
-  'platform',
-  'feature',
-  'milestone',
-  'app_version',
-  'return_interval_bucket',
-];
 
 async function invokeConnections<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('posthog-connections', { body });

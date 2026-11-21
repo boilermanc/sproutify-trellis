@@ -1,4 +1,5 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { createBackendGemini } from './aiBackend';
 import { BrandCardStyle, CardBullet, CardConcept, CardMessage, CardPalette, CardTemplate } from '../types';
 import { sanitizePII } from './aiService';
 import { USFM_BOOKS, VerseReference } from './bibleService';
@@ -295,7 +296,7 @@ ${templatesIntro}
    - bullets: 2 to 4 feature/benefit rows, each ONE short line. Every bullet is {text, emphasis, icon}: "text" is the full line, "emphasis" MUST be a VERBATIM SUBSTRING of that same bullet's "text" (copy the exact characters — the renderer bolds that fragment inline, and if it isn't an exact substring the whole line just renders in regular weight, so get it right), and "icon" MUST be exactly one of: heart, book, leaf, sparkle, check, sun — pick whichever best fits that line's meaning.
    - footer: a short tracked-caps closing line, roughly 6 words or fewer (e.g. "GROWN WITH CARE, SHARED WITH LOVE")
    - scrimStrength: a number 0 to 1 for how strongly to wash the photo for text legibility (0.6-0.8 is typically right; higher for busier photos)
-   - photo_brief: 1-2 sentences describing the ideal PHOTOGRAPH behind this layout — a warm, real scene with actual objects and light (e.g. an open book, a mug, flowers, morning light; people optional and usually unnecessary). Compose it so the LEFT side of the frame stays calm and uncluttered, because that's where the text column sits. Describe ONLY what the camera sees — no text, graphics or logos in the scene.
+   - photo_brief: 1-2 sentences describing the ideal PHOTOGRAPH behind this layout — a warm, real scene with actual objects and light (e.g. an open book, a mug, flowers, morning light; people optional and usually unnecessary). Reserve the LEFT 55% as empty, calm background for typography. If people appear, keep every face, head, body and hand fully inside the RIGHT 45%; nothing human may cross the center line. Describe ONLY what the camera sees — no text, graphics or logos in the scene.
    Do NOT invent or include a backgroundUrl — the app supplies the actual photograph separately. Do not use "editorial" for a verse concept; if scripture is the point of the card, use "verse" instead.
 5. "list" — a numbered listicle (1, 2, 3...). Good for tips, reasons, or steps framed as a countdown. Needs: heading (the title) and bullets (2 to 4 short lines). Bullets use the SAME shape as editorial's: {text, emphasis, icon} — "emphasis" MUST be a VERBATIM SUBSTRING of that bullet's own "text" (exact characters), and "icon" MUST be exactly one of: heart, book, leaf, sparkle, check, sun. May optionally include footnote. Unlike "grid" (short standalone words/phrases arranged in a grid), a "list" reads as full sentences stacked and numbered — use it when each point deserves a real sentence, not a two-word label.
 6. "conversation" — a text-message thread rendered as chat bubbles. Needs: messages (2 to 6 turns), each {side, text} where side is "left" (the other party — a friend, a worried voice, a question) or "right" (the brand's reply or answer). May optionally include heading. GUARDRAIL: every message must be ORIGINAL short copy written in the brand's voice for this concept — never a quote attributed to a real person, never a fabricated testimonial or review, never phrased to imply an actual customer said this. It's a device to dramatize a felt need and the brand's answer, not evidence of something that happened.
@@ -622,6 +623,13 @@ function resolveConceptFromRaw(raw: any, model: string, cardStyle?: BrandCardSty
     }
 
     if (statement) base.statement = statement;
+    // `drawEditorial` draws its big serif headline from `heading`, not
+    // `statement` — the prompt asks for the headline under the name
+    // "statement" (shared with the statement template), so mirror it into
+    // `heading` here. Without this an editorial concept renders headline-less
+    // unless something downstream supplies one, which is exactly what the
+    // brand-direction presets were silently compensating for.
+    if (statement) base.heading = statement;
     if (wordmark) base.wordmark = wordmark;
     if (wordmarkSubtitle) base.wordmarkSubtitle = wordmarkSubtitle;
     base.bullets = bullets;
@@ -774,6 +782,17 @@ function enforceTemplateRestriction(concept: CardConceptWithRef, cardStyle?: Bra
     // the renderer draws whatever of it applies to the new template's shape.
     // Also carry a `statement` fallback since several templates read it.
     if (!demoted.statement && salvagedStatement) demoted.statement = salvagedStatement;
+    // ...and `heading` alongside it, because "editorial" (the usual demotion
+    // target for a direction-restricted brand) draws its headline from
+    // `heading`, not `statement`. Without this, a concept arriving here — a
+    // verse the brand can't render, say — lands on editorial with no headline
+    // at all and silently falls back to the direction's stock line.
+    if (!demoted.heading && (demoted.statement || salvagedStatement)) {
+      demoted.heading = demoted.statement || salvagedStatement;
+    }
+    // A verse reference is meaningless on any non-verse template and would
+    // leave the card asking to be hydrated with scripture it will never draw.
+    if (target !== 'verse') delete demoted.verse_ref;
   }
 
   return demoted;
@@ -819,7 +838,7 @@ export async function generateCardConcepts(opts: {
   const count = Math.max(1, Math.min(6, Math.round(opts.count) || 3));
 
   try {
-    const ai = new GoogleGenAI({ apiKey: opts.apiKey });
+    const ai = createBackendGemini();
     const prompt = buildDirectorPrompt({ ...opts, count });
 
     // WHY NO responseSchema: the head/tail runaway logging caught the model

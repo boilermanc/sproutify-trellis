@@ -1,0 +1,91 @@
+{
+  "name": "Trellis: Chief-channel technical error handler",
+  "active": false,
+  "nodes": [
+    {
+      "id": "error",
+      "name": "Workflow failed",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "test",
+      "name": "Test technical alert",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "notify",
+      "name": "Notify sweetwater_tech",
+      "position": [
+        300,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackOAuth2Api",
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({channel:\"C0CDFTGV8F7\",text:($json.workflow ? \"Trellis chief-channel automation failed. Review its n8n workflow and Trellis integration logs.\" : \"TEST — Trellis chief-channel technical alerts stay in sweetwater_tech. Proposal and morning updates go to chief-channel.\"),unfurl_links:false,unfurl_media:false}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "KFLz5xO2rHw2YBFb",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Workflow failed": {
+      "main": [
+        [
+          {
+            "node": "Notify sweetwater_tech",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test technical alert": {
+      "main": [
+        [
+          {
+            "node": "Notify sweetwater_tech",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "executionTimeout": -1
+  }
+}

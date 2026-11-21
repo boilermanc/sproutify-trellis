@@ -388,50 +388,6 @@ export async function fetchLeadTimeline(
   return (data || []) as TimelineEntry[];
 }
 
-/**
- * Fetch the newest operator/customer interaction for each requested lead.
- * Lifecycle-only events are intentionally excluded so the list answers
- * "what did we last do with this customer?" rather than showing stage edits.
- */
-export async function fetchLatestLeadActivities(
-  leadIds: string[]
-): Promise<Record<string, TimelineEntry>> {
-  const uniqueIds = [...new Set(leadIds.filter(Boolean))];
-  const latestByLead: Record<string, TimelineEntry> = {};
-  const activityTypes: LeadActivityType[] = [
-    'lead_note',
-    'lead_call',
-    'lead_email',
-    'lead_meeting',
-    'lead_quote',
-  ];
-  const batchSize = 100;
-
-  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
-    const batch = uniqueIds.slice(offset, offset + batchSize);
-    const { data, error } = await supabase
-      .from('marketing_events')
-      .select('id, profile_id, event_type, source, payload, created_at')
-      .in('event_type', activityTypes)
-      .in('payload->>lead_id', batch)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching latest lead activities:', error);
-      throw error;
-    }
-
-    for (const event of data || []) {
-      const leadId = event.payload?.lead_id;
-      if (typeof leadId === 'string' && !latestByLead[leadId]) {
-        latestByLead[leadId] = event as TimelineEntry;
-      }
-    }
-  }
-
-  return latestByLead;
-}
-
 /** Resolve the latest recorded stage transition timestamp for each lead. */
 export async function fetchLeadStageDates(leadIds: string[]): Promise<Record<string, string>> {
   const uniqueIds = [...new Set(leadIds.filter(Boolean))];
@@ -545,6 +501,8 @@ export function formatLeadBody(body: string): string {
     .join('');
 }
 
+export type LeadEmailBodyFormat = 'text' | 'html';
+
 // Sender + compliance footer for Sproutify Farm lead correspondence. From uses the
 // verified sproutify.app domain; the mailing address + unsubscribe link keep bulk
 // lead outreach CAN-SPAM compliant. The unsubscribe endpoint is the same one the
@@ -552,8 +510,11 @@ export function formatLeadBody(body: string): string {
 // then honors on future sends).
 export const LEAD_EMAIL_FROM = 'Sheree | Sproutify Farm <sheree@sproutify.app>';
 export const LEAD_TEST_RECIPIENT = 'boilermanc@gmail.com';
-// Tower Farm Corp partner copied on outbound lead correspondence.
-export const LEAD_CC_RECIPIENT = 'bret.bowlin@towerfarms.com';
+// Internal partners copied on outbound lead correspondence.
+export const LEAD_CC_RECIPIENTS = [
+  'bret.bowlin@towerfarms.com',
+  'sheree@sproutify.app',
+] as const;
 const LEAD_CONTACT_EMAIL = 'sheree@sproutify.app';
 const LEAD_MAILING_ADDRESS = '1295 Smithdale Heights Drive, Cumming, GA 30040';
 const LEAD_WEBSITE_URL = 'https://farm.sproutify.app/';
@@ -561,6 +522,7 @@ const LEAD_WEBSITE_LABEL = 'farm.sproutify.app';
 const LEAD_DEFAULT_BRAND = 'Sproutify Farm';
 const LEAD_DEFAULT_TAGLINE = 'Manage Your Tower Farm Like a Pro';
 const LEAD_DEFAULT_SCOPE = 'sproutify-farm';
+const LEAD_COMPLIANCE_FOOTER_MARKER = '<!-- SPROUTIFY_COMPLIANCE_FOOTER -->';
 const HUB_FUNCTIONS_URL = (
   (import.meta as any).env?.VITE_SUPABASE_URL || 'https://horvjqqifgrzxesuxtfm.supabase.co'
 ).replace(/\/$/, '');
@@ -587,6 +549,7 @@ function buildLeadFooter(recipientEmail: string, brandName: string, tagline: str
 /** Compose the full lead email HTML: escaped body + branded compliance footer. */
 export function buildLeadEmailHtml(input: {
   body: string;
+  bodyFormat?: LeadEmailBodyFormat;
   recipientEmail: string;
   brandName?: string;
   tagline?: string;
@@ -598,39 +561,68 @@ export function buildLeadEmailHtml(input: {
     input.tagline ?? LEAD_DEFAULT_TAGLINE,
     input.scope || LEAD_DEFAULT_SCOPE,
   );
+  if (input.bodyFormat === 'html') {
+    if (input.body.includes(LEAD_COMPLIANCE_FOOTER_MARKER)) {
+      return input.body.replace(LEAD_COMPLIANCE_FOOTER_MARKER, footer);
+    }
+    const closingBody = /<\/body\s*>/i;
+    return closingBody.test(input.body)
+      ? input.body.replace(closingBody, `${footer}</body>`)
+      : `${input.body}${footer}`;
+  }
   return `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#0f172a">${formatLeadBody(input.body)}${footer}</div>`;
 }
 
-/** Send one inquiry-specific email through the existing server-side Resend RPC. */
+/** Send one inquiry-specific email through the authenticated, attributable Edge Function. */
 export async function sendLeadEmail(input: {
+  leadId: string;
   to: string;
   subject: string;
   body: string;
+  bodyFormat?: LeadEmailBodyFormat;
   from?: string;
-  cc?: string;
+  cc?: readonly string[];
   brandName?: string;
   scope?: string;
-}): Promise<{ id: string }> {
-  const to = input.to.trim().toLowerCase();
-  const { data, error } = await supabase.rpc('send_resend_email', {
-    p_to: to,
-    p_subject: input.subject.trim(),
-    p_html: buildLeadEmailHtml({
+  test?: boolean;
+}): Promise<{ id: string; messageId?: string }> {
+  const { data, error } = await supabase.functions.invoke('lead-email-send', {
+    body: {
+      leadId: input.leadId,
+      subject: input.subject.trim(),
       body: input.body,
-      recipientEmail: to,
-      brandName: input.brandName,
+      bodyFormat: input.bodyFormat || 'text',
+      cc: input.cc?.map(address => address.trim()).filter(Boolean),
       scope: input.scope,
-    }),
-    p_from: input.from || LEAD_EMAIL_FROM,
-    p_cc: input.cc?.trim() || null,
+      test: input.test === true,
+    },
   });
 
   if (error) throw new Error(`Email send failed: ${error.message}`);
-  const result = typeof data === 'string' ? JSON.parse(data) : data;
-  if (result?.statusCode && result.statusCode >= 400) {
-    throw new Error(`Resend error (${result.statusCode}): ${result.message || 'Unknown error'}`);
+  if (data?.error) throw new Error(data.error);
+  return { id: data?.id || 'unknown', messageId: data?.messageId };
+}
+
+/** Resolve the newest CRM event for each lead so the list is useful at a glance. */
+export async function fetchLatestLeadActivities(leadIds: string[]): Promise<Record<string, TimelineEntry>> {
+  const uniqueIds = [...new Set(leadIds.filter(Boolean))];
+  const latest: Record<string, TimelineEntry> = {};
+  const batchSize = 100;
+  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
+    const batch = uniqueIds.slice(offset, offset + batchSize);
+    const { data, error } = await supabase
+      .from('marketing_events')
+      .select('id,profile_id,event_type,source,payload,created_at')
+      .like('event_type', 'lead_%')
+      .in('payload->>lead_id', batch)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    for (const event of data || []) {
+      const leadId = event.payload?.lead_id;
+      if (typeof leadId === 'string' && !latest[leadId]) latest[leadId] = event as TimelineEntry;
+    }
   }
-  return { id: result?.id || 'unknown' };
+  return latest;
 }
 
 /** Move a lead to another stage and record the transition. */

@@ -297,9 +297,9 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+        <div className="bg-white rounded-none p-5 border border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-100 rounded-xl">
+            <div className="p-2 bg-emerald-100 rounded-none">
               <DollarSign className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
@@ -311,9 +311,9 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+        <div className="bg-white rounded-none p-5 border border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-xl">
+            <div className="p-2 bg-blue-100 rounded-none">
               <TrendingUp className="w-5 h-5 text-blue-600" />
             </div>
             <div>
@@ -325,9 +325,9 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+        <div className="bg-white rounded-none p-5 border border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-xl">
+            <div className="p-2 bg-amber-100 rounded-none">
               <ShoppingBag className="w-5 h-5 text-amber-600" />
             </div>
             <div>
@@ -339,9 +339,9 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-gray-100">
+        <div className="bg-white rounded-none p-5 border border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-xl">
+            <div className="p-2 bg-purple-100 rounded-none">
               <Users className="w-5 h-5 text-purple-600" />
             </div>
             <div>
@@ -358,7 +358,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Customer Lifecycle */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="bg-white rounded-none p-6 border border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-gray-400" />
             Customer Lifecycle
@@ -447,7 +447,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* Segment Distribution */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="bg-white rounded-none p-6 border border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <PieChart className="w-5 h-5 text-gray-400" />
             Segment Distribution
@@ -476,7 +476,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* Demographics - Gender */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="bg-white rounded-none p-6 border border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Users className="w-5 h-5 text-gray-400" />
             Predicted Gender
@@ -583,7 +583,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* Demographics - Age */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="bg-white rounded-none p-6 border border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-gray-400" />
             Predicted Age Range
@@ -647,7 +647,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* Geographic Distribution */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="bg-white rounded-none p-6 border border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <MapPin className="w-5 h-5 text-gray-400" />
             Top Locations
@@ -695,7 +695,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* LTV Distribution */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100">
+        <div className="bg-white rounded-none p-6 border border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-gray-400" />
             LTV Distribution
@@ -727,7 +727,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* Top Products */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 lg:col-span-2">
+        <div className="bg-white rounded-none p-6 border border-gray-100 lg:col-span-2">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Package className="w-5 h-5 text-gray-400" />
             Top Products by Revenue
@@ -779,7 +779,7 @@ export const CustomerIntelligence: React.FC<CustomerIntelligenceProps> = ({ spok
         </div>
 
         {/* Order Frequency */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 lg:col-span-2">
+        <div className="bg-white rounded-none p-6 border border-gray-100 lg:col-span-2">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Repeat className="w-5 h-5 text-gray-400" />
             Order Frequency Distribution

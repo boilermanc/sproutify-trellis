@@ -198,6 +198,7 @@ const PLATFORM_CONFIGS: Record<string, PlatformOAuthConfig> = {
     tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
     defaultScopes: [
       "user.info.basic",
+      "video.list",
       "video.publish",
       "video.upload",
     ],
@@ -603,7 +604,26 @@ Deno.serve(async (req: Request) => {
         );
       } catch (err) {
         console.error(`Metadata fetch failed for ${platform}:`, err);
-        // Non-fatal — continue without metadata
+        // A Meta publish connection is unusable without its target account.
+        // Do not mark the credential active and make the user discover this
+        // later from the publisher workflow.
+        if (platform === "facebook") {
+          return errorPage(
+            "Page Connection Failed",
+            err instanceof Error
+              ? err.message
+              : "Meta did not return a publishable Page. Reconnect and grant the requested Page access."
+          );
+        }
+        // Other platforms can still store a usable token when optional profile
+        // metadata is unavailable.
+      }
+
+      if (platform === "facebook" && !platformMetadata.page_id) {
+        return errorPage(
+          "No Facebook Page Granted",
+          "Facebook did not return a Page for this login. In the authorization window, grant Trellis access to the intended Facebook Page. You must be able to manage that Page."
+        );
       }
 
       // Store tokens in the vault (upserts on same branch_id+platform row)
@@ -726,19 +746,19 @@ async function fetchPlatformMetadata(
         `https://graph.facebook.com/v21.0/me/accounts?fields=name,id,picture,fan_count,access_token&access_token=${accessToken}`
       );
       const pagesData = await pagesRes.json();
+      if (!pagesRes.ok || pagesData.error) {
+        const detail = pagesData.error?.message || `Meta Graph API returned HTTP ${pagesRes.status}`;
+        throw new Error(`Facebook could not list the Pages granted to Trellis: ${detail}`);
+      }
       const first = pagesData.data?.[0];
 
-      // If this login granted no Page, return WITHOUT page_id/page_access_token.
-      // The DB merges metadata (old || new), so returning page_id:null here would
-      // OVERWRITE a previously-captured page id with null — which is exactly what
-      // wiped Rejoice's page_id on a reconnect and left the publisher with
-      // nowhere to post. Omitting the keys preserves whatever was already stored.
+      // A user token is not a Facebook publishing target. Treat an empty Page
+      // list as a failed connection instead of storing an active credential
+      // that the publisher cannot use.
       if (!first?.id) {
-        return {
-          page_count: 0,
-          connected_at: new Date().toISOString(),
-          note: "No Facebook Page was granted in this login — existing page_id (if any) was preserved.",
-        };
+        throw new Error(
+          "Facebook returned no Pages. Grant Trellis access to the intended Facebook Page and confirm that your Facebook account can manage it."
+        );
       }
 
       return {
@@ -800,7 +820,8 @@ async function fetchPlatformMetadata(
       const openId = tokenData?.open_id ?? null;
       try {
         const meRes = await fetch(
-          "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name,avatar_url,username",
+          // Keep this lookup within the user.info.basic grant (username needs user.info.profile).
+          "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name,avatar_url",
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
         const meData = await meRes.json();

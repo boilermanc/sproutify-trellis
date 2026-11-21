@@ -17,6 +17,8 @@ export interface StudioStylePreset {
   instruments: string[];
   prompt_guidance: string;
   artwork_direction: string;
+  mood_collection?: string;
+  paired_art_style_id?: string;
 }
 
 export const STUDIO_STYLE_PRESETS: StudioStylePreset[] = [
@@ -43,6 +45,51 @@ export const STUDIO_STYLE_PRESETS: StudioStylePreset[] = [
     bpm_range: '72–94 BPM', instruments: ['Rhodes electric piano', 'mellow organ', 'clean guitar', 'upright bass', 'brushed drums', 'soft percussion'],
     prompt_guidance: 'Keep arrangements airy and melodic with gentle pocket, warm keys, subtle organ color, and no nightlife or romance language.',
     artwork_direction: 'Soft morning light, warm wood, coffee, houseplants, linen textures, calm editorial photography or illustration.',
+  },
+  {
+    id: 'french_riviera_60s', name: 'French Riviera ’60s', tagline: 'Sunny cinematic lounge with bossa nova rhythms, elegant orchestration, and glamorous vintage Mediterranean style.',
+    genre: '1960s French Riviera Cinematic Lounge', mood: 'Sunny, playful, polished, sophisticated', era: 'Late 1960s inspired',
+    theme: 'Arriving at a luxury Cannes hotel in a vintage convertible in 1968', vocal_direction: 'instrumental', preferred_track_seconds: 150,
+    bpm_range: '105–120 BPM', instruments: ['brushed acoustic drums', 'warm upright bass', 'nylon-string bossa nova guitar', 'vibraphone', 'glockenspiel', 'flute', 'muted trumpet', 'Hammond organ', 'vintage electric piano', 'sweeping strings'],
+    prompt_guidance: 'Blend French and Italian film-score lounge, light bossa nova, orchestral pop, easy-listening jazz, and vintage production-library music. Use a lightly syncopated Latin swing, memorable cinematic melody, tasteful orchestral flourishes, smooth transitions, natural acoustic instruments, and warm analog tape character without heavy improvisation. No vocals, modern synthesizers, EDM drums, trap percussion, lo-fi hip-hop beats, heavy jazz solos, aggressive brass, disco bass, trailer percussion, dark suspense, or contemporary pop production.',
+    artwork_direction: 'Sun-faded late-1960s French Riviera travel editorial with a Cannes luxury hotel, Mediterranean coastline, vintage convertible, linen resort clothing, elegant old-money warmth, authentic Kodachrome color, and generous cinematic negative space.',
+    mood_collection: 'French Riviera ’60s', paired_art_style_id: 'photoreal_60s',
+  },
+  {
+    id: 'mystical_new_age', name: 'Mystical New Age', tagline: 'Ethereal downtempo music with atmospheric synths, world percussion, distant voices, and a mysterious spiritual mood.',
+    genre: 'Mystical New Age Chillout', mood: 'Dreamlike, spiritual, mysterious, peaceful', era: '1990s-inspired contemporary',
+    theme: 'A luminous contemplative journey through ancient landscapes, mist, and quiet revelation', vocal_direction: 'mostly_instrumental', preferred_track_seconds: 150,
+    bpm_range: '75–90 BPM', instruments: ['deep soft electronic kick', 'restrained world percussion', 'breath-like rhythmic textures', 'warm synth bass', 'expansive atmospheric pads', 'haunting flute', 'distant choir textures', 'delicate wordless female vocalizations'],
+    prompt_guidance: 'Build a steady softened downtempo pulse around a simple repeating minor-key bass progression, recognizable ethereal melodies, expansive pads, subtle world percussion, distant choir color, and delicate wordless female vocal textures. Develop gradually through long reverb tails, gentle echoes, immersive stereo layers, and slow evolving transitions rather than verse-and-chorus sections. Keep the spiritual atmosphere mysterious, peaceful, warm, and emotionally uplifting rather than dark. No intelligible lyrics, pop vocals, EDM drops, bright dance synthesizers, aggressive drums, trap percussion, corporate music, jazz improvisation, acoustic singer-songwriter elements, horror effects, or trailer impacts.',
+    artwork_direction: 'Luminous contemplative nature and ancient stone architecture, soft mist, warm dawn light, expansive skies, subtle sacred geometry, calm human-scale detail, and an uplifting spiritual atmosphere without horror or dark occult imagery.',
+    mood_collection: 'Mystical New Age',
+  },
+  {
+    id: 'quiet_intelligence', name: 'Quiet Intelligence', tagline: 'Low-cortisol ambient jazz with space, restraint, and architectural calm.',
+    genre: 'Minimalist Ambient Jazz', mood: 'Calm, intelligent, introspective, luxurious', era: 'Contemporary with subtle mid-century influence',
+    theme: 'A serene modernist interior designed for deep focus and quiet confidence', vocal_direction: 'instrumental', preferred_track_seconds: 150,
+    bpm_range: '68–78 BPM', instruments: ['Rhodes electric piano', 'felt piano', 'warm upright bass', 'brushed drums', 'muted trumpet', 'breathy tenor saxophone', 'subtle atmospheric pads'],
+    prompt_guidance: 'Keep the pulse soft and nearly flat, with sparse short phrases, generous silence, seventh and ninth chords, warm tape color, dark room ambience, soft transients, and spacious reverb. No vocals, catchy hooks, bright solos, upbeat café jazz, swing exaggeration, bebop, funk, jazz-hop beats, dramatic builds, busy percussion, or excessive vinyl crackle.',
+    artwork_direction: 'Serene modernist architecture, warm natural materials, precise negative space, soft shadow, muted charcoal and amber, premium editorial restraint without text.',
+    mood_collection: 'Quiet Intelligence', paired_art_style_id: 'cinematic_architectural_minimalism',
+  },
+  {
+    id: 'smooth_noir_jazz', name: 'Smooth Noir Jazz', tagline: 'Slow saxophone, smoky piano and late-night cinematic elegance.',
+    genre: 'Slow Smooth Noir Jazz', mood: 'Intimate, reflective, romantic, smoky, slightly melancholic', era: '1940s–1960s inspired contemporary',
+    theme: 'An elegant late-night lounge after the story has already happened', vocal_direction: 'instrumental', preferred_track_seconds: 150,
+    bpm_range: '55–70 BPM', instruments: ['breathy tenor saxophone', 'dark acoustic piano', 'slow upright bass', 'brushed snare', 'muted kick', 'delicate ride cymbal', 'restrained jazz guitar', 'muted trumpet', 'occasional strings'],
+    prompt_guidance: 'Use dark minor-seventh, major-seventh, and ninth-chord harmony with a slow, memorable but understated saxophone melody, generous narration space, warm tape color, soft transients, subtle room ambience, and dark natural reverb. Allow only restrained hints of Latin-jazz rhythm. No upbeat swing, bebop, cheerful café jazz, bright brass sections, energetic solos, trap drums, lo-fi hip-hop beats, excessive vinyl crackle, vocals, action scoring, or exaggerated detective clichés.',
+    artwork_direction: 'Cinematic vintage-noir luxury interior after midnight, one elegant solitary figure, rain-streaked glass, warm practical lamps, deep shadows, atmospheric haze, desaturated charcoal and amber, and restrained analog-film character.',
+    mood_collection: 'After Midnight', paired_art_style_id: 'cinematic_vintage_noir',
+  },
+  {
+    id: 'positive_chill_house', name: 'Positive Chill House', tagline: 'Warm electronic grooves, wordless textures, and relaxed morning energy.',
+    genre: 'Positive Chill House', mood: 'Fresh, optimistic, productive, emotionally light', era: 'Contemporary polished electronic',
+    theme: 'Sunlight entering a beautiful modern home at the beginning of a productive day', vocal_direction: 'instrumental', preferred_track_seconds: 120,
+    bpm_range: '105–115 BPM', instruments: ['soft four-on-the-floor kick', 'warm rounded electronic bass', 'finger snaps', 'delicate shakers', 'restrained hi-hats', 'airy synth pads', 'electric piano', 'soft melodic plucks', 'abstract wordless vocal textures'],
+    prompt_guidance: 'Maintain a steady, quietly energizing house pulse with bright simple motifs, smooth transitions, soft transients, clean modern production, and a warm spacious mix. Wordless vocal textures may appear only as subtle atmospheric instrumentation, never intelligible lyrics. No festival EDM, heavy bass drops, aggressive sidechain pumping, nightclub energy, tropical-house clichés, prominent vocals, bright corporate music, ukulele, trap drums, harsh synth leads, or dramatic cinematic tension.',
+    artwork_direction: 'Sunlit lifestyle editorial in a beautiful contemporary home, with one naturally relaxed stylish person, enormous windows, warm morning light, cream textiles, pale walls, light oak, subtle greenery, restrained lifestyle details, and generous negative space.',
+    mood_collection: 'Morning Flow', paired_art_style_id: 'sunlit_lifestyle_editorial',
   },
   {
     id: 'midnight_jazz', name: 'Midnight Jazz', tagline: 'Polished, mysterious jazz for focused evening listening.',

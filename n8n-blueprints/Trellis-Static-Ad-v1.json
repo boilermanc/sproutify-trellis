@@ -248,7 +248,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $('Prepare Copy Prompt').item.json.copy_prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 2048, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { headline_variants: { type: 'ARRAY', items: { type: 'STRING' } }, subhead: { type: 'STRING' }, cta: { type: 'STRING' }, caption: { type: 'STRING' }, scene_brief: { type: 'STRING' } }, required: ['headline_variants','subhead','cta','caption','scene_brief'] } } }) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 90000
         }
       },
       "id": "generate-copy-gemini",
@@ -265,6 +265,9 @@
           "name": "Gemini API"
         }
       },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "onError": "continueErrorOutput",
       "notes": "gemini-flash-latest with responseMimeType application/json + responseSchema, so the API itself guarantees parseable JSON. Prose-asking for JSON previously let the model return a markdown explanation of the schema, which then got rendered onto the image as the headline. maxOutputTokens is generous because thinking tokens count against the budget and a truncated response is unparseable. As of v1.4 the schema returns 5 headline_variants (different persuasion angles) plus subhead/cta/caption/scene_brief - see Sticky Note - Setup for the full shape."
     },

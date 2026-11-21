@@ -59,10 +59,10 @@ const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles 
         </div>
 
         {/* Recipient Card */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+        <div className="bg-white p-6 border border-slate-200">
           <div className="flex items-center space-x-2 mb-4">
             <Mail size={16} className="text-slate-400" />
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Select Audience</h3>
+            <h3 className="text-sm font-bold text-slate-900">Select audience</h3>
           </div>
           <select 
             className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500"
@@ -81,10 +81,10 @@ const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles 
         </div>
 
         {/* Brand Theming */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+        <div className="bg-white p-6 border border-slate-200">
           <div className="flex items-center space-x-2 mb-4">
             <Palette size={16} className="text-slate-400" />
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Theme</h3>
+            <h3 className="text-sm font-bold text-slate-900">Theme</h3>
           </div>
           <div className="grid grid-cols-3 gap-3">
             {THEME_PRESETS.map(t => (
@@ -100,7 +100,7 @@ const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles 
           </div>
         </div>
 
-        <div className="bg-slate-900 p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
+        <div className="bg-slate-900 p-8 text-white border border-slate-800 relative overflow-hidden">
            <div className="absolute top-0 right-0 p-4 opacity-10">
               <Zap size={64} className="text-emerald-400" />
            </div>
@@ -114,18 +114,18 @@ const EmailPreviewer: React.FC<EmailPreviewerProps> = ({ initialEmail, profiles 
       {/* Main Preview Area */}
       <div className="xl:col-span-3 flex flex-col h-full space-y-4">
         {/* Preview Toolbar */}
-        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-3 border border-slate-200 flex items-center justify-between">
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <button 
               onClick={() => setIsMobile(false)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition ${!isMobile ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+              className={`flex min-h-11 items-center space-x-2 px-4 py-2 text-xs font-bold transition ${!isMobile ? 'bg-white text-slate-900 border border-slate-200' : 'text-slate-400'}`}
             >
               <Monitor size={14} />
               <span>Desktop</span>
             </button>
             <button 
               onClick={() => setIsMobile(true)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition ${isMobile ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+              className={`flex min-h-11 items-center space-x-2 px-4 py-2 text-xs font-bold transition ${isMobile ? 'bg-white text-slate-900 border border-slate-200' : 'text-slate-400'}`}
             >
               <Smartphone size={14} />
               <span>Mobile</span>

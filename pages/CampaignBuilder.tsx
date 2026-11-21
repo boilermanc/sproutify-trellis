@@ -1,7 +1,8 @@
+import AtlAcquisition from '../components/AtlAcquisition';
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult } from '../types';
-import { Segment, PRESET_SEGMENTS } from '../segmentTypes';
+import { Profile, SpokeConnection, BranchContext, Branch, MarketingEvent, Toast, CampaignChannel, ChannelContent, CampaignTimingRule, ChannelDeployResult, DeployedCampaign, EmailTemplate, BranchStatsResult, EnrichedProfile } from '../types';
+import { Segment, PRESET_SEGMENTS, isEventAudienceSegment } from '../segmentTypes';
 import { evaluateSegment } from '../segmentEngine';
 import { Article } from '../src/data/helpContent';
 import HelpLink from '../src/components/HelpLink';
@@ -14,6 +15,11 @@ import { generateText } from '../services/aiService';
 import { fetchSecrets } from '../services/secretsService';
 import { fetchSuppressedEmails } from '../services/suppressionService';
 import { fetchNewsletterAudience, NewsletterAudienceRecipient } from '../services/newsletterAudienceService';
+import {
+  EngagementSummary, fetchEngagementByEmail, fetchLinkInterestByEmail, LinkInterestClickSummary,
+  CampaignEngagementSummary, fetchCampaignEngagementByEmail,
+} from '../services/emailReportingService';
+import { fetchSharedSegments } from '../services/audienceSegmentService';
 import { fetchTemplatesForBranch, fetchBrandByBranch } from '../brandRepository';
 import { BUILTIN_EMAIL_TEMPLATES } from '../constants';
 import CampaignBrandAssetLibrary from '../components/CampaignBrandAssetLibrary';
@@ -56,7 +62,7 @@ interface CampaignRecord {
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface CampaignBuilderProps {
-  onCampaignLaunch: (campaign: { name: string, audienceSize: number, segments: string[] }) => void;
+  onCampaignLaunch: (campaign: { id: string, name: string, audienceSize: number, segments: string[] }) => void;
   profiles: Profile[];
   branchStats?: BranchStatsResult;
   spokeConnections?: SpokeConnection[];
@@ -76,6 +82,7 @@ interface CampaignBuilderDraftState {
   currentStep: number;
   campaignName: string;
   emailSubject: string;
+  emailPreviewText: string;
   emailCc: string;
   selectedBranches: string[];
   selectedSegments: string[];
@@ -102,6 +109,24 @@ interface ChannelConfig {
   gateway: string;
   color: string;
 }
+
+// Mailchimp-style "Preview Text" (preheader): the inbox snippet shown after the
+// subject line. Injected as a hidden block at the very top of <body> so mail
+// clients read it for the preview but it never renders in the email itself. The
+// trailing zero-width-joiner + nbsp padding stops the body copy from bleeding
+// into the preview after the preview text ends.
+const injectPreheader = (html: string, previewText: string): string => {
+  const preview = previewText.trim();
+  if (!preview) return html;
+  const esc = preview.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const spacer = '&nbsp;&zwnj;'.repeat(60);
+  const block = `<div style="display:none !important;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff;opacity:0;">${esc}${spacer}</div>`;
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/(<body[^>]*>)/i, `$1${block}`);
+  }
+  // Fragment template with no <body> tag — prepend so it's first in the DOM.
+  return block + html;
+};
 
 const CHANNEL_CONFIG: ChannelConfig[] = [
   { id: 'email', label: 'Email', icon: Mail, charLimit: 0, placeholder: 'Email is composed via the template system below', gateway: 'resend', color: 'indigo' },
@@ -187,6 +212,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Campaign identity
   const [campaignName, setCampaignName] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
+  const [emailPreviewText, setEmailPreviewText] = useState('');
   const [emailCc, setEmailCc] = useState('');
   const emailCcIsValid = !emailCc.trim() || EMAIL_ADDRESS_PATTERN.test(emailCc.trim());
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
@@ -194,6 +220,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const [selectedSavedSegments, setSelectedSavedSegments] = useState<string[]>([]);
   const [showAudiencePreview, setShowAudiencePreview] = useState(false);
   const [suppressedEmails, setSuppressedEmails] = useState<Set<string>>(new Set());
+  const [engagementByEmail, setEngagementByEmail] = useState<Map<string, EngagementSummary>>(new Map());
+  const [linkInterestByEmail, setLinkInterestByEmail] = useState<Map<string, LinkInterestClickSummary[]>>(new Map());
+  const [campaignEngagementByEmail, setCampaignEngagementByEmail] = useState<Map<string, CampaignEngagementSummary>>(new Map());
   const [selectedTags] = useState<string[]>([]);
   const [triggerType, setTriggerType] = useState<'immediate' | 'scheduled' | 'staggered'>('immediate');
 
@@ -319,6 +348,19 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     loadCampaigns();
   }, []);
 
+  // Saved engagement and link-interest segments depend on Hub email-event
+  // aggregates. Load both maps in bulk so Campaign Builder evaluates the same
+  // dynamic membership shown on the Segments page.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchEngagementByEmail(), fetchLinkInterestByEmail()]).then(([engagement, linkInterest]) => {
+      if (cancelled) return;
+      setEngagementByEmail(engagement);
+      setLinkInterestByEmail(linkInterest);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   // Restore a saved draft into the wizard. Audience and consent are deliberately
   // not restored: both are re-evaluated from the live federated sources.
   useEffect(() => {
@@ -358,6 +400,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
         setCurrentStep(Math.max(0, Math.min(STEPS.length - 1, Number(saved.currentStep) || 0)));
         setCampaignName(saved.campaignName || campaign.name || '');
         setEmailSubject(saved.emailSubject || campaign.subject || '');
+        setEmailPreviewText(saved.emailPreviewText || campaign.dispatch?.preview_text || '');
         setEmailCc(saved.emailCc || '');
         setSelectedBranches(Array.isArray(saved.selectedBranches) ? saved.selectedBranches : campaign.branches);
         setSelectedSegments(Array.isArray(saved.selectedSegments) ? saved.selectedSegments : campaign.segments);
@@ -533,12 +576,19 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   }, [branches]);
 
   const availableBranches = useMemo(() => {
+    // The branches table is the source of truth: every active branch is
+    // targetable, whether or not it has a spoke DB behind it. Branches whose
+    // audience lives Hub-side (spoke_connection_id NULL) used to fall through
+    // both of the derived lists below and silently disappear from the picker.
+    const fromBranchRecords = branches
+      .filter(b => b.is_active !== false && b.slug)
+      .map(b => b.slug);
     const fromProfiles = profiles.flatMap(p => p.branches);
     const fromSpokes = spokeConnections
       .filter(c => c.status === 'active')
       .map(c => slugByConnectionId.get(c.id) || c.name);
-    return Array.from(new Set([...fromProfiles, ...fromSpokes])).filter(Boolean);
-  }, [profiles, spokeConnections, slugByConnectionId]);
+    return Array.from(new Set([...fromBranchRecords, ...fromProfiles, ...fromSpokes])).filter(Boolean);
+  }, [branches, profiles, spokeConnections, slugByConnectionId]);
 
   const spokeStatusMap = useMemo(() => {
     const map: Record<string, SpokeConnection['status']> = {};
@@ -588,6 +638,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       !suppressedEmails.has((p.email || '').toLowerCase())
     );
   }, [scopedProfiles, selectedBranches, suppressedEmails]);
+
+  const eventConsentFiltered = useMemo(() => scopedProfiles.filter((profile) => {
+    const email = (profile.email || '').toLowerCase();
+    return profile.metadata?.event_notice_consent === true && !suppressedEmails.has(email);
+  }), [scopedProfiles, suppressedEmails]);
 
   useEffect(() => {
     let cancelled = false;
@@ -660,11 +715,11 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     });
   }, [authoritativeNewsletterAudience, profiles, selectedBranches]);
 
-  // Saved Segments — the same rule-based library managed on the Segments page
-  // (built-in presets + user-created custom segments from localStorage). These are
+  // Saved Segments — built-in presets, local QA lists, and team-shared Hub
+  // definitions managed on the Segments page. These are
   // evaluated with the shared segmentEngine over the ENRICHED profiles so that what
   // you see on the Segments page matches what you can target here.
-  const savedSegments = useMemo<Segment[]>(() => {
+  const [savedSegments, setSavedSegments] = useState<Segment[]>(() => {
     const presets: Segment[] = PRESET_SEGMENTS.map((preset, index) => ({
       ...preset,
       id: `preset-${index}`,
@@ -677,7 +732,47 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       if (raw) custom = JSON.parse(raw);
     } catch { /* ignore malformed cache */ }
     return [...presets, ...custom];
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSharedSegments().then((shared) => {
+      if (cancelled) return;
+      setSavedSegments((current) => {
+        const presetsAndLocal = current.filter(segment => segment.is_preset || !segment.is_shared);
+        return [...presetsAndLocal, ...shared];
+      });
+    }).catch((error) => console.error('[CampaignBuilder] Failed to load shared segments:', error));
+    return () => { cancelled = true; };
   }, []);
+
+  const campaignEngagementIds = useMemo(() => [...new Set(
+    savedSegments.flatMap(segment => segment.campaign_engagement?.campaign_ids || []),
+  )], [savedSegments]);
+  const campaignEngagementIdsKey = campaignEngagementIds.join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCampaignEngagementByEmail(campaignEngagementIds).then((engagement) => {
+      if (!cancelled) setCampaignEngagementByEmail(engagement);
+    });
+    return () => { cancelled = true; };
+  }, [campaignEngagementIdsKey]);
+
+  // Freeze the selected audience definitions onto every draft/launch. Segment
+  // membership stays live, but historical campaign attribution must still say
+  // exactly which intent rule Sheree selected at send time.
+  const selectedSavedSegmentSnapshot = useMemo(() => selectedSavedSegments
+    .map((id) => savedSegments.find((segment) => segment.id === id))
+    .filter((segment): segment is Segment => Boolean(segment))
+    .map((segment) => ({
+      id: segment.id,
+      name: segment.name,
+      kind: segment.kind || 'rules',
+      link_interest: segment.link_interest || null,
+      campaign_engagement: segment.campaign_engagement || null,
+      recommended_branches: segment.recommended_branches || [],
+    })), [selectedSavedSegments, savedSegments]);
 
   // For each saved segment, the lowercased set of emails that qualify (evaluated once
   // over every enriched profile). Membership is then intersected with the scoped,
@@ -690,12 +785,40 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
       if (seg.kind === 'email_list') continue;
       const emails = new Set<string>();
       for (const ep of enriched) {
-        if (ep.email && evaluateSegment(ep, seg)) emails.add(ep.email.toLowerCase());
+        if (ep.email && evaluateSegment(ep, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(ep.email.toLowerCase());
+      }
+      // Newsletter-only clickers are intentionally absent from the federated
+      // customer profile feed. Seed link-interest membership from the Hub event
+      // aggregate, then intersect it with live newsletter consent below.
+      if (seg.kind === 'link_interest') {
+        for (const email of linkInterestByEmail.keys()) {
+          const clickOnlyIdentity: EnrichedProfile = {
+            email,
+            _spoke_id: 'hub-link-interest',
+            _spoke_name: 'Email engagement',
+          };
+          if (evaluateSegment(clickOnlyIdentity, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(email);
+        }
+      }
+      if (seg.kind === 'campaign_engagement') {
+        for (const email of campaignEngagementByEmail.keys()) {
+          const engagementOnlyIdentity: EnrichedProfile = {
+            email,
+            _spoke_id: 'hub-campaign-engagement',
+            _spoke_name: 'Email engagement',
+          };
+          if (evaluateSegment(engagementOnlyIdentity, seg, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail)) emails.add(email);
+        }
       }
       map[seg.id] = emails;
     }
     return map;
-  }, [savedSegments, branchStats?.enrichedProfiles]);
+  }, [savedSegments, branchStats?.enrichedProfiles, engagementByEmail, linkInterestByEmail, campaignEngagementByEmail]);
+
+  const eventSegmentIds = useMemo(() => new Set(
+    savedSegments.filter(isEventAudienceSegment).map((segment) => segment.id),
+  ), [savedSegments]);
+  const isEventAudienceSelected = selectedSavedSegments.some((id) => eventSegmentIds.has(id));
 
   const segmentProfiles = useMemo(() => {
     if (authoritativeNewsletterAudience && selectedSegments.length === 0 && selectedSavedSegments.length === 0) {
@@ -703,14 +826,33 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     }
     if (selectedSegments.length === 0 && selectedSavedSegments.length === 0) return consentFiltered;
     const activeFilters = CAMPAIGN_PRESETS.filter(p => selectedSegments.includes(p.id));
-    const activeSavedSets = selectedSavedSegments.map(id => savedSegmentEmails[id]).filter(Boolean);
+    const activeEventSets = selectedSavedSegments
+      .filter((id) => eventSegmentIds.has(id))
+      .map((id) => savedSegmentEmails[id])
+      .filter(Boolean);
+    const activeRegularSets = selectedSavedSegments
+      .filter((id) => !eventSegmentIds.has(id))
+      .map((id) => savedSegmentEmails[id])
+      .filter(Boolean);
     const sourceProfiles = authoritativeNewsletterAudience ? authoritativeNewsletterProfiles : consentFiltered;
+    if (activeEventSets.length > 0) {
+      const newsletterEligible = new Set(sourceProfiles.map((profile) => (profile.email || '').toLowerCase()));
+      return scopedProfiles.filter((profile) => {
+        const email = (profile.email || '').toLowerCase();
+        if (!email || suppressedEmails.has(email)) return false;
+        const matchesEvent = activeEventSets.some((set) => set.has(email));
+        const matchesRegular = activeFilters.some((preset) => preset.filter(profile))
+          || activeRegularSets.some((set) => set.has(email));
+        const eventEligible = profile.metadata?.event_notice_consent === true;
+        return (matchesEvent && eventEligible) || (matchesRegular && newsletterEligible.has(email));
+      });
+    }
     return sourceProfiles.filter(profile => {
       const matchesQuick = activeFilters.some(preset => preset.filter(profile));
-      const matchesSaved = activeSavedSets.some(set => set.has((profile.email || '').toLowerCase()));
+      const matchesSaved = activeRegularSets.some(set => set.has((profile.email || '').toLowerCase()));
       return matchesQuick || matchesSaved;
     });
-  }, [authoritativeNewsletterAudience, authoritativeNewsletterProfiles, consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails]);
+  }, [authoritativeNewsletterAudience, authoritativeNewsletterProfiles, consentFiltered, selectedSegments, selectedSavedSegments, savedSegmentEmails, eventSegmentIds, scopedProfiles, suppressedEmails]);
 
   // Static test-list addresses from any selected 'email_list' segment. These bypass
   // branch scope + consent entirely and are emailed directly (QA sends).
@@ -761,13 +903,14 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   // Count of each saved segment WITHIN the currently scoped branches (reflects reach here)
   const savedSegmentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
+    const countProfiles = authoritativeNewsletterAudience ? authoritativeNewsletterProfiles : scopedProfiles;
     for (const seg of savedSegments) {
       if (seg.kind === 'email_list') { counts[seg.id] = seg.email_list?.length || 0; continue; }
       const set = savedSegmentEmails[seg.id];
-      counts[seg.id] = set ? scopedProfiles.filter(p => set.has((p.email || '').toLowerCase())).length : 0;
+      counts[seg.id] = set ? countProfiles.filter(p => set.has((p.email || '').toLowerCase())).length : 0;
     }
     return counts;
-  }, [savedSegments, savedSegmentEmails, scopedProfiles]);
+  }, [savedSegments, savedSegmentEmails, scopedProfiles, authoritativeNewsletterAudience, authoritativeNewsletterProfiles]);
 
   const enabledChannelCount = enabledChannels.size;
 
@@ -776,6 +919,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     currentStep,
     campaignName,
     emailSubject,
+    emailPreviewText,
     emailCc,
     selectedBranches,
     selectedSegments,
@@ -792,7 +936,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     scheduledTime,
     branchContent,
   }), [
-    currentStep, campaignName, emailSubject, emailCc, selectedBranches,
+    currentStep, campaignName, emailSubject, emailPreviewText, emailCc, selectedBranches,
     selectedSegments, selectedSavedSegments, triggerType, channelList,
     channelContents, activeComposeTab, emailTemplate, customTemplateFields,
     templateImageOverrides,
@@ -805,11 +949,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
   const hasSaveworthyContent = useMemo(() => (
     !!campaignName.trim()
     || !!emailSubject.trim()
+    || !!emailPreviewText.trim()
     || Object.keys(channelContents).some(channel => channelContents[channel as CampaignChannel].trim().length > 0)
     || Object.keys(customTemplateFields).some(field => customTemplateFields[field].trim().length > 0)
     || Object.keys(templateImageOverrides).some(source => templateImageOverrides[source].trim().length > 0)
     || Object.keys(branchContent).some(branch => branchContent[branch].trim().length > 0)
-  ), [campaignName, emailSubject, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
+  ), [campaignName, emailSubject, emailPreviewText, channelContents, customTemplateFields, templateImageOverrides, branchContent]);
 
   const draftSaveInFlightRef = useRef(false);
   const handleSaveDraft = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -837,6 +982,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
           branches: selectedBranches,
           presets: selectedSegments,
           saved_segments: selectedSavedSegments,
+          saved_segment_snapshot: selectedSavedSegmentSnapshot,
           branch_content: branchContent,
         },
         channels: channelList,
@@ -866,7 +1012,7 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     isDraftHydrated, isLaunching, triggerType, scheduledDate, scheduledTime,
     draftId, campaignName, emailTemplate, emailSubject, selectedSegments,
     selectedTags, selectedBranches, audienceSize, draftSnapshot,
-    selectedSavedSegments, branchContent, channelList, timingRules,
+    selectedSavedSegments, selectedSavedSegmentSnapshot, branchContent, channelList, timingRules,
     channelContents, addToast, onDraftIdChange,
   ]);
 
@@ -921,8 +1067,9 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     fetchSuppressedEmails(scopes).then(setSuppressedEmails);
   }, [selectedBranches]);
 
-  // One-time handoff from the Segments page "Send Campaign" button: pre-select the
-  // handed-off segment and scope to all branches so it's immediately addressable.
+  // One-time handoff from the Segments page "Send Campaign" button. Segments may
+  // recommend a consent-bearing origin branch; otherwise preserve the established
+  // all-branches fallback.
   const handoffAppliedRef = useRef(false);
   useEffect(() => {
     if (handoffAppliedRef.current) return;
@@ -934,9 +1081,12 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
     if (savedSegments.length === 0 || availableBranches.length === 0) return;
     handoffAppliedRef.current = true;
     try { localStorage.removeItem('trellis_pending_campaign_segment'); } catch { /* ignore */ }
-    if (savedSegments.some(s => s.id === pending)) {
+    const handedOffSegment = savedSegments.find(s => s.id === pending);
+    if (handedOffSegment) {
       setSelectedSavedSegments([pending]);
-      setSelectedBranches([...availableBranches]);
+      const recommended = (handedOffSegment.recommended_branches || [])
+        .filter((slug) => availableBranches.includes(slug));
+      setSelectedBranches(recommended.length > 0 ? recommended : [...availableBranches]);
       setCurrentStep(0);
       setShowAudiencePreview(true);
     }
@@ -944,8 +1094,8 @@ const CampaignBuilder: React.FC<CampaignBuilderProps> = ({
 
   // Seed the branch scope from the global Branch Scope picker (top bar) so
   // narrowing the global scope pre-selects those branches here. Runs once, is
-  // skipped while a Segments "Send Campaign" handoff is pending (that flow
-  // scopes to all branches), and never overwrites manual changes afterward.
+  // skipped while a Segments "Send Campaign" handoff is pending, and never
+  // overwrites manual changes afterward.
   const scopeSeededRef = useRef(false);
   useEffect(() => {
     if (scopeSeededRef.current) return;
@@ -1036,6 +1186,16 @@ Return ONLY the post content, no explanations or labels.`,
   const buildDispatchHtml = (profile: Profile): string => {
     const fill = (html: string) => {
       let out = applyTemplateImageOverrides(html, templateImageOverrides);
+      // Conditional greeting blocks remain in the launch snapshot so the
+      // campaign-sender can decide per recipient. Test sends have a real email,
+      // so resolve the block here to make the preview match delivery exactly.
+      if (profile.email) {
+        const hasFirstName = Boolean(profile.first_name?.trim());
+        out = out.replace(
+          /<!--\s*IF_FIRST_NAME\s*-->([\s\S]*?)<!--\s*END_IF_FIRST_NAME\s*-->/gi,
+          (_match, content: string) => hasFirstName ? content : '',
+        );
+      }
       // Replace each discovered token with the value typed in Compose. Empty
       // tokens collapse to '' so a raw {{token}} never leaks into the sent email.
       // A FUNCTION replacer is used (not a string) so `$` sequences in the copy
@@ -1074,13 +1234,21 @@ Return ONLY the post content, no explanations or labels.`,
         .replace(/\{\{\s*unsubscribe_url\s*\}\}/gi, () => unsubUrl);
     };
 
-    if (isCustomTemplate) {
-      const ct = customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''));
-      if (ct) return fill(ct.html_body);
-    } else if (BUILTIN_EMAIL_TEMPLATES[emailTemplate]) {
-      return fill(BUILTIN_EMAIL_TEMPLATES[emailTemplate]);
-    }
-    return renderCampaignHtml({ profile, subject: emailSubject, templateId: emailTemplate, campaignName });
+    const buildRaw = (): string => {
+      if (isCustomTemplate) {
+        const ct = customTemplates.find(t => t.id === emailTemplate.replace('custom:', ''));
+        if (ct) return fill(ct.html_body);
+      }
+      if (BUILTIN_EMAIL_TEMPLATES[emailTemplate]) {
+        return fill(BUILTIN_EMAIL_TEMPLATES[emailTemplate]);
+      }
+      return renderCampaignHtml({ profile, subject: emailSubject, templateId: emailTemplate, campaignName });
+    };
+    // Bake the preview text into the template as a hidden preheader. Run it through
+    // fill() too so {{first_name}} resolves — for the launch snapshot (empty profile)
+    // the token stays intact and campaign-sender fills it per recipient, exactly like
+    // the body copy.
+    return injectPreheader(buildRaw(), fill(emailPreviewText));
   };
 
   const handleSendTest = async () => {
@@ -1159,6 +1327,7 @@ Return ONLY the post content, no explanations or labels.`,
     const activeBranch = branches.find(b => selectedBranches.includes(b.slug));
     const dispatch = {
       subject: emailSubject,
+      preview_text: emailPreviewText.trim() || undefined,
       from: activeBranch?.resend_from_address || undefined,
       cc: emailCc.trim() || undefined,
       html_template: buildDispatchHtml({ email: '', first_name: '' } as Profile),
@@ -1186,6 +1355,7 @@ Return ONLY the post content, no explanations or labels.`,
           branches: selectedBranches,
           presets: selectedSegments,
           saved_segments: selectedSavedSegments,
+          saved_segment_snapshot: selectedSavedSegmentSnapshot,
           branch_content: branchContent,
         },
         channels: channels,
@@ -1283,6 +1453,7 @@ Return ONLY the post content, no explanations or labels.`,
         }));
 
         onCampaignLaunch({
+          id: newCampaign.id,
           name: campaignName,
           audienceSize,
           segments: selectedSegments,
@@ -1334,6 +1505,7 @@ Return ONLY the post content, no explanations or labels.`,
           setCurrentStep(0);
           setCampaignName('');
           setEmailSubject('');
+          setEmailPreviewText('');
           setEmailCc('');
           setSelectedBranches([]);
           setSelectedSegments([]);
@@ -1736,6 +1908,8 @@ Return ONLY the post content, no explanations or labels.`,
                                 {seg.name}
                                 {seg.kind === 'email_list'
                                   ? <span className="ml-2 text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full align-middle tracking-normal">TEST</span>
+                                  : seg.kind === 'link_interest'
+                                    ? <span className="ml-2 text-[8px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full align-middle tracking-normal">INTENT</span>
                                   : !isPreset && <span className="ml-2 text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full align-middle tracking-normal">CUSTOM</span>}
                               </p>
                               {seg.description && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{seg.description}</p>}
@@ -1758,6 +1932,12 @@ Return ONLY the post content, no explanations or labels.`,
                       Test list active — {extraTestEmails.length} {extraTestEmails.length === 1 ? 'address' : 'addresses'} will be emailed
                       <b> directly, bypassing branch scope and consent</b>. The selected branch still sets the “from” address.
                     </span>
+                  </div>
+                )}
+                {isEventAudienceSelected && (
+                  <div className="mt-3 flex items-start gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-[11px] font-semibold text-teal-800">
+                    <Calendar size={15} className="mt-0.5 shrink-0" />
+                    <span><b>Event audience active.</b> Event-specific consent is valid only for notices about the event(s) these people registered for. Do not use this audience for general promotions or newsletters.</span>
                   </div>
                 )}
               </div>
@@ -1963,6 +2143,31 @@ Return ONLY the post content, no explanations or labels.`,
                     value={emailSubject}
                     onChange={e => setEmailSubject(e.target.value)}
                   />
+
+                  {/* Preview Text (a.k.a. preheader) — the inbox snippet shown right
+                      after the subject. Baked into the sent HTML as a hidden block. */}
+                  <div>
+                    <div className="flex justify-between items-end mb-2">
+                      <label htmlFor="campaign-preview-text" className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        Preview Text <span className="font-bold normal-case tracking-normal text-slate-400">(inbox preheader)</span>
+                      </label>
+                      <span className={`text-[10px] font-bold ${emailPreviewText.length > 150 ? 'text-amber-500' : 'text-slate-300'}`}>
+                        {emailPreviewText.length}/150
+                      </span>
+                    </div>
+                    <input
+                      id="campaign-preview-text"
+                      type="text"
+                      placeholder="Shown in the inbox after the subject — e.g. Buy gift cards now and save on summer seedlings."
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 outline-none transition-all duration-300 shadow-inner"
+                      value={emailPreviewText}
+                      onChange={e => setEmailPreviewText(e.target.value)}
+                    />
+                    <p className="mt-1.5 text-[10px] text-slate-400 font-medium">
+                      Optional. Most inboxes show the first ~90–150 characters. Supports <span className="font-mono">{'{{first_name}}'}</span>.
+                    </p>
+                  </div>
+
                   <div className="grid gap-2 sm:grid-cols-[9rem_1fr] sm:items-center">
                     <label htmlFor="campaign-email-cc" className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                       CC <span className="font-bold normal-case tracking-normal text-slate-400">(optional)</span>
@@ -2174,6 +2379,12 @@ Return ONLY the post content, no explanations or labels.`,
                         <div className="px-6 py-2.5 border-b border-slate-100 bg-white">
                           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Subject</p>
                           <p className="text-xs font-bold text-slate-800 mt-0.5 break-words">{emailSubject || '(no subject yet)'}</p>
+                          {emailPreviewText.trim() && (
+                            <p className="text-[11px] text-slate-400 mt-1 break-words">
+                              <span className="font-black uppercase tracking-widest text-[9px] text-slate-400">Preview</span>{' '}
+                              {emailPreviewText}
+                            </p>
+                          )}
                         </div>
                         <iframe
                           title="Live email preview"
@@ -2627,8 +2838,8 @@ Return ONLY the post content, no explanations or labels.`,
               <div className="p-8 space-y-5">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                    <p className="text-2xl font-black text-emerald-700">{consentFiltered.length}</p>
-                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mt-1">Opted-In</p>
+                    <p className="text-2xl font-black text-emerald-700">{isEventAudienceSelected ? eventConsentFiltered.length : consentFiltered.length}</p>
+                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest mt-1">{isEventAudienceSelected ? 'Event Eligible' : 'Opted-In'}</p>
                   </div>
                   <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-center">
                     <p className="text-2xl font-black text-amber-700">{scopedProfiles.filter(p => selectedBranches.some(slug => { const entry = p.branch_consent?.[slug]; return entry ? entry.paused : p.marketing_pause; })).length}</p>
@@ -2651,8 +2862,8 @@ Return ONLY the post content, no explanations or labels.`,
                     className="mt-0.5 w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                   />
                   <div>
-                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight">I confirm this campaign targets opted-in recipients only</p>
-                    <p className="text-[11px] text-slate-500 mt-1">The delivery gateway will enforce subscription status at send time.</p>
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight">{isEventAudienceSelected ? 'I confirm this message is specifically about the registered event(s)' : 'I confirm this campaign targets opted-in recipients only'}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">{isEventAudienceSelected ? 'Event registration consent must not be reused for general marketing.' : 'The delivery gateway will enforce subscription status at send time.'}</p>
                   </div>
                 </label>
               </div>
@@ -2728,7 +2939,8 @@ Return ONLY the post content, no explanations or labels.`,
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-12 pb-20">
       <div className="lg:col-span-3 space-y-12">
-        <div className={`rounded-2xl border px-5 py-4 flex flex-wrap items-center justify-between gap-4 ${
+        {(branchContext?.isAllSelected || branchContext?.activeBranchSlugs.some(slug => slug === 'atl-urban-farms' || slug === 'atlurbanfarms')) && <AtlAcquisition />}
+        <div className={`border px-5 py-4 flex flex-wrap items-center justify-between gap-4 ${
           draftSaveError ? 'border-rose-200 bg-rose-50' : 'border-emerald-100 bg-emerald-50/70'
         }`}>
           <div>
@@ -2751,7 +2963,7 @@ Return ONLY the post content, no explanations or labels.`,
             type="button"
             onClick={() => handleSaveDraft()}
             disabled={!isDraftHydrated || isSavingDraft || isLaunching}
-            className="inline-flex items-center gap-2 rounded-xl bg-white border border-emerald-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-emerald-700 shadow-sm hover:bg-emerald-100 transition disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 bg-white border border-emerald-200 px-4 py-2.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition disabled:opacity-50"
           >
             {isSavingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
             Save Draft
@@ -2760,8 +2972,8 @@ Return ONLY the post content, no explanations or labels.`,
 
         {/* Step Progress */}
         <div className="flex justify-between items-start relative px-4">
-          <div className="absolute top-6 left-10 right-10 h-1 bg-slate-100 -z-10 rounded-full">
-            <div className="h-full bg-emerald-500 transition-all duration-700 rounded-full" style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }} />
+          <div className="absolute top-6 left-10 right-10 h-px bg-slate-200 -z-10">
+            <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }} />
           </div>
           {STEPS.map((step, idx) => {
             const isActive = idx === currentStep;
@@ -2774,8 +2986,8 @@ Return ONLY the post content, no explanations or labels.`,
             );
             return (
               <div key={step.id} className={`flex flex-col items-center group ${canNavigate ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`} onClick={() => canNavigate && setCurrentStep(idx)}>
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 border-4 shadow-xl ${
-                  isActive ? 'bg-slate-900 text-white border-emerald-500 scale-110' :
+                <div className={`w-12 h-12 flex items-center justify-center transition-all duration-300 border ${
+                  isActive ? 'bg-slate-900 text-white border-emerald-500' :
                   isCompleted ? 'bg-emerald-600 text-white border-white' :
                   'bg-white text-slate-300 border-slate-100'
                 }`}>
@@ -2799,7 +3011,7 @@ Return ONLY the post content, no explanations or labels.`,
 
         {/* Navigation */}
         <div className="flex justify-between items-center pt-10 border-t border-slate-200">
-          <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={!isDraftHydrated || currentStep === 0 || isLaunching} className="px-8 py-4 flex items-center space-x-3 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-slate-800 transition disabled:opacity-0 group">
+          <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={!isDraftHydrated || currentStep === 0 || isLaunching} className="min-h-11 px-6 py-3 flex items-center space-x-3 text-slate-500 font-bold text-xs hover:text-slate-800 transition disabled:opacity-0 group">
             <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
             <span>Previous Step</span>
           </button>
@@ -2808,7 +3020,7 @@ Return ONLY the post content, no explanations or labels.`,
             <button
               onClick={handleLaunch}
               disabled={!isDraftHydrated || isSavingDraft || isLaunching || audienceSize === 0 || !campaignName || !emailSubject || !consentConfirmed || !emailCcIsValid}
-              className="px-12 py-5 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-slate-900/40 hover:bg-emerald-600 transition disabled:opacity-50 flex items-center space-x-4"
+              className="min-h-11 px-8 py-3 bg-slate-900 text-white font-bold text-base hover:bg-emerald-600 transition disabled:opacity-50 flex items-center space-x-3"
             >
               <Rocket size={24} className="text-emerald-400" />
               <span>Launch Across {enabledChannelCount} Channel{enabledChannelCount !== 1 ? 's' : ''}</span>
@@ -2822,7 +3034,7 @@ Return ONLY the post content, no explanations or labels.`,
                 (currentStep === 1 && (!emailSubject || emailComposeIncomplete || !emailCcIsValid)) ||
                 (currentStep === 2 && triggerType === 'scheduled' && !scheduledDate)
               }
-              className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group"
+              className="min-h-11 px-6 py-3 bg-emerald-600 text-white font-bold text-xs flex items-center space-x-3 hover:bg-emerald-700 transition disabled:opacity-50 group"
             >
               <span>Continue Strategy</span>
               <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
@@ -2834,10 +3046,10 @@ Return ONLY the post content, no explanations or labels.`,
       {/* Sidebar */}
       <div className="lg:col-span-1 space-y-8">
         {/* Strategic Guidance */}
-        <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm flex flex-col min-h-[400px]">
+        <div className="bg-white p-6 border border-slate-200 flex flex-col min-h-[400px]">
           <div className="flex items-center space-x-3 mb-10 border-b border-slate-100 pb-10">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-sm border border-indigo-100"><Info size={20} /></div>
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Sage Guidance</h3>
+            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100"><Info size={20} /></div>
+            <h3 className="text-sm font-bold text-slate-900">Sage guidance</h3>
           </div>
           <div className="flex-1 space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="space-y-4">

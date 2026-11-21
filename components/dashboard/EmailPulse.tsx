@@ -17,7 +17,7 @@ interface EmailPulseProps {
 
 const SKELETON = 'bg-[#E5E7EB]/60 animate-pulse rounded';
 const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E698F] focus-visible:ring-offset-2';
-const CARD = 'bg-white border border-[#E5E7EB] rounded-[12px] p-[18px] flex flex-col gap-[14px]';
+const CARD = 'bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-[14px]';
 
 // ── Derived data shape ────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ const EmailPulseSkeleton: React.FC = () => (
       <div className={`h-4 w-28 ${SKELETON}`} />
       <div className={`h-3 w-20 ${SKELETON}`} />
     </div>
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {Array.from({ length: 4 }).map((_, i) => (
         <div key={i} className="flex flex-col gap-1">
           <div className={`h-5 w-12 ${SKELETON}`} />
@@ -276,20 +276,20 @@ const EmailPulse: React.FC<EmailPulseProps> = ({ events, window: timeWindow, isL
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Delivered" value={derived.delivered} />
         <StatTile label="Opened" value={derived.opened} />
         <StatTile label="Clicked" value={derived.clicked} />
         <StatTile label="Bounced" value={derived.bounced} />
       </div>
 
-      <div className="flex items-center gap-6 pt-1">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-1">
         <RateBlock label="Open rate" rate={derived.openRate} delta={derived.openRateDelta} />
         <RateBlock label="Click rate" rate={derived.clickRate} delta={derived.clickRateDelta} />
       </div>
 
       {derived.bounceWarning && bounceRatio !== null && (
-        <div className="flex items-center gap-2 bg-[#FFFBEB] border border-[#FDE68A] rounded-[8px] px-3 py-[7px]">
+        <div className="flex items-center gap-2 bg-[#FFFBEB] border border-[#FDE68A] rounded-sm px-3 py-[7px]">
           <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: '#B45309' }} />
           <span className="text-[11px] font-semibold" style={{ color: '#B45309' }}>
             Bounce rate {bounceRatio.toFixed(1)}% — above the 5% deliverability threshold
@@ -300,14 +300,14 @@ const EmailPulse: React.FC<EmailPulseProps> = ({ events, window: timeWindow, isL
       {derived.recentCampaign && (
         <div className="pt-2 border-t border-[#E5E7EB] flex flex-col gap-[6px]">
           <span className="text-[11px] text-[#6B7280]">Most recent campaign</span>
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
             <span
               className="text-[13px] font-semibold text-[#1F2937] truncate min-w-0"
               title={derived.recentCampaign.subject}
             >
               {truncate(derived.recentCampaign.subject)}
             </span>
-            <span className="font-mono text-[11px] text-[#6B7280] flex-shrink-0">
+            <span className="font-mono text-[11px] text-[#6B7280] sm:flex-shrink-0">
               {derived.recentCampaign.delivered.toLocaleString()} delivered ·{' '}
               {derived.recentCampaign.openRate === null ? '—' : `${derived.recentCampaign.openRate.toFixed(1)}%`} opened
             </span>

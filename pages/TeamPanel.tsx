@@ -163,14 +163,14 @@ const TeamPanel: React.FC = () => {
     <div className="space-y-8 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Team</h3>
+          <h3 className="text-xl font-black text-slate-800">Team</h3>
           <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
             Manage Trellis operators, roles, and branch access
           </p>
         </div>
         <button
           onClick={load}
-          className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition"
+          className="flex items-center space-x-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-sm font-bold text-xs hover:bg-slate-200 transition"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           <span>Refresh</span>
@@ -178,7 +178,7 @@ const TeamPanel: React.FC = () => {
       </div>
 
       {error && (
-        <div className="flex items-center space-x-2 bg-red-50 border border-red-100 text-red-600 text-xs font-bold px-4 py-3 rounded-2xl">
+        <div className="flex items-center space-x-2 bg-red-50 border border-red-100 text-red-600 text-xs font-bold px-4 py-3 rounded-sm">
           <ShieldAlert size={14} />
           <span>{error}</span>
         </div>
@@ -186,10 +186,10 @@ const TeamPanel: React.FC = () => {
 
       {/* Invite member */}
       {canManage && (
-        <div className="bg-slate-50 border-2 border-slate-100 rounded-3xl p-6">
+        <div className="bg-slate-50 border-2 border-slate-100 rounded-sm p-6">
           <div className="flex items-center space-x-2 mb-4">
             <UserPlus size={16} className="text-emerald-600" />
-            <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Invite Member</h4>
+            <h4 className="text-sm font-black text-slate-800">Invite Member</h4>
           </div>
           <div className="flex flex-col lg:flex-row lg:items-end gap-4">
             <div className="flex-1">
@@ -199,7 +199,7 @@ const TeamPanel: React.FC = () => {
                 value={inviteEmail}
                 onChange={e => setInviteEmail(e.target.value)}
                 placeholder="operator@sproutify.app"
-                className="mt-1 w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                className="mt-1 w-full px-4 py-2.5 rounded-sm border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
             </div>
             <div className="flex-1">
@@ -209,7 +209,7 @@ const TeamPanel: React.FC = () => {
                 value={inviteName}
                 onChange={e => setInviteName(e.target.value)}
                 placeholder="Jane Operator"
-                className="mt-1 w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                className="mt-1 w-full px-4 py-2.5 rounded-sm border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
             </div>
             <div>
@@ -217,7 +217,7 @@ const TeamPanel: React.FC = () => {
               <select
                 value={inviteRole}
                 onChange={e => setInviteRole(e.target.value as TrellisRole)}
-                className="mt-1 w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 capitalize"
+                className="mt-1 w-full px-4 py-2.5 rounded-sm border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 capitalize"
               >
                 {ROLES.map(r => (
                   <option key={r} value={r} className="capitalize">{r}</option>
@@ -227,7 +227,7 @@ const TeamPanel: React.FC = () => {
             <button
               onClick={handleInvite}
               disabled={inviting || !inviteEmail.trim()}
-              className="flex items-center justify-center space-x-2 px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition disabled:opacity-50"
+              className="flex items-center justify-center space-x-2 px-6 py-2.5 bg-emerald-600 text-white rounded-sm font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition disabled:opacity-50"
             >
               {inviting ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
               <span>Invite</span>
@@ -248,7 +248,28 @@ const TeamPanel: React.FC = () => {
           <span className="text-xs font-bold uppercase tracking-widest">No team members yet</span>
         </div>
       ) : (
-        <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+        <>
+        <div className="space-y-3 md:hidden">
+          {users.map(user => (
+            <article key={user.id} className="border border-slate-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-800">{user.full_name || user.email}</p>
+                  <p className="mt-0.5 break-all font-mono text-xs text-slate-500">{user.email}</p>
+                </div>
+                <span className={`shrink-0 rounded-sm px-2 py-1 text-[9px] font-black uppercase tracking-wider ${STATUS_STYLES[user.status]}`}>{user.status}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wider">
+                <span className="rounded-sm bg-slate-100 px-2 py-1 text-slate-600">{user.role}</span>
+                {user.branches.length > 0
+                  ? user.branches.map(branch => <span key={branch.branch_id} className="rounded-sm bg-emerald-50 px-2 py-1 text-emerald-700">{branch.branch_name} · {branch.branch_role}</span>)
+                  : <span className="rounded-sm bg-slate-100 px-2 py-1 text-slate-400">No branch access</span>}
+              </div>
+            </article>
+          ))}
+          {canManage && <p className="px-1 text-xs leading-5 text-slate-500">Role, status, and branch changes are available on desktop.</p>}
+        </div>
+        <div className="hidden overflow-x-auto rounded-sm border-2 border-slate-100 md:block">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -272,9 +293,9 @@ const TeamPanel: React.FC = () => {
                     <td className="px-6 py-5">
                       <div className="flex items-center space-x-3">
                         {user.avatar_url ? (
-                          <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover" />
+                          <img src={user.avatar_url} alt="" className="w-10 h-10 rounded-sm object-cover" />
                         ) : (
-                          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
+                          <div className="w-10 h-10 rounded-sm bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
                             {initials(user)}
                           </div>
                         )}
@@ -292,7 +313,7 @@ const TeamPanel: React.FC = () => {
                           value={user.role}
                           disabled={busyId === user.id}
                           onChange={e => handleRoleChange(user.id, e.target.value as TrellisRole)}
-                          className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold bg-white capitalize focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-50"
+                          className="px-3 py-1.5 rounded-sm border border-slate-200 text-xs font-bold bg-white capitalize focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-50"
                         >
                           {ROLES.map(r => (
                             <option key={r} value={r} className="capitalize">{r}</option>
@@ -319,7 +340,7 @@ const TeamPanel: React.FC = () => {
                         {user.branches.map(b => (
                           <span
                             key={b.branch_id}
-                            className="inline-flex items-center space-x-1 bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg"
+                            className="inline-flex items-center space-x-1 bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-sm"
                           >
                             <span>{b.branch_name}</span>
                             <span className="text-slate-400">· {b.branch_role}</span>
@@ -347,7 +368,7 @@ const TeamPanel: React.FC = () => {
                                 [user.id]: { ...draft, branch_id: e.target.value },
                               }))
                             }
-                            className="px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                            className="px-2 py-1 rounded-sm border border-slate-200 text-[10px] font-bold bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
                           >
                             <option value="">+ Branch…</option>
                             {available.map(b => (
@@ -362,7 +383,7 @@ const TeamPanel: React.FC = () => {
                                 [user.id]: { ...draft, branch_role: e.target.value as BranchRole },
                               }))
                             }
-                            className="px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold bg-white capitalize focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                            className="px-2 py-1 rounded-sm border border-slate-200 text-[10px] font-bold bg-white capitalize focus:outline-none focus:ring-2 focus:ring-emerald-400"
                           >
                             {BRANCH_ROLES.map(r => (
                               <option key={r} value={r} className="capitalize">{r}</option>
@@ -371,7 +392,7 @@ const TeamPanel: React.FC = () => {
                           <button
                             onClick={() => handleAssign(user.id)}
                             disabled={!draft.branch_id || busyId === user.id}
-                            className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-40"
+                            className="p-1.5 bg-emerald-600 text-white rounded-sm hover:bg-emerald-700 transition disabled:opacity-40"
                             title="Assign branch"
                           >
                             <Plus size={12} />
@@ -388,7 +409,7 @@ const TeamPanel: React.FC = () => {
                             <button
                               onClick={() => handleStatus(user.id, 'suspended')}
                               disabled={busyId === user.id}
-                              className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-orange-50 text-orange-600 hover:bg-orange-100 transition disabled:opacity-50"
+                              className="flex items-center space-x-1 px-3 py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest bg-orange-50 text-orange-600 hover:bg-orange-100 transition disabled:opacity-50"
                             >
                               <ShieldAlert size={12} />
                               <span>Suspend</span>
@@ -398,7 +419,7 @@ const TeamPanel: React.FC = () => {
                             <button
                               onClick={() => handleStatus(user.id, 'active')}
                               disabled={busyId === user.id}
-                              className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition disabled:opacity-50"
+                              className="px-3 py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition disabled:opacity-50"
                             >
                               Reactivate
                             </button>
@@ -406,7 +427,7 @@ const TeamPanel: React.FC = () => {
                           <button
                             onClick={() => handleStatus(user.id, 'deleted')}
                             disabled={busyId === user.id}
-                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-red-50 text-red-600 hover:bg-red-100 transition disabled:opacity-50"
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest bg-red-50 text-red-600 hover:bg-red-100 transition disabled:opacity-50"
                           >
                             <Trash2 size={12} />
                             <span>Remove</span>
@@ -420,6 +441,7 @@ const TeamPanel: React.FC = () => {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

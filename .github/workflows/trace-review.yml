@@ -1,0 +1,48 @@
+name: Trace migration checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/trace-review.yml'
+      - 'supabase/migrations/*_sweetwater_trace*.sql'
+      - 'tests/sweetwater-trace.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Validate migration and privileges on disposable PostgreSQL
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          sql() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres "$@"; }
+          sql -c 'create role anon; create role authenticated; create role service_role bypassrls; create extension "uuid-ossp";'
+          for pass in 1 2; do
+            for migration in supabase/migrations/*_sweetwater_trace*.sql; do
+              sql < "$migration"
+            done
+          done
+          sql < tests/sweetwater-trace.sql

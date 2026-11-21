@@ -1,0 +1,22 @@
+{
+  "status": "passed",
+  "composition": "vertical-ui-story@v1",
+  "output": "work/promo-studio/vertical-ui-story-v1/output/vertical-ui-story-v1.mp4",
+  "media": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "duration": 10,
+    "video": "h264/yuv420p",
+    "audio": "aac/48000"
+  },
+  "loudness": {
+    "integrated_lufs": -14.11,
+    "true_peak_dbfs": -1.84
+  },
+  "fixture": {
+    "branch_slug": "rekkrd",
+    "capture_checksum_sha256": "0c10d913a06fb4ec95a10df2a3b27226c47d812cf60388e755a9ceb6eedf657a",
+    "logo_checksum_sha256": "d24ebd753511478b217c898464a18f478e9210bcd48c4965e7357dd470660c12"
+  }
+}

@@ -15,7 +15,7 @@ export interface SegmentField {
   id: string;
   label: string;
   type: SegmentFieldType;
-  category: 'profile' | 'orders' | 'products' | 'location' | 'demographics' | 'engagement';
+  category: 'profile' | 'orders' | 'products' | 'location' | 'demographics' | 'engagement' | 'events';
   path: string;
 }
 
@@ -35,6 +35,31 @@ export interface SegmentRuleGroup {
   rules: SegmentRule[];
 }
 
+export type LinkInterestMatchType = 'exact' | 'domain' | 'prefix';
+
+// A reusable intent signal derived from Resend click events. Membership stays
+// dynamic: historical clicks qualify immediately and future clicks appear as
+// soon as the webhook records them.
+export interface LinkInterestDefinition {
+  url: string;
+  match_type: LinkInterestMatchType;
+  min_clicks: number;
+  lookback_days?: number | null;
+  campaign_ids?: string[];
+  campaign_subjects?: string[];
+}
+
+// A campaign-scoped engagement cohort. Recipients qualify only when delivery
+// was recorded for every selected campaign, preventing never-contacted people
+// from being mislabeled as non-openers.
+export interface CampaignEngagementDefinition {
+  branch_slug: string;
+  campaign_ids: string[];
+  campaign_labels: string[];
+  opened_count: number;
+  delivery_requirement: 'all_selected';
+}
+
 // A saved segment
 export interface Segment {
   id: string;
@@ -48,8 +73,12 @@ export interface Segment {
   // 'email_list' is a static test list — membership is the explicit set of
   // addresses in `email_list`, which are emailed directly (bypassing branch
   // scope + consent) when used as a campaign audience.
-  kind?: 'rules' | 'email_list';
+  kind?: 'rules' | 'email_list' | 'link_interest' | 'campaign_engagement';
   email_list?: string[]; // lowercased addresses when kind === 'email_list'
+  link_interest?: LinkInterestDefinition;
+  campaign_engagement?: CampaignEngagementDefinition;
+  recommended_branches?: string[];
+  is_shared?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -66,10 +95,18 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   { id: 'sms_notifications', label: 'SMS Notifications', type: 'boolean', category: 'profile', path: 'sms_notifications' },
   { id: 'created_at', label: 'Customer Since', type: 'date', category: 'profile', path: 'created_at' },
   { id: 'spoke', label: 'Source/Spoke', type: 'string', category: 'profile', path: '_spoke_name' },
+  { id: 'collection_record_count', label: 'Records Added (current collection)', type: 'number', category: 'profile', path: 'collection_record_count' },
   { id: 'referral_source', label: 'Referral Source', type: 'string', category: 'profile', path: 'referral_source' },
   // Classification tags carried from the spoke's customer_tags (ATL). Use the
   // 'includes'/'does not include' operators with a tag name, e.g. "School Partner".
   { id: 'customer_tags', label: 'Customer Tag', type: 'array', category: 'profile', path: 'tags' },
+
+  // ATL event registration intent — read live from event_registrations.
+  { id: 'event_notice_consent', label: 'Event Notice Consent', type: 'boolean', category: 'events', path: 'event_notice_consent' },
+  { id: 'event_registration_count', label: 'Event Registration Count', type: 'number', category: 'events', path: 'event_registrations.length' },
+  { id: 'event_titles', label: 'Registered Event', type: 'array', category: 'events', path: 'event_titles' },
+  { id: 'event_statuses', label: 'Event Registration Status', type: 'array', category: 'events', path: 'event_statuses' },
+  { id: 'last_event_registration_at', label: 'Last Event Registration', type: 'date', category: 'events', path: 'last_event_registration_at' },
 
   // Order fields
   { id: 'ltv', label: 'Lifetime Value ($)', type: 'number', category: 'orders', path: 'order_stats.ltv' },
@@ -102,6 +139,9 @@ export const SEGMENT_FIELDS: SegmentField[] = [
   // never match (see segmentEngine.ts).
   { id: 'emails_opened', label: 'Emails Opened', type: 'number', category: 'engagement', path: 'emails_opened' },
   { id: 'emails_clicked', label: 'Emails Clicked', type: 'number', category: 'engagement', path: 'emails_clicked' },
+  { id: 'campaigns_delivered', label: 'Distinct Campaigns Delivered', type: 'number', category: 'engagement', path: 'campaigns_delivered' },
+  { id: 'campaigns_opened', label: 'Distinct Campaigns Opened', type: 'number', category: 'engagement', path: 'campaigns_opened' },
+  { id: 'campaigns_clicked', label: 'Distinct Campaigns Clicked', type: 'number', category: 'engagement', path: 'campaigns_clicked' },
   // "Never opened/clicked" resolves to a large sentinel (see NEVER_ENGAGED_DAYS in
   // segmentEngine.ts) so "at least/more than N days ago" rules correctly include
   // never-engaged profiles, while "in the last N days" style rules exclude them.
@@ -302,4 +342,72 @@ export const PRESET_SEGMENTS: Omit<Segment, 'id' | 'created_at' | 'updated_at'>[
       rules: [{ id: 'school-partners-rule', field: 'customer_tags', operator: 'contains', value: 'School Partner' }]
     }]
   },
+  {
+    name: 'Frequent Email Openers',
+    description: 'Opened 2+ distinct campaigns and opened within the last 60 days',
+    icon: 'activity',
+    color: 'violet',
+    is_preset: true,
+    rule_groups: [{
+      id: 'frequent-email-openers-group',
+      join: 'AND',
+      rules: [
+        { id: 'frequent-email-openers-frequency', field: 'campaigns_opened', operator: 'greater_or_equal', value: 2 },
+        { id: 'frequent-email-openers-recency', field: 'last_opened_days_ago', operator: 'less_or_equal', value: 60 }
+      ]
+    }]
+  },
+  {
+    name: 'ATL Event Registrants',
+    description: 'People who registered or pre-registered for an ATL Urban Farms event',
+    icon: 'calendar',
+    color: 'teal',
+    is_preset: true,
+    rule_groups: [{
+      id: 'atl-event-registrants-group',
+      join: 'AND',
+      rules: [
+        { id: 'atl-event-registration-count', field: 'event_registration_count', operator: 'greater_or_equal', value: 1 },
+        { id: 'atl-event-notice-consent', field: 'event_notice_consent', operator: 'is_true', value: true }
+      ]
+    }]
+  },
+  // Keep new presets appended so existing preset-<index> handoff ids remain stable.
+  {
+    name: 'Home App Leads',
+    description: 'People who clicked a sproutify.app link in a tracked email',
+    icon: 'mouse-pointer-click',
+    color: 'violet',
+    is_preset: true,
+    kind: 'link_interest',
+    link_interest: {
+      url: 'https://sproutify.app',
+      match_type: 'domain',
+      min_clicks: 1,
+      lookback_days: null,
+    },
+    recommended_branches: ['atlurbanfarms'],
+    rule_groups: [],
+  },
+  {
+    name: 'Rekkrd: No records yet',
+    description: 'Rekkrd users with a confirmed empty collection. Unknown counts are excluded; email consent still applies.',
+    icon: 'sparkles',
+    color: 'emerald',
+    is_preset: true,
+    recommended_branches: ['rekkrd'],
+    rule_groups: [{
+      id: 'rekkrd-empty-collection-group',
+      join: 'AND',
+      rules: [
+        { id: 'rekkrd-empty-collection-source', field: 'spoke', operator: 'is', value: 'Rekkrd' },
+        { id: 'rekkrd-empty-collection-count', field: 'collection_record_count', operator: 'equals', value: 0 },
+      ],
+    }],
+  },
 ];
+
+export const isEventAudienceSegment = (segment: Pick<Segment, 'rule_groups'>): boolean => {
+  const eventFieldIds = new Set(SEGMENT_FIELDS.filter((field) => field.category === 'events').map((field) => field.id));
+  return segment.rule_groups.some((group) => group.rules.some((rule) => eventFieldIds.has(rule.field)));
+};

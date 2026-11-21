@@ -25,6 +25,34 @@ test('batch generation reports partial failures instead of hiding queued tracks'
   assert.match(fn, /return json\(\{ tracks, failures \}, failures\.length \? 207 : 201\)/);
 });
 
+test('an untestable track can be reversibly left out without falsely approving it', async () => {
+  const migration = await read('supabase/migrations/20260825182123_add_studio_track_master_inclusion.sql');
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  const service = await read('services/studioAlbumsService.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(migration, /included_in_master BOOLEAN NOT NULL DEFAULT TRUE/);
+  assert.match(fn, /body\.action === "set_track_master_inclusion"/);
+  assert.match(fn, /const includedTracks = \(tracks \|\| \[\]\)\.filter/);
+  assert.match(fn, /track\.included_in_master !== false/);
+  assert.match(fn, /Track inclusion is locked after the master build begins/);
+  assert.match(fn, /\.eq\("included_in_master", true\)\.eq\("review_status", "approved"\)/);
+  assert.match(service, /setStudioTrackMasterInclusion/);
+  assert.match(page, /Leave out/);
+  assert.match(page, /left out of master/);
+  assert.match(page, /includedTracks\.length > 0 && approvedAudioCount === includedTracks\.length/);
+});
+
+test('Studio limits active Lyria workers and automatically recovers stale track jobs', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /const MAX_CONCURRENT_STUDIO_TRACKS = 3/);
+  assert.match(fn, /const STALE_STUDIO_TRACK_MS = 25 \* 60 \* 1000/);
+  assert.match(fn, /async function recoverStudioTrackQueue/);
+  assert.match(fn, /track\.status === "generating" && new Date\(track\.updated_at\)\.getTime\(\) < cutoff/);
+  assert.match(fn, /const availableSlots = Math\.max\(0, MAX_CONCURRENT_STUDIO_TRACKS - active\.length\)/);
+  assert.match(fn, /queueStudioTrackGeneration\(db, album, user\.id, track, false\)/);
+  assert.match(fn, /await recoverStudioTrackQueue\(db, album\.id\)/);
+});
+
 test('review UI explains and confirms approve-all behavior', async () => {
   const page = await read('pages/StudioAlbums.tsx');
   const confirmation = await read('components/ConfirmationModal.tsx');
@@ -76,7 +104,22 @@ test('music generation carries the planned runtime into the Lyria prompt', async
   const fn = await read('supabase/functions/generate-session-track/index.ts');
   assert.match(fn, /const useClip = duration === 30/);
   assert.match(fn, /Create an approximately \$\{formatTargetDuration\(duration\)\} piece/);
-  assert.match(fn, /input: `\$\{durationDirection\} \$\{track\.prompt\}`/);
+  assert.match(fn, /input: `\$\{durationDirection\} \$\{vocalDirection\} \$\{track\.prompt\}`/);
+});
+
+test('Studio previews stop the previous audio and instrumental generation uses a strict positive-only constraint', async () => {
+  const page = await read('pages/StudioAlbums.tsx');
+  const worker = await read('supabase/functions/generate-session-track/index.ts');
+  const studio = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(page, /const activeAudioRef = useRef<HTMLAudioElement \| null>\(null\)/);
+  assert.match(page, /previousAudio !== nextAudio\) previousAudio\.pause\(\)/);
+  assert.match(page, /onPlay=\{handleAudioPlay\}/);
+  assert.match(worker, /track\.vocal_style === "instrumental"/);
+  assert.match(worker, /PURE INSTRUMENTAL MUSIC/);
+  assert.match(worker, /entire piece exclusively for musical instruments/);
+  assert.match(worker, /non-vocal instruments/);
+  assert.doesNotMatch(worker, /no vocals, singing, spoken words, chants/);
+  assert.match(studio, /vocal_style: album\.vocal_direction/);
 });
 
 test('Studio planning does not promise sub-30-second Lyria tracks', async () => {
@@ -113,6 +156,40 @@ test('Studio cover generation treats subject and Riviera direction as hard const
   assert.match(fn, /Exactly one adult woman is the only human figure anywhere/);
   assert.match(fn, /real French Riviera \/ Côte d’Azur/);
   assert.match(fn, /No tropical jungle, waterfall, volcano/);
+});
+
+test('Studio image options include Cinematic Architectural Minimalism for Quiet Intelligence releases', async () => {
+  const constants = await read('constants.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(constants, /id: 'cinematic_architectural_minimalism'/);
+  assert.match(constants, /name: 'Cinematic Architectural Minimalism'/);
+  assert.match(constants, /Monumental spaces, sculptural materials, warm shadows and quiet luxury\./);
+  assert.match(constants, /expansive negative space/);
+  assert.match(constants, /No bright colors, busy decor/);
+  assert.match(constants, /No people by default; if scale is essential, use only one tiny distant figure/);
+  assert.match(page, /EPISODE_ART_STYLES\.map\(style => <option/);
+});
+
+test('Studio image options include Cinematic Vintage Noir and persist paired mood selections', async () => {
+  const constants = await read('constants.ts');
+  const page = await read('pages/StudioAlbums.tsx');
+  assert.match(constants, /id: 'cinematic_vintage_noir'/);
+  assert.match(constants, /name: 'Cinematic Vintage Noir'/);
+  assert.match(constants, /rain-streaked window/);
+  assert.match(constants, /No modern nightclub, neon or cyberpunk colors/);
+  assert.match(constants, /visible weapons/);
+  assert.match(page, /paired_art_style_id: preset\.paired_art_style_id/);
+  assert.match(page, /setCoverStyleId\(pairedArtStyleId\)/);
+});
+
+test('Studio image options include Sunlit Lifestyle Editorial for Morning Flow', async () => {
+  const constants = await read('constants.ts');
+  assert.match(constants, /id: 'sunlit_lifestyle_editorial'/);
+  assert.match(constants, /name: 'Sunlit Lifestyle Editorial'/);
+  assert.match(constants, /Warm morning light, relaxed luxury and clean modern living\./);
+  assert.match(constants, /one or two purposeful lifestyle details/);
+  assert.match(constants, /No staged stock-photo smiles/);
+  assert.match(constants, /generous negative space for later typography or product overlays/);
 });
 
 test('Studio covers are editable, removable, and titled before approval', async () => {
@@ -178,8 +255,23 @@ test('Studio publishing requires review and has a durable failure path', async (
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Album Publishing'));
   assert.ok(workflow.nodes.some(node => node.name === 'Fail Studio Publish Job'));
   const youtubeUpload = workflow.nodes.find(node => node.name === 'Upload Studio Album to YouTube');
-  assert.equal(youtubeUpload?.parameters.regionCode, 'US');
-  assert.equal(youtubeUpload?.parameters.categoryId, "={{ '10' }}");
+  assert.equal(youtubeUpload?.type, 'n8n-nodes-base.executeWorkflow');
+  assert.deepEqual(youtubeUpload?.parameters.workflowId, {
+    __rl: true,
+    value: 'REPLACE_WITH_E11_WORKFLOW_ID',
+    mode: 'id',
+  });
+  assert.ok(workflow.nodes.some(node => node.name === 'Prepare Studio Account Upload'));
+  assert.ok(!workflow.nodes.some(node => node.name === 'Download Private Studio Video'));
+});
+
+test('Studio cover generation uses the current native Gemini image API', async () => {
+  const fn = await read('supabase/functions/studio-albums/index.ts');
+  assert.match(fn, /const IMAGE_MODEL = configuredImageModel\.startsWith\("imagen-"\) \? "gemini-3\.1-flash-image"/);
+  assert.match(fn, /generativelanguage\.googleapis\.com\/v1beta\/models\/\$\{IMAGE_MODEL\}:generateContent/);
+  assert.match(fn, /generationConfig: \{ responseModalities: \["IMAGE"\], imageConfig: \{ aspectRatio \} \}/);
+  assert.match(fn, /candidates\?\.\[0\]\?\.content\?\.parts\?\.find/);
+  assert.doesNotMatch(fn, /models\/\$\{IMAGE_MODEL\}:predict/);
 });
 
 test('publishing draft picks the approved cover as the thumbnail, not just the newest one', async () => {
@@ -263,6 +355,19 @@ test('Studio video renders with no separate artwork-approval step', async () => 
   assert.match(page, /Render final video/);
 });
 
+test('oversized Studio renders use Supabase resumable storage uploads', async () => {
+  const worker = await read('workers/video_worker.py');
+  const requirements = await read('workers/requirements.txt');
+  assert.match(requirements, /tuspy==1\.1\.0/);
+  assert.match(worker, /\.storage\.supabase\.co/);
+  assert.match(worker, /storage\/v1\/upload\/resumable/);
+  assert.match(worker, /TUS_CHUNK_SIZE = 6 \* 1024 \* 1024/);
+  assert.match(worker, /"bucketName": bucket/);
+  assert.match(worker, /"objectName": path_in_bucket/);
+  assert.match(worker, /if size_mb > MAX_STANDARD_UPLOAD_MB:[\s\S]*?_upload_resumable/);
+  assert.doesNotMatch(worker, /above the configured standard upload limit/);
+});
+
 test('video renders from a native 16:9 text-free companion photo, not a crop of the square typography cover', async () => {
   // Root-cause fix: cropping a square cover that has title text burned near its
   // edges either clips the text or throws away ~44% of the photo. Episodes never
@@ -323,15 +428,42 @@ test('cover typography has a text color picker and font selector, and no video c
   assert.match(composer, /FONT_OPTIONS/);
   assert.match(composer, /TREATMENT_DEFAULT_FONT/);
   assert.match(composer, /Playfair Display/);
+  assert.match(composer, /DM Serif Display/);
+  assert.match(composer, /Libre Baskerville/);
+  assert.match(composer, /Cinzel/);
+  assert.match(composer, /Anton/);
+  assert.match(composer, /League Spartan/);
+  assert.match(composer, /Poppins/);
+  assert.match(composer, /Raleway/);
+  assert.match(composer, /Caveat/);
+  assert.match(fn, /"dm_serif", "libre_baskerville", "cinzel", "anton", "league_spartan", "poppins", "raleway", "caveat"/);
+  assert.match(composer, /Title block position/);
+  assert.match(composer, /document\.fonts\.load/);
+  assert.match(composer, /await loadSelectedFonts\(\);\s*draw\(\);/);
+  assert.match(composer, /onSaved\(\{ \.\.\.concept, metadata_json: \{ \.\.\.concept\.metadata_json, typography:/);
+  assert.match(composer, /text_v: vPos/);
+  assert.match(composer, /text_h: hAlign/);
   assert.doesNotMatch(composer, /crop guide/i);
   assert.doesNotMatch(composer, /VIDEO_CROP_FRACTION/);
   assert.match(service, /title_color\?: string/);
   assert.match(service, /title_font\?: string/);
+  assert.match(service, /text_v\?: string/);
+  assert.match(service, /text_h\?: string/);
   assert.match(fn, /title_color: \/\^#\[0-9a-fA-F\]\{6\}\$\/\.test/);
   assert.match(fn, /VALID_COVER_FONTS\.has/);
+  assert.match(fn, /\["top", "middle", "bottom"\]\.includes/);
+  assert.match(fn, /\["left", "center", "right"\]\.includes/);
+  assert.match(fn, /A selected cover font is not supported/);
+  assert.match(fn, /The title position is invalid/);
   assert.match(page, /defaultTitleColor=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_color\}/);
   assert.match(page, /defaultTitleFont=\{selectedCoverConcept\.metadata_json\?\.typography\?\.title_font\}/);
+  assert.match(page, /typography: selectedCoverConcept\?\.metadata_json\?\.typography/);
   assert.match(html, /Playfair\+Display/);
+  assert.match(html, /DM\+Serif\+Display/);
+  assert.match(html, /League\+Spartan/);
+  const thumbnailComposer = await read('components/StudioThumbnailComposer.tsx');
+  assert.match(thumbnailComposer, /DM Serif Display/);
+  assert.match(thumbnailComposer, /await loadSelectedFont\(\);\s*draw\(\);/);
 });
 
 test('the title can optionally be burned onto the video by rendering from the thumbnail', async () => {

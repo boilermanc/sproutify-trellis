@@ -17,6 +17,8 @@ export interface TemplateImageSlot {
 
 const galleryPath = (branchSlug: string) => `${branchSlug}/gallery`;
 
+const isImageAssetName = (name: string) => /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(name);
+
 export function extractTemplateImageSlots(html: string): TemplateImageSlot[] {
   const slots: TemplateImageSlot[] = [];
   const seen = new Set<string>();
@@ -58,7 +60,10 @@ export async function listBrandGalleryAssets(branchSlug: string): Promise<BrandG
   if (error) throw new Error(`Could not load the brand asset library: ${error.message}`);
 
   return (data || [])
-    .filter(file => file.name !== '.emptyFolderPlaceholder')
+    // This consumer replaces <img> blocks in campaigns. Brand DNA can also
+    // store PDFs in the shared gallery, but documents are not valid image
+    // replacements and must not appear here as broken thumbnails.
+    .filter(file => file.name !== '.emptyFolderPlaceholder' && isImageAssetName(file.name))
     .map(file => {
       const path = `${folder}/${file.name}`;
       const { data: publicData } = supabase.storage.from(BRAND_ASSET_BUCKET).getPublicUrl(path);

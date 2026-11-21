@@ -1940,9 +1940,9 @@ export default function MarketingWizard({
       {/* ---- Header ---- */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
             <Wand2 size={28} className="text-emerald-600" />
-            Marketing Campaign Generator
+            Marketing campaign generator
           </h2>
           <p className="text-sm text-slate-500 mt-1 font-medium">
             AI-powered campaign creation — from positioning to deployment
@@ -1951,12 +1951,12 @@ export default function MarketingWizard({
         <div className="flex items-center gap-3">
           <button
             onClick={clearDraft}
-            className="flex items-center gap-2 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition"
+            className="flex min-h-11 items-center gap-2 px-5 py-2.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition"
           >
             <Trash2 size={14} />
             Clear Draft
           </button>
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-4 py-2.5 rounded-xl">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-500 bg-slate-100 border border-slate-200 px-4 py-2.5">
             Step {currentStep + 1} of {STEPS.length}
           </span>
         </div>
@@ -1965,9 +1965,9 @@ export default function MarketingWizard({
       {/* ---- Progress Bar ---- */}
       <div className="flex justify-between items-start relative px-4">
         {/* Background track */}
-        <div className="absolute top-6 left-10 right-10 h-1 bg-slate-100 -z-10 rounded-full">
+        <div className="absolute top-6 left-10 right-10 h-px bg-slate-200 -z-10">
           <div
-            className="h-full bg-emerald-500 transition-all duration-700 rounded-full"
+            className="h-full bg-emerald-500 transition-all duration-700"
             style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
           />
         </div>
@@ -1986,9 +1986,9 @@ export default function MarketingWizard({
               onClick={() => canNav && setCurrentStep(idx)}
             >
               <div
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 border-4 shadow-xl ${
+                className={`w-12 h-12 flex items-center justify-center transition-all duration-300 border ${
                   isActive
-                    ? 'bg-slate-900 text-white border-emerald-500 scale-110'
+                    ? 'bg-slate-900 text-white border-emerald-500'
                     : isCompleted
                       ? 'bg-emerald-600 text-white border-white'
                       : 'bg-white text-slate-300 border-slate-100'
@@ -2021,7 +2021,7 @@ export default function MarketingWizard({
         <button
           onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
           disabled={currentStep === 0}
-          className="px-8 py-4 flex items-center space-x-3 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-slate-800 transition disabled:opacity-0 group"
+          className="min-h-11 px-6 py-3 flex items-center space-x-3 text-slate-500 font-bold text-xs hover:text-slate-800 transition disabled:opacity-0 group"
         >
           <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
           <span>Previous Step</span>
@@ -2031,7 +2031,7 @@ export default function MarketingWizard({
           <button
             onClick={() => setCurrentStep(Math.min(STEPS.length - 1, currentStep + 1))}
             disabled={!canAdvance(currentStep)}
-            className="px-10 py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center space-x-3 shadow-xl hover:bg-emerald-700 transition disabled:opacity-50 group"
+            className="min-h-11 px-6 py-3 bg-emerald-600 text-white font-bold text-xs flex items-center space-x-3 hover:bg-emerald-700 transition disabled:opacity-50 group"
           >
             <span>{getNextLabel()}</span>
             <ChevronRight

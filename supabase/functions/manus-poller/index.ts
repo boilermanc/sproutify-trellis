@@ -113,7 +113,19 @@ Deno.serve(async () => {
       // A transient API error must NOT finalize the row — leave it running so the
       // next tick retries.
       if (!detail.ok) {
-        results.push({ id: row.id, apiError: detail.body?.error?.message || `HTTP ${detail.status}` });
+        const apiError = detail.body?.error?.message || `HTTP ${detail.status}`;
+        if (detail.status === 404 || /task not found/i.test(apiError)) {
+          const now = new Date().toISOString();
+          const message = "Manus can no longer access this task with the saved API key. Reconnect Manus in Settings and retry the deep dive.";
+          await db.from("lead_research").update({
+            status: "failed",
+            error: message,
+            updated_at: now,
+          }).eq("id", row.id);
+          results.push({ id: row.id, status: "failed", apiError });
+          continue;
+        }
+        results.push({ id: row.id, apiError });
         continue;
       }
       const status = readStatus(detail.body);

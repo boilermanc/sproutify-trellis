@@ -42,6 +42,11 @@ VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "12"))
 VIDEO_CRF = os.environ.get("VIDEO_CRF", "32").strip()
 VIDEO_AUDIO_BITRATE = os.environ.get("VIDEO_AUDIO_BITRATE", "96k").strip()
 MAX_STANDARD_UPLOAD_MB = int(os.environ.get("VIDEO_MAX_STANDARD_UPLOAD_MB", "48"))
+TUS_CHUNK_SIZE = 6 * 1024 * 1024
+STORAGE_URL = os.environ.get(
+    "SUPABASE_STORAGE_URL",
+    SUPABASE_URL.replace(".supabase.co", ".storage.supabase.co"),
+).strip().rstrip("/")
 RENDER_PROFILE = "studio-landscape-v1"
 
 app = Flask(__name__)
@@ -141,14 +146,47 @@ def _download(url: str, path: str):
         f.write(r.content)
 
 
+def _public_url(bucket: str, path_in_bucket: str) -> str:
+    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path_in_bucket}"
+
+
+def _upload_resumable(bucket: str, path_in_bucket: str, data: bytes, content_type: str):
+    """Upload a large render with Supabase Storage's TUS endpoint."""
+    try:
+        from tusclient import client as tus_client
+
+        client = tus_client.TusClient(
+            f"{STORAGE_URL}/storage/v1/upload/resumable",
+            headers={
+                "Authorization": f"Bearer {SERVICE_KEY}",
+                "apikey": SERVICE_KEY,
+                "x-upsert": "true",
+            },
+        )
+        uploader = client.uploader(
+            file_stream=io.BytesIO(data),
+            chunk_size=TUS_CHUNK_SIZE,
+            metadata={
+                "bucketName": bucket,
+                "objectName": path_in_bucket,
+                "contentType": content_type,
+                "cacheControl": "3600",
+            },
+        )
+        uploader.upload()
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Resumable video upload failed: {exc}") from exc
+
+
 def _upload(bucket: str, path_in_bucket: str, data: bytes, content_type: str) -> str:
     size_mb = len(data) / (1024 * 1024)
     if size_mb > MAX_STANDARD_UPLOAD_MB:
-        raise RuntimeError(
-            f"Video is {size_mb:.1f} MB, above the configured standard upload limit "
-            f"of {MAX_STANDARD_UPLOAD_MB} MB. Lower VIDEO_WIDTH/VIDEO_HEIGHT/VIDEO_FPS, "
-            "raise VIDEO_CRF, or switch the worker to Supabase resumable uploads."
+        print(
+            f"[video] {size_mb:.1f}MB exceeds the {MAX_STANDARD_UPLOAD_MB}MB "
+            "standard-upload threshold; switching to Supabase TUS"
         )
+        _upload_resumable(bucket, path_in_bucket, data, content_type)
+        return _public_url(bucket, path_in_bucket)
 
     r = requests.post(
         f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path_in_bucket}",
@@ -162,7 +200,7 @@ def _upload(bucket: str, path_in_bucket: str, data: bytes, content_type: str) ->
                 "Use smaller video render settings or configure resumable uploads for long videos."
             )
         raise RuntimeError(f"Upload failed {r.status_code}: {r.text}")
-    return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path_in_bucket}"
+    return _public_url(bucket, path_in_bucket)
 
 
 def _run_ffmpeg(cmd: list[str], asset_id: str, duration_s: float, pipeline: str = "episode", job_id: str | None = None, album_id: str | None = None):
@@ -197,6 +235,67 @@ def _run_ffmpeg(cmd: list[str], asset_id: str, duration_s: float, pipeline: str 
     code = proc.wait()
     if code != 0:
         raise RuntimeError(f"ffmpeg failed with exit code {code}: {' | '.join(tail[-8:])}")
+
+
+def _render_motion_post(job_id: str, user_id: str, source_video_url: str, audio_url: str,
+                        audio_start_seconds: float, requested_duration: float,
+                        storage_bucket: str, storage_path: str):
+    """Mix an owned Rekkrd audio excerpt under an xAI-generated vertical clip."""
+    try:
+        _patch("motion_post_jobs", job_id, {
+            "status": "mixing", "progress": 90, "error_message": None, "updated_at": _now(),
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            source = os.path.join(tmp, "source.mp4")
+            audio = os.path.join(tmp, "music.mp3")
+            out = os.path.join(tmp, "motion-post.mp4")
+            _download(source_video_url, source)
+            _download(audio_url, audio)
+            source_duration = _duration(source)
+            duration = min(source_duration or requested_duration, requested_duration or source_duration)
+            if duration <= 0:
+                raise RuntimeError("Generated clip duration could not be determined")
+            fade_out_start = max(0.0, duration - 0.65)
+            cmd = [
+                "ffmpeg", "-y", "-nostats", "-progress", "pipe:1",
+                "-i", source,
+                "-stream_loop", "-1", "-ss", str(max(0.0, audio_start_seconds)), "-i", audio,
+                "-filter_complex",
+                (
+                    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+                    "crop=1080:1920,setsar=1,fps=30,format=yuv420p[v];"
+                    f"[1:a]atrim=duration={duration:.3f},asetpts=PTS-STARTPTS,volume=0.90,"
+                    f"afade=t=in:st=0:d=0.35,afade=t=out:st={fade_out_start:.3f}:d=0.65[a]"
+                ),
+                "-map", "[v]", "-map", "[a]", "-t", f"{duration:.3f}",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out,
+            ]
+            # The generic heartbeat helper targets Episode/Studio asset tables,
+            # so Motion Posts track coarse progress directly on their job row.
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                tail = " | ".join((proc.stderr or "").splitlines()[-8:])
+                raise RuntimeError(f"ffmpeg motion mix failed: {tail}")
+            _patch("motion_post_jobs", job_id, {"progress": 97, "updated_at": _now()})
+            with open(out, "rb") as f:
+                data = f.read()
+            url = _upload(storage_bucket, storage_path, data, "video/mp4")
+        _patch("motion_post_jobs", job_id, {
+            "status": "ready", "progress": 100, "output_bucket": storage_bucket,
+            "output_path": storage_path, "output_url": url, "error_message": None,
+            "completed_at": _now(), "updated_at": _now(),
+        })
+        print(f"[motion-post] job {job_id} ready -> {url}")
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        try:
+            _patch("motion_post_jobs", job_id, {
+                "status": "failed", "progress": 100,
+                "error_message": str(exc)[:500], "updated_at": _now(),
+            })
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: str | None, motion: str = "ken_burns",
@@ -324,7 +423,7 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
             metadata_column = "metadata_json" if pipeline == "studio" else "metadata"
             existing = _get_row(table, asset_id, metadata_column) or {}
             metadata = existing.get(metadata_column) if isinstance(existing.get(metadata_column), dict) else {}
-            _patch(table, asset_id, {"status": "failed", "error_message": str(e)[:500], metadata_column: {**metadata, "worker": {"stage": "failed", "message": str(e)[:500], "heartbeat_at": _now()}}, "updated_at": _now()})
+            _patch(table, asset_id, {"status": "failed", "error_message": str(e)[:500], metadata_column: {**metadata, "worker": {"stage": "failed", "message": str(e)[:500], "heartbeat_at": _now(), "settings": {"width": VIDEO_WIDTH, "height": VIDEO_HEIGHT, "fps": VIDEO_FPS, "crf": VIDEO_CRF, "audio_bitrate": VIDEO_AUDIO_BITRATE, "render_profile": RENDER_PROFILE}}}, "updated_at": _now()})
             if pipeline == "studio":
                 if job_id:
                     _patch("studio_jobs", job_id, {"status": "failed", "error_message": str(e)[:500], "completed_at": _now(), "updated_at": _now()})
@@ -337,8 +436,33 @@ def _render(asset_id: str, project_id: str, master_audio_url: str, cover_url: st
 def video():
     b = request.get_json(force=True, silent=True) or {}
     pipeline = b.get("pipeline", "episode")
-    if pipeline not in ("episode", "studio"):
-        return jsonify({"error": "pipeline must be episode or studio"}), 400
+    if pipeline not in ("episode", "studio", "motion_post"):
+        return jsonify({"error": "pipeline must be episode, studio, or motion_post"}), 400
+    if pipeline == "motion_post":
+        required = ("job_id", "user_id", "source_video_url", "audio_url", "storage_bucket", "storage_path")
+        if any(not b.get(field) for field in required):
+            return jsonify({"error": f"Motion Post jobs require {', '.join(required)}"}), 400
+        expected_prefix = f"{b['user_id']}/{b['job_id']}/"
+        if b.get("storage_bucket") != "motion-posts" or not str(b.get("storage_path", "")).startswith(expected_prefix):
+            return jsonify({"error": "Motion Post output path is invalid"}), 400
+        job = _get_row("motion_post_jobs", b["job_id"], "id,created_by,status,output_bucket,output_path")
+        valid = bool(
+            job and job.get("created_by") == b["user_id"]
+            and job.get("status") == "mixing"
+            and job.get("output_bucket") == b.get("storage_bucket")
+            and job.get("output_path") == b.get("storage_path")
+        )
+        if not valid:
+            return jsonify({"error": "Motion Post job linkage could not be verified"}), 409
+        threading.Thread(
+            target=_render_motion_post,
+            args=(
+                b["job_id"], b["user_id"], b["source_video_url"], b["audio_url"],
+                float(b.get("audio_start_seconds") or 0), float(b.get("duration_seconds") or 7),
+                b["storage_bucket"], b["storage_path"],
+            ), daemon=True,
+        ).start()
+        return jsonify({"accepted": True, "job_id": b["job_id"]}), 202
     project_id = b.get("album_id") if pipeline == "studio" else b.get("episode_id")
     if not b.get("asset_id") or not project_id or not b.get("master_audio_url"):
         return jsonify({"error": "asset_id, project id, and master_audio_url required"}), 400

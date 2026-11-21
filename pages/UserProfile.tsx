@@ -108,13 +108,13 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
   return (
     <div className="max-w-3xl mx-auto space-y-8">
       {/* Header */}
-      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+      <div className="bg-white p-8 rounded-sm border border-slate-200 ">
         <div className="flex items-center space-x-6">
           {/* Avatar */}
           <div className="relative group">
             <div
               onClick={handleAvatarClick}
-              className="w-28 h-28 rounded-[2rem] bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center cursor-pointer overflow-hidden border-4 border-white shadow-lg transition-transform hover:scale-105"
+              className="w-28 h-28 rounded-sm bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center cursor-pointer overflow-hidden border-4 border-white  transition-transform hover:scale-105"
             >
               {uploading ? (
                 <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
@@ -133,7 +133,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
             <button
               onClick={handleAvatarClick}
               disabled={uploading}
-              className="absolute -bottom-2 -right-2 p-2 bg-emerald-600 text-white rounded-xl shadow-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              className="absolute -bottom-2 -right-2 p-2 bg-emerald-600 text-white rounded-sm  hover:bg-emerald-700 transition-colors disabled:opacity-50"
             >
               <Camera size={16} />
             </button>
@@ -153,7 +153,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
             </h1>
             <p className="text-slate-500 font-mono text-sm">{profile.email}</p>
             {profile.role && (
-              <div className="mt-3 inline-flex items-center space-x-2 px-4 py-2 bg-indigo-50 rounded-xl">
+              <div className="mt-3 inline-flex items-center space-x-2 px-4 py-2 bg-indigo-50 rounded-sm">
                 <Shield size={14} className="text-indigo-600" />
                 <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">
                   {ROLE_LABELS[profile.role] || profile.role}
@@ -167,7 +167,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
       {/* Message */}
       {message && (
         <div
-          className={`p-4 rounded-2xl flex items-center space-x-3 ${
+          className={`p-4 rounded-sm flex items-center space-x-3 ${
             message.type === 'success'
               ? 'bg-emerald-50 border border-emerald-200'
               : 'bg-red-50 border border-red-200'
@@ -189,8 +189,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
       )}
 
       {/* Profile Form */}
-      <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
-        <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">
+      <div className="bg-white p-8 rounded-sm border border-slate-200  space-y-6">
+        <h2 className="text-[10px] font-black text-slate-400   mb-6">
           Profile Information
         </h2>
 
@@ -207,7 +207,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
                 name="first_name"
                 value={formData.first_name}
                 onChange={handleInputChange}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
                 placeholder="Enter first name"
               />
             </div>
@@ -225,7 +225,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
                 name="last_name"
                 value={formData.last_name}
                 onChange={handleInputChange}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
                 placeholder="Enter last name"
               />
             </div>
@@ -242,7 +242,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
                 type="email"
                 value={profile.email}
                 disabled
-                className="w-full pl-12 pr-4 py-4 bg-slate-100 border border-slate-200 rounded-2xl font-bold text-sm text-slate-500 cursor-not-allowed"
+                className="w-full pl-12 pr-4 py-4 bg-slate-100 border border-slate-200 rounded-sm font-bold text-sm text-slate-500 cursor-not-allowed"
               />
             </div>
             <p className="text-[10px] text-slate-400 mt-1 ml-1">Email cannot be changed</p>
@@ -260,7 +260,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
                 name="phone"
                 value={formData.phone}
                 onChange={handleInputChange}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
                 placeholder="+1 (555) 123-4567"
               />
             </div>
@@ -277,7 +277,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
             value={formData.bio}
             onChange={handleInputChange}
             rows={4}
-            className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm resize-none"
+            className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm resize-none"
             placeholder="Tell us a bit about yourself..."
           />
         </div>
@@ -287,7 +287,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center space-x-2 px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-200"
+            className="flex items-center space-x-2 px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm font-black text-sm uppercase tracking-widest transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -300,7 +300,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ profile, onProfileUpdate }) =
       </div>
 
       {/* Account Info */}
-      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+      <div className="bg-slate-50 p-6 rounded-sm border border-slate-200">
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
           Account ID
         </p>

@@ -1,0 +1,9 @@
+{
+  "name": "trellis-promo-music-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node run.mjs", "once": "node run.mjs --once" },
+  "dependencies": { "@supabase/supabase-js": "2.90.1" },
+  "engines": { "node": ">=22.12.0" }
+}

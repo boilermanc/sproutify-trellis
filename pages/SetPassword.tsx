@@ -43,18 +43,18 @@ const SetPassword: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl p-10">
+        <div className="bg-white border border-slate-200 p-10">
           <div className="flex items-center justify-center mb-8">
-            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
+            <div className="w-12 h-12 border border-emerald-200 bg-emerald-50 flex items-center justify-center">
               <Sprout className="w-8 h-8 text-emerald-600" />
             </div>
           </div>
 
           {done ? (
             <div className="text-center">
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className="w-12 h-12 border border-emerald-200 bg-emerald-50 flex items-center justify-center mx-auto mb-6">
                 <CheckCircle2 className="w-8 h-8 text-emerald-600" />
               </div>
               <h1 className="text-2xl font-black text-slate-800 mb-2">You're all set</h1>
@@ -71,14 +71,14 @@ const SetPassword: React.FC = () => {
               </p>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                <div className="bg-red-50 border border-red-200 p-4 mb-6">
                   <p className="text-red-700 text-sm font-medium">{error}</p>
                 </div>
               )}
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                  <label className="block font-mono text-xs font-bold text-slate-500 tracking-wide mb-2">
                     New Password
                   </label>
                   <div className="relative">
@@ -87,7 +87,7 @@ const SetPassword: React.FC = () => {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
+                      className="w-full min-h-11 pl-11 pr-4 py-3 bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
                       placeholder="At least 8 characters"
                       autoComplete="new-password"
                       required
@@ -96,7 +96,7 @@ const SetPassword: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                  <label className="block font-mono text-xs font-bold text-slate-500 tracking-wide mb-2">
                     Confirm Password
                   </label>
                   <div className="relative">
@@ -105,7 +105,7 @@ const SetPassword: React.FC = () => {
                       type="password"
                       value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
-                      className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
+                      className="w-full min-h-11 pl-11 pr-4 py-3 bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-medium text-sm"
                       placeholder="Re-enter your password"
                       autoComplete="new-password"
                       required
@@ -116,7 +116,7 @@ const SetPassword: React.FC = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl font-black text-sm uppercase tracking-widest transition flex items-center justify-center"
+                  className="w-full min-h-11 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-sm transition flex items-center justify-center"
                 >
                   {loading ? (
                     <>

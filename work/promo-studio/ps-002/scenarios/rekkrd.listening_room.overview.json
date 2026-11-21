@@ -1,0 +1,23 @@
+{
+  "key": "rekkrd.listening_room.overview",
+  "version": 1,
+  "base_url": null,
+  "auth_profile_key": null,
+  "fixture_identity": null,
+  "viewport": { "width": 1440, "height": 2560 },
+  "setup": [],
+  "steps": [],
+  "assertions": [],
+  "masks": [],
+  "output": { "kind": "video", "fps": 30 },
+  "cleanup": [],
+  "status": "blocked_missing_rekkrd_environment",
+  "blockers": [
+    "approved capture base URL",
+    "fixture login method and encrypted auth profile",
+    "synthetic fixture data owner",
+    "verified route and visible assertion",
+    "stable data-testid selectors",
+    "PII masking selectors"
+  ]
+}

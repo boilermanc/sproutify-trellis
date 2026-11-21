@@ -29,7 +29,7 @@ export interface WindowTotals {
 }
 
 // ── System health ─────────────────────────────────────────────────
-export type SystemStatus = 'ok' | 'down' | 'error' | 'stale';
+export type SystemStatus = 'ok' | 'down' | 'error' | 'stale' | 'warning' | 'unknown' | 'optional';
 
 export interface SystemRow {
   key: string;
@@ -37,6 +37,17 @@ export interface SystemRow {
   status: SystemStatus;
   code: string;          // 'OK' | '404' | 'STALE' | 'ERROR'
   detail: string;
+  checked_at?: string;
+}
+
+export interface SystemHealthReport {
+  version: number;
+  checked_at: string;
+  complete: boolean;
+  systems: SystemRow[];
+  webhooks: WebhookHealth[];
+  spokes: Array<{ id: string; name: string; status: 'ok' | 'error' | 'unknown'; detail: string; checked_at: string }>;
+  email: { sent: number; bounced: number; complained: number; since: string; until: string } | null;
 }
 
 export interface WebhookHealth {
@@ -46,6 +57,7 @@ export interface WebhookHealth {
   http_code: number | null;
   detail: string;
   checked_at: string;
+  critical?: boolean;
 }
 
 // ── Today timeline ────────────────────────────────────────────────
@@ -101,6 +113,39 @@ export interface QueueOutcome {
   status: 'success' | 'error';
   message: string;
   at: string;
+}
+
+// ── Weekly business actions ─────────────────────────────────────────
+export type WeeklyActionKind = 'campaign_draft' | 'operational_review' | 'business_metric_review';
+export type WeeklyActionStateStatus = 'active' | 'completed' | 'dismissed' | 'deferred';
+
+export interface WeeklyActionCandidate {
+  key: string;
+  kind: WeeklyActionKind;
+  title: string;
+  why: string;
+  evidence: string;
+  branchSlugs: string[];
+  ownerId: string | null;
+  ownerName: string;
+  eligibleOwnerIds: string[];
+  effortMinutes: number;
+  preparedStep: string;
+  primaryLabel: string;
+  destination: ViewState;
+  destinationId?: string;
+  resultCheck: string;
+  sourceUpdatedAt: string;
+  priority: number;
+}
+
+export interface WeeklyActionState {
+  actionKey: string;
+  status: WeeklyActionStateStatus;
+  ownerId: string | null;
+  deferredUntil: string | null;
+  sourceUpdatedAt: string;
+  completedAt: string | null;
 }
 
 // ── Branch Board ──────────────────────────────────────────────────

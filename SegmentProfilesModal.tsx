@@ -148,7 +148,7 @@ export const SegmentProfilesModal: React.FC<SegmentProfilesModalProps> = ({
       />
 
       {/* Modal */}
-      <div className="fixed inset-4 md:inset-10 lg:inset-16 bg-white rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden">
+      <div className="fixed inset-4 md:inset-10 lg:inset-16 bg-white rounded-none shadow-none z-50 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">

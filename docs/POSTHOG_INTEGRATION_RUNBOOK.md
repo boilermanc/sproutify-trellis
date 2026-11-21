@@ -61,12 +61,121 @@ For B7, update `YOUR_HUB_PROJECT`, create an **HTTP Header Auth** credential nam
   "event": "{event.event}",
   "distinct_id": "{event.distinct_id}",
   "timestamp": "{event.timestamp}",
-  "email": "{person.properties.email}",
   "properties": {event.properties}
 }
 ```
 
 Trellis always drops keys resembling journal, prayer, mood, emotion, faith, free text, URLs, contact fields, or secrets—even if they are accidentally added to the connection allowlist.
+
+### Rejoice canonical transition
+
+Rejoice accepts its canonical guest-first lifecycle, marketing, and monetization UX events. It never accepts prayer, journal, devotion content, raw feelings, names, email, URLs, referrers, promo text, or campaign URLs. `custom_feeling` is accepted only as a boolean classification.
+
+Unlike older spoke templates, the Rejoice destination must omit `email` and the
+entire PostHog `person` object. The Hub also forces Rejoice email to `null` at
+ingestion as a defense in depth.
+
+For 14 days, query `user_signed_up` alongside `Application Installed` and `onboarding_completed` alongside `$identify`. Switch reporting to canonical signals when coverage is at least 95%, retain legacy diagnostics for another 30 days, then remove the proxy mapping. Completion and activation can precede signup, so all lifecycle stages are independent counts rather than a strict ordered funnel.
+
+RevenueCat remains revenue truth. Rejoice's `purchase_started` and `plan_selected` describe paywall UX only. Display calendar periods in `America/New_York`; compute 24-hour and 168-hour activation windows as elapsed UTC time. Filter internal UUIDs, development, previews, and TestFlight from production dashboards.
+
+Feeling-cohort data may enter Trellis only from Rejoice's protected aggregate view: rolling 30/90-day buckets, minimum group size 10, and no UUIDs, study IDs, custom text, or devotion content.
+
+## Connect Rekkrd
+
+Connected and verified on 2026-09-12. Hub connection ID:
+`6397b187-6aab-44c7-8274-99ba0d122ad8`. The first live 30-day snapshot at
+15:06:47 UTC returned 6 daily/weekly/monthly active users and 5 sessions, with no
+connection error. Reports → Product was also verified with scope set to Rekkrd.
+The encrypted credential is restricted to Query Read for this project.
+Realtime webhook forwarding is not enabled.
+
+Rekkrd uses US Cloud (`https://us.posthog.com`), project **605974**, and the existing
+`rekkrd` Trellis branch. Its public `phc_` SDK token is only for event capture.
+Trellis queries require a personal API key restricted to the Rekkrd project with
+**Query Read** permission ([PostHog query prerequisites](https://posthog.com/docs/api/queries)).
+Enter that key directly in the connection form; do not commit it to source.
+
+1. Open **Settings → Integrations → PostHog Product Analytics → Connect branch**.
+2. Select **Rekkrd**. The form supplies the shipped product event/property defaults.
+3. Choose **US Cloud**, enter project **605974** and the personal API key, then **Test and save**.
+4. Open **Reports → Product Analytics**, choose Rekkrd, and refresh the 30-day report.
+
+The preset accepts `signup_completed`, `first_record_added`, `discogs_connected`,
+`discogs_import_completed`, `collection_value_viewed`, and `third_spin_logged`.
+Only `platform`, `surface`, `placement`, and numeric `value` are approved properties.
+`signup_completed` counts as a signup; `first_record_added` counts as activation.
+The remaining events are feature milestones. Rekkrd does not currently emit a
+separate onboarding-completion event, so that stage remains zero until instrumented.
+
+Start with aggregate reports. Rekkrd identifies PostHog users by Supabase UUID and
+does not send email. The current webhook ingester matches Hub profiles by email,
+so these events cannot yet drive email-matched profile automation. Do not add
+emails or copy profiles into the Hub merely to enable analytics.
+
+### Maintaining branch mappings
+
+Before redeploying, compare the live functions with the repository. The live
+Rejoice analytics function previously used an install/identity proxy absent from
+local source. `posthogLifecycleForBranch()` now preserves that proxy only for
+Rejoice, including its Installed/Identified labels. Other branches use canonical
+lifecycle events, including Rekkrd's aliases. Contract tests cover this separation.
+
+## Ask Sage about connected properties
+
+Sage discovers PostHog connections on each product-analytics question. Existing
+and future connected branches use the same protected `posthog-connections` and
+`posthog-analytics` endpoints as Reports. No new credential, database migration,
+or Edge Function deployment is required for the Sage reader. The frontend change
+uses the normal Trellis build and deployment process.
+
+Try:
+
+- “How are all PostHog properties doing?”
+- “Compare Rekkrd and Rejoice retention.”
+- “Show Rekkrd usage over 7 days.”
+- “What about Rejoice?”
+- “Which features are being used in Rekkrd?”
+
+Questions use the selected branches unless they explicitly name branches/projects
+or request all properties. Follow-ups remember the last product scope, topic, and
+window. Changing the branch selector or asking an unrelated question clears that
+context. An empty selection never silently expands to all properties.
+
+Each answer identifies its project and snapshot timestamp, marks stale data, and
+keeps successful branches visible when another query fails. Supported windows are
+rolling 7, 30, and 90 days. Daily/weekly/monthly active-user metrics always use
+1/7/30 days, independently of the selected window. Projects are not deduplicated
+across branches.
+
+Interpretation safeguards:
+
+- Lifecycle stages count distinct IDs independently; their ratios do not prove a
+  sequenced signup-to-activation conversion funnel. Rejoice temporarily counts
+  canonical and legacy proxy signals together during reconciliation.
+- Repeat activity measures the overlap between adjacent 7- or 30-day periods,
+  rather than exact day-7/day-30 signup-cohort retention. Empty previous periods
+  mean insufficient history. `users.returning` is not used as a repeat-user count.
+- `users.new` counts signup/install events, not first-seen visitors.
+- Missing fields are unavailable, and an empty feature list does not prove that
+  nobody used those features. Only approved milestone names are displayed.
+- Custom date ranges, historical comparisons, arbitrary property breakdowns,
+  individual-user details, and revenue attribution need a separate PostHog report.
+
+The deterministic reader does not send analytics or connection metadata to an
+LLM and does not store raw events or profiles. Sage's existing email and ATL event
+readers remain in place. The launcher is also available on narrow screens.
+
+Validate with `npm run test:sage`, `npm run test:posthog`, `npx tsc --noEmit`, and
+`npm run build`. In the signed-in app, open Sage and ask the first three questions
+above, then compare the answers with Reports → Product using the same window.
+
+Sage verification on 2026-09-12: 24 Sage tests and 9 PostHog contract tests passed,
+with no TypeScript errors. A reader smoke test against the Hub's live 30-day
+aggregate snapshots returned Rejoice's 68 monthly active IDs / 79 sessions and
+Rekkrd's 6 / 5, preserved Rejoice's lifecycle proxy labels, and correctly reported
+insufficient prior-period history for Rekkrd retention. The rendered Sage chat
+still needs UI verification: the signed-in in-app browser automation timed out.
 
 ## Verification
 

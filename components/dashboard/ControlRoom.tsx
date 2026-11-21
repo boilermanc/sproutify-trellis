@@ -25,6 +25,7 @@ interface ControlRoomProps {
   totals: WindowTotals;
   window: TimeWindow;
   isLoading: boolean;
+  healthLoading?: boolean;
   onViewChange?: (view: ViewState) => void;
   onSelectBranch: (slug: string) => void;
   onSeeAllQueue: () => void; // switches to the Morning Standup tab
@@ -50,6 +51,19 @@ const SYSTEM_DOT: Record<SystemStatus, string> = {
   stale: '#F59E0B',
   down: '#EF4444',
   error: '#EF4444',
+  warning: '#F59E0B',
+  unknown: '#64748B',
+  optional: '#94A3B8',
+};
+
+const SYSTEM_STYLE: Record<SystemStatus, { label: string; className: string }> = {
+  ok: { label: 'Check passed', className: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
+  down: { label: 'Needs repair', className: 'bg-red-50 border-red-200 text-red-800' },
+  error: { label: 'Check failed', className: 'bg-red-50 border-red-200 text-red-800' },
+  warning: { label: 'Needs review', className: 'bg-amber-50 border-amber-200 text-amber-800' },
+  stale: { label: 'Out of date', className: 'bg-amber-50 border-amber-200 text-amber-800' },
+  unknown: { label: 'Not verified', className: 'bg-slate-50 border-slate-200 text-slate-700' },
+  optional: { label: 'Optional', className: 'bg-slate-50 border-slate-200 text-slate-600' },
 };
 
 const STATE_CHIP: Record<TimelineState, { dot: string; bg: string; text: string; label: string }> = {
@@ -114,9 +128,9 @@ function timeAgoShort(iso: string): string {
 // ── Branch strip ──────────────────────────────────────────────────
 
 const BranchStripSkeleton: React.FC = () => (
-  <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
     {Array.from({ length: 5 }).map((_, i) => (
-      <div key={i} className="bg-white border border-[#E5E7EB] rounded-[10px] p-[14px] flex flex-col gap-[9px]">
+      <div key={i} className="bg-white border border-[#E5E7EB] rounded-sm p-[14px] flex flex-col gap-[9px]">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 ${SKELETON}`} />
           <div className={`h-3 w-16 ${SKELETON}`} />
@@ -129,14 +143,14 @@ const BranchStripSkeleton: React.FC = () => (
 );
 
 const BranchEmptyState: React.FC<{ onConnectSpoke: () => void }> = ({ onConnectSpoke }) => (
-  <div className="bg-white border border-[#E5E7EB] rounded-[10px] p-8 flex flex-col items-center justify-center text-center gap-2">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-8 flex flex-col items-center justify-center text-center gap-2">
     <Database size={28} className="text-[#CBD5E1]" />
     <p className="text-[14px] font-bold text-[#475569]">No branches connected yet</p>
     <p className="text-[12px] text-[#94A3B8]">Connect a spoke to see profiles, orders and revenue here.</p>
     <button
       type="button"
       onClick={onConnectSpoke}
-      className={`mt-2 bg-[#0B4A6B] hover:bg-[#093a55] transition-colors duration-150 text-white text-[12px] font-semibold px-4 py-2 rounded-[8px] ${FOCUS_RING}`}
+      className={`mt-2 bg-[#0B4A6B] hover:bg-[#093a55] transition-colors duration-150 text-white text-[12px] font-semibold px-4 py-2 rounded-sm ${FOCUS_RING}`}
     >
       Connect your first spoke
     </button>
@@ -151,11 +165,11 @@ const BranchTile: React.FC<{ branch: BranchCardData; onSelectBranch: (slug: stri
       type="button"
       onClick={() => onSelectBranch(branch.slug)}
       title={branch.healthLabel}
-      className={`text-left w-full bg-white border border-[#E5E7EB] hover:border-[#CBD5E1] transition-colors duration-150 rounded-[10px] p-[14px] flex flex-col gap-[9px] ${FOCUS_RING}`}
+      className={`flex min-h-[124px] w-full flex-col gap-[9px] rounded-sm border border-[#E5E7EB] bg-white p-3 text-left transition-colors duration-150 hover:border-[#CBD5E1] sm:min-h-0 sm:p-[14px] ${FOCUS_RING}`}
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className="w-2 h-2 rounded-[2px] flex-shrink-0" style={{ background: branch.color }} />
-        <span className="text-[12px] font-bold text-[#111827] truncate min-w-0">{branch.name}</span>
+        <span className="line-clamp-2 min-w-0 text-[12px] font-bold leading-[1.3] text-[#111827] sm:truncate">{branch.name}</span>
         <span
           className="w-[7px] h-[7px] rounded-full flex-shrink-0 ml-auto"
           style={{ background: HEALTH_DOT[branch.health] }}
@@ -164,7 +178,7 @@ const BranchTile: React.FC<{ branch: BranchCardData; onSelectBranch: (slug: stri
       <div className="font-mono text-[22px] font-semibold text-[#111827] tracking-[-0.03em]">
         {formatCurrency(branch.revenue)}
       </div>
-      <div className="flex items-baseline gap-1 text-[11px]">
+      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-[11px]">
         <span className="text-[#6B7280]">{branch.profiles.toLocaleString()} profiles</span>
         {profilesDeltaText && (
           <span className={`font-semibold ${profilesDeltaPositive ? 'text-[#059669]' : 'text-[#DC2626]'}`}>
@@ -187,7 +201,7 @@ const BranchStrip: React.FC<{
   if (branchCards.length === 0) return <BranchEmptyState onConnectSpoke={onConnectSpoke} />;
   const sorted = [...branchCards].sort((a, b) => b.revenue - a.revenue);
   return (
-    <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
       {sorted.map((branch) => (
         <BranchTile key={branch.slug} branch={branch} onSelectBranch={onSelectBranch} />
       ))}
@@ -198,7 +212,7 @@ const BranchStrip: React.FC<{
 // ── Today timeline ────────────────────────────────────────────────
 
 const TimelineSkeleton: React.FC = () => (
-  <div className="flex-1 bg-white border border-[#E5E7EB] rounded-xl p-[22px] flex flex-col gap-4">
+  <div className="flex-1 bg-white border border-[#E5E7EB] rounded-sm p-[22px] flex flex-col gap-4">
     <div className="flex items-center justify-between">
       <div className={`h-4 w-56 ${SKELETON}`} />
       <div className={`h-4 w-24 ${SKELETON}`} />
@@ -242,7 +256,7 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
 }) => {
   const chip = STATE_CHIP[item.state];
   return (
-    <div className="grid grid-cols-[52px_15px_1fr_auto] items-stretch">
+    <div className="grid grid-cols-[42px_12px_minmax(0,1fr)] items-stretch sm:grid-cols-[52px_15px_minmax(0,1fr)_auto]">
       <div className="flex items-center justify-end pr-1">
         <span className="font-mono text-[11px] text-[#9CA3AF]">{formatTime(item.at)}</span>
       </div>
@@ -254,32 +268,51 @@ const TimelineRow: React.FC<{ item: TimelineItem; isFirst: boolean; isLast: bool
           style={{ background: chip.dot }}
         />
       </div>
-      <div className="flex items-center gap-3 py-[9px] min-w-0 pr-3">
-        <span className="w-[7px] h-[7px] rounded-[2px] flex-shrink-0" style={{ background: item.branchColor }} />
-        <span className="text-[11px] font-semibold text-[#6B7280] w-[100px] flex-shrink-0 truncate">
-          {item.branchName}
-        </span>
-        {item.sourceTag && (
-          <span
-            className={`font-mono text-[9px] font-bold tracking-[0.06em] uppercase px-1.5 py-[2px] rounded-[4px] flex-shrink-0 ${
-              item.sourceTag === 'trellis'
-                ? 'bg-[#ECFDF5] text-[#047857]'
-                : 'bg-[#F1F5F9] text-[#64748B]'
-            }`}
-            title={
-              item.sourceTag === 'trellis'
-                ? 'Dispatched by Trellis'
-                : 'Transactional email from a spoke (shares the Resend account)'
-            }
-          >
-            {item.sourceTag === 'trellis' ? 'Trellis' : 'Resend'}
+      <div className="min-w-0 py-3 pr-1 sm:flex sm:items-center sm:gap-3 sm:py-[9px] sm:pr-3">
+        <div className="mb-1 flex min-w-0 items-center gap-1.5 sm:mb-0 sm:contents">
+          <span className="h-[7px] w-[7px] flex-shrink-0 rounded-[2px]" style={{ background: item.branchColor }} />
+          <span className="min-w-0 truncate text-[11px] font-semibold text-[#6B7280] sm:w-[100px] sm:flex-shrink-0">
+            {item.branchName}
           </span>
-        )}
-        <span className="text-[13px] text-[#1F2937] flex-1 min-w-0 truncate">{item.text}</span>
+          {item.sourceTag && (
+            <span
+              className={`flex-shrink-0 rounded-sm px-1.5 py-[2px] font-mono text-[9px] font-bold uppercase tracking-[0.06em] ${
+                item.sourceTag === 'trellis'
+                  ? 'bg-[#ECFDF5] text-[#047857]'
+                  : 'bg-[#F1F5F9] text-[#64748B]'
+              }`}
+              title={
+                item.sourceTag === 'trellis'
+                  ? 'Dispatched by Trellis'
+                  : 'Transactional email from a spoke (shares the Resend account)'
+              }
+            >
+              {item.sourceTag === 'trellis' ? 'Trellis' : 'Resend'}
+            </span>
+          )}
+        </div>
+        <p className="line-clamp-2 min-w-0 text-[12px] leading-[1.45] text-[#1F2937] sm:flex-1 sm:truncate sm:text-[13px]">{item.text}</p>
+        <div className="mt-1.5 flex items-center gap-2 sm:hidden">
+          <span
+            className="rounded-sm px-2 py-[3px] font-mono text-[9px] font-semibold uppercase tracking-[0.06em]"
+            style={{ background: chip.bg, color: chip.text }}
+          >
+            {chip.label}
+          </span>
+          {item.actionLabel && (
+            <button
+              type="button"
+              onClick={() => item.actionView && onViewChange?.(item.actionView)}
+              className={`text-[11px] font-bold text-[#1E698F] ${FOCUS_RING}`}
+            >
+              {item.actionLabel}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="hidden items-center gap-2 sm:flex">
         <span
-          className="font-mono text-[10px] font-semibold tracking-[0.06em] uppercase px-2 py-[3px] rounded-[5px] whitespace-nowrap"
+          className="font-mono text-[10px] font-semibold tracking-[0.06em] uppercase px-2 py-[3px] rounded-sm whitespace-nowrap"
           style={{ background: chip.bg, color: chip.text }}
         >
           {chip.label}
@@ -352,12 +385,12 @@ const TodayTimeline: React.FC<{
   };
 
   return (
-    <div className="flex-1 bg-white border border-[#E5E7EB] rounded-xl p-[22px] flex flex-col gap-4 min-w-0">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
+    <div className="flex min-w-0 flex-1 flex-col gap-4 rounded-sm border border-[#E5E7EB] bg-white p-3.5 sm:p-[22px]">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
           <h3 className="text-[15px] font-bold text-[#111827]">Today across the ecosystem</h3>
           {timeline.length > 0 && (
-            <span className="font-mono text-[11px] text-[#9CA3AF]">
+            <span className="font-mono text-[10px] text-[#9CA3AF] sm:text-[11px]">
               {eventsCount}
               {filtersActive ? ` / ${timeline.length}` : ''} EVENTS · {scheduledCount} SCHEDULED · {failedCount} FAILED
             </span>
@@ -376,14 +409,14 @@ const TodayTimeline: React.FC<{
       {timeline.length > 0 && (hasSourceTags || branchOptions.length > 1) && (
         <div className="flex items-center gap-2 flex-wrap">
           {hasSourceTags && (
-            <div className="inline-flex items-center rounded-[7px] bg-[#F1F5F9] p-[2px]">
+            <div className="inline-flex items-center rounded-sm bg-[#F1F5F9] p-[2px]">
               {SOURCE_FILTERS.map((f) => (
                 <button
                   key={f.id}
                   type="button"
                   onClick={() => setSource(f.id)}
-                  className={`text-[11px] font-semibold px-2.5 py-[3px] rounded-[5px] transition-colors ${FOCUS_RING} ${
-                    source === f.id ? 'bg-white text-[#0B4A6B] shadow-sm' : 'text-[#64748B] hover:text-[#334155]'
+                  className={`text-[11px] font-semibold px-2.5 py-[3px] rounded-sm transition-colors ${FOCUS_RING} ${
+                    source === f.id ? 'bg-white text-[#0B4A6B] ' : 'text-[#64748B] hover:text-[#334155]'
                   }`}
                 >
                   {f.label}
@@ -396,7 +429,7 @@ const TodayTimeline: React.FC<{
               value={branchSlug}
               onChange={(e) => setBranchSlug(e.target.value)}
               aria-label="Filter timeline by branch"
-              className={`text-[11px] font-semibold text-[#334155] bg-[#F1F5F9] rounded-[7px] px-2 py-[4px] ${FOCUS_RING}`}
+              className={`text-[11px] font-semibold text-[#334155] bg-[#F1F5F9] rounded-sm px-2 py-[4px] ${FOCUS_RING}`}
             >
               <option value="all">All branches</option>
               {branchOptions.map(([slug, name]) => (
@@ -451,7 +484,7 @@ const TodayTimeline: React.FC<{
 // ── System health ─────────────────────────────────────────────────
 
 const SystemHealthSkeleton: React.FC = () => (
-  <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-3">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-3">
     <div className={`h-4 w-32 ${SKELETON}`} />
     {Array.from({ length: 3 }).map((_, i) => (
       <div key={i} className="flex flex-col gap-1">
@@ -465,53 +498,64 @@ const SystemHealthSkeleton: React.FC = () => (
 const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ systems, isLoading }) => {
   if (isLoading) return <SystemHealthSkeleton />;
 
-  const healthy = systems.every((s) => s.status === 'ok');
-  const downCount = systems.filter((s) => s.status === 'down' || s.status === 'error').length;
-  const staleCount = systems.filter((s) => s.status === 'stale').length;
-  const summaryParts: string[] = [];
-  if (downCount) summaryParts.push(`${downCount} DOWN`);
-  if (staleCount) summaryParts.push(`${staleCount} STALE`);
+  const attention = systems.filter((s) => s.status !== 'ok' && s.status !== 'optional');
+  const passed = systems.filter((s) => s.status === 'ok');
+  const optional = systems.filter((s) => s.status === 'optional');
 
-  const cardBg = healthy ? 'bg-[#F0FDF4]' : 'bg-[#FEF2F2]';
-  const cardBorder = healthy ? 'border-[#A7F3D0]' : 'border-[#FECACA]';
-  const rowBorder = healthy ? 'border-[rgba(5,150,105,0.12)]' : 'border-[rgba(220,38,38,0.12)]';
+  const renderRow = (s: SystemRow) => (
+    <div key={s.key} className={`flex flex-col gap-1 rounded border p-3 ${SYSTEM_STYLE[s.status].className}`}>
+      <div className="flex flex-wrap items-center gap-2 min-w-0">
+        <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: SYSTEM_DOT[s.status] }} />
+        <span className="text-[12px] font-semibold flex-1 min-w-0 break-words">{s.name}</span>
+        <span className="text-[11px] font-semibold flex-shrink-0">{SYSTEM_STYLE[s.status].label}</span>
+      </div>
+      <div className="text-[11px] text-slate-600 leading-[1.5] pl-[14px]">{s.detail}</div>
+      {s.checked_at && <div className="text-[10px] text-slate-500 pl-[14px]">Checked {new Date(s.checked_at).toLocaleString()}</div>}
+    </div>
+  );
 
   return (
-    <div id="system-health" className={`${cardBg} border ${cardBorder} rounded-xl p-[18px] flex flex-col gap-3`}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {healthy ? (
-            <CheckCircle2 size={16} className="text-[#059669] flex-shrink-0" />
-          ) : (
-            <ShieldAlert size={16} className="text-[#DC2626] flex-shrink-0" />
-          )}
-          <span className={`text-[13px] font-bold truncate ${healthy ? 'text-[#065F46]' : 'text-[#991B1B]'}`}>
-            {healthy ? 'All systems healthy' : 'System health'}
-          </span>
-        </div>
-        {!healthy && summaryParts.length > 0 && (
-          <span className="font-mono text-[10px] text-[#B91C1C] flex-shrink-0">{summaryParts.join(' · ')}</span>
-        )}
+    <div id="system-health" className="bg-white border border-slate-200 rounded-sm p-[18px] flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-slate-800">
+        <ShieldAlert size={16} className="flex-shrink-0" />
+        <span className="text-[13px] font-bold">System health</span>
       </div>
-      <div className="flex flex-col">
-        {systems.map((s, i) => (
-          <div
-            key={s.key}
-            className={`flex flex-col gap-1 ${i < systems.length - 1 ? `pb-[10px] mb-[10px] border-b ${rowBorder}` : ''}`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: SYSTEM_DOT[s.status] }} />
-              <span className="font-mono text-[11px] text-[#1F2937] truncate flex-1 min-w-0">{s.name}</span>
-              <span
-                className="font-mono text-[10px] font-semibold flex-shrink-0"
-                style={{ color: SYSTEM_DOT[s.status] }}
-              >
-                {s.code}
-              </span>
-            </div>
-            <div className="text-[11px] text-[#6B7280] leading-[1.45] pl-[14px]">{s.detail}</div>
-          </div>
-        ))}
+      <p className="text-[12px] text-slate-700">
+        {systems.length === 0 ? 'No checks available yet.' : `${attention.length} need attention · ${passed.length} passed · ${optional.length} optional`}
+      </p>
+      <p className="text-[11px] text-slate-600 leading-relaxed">
+        Green: check passed. Red: repair needed. Amber: review needed, not necessarily an outage.
+        Gray: optional or not verified. Connection checks do not prove data is current or complete.
+        Email quality covers the last 7 days.
+      </p>
+      <div className="flex flex-col gap-2">{attention.map(renderRow)}</div>
+      {passed.length > 0 && (
+        <details className="rounded border border-emerald-200 bg-emerald-50 p-3">
+          <summary className={`cursor-pointer text-[12px] font-semibold text-emerald-800 rounded ${FOCUS_RING}`}>
+            {passed.length} checks passed — no action needed for these checks
+          </summary>
+          <div className="mt-3 flex flex-col gap-2">{passed.map(renderRow)}</div>
+        </details>
+      )}
+      {optional.length > 0 && (
+        <details className="rounded border border-slate-200 bg-slate-50 p-3">
+          <summary className={`cursor-pointer text-[12px] font-semibold text-slate-600 rounded ${FOCUS_RING}`}>
+            {optional.length} optional integrations — not counted as problems
+          </summary>
+          <div className="mt-3 flex flex-col gap-2">{optional.map(renderRow)}</div>
+        </details>
+      )}
+      <div className="border-t border-slate-200 pt-3 text-[11px] text-slate-600 leading-relaxed">
+        <a
+          href="https://github.com/boilermanc/sproutify-trellis/issues?q=is%3Aissue+is%3Aopen+label%3Atrellis-health"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-block text-[12px] font-semibold text-[#1E698F] underline rounded ${FOCUS_RING}`}
+        >
+          Open GitHub repair queue ↗
+        </a>
+        <p className="mt-1">The daily bot creates or updates issues for checks needing attention. It does not fix code automatically.</p>
+        <p className="mt-1">Ask Codex to fix an issue, review and deploy the fix, then the bot closes it after a complete recheck confirms recovery.</p>
       </div>
     </div>
   );
@@ -520,7 +564,7 @@ const SystemHealth: React.FC<{ systems: SystemRow[]; isLoading: boolean }> = ({ 
 // ── Queue · needs a person ────────────────────────────────────────
 
 const QueueSkeleton: React.FC = () => (
-  <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-[13px]">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-[13px]">
     <div className={`h-4 w-40 ${SKELETON}`} />
     {Array.from({ length: 4 }).map((_, i) => (
       <div key={i} className="flex items-center gap-3">
@@ -557,7 +601,7 @@ const QueuePanel: React.FC<{
     .slice(0, 4);
 
   return (
-    <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-[13px]">
+    <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-[13px]">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-bold text-[#111827]">Queue · needs a person</span>
         <button
@@ -574,7 +618,7 @@ const QueuePanel: React.FC<{
         cards.map(({ item, outcome }) => {
           if (outcome?.status === 'success') {
             return (
-              <div key={item.key} className="flex items-stretch gap-3 queue-complete-flash rounded-lg -mx-1 px-1">
+              <div key={item.key} className="flex items-stretch gap-3 queue-complete-flash rounded-sm -mx-1 px-1">
                 <span className="w-1 rounded-[99px] flex-shrink-0 bg-[#10B981]" />
                 <CheckCircle2 size={14} className="queue-check-pop flex-shrink-0 text-[#059669] mt-[1px]" />
                 <div className="flex-1 min-w-0 flex flex-col gap-[2px]">
@@ -632,7 +676,7 @@ const QueuePanel: React.FC<{
 // ── {7|30}-day totals ─────────────────────────────────────────────
 
 const TotalsSkeleton: React.FC = () => (
-  <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-3">
+  <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-3">
     <div className={`h-4 w-28 ${SKELETON}`} />
     {Array.from({ length: 4 }).map((_, i) => (
       <div key={i} className="flex items-center gap-2">
@@ -690,7 +734,7 @@ const TotalsPanel: React.FC<{ totals: WindowTotals; window: TimeWindow; isLoadin
   ];
 
   return (
-    <div className="bg-white border border-[#E5E7EB] rounded-xl p-[18px] flex flex-col gap-3">
+    <div className="bg-white border border-[#E5E7EB] rounded-sm p-[18px] flex flex-col gap-3">
       <span className="text-[13px] font-bold text-[#111827]">{timeWindow === '7d' ? '7-day totals' : '30-day totals'}</span>
       {rows.map((row) => (
         <div key={row.key} className="flex items-baseline gap-2">
@@ -719,6 +763,7 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
   totals,
   window: timeWindow,
   isLoading,
+  healthLoading,
   onViewChange,
   onSelectBranch,
   onSeeAllQueue,
@@ -729,8 +774,8 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
   onDismissOutcome,
 }) => {
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1fr_330px] gap-5 items-start">
-      <div className="flex flex-col gap-[18px] min-w-0">
+    <div className="grid grid-cols-1 items-start gap-3 sm:gap-5 xl:grid-cols-[1fr_330px]">
+      <div className="order-2 flex min-w-0 flex-col gap-3 sm:gap-[18px] xl:order-1">
         <BranchStrip
           branchCards={branchCards}
           isLoading={isLoading}
@@ -739,8 +784,10 @@ const ControlRoom: React.FC<ControlRoomProps> = ({
         />
         <TodayTimeline timeline={timeline} isLoading={isLoading} onViewChange={onViewChange} />
       </div>
-      <div className="flex flex-col gap-[14px]">
-        <SystemHealth systems={systems} isLoading={isLoading} />
+      <div className="order-1 flex flex-col gap-3 sm:gap-[14px] xl:order-2">
+        <div className="hidden sm:block">
+          <SystemHealth systems={systems} isLoading={healthLoading ?? isLoading} />
+        </div>
         <QueuePanel
           queue={queue}
           isLoading={isLoading}

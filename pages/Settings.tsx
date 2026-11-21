@@ -13,13 +13,14 @@ import {
 } from 'lucide-react';
 import { MOCK_INTEGRATIONS } from '../constants';
 import ConnectionsManager from '../ConnectionsManager';
+import { AI_CONFIGURED } from '../services/aiBackend';
 import TeamPanel from './TeamPanel';
 import PostHogConnectionsPanel from '../components/PostHogConnectionsPanel';
 import { testManusConnection, ManusTestResult } from '../services/manusService';
 
 interface SettingsProps {
   apiKeys: ApiKeyConfig;
-  onUpdateApiKeys: (keys: ApiKeyConfig) => void;
+  onUpdateApiKeys: (keys: ApiKeyConfig) => Promise<boolean>;
   spokeConnections: SpokeConnection[];
   onSpokeConnectionsChange: (connections: SpokeConnection[]) => void;
   branches: Branch[];
@@ -36,7 +37,7 @@ interface SettingsProps {
 
 const LLM_PROVIDERS: { id: LlmProvider; name: string; icon: any; color: string }[] = [
   { id: 'gemini', name: 'Google Gemini', icon: Sparkles, color: 'text-blue-500' },
-  { id: 'openai', name: 'OpenAI GPT-4o', icon: Zap, color: 'text-emerald-500' },
+  { id: 'openai', name: 'OpenAI', icon: Zap, color: 'text-emerald-500' },
   { id: 'anthropic', name: 'Anthropic Claude', icon: Cpu, color: 'text-amber-500' },
 ];
 
@@ -66,6 +67,7 @@ const Settings: React.FC<SettingsProps> = ({
   }, [initialTab]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [localApiKeys, setLocalApiKeys] = useState<ApiKeyConfig>(apiKeys);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [integrations, setIntegrations] = useState<Integration[]>(MOCK_INTEGRATIONS);
@@ -82,14 +84,25 @@ const Settings: React.FC<SettingsProps> = ({
   const [manusTesting, setManusTesting] = useState(false);
   const [manusTestResult, setManusTestResult] = useState<ManusTestResult | null>(null);
 
-  const handleSave = () => {
+  useEffect(() => { setLocalApiKeys(apiKeys); }, [apiKeys]);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => {
-      onUpdateApiKeys(localApiKeys);
-      setIsSaving(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    }, 1500);
+    setSaveSuccess(false);
+    setSaveError(false);
+    try {
+      const success = await onUpdateApiKeys(localApiKeys);
+      if (success) {
+        setLocalApiKeys(previous => ({ ...previous,
+          gemini_api_key: previous.gemini_api_key ? AI_CONFIGURED : '',
+          openai_api_key: previous.openai_api_key ? AI_CONFIGURED : '',
+          anthropic_api_key: previous.anthropic_api_key ? AI_CONFIGURED : '',
+        }));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else { setSaveError(true); }
+    } catch { setSaveError(true); }
+    finally { setIsSaving(false); }
   };
 
   const handleMetaSave = () => {
@@ -164,7 +177,7 @@ const Settings: React.FC<SettingsProps> = ({
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-              activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-800'
+              activeTab === tab.id ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
             <tab.icon size={14} />
@@ -173,7 +186,7 @@ const Settings: React.FC<SettingsProps> = ({
         ))}
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden min-h-[500px] flex flex-col">
+      <div className="bg-white border border-slate-200 overflow-hidden min-h-[500px] flex flex-col">
         <div className="flex-1 p-10">
           {activeTab === 'integrations' && (
             <div className="space-y-8 animate-in fade-in duration-300">
@@ -194,7 +207,7 @@ const Settings: React.FC<SettingsProps> = ({
               <PostHogConnectionsPanel branches={branches} />
 
               {/* Manus Deep Research */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 space-y-5">
+              <div className="border border-slate-200 p-6 space-y-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
@@ -351,7 +364,7 @@ const Settings: React.FC<SettingsProps> = ({
               {/* Add Integration Modal */}
               {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-2xl">
+                  <div className="bg-white border border-slate-200 p-8 w-full max-w-md shadow-xl">
                     <div className="flex justify-between items-center mb-6">
                       <h3 className="text-lg font-black text-slate-800 uppercase">Add Integration</h3>
                       <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-800">
@@ -469,7 +482,7 @@ const Settings: React.FC<SettingsProps> = ({
                         key={provider.id}
                         onClick={() => setLocalApiKeys({...localApiKeys, active_llm: provider.id})}
                         className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center text-center space-y-3 ${
-                          localApiKeys.active_llm === provider.id ? 'border-emerald-500 bg-emerald-50 shadow-lg' : 'border-slate-100 hover:bg-slate-50'
+                          localApiKeys.active_llm === provider.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'
                         }`}
                       >
                          <provider.icon size={24} className={provider.color} />
@@ -477,29 +490,51 @@ const Settings: React.FC<SettingsProps> = ({
                       </button>
                     ))}
                   </div>
+                  <p className="text-sm text-slate-500 mb-4">AI keys stay on the server after saving and cannot be revealed here. Leave a field blank to keep its saved key.</p>
                   <div className="space-y-4">
                     {[
                       { id: 'gemini_api_key', label: 'Gemini API Key', provider: 'gemini', icon: Sparkles, color: 'text-blue-500' },
                       { id: 'openai_api_key', label: 'OpenAI API Key', provider: 'openai', icon: Zap, color: 'text-emerald-500' },
                       { id: 'anthropic_api_key', label: 'Anthropic API Key', provider: 'anthropic', icon: Cpu, color: 'text-amber-500' },
                     ].map(cfg => (
-                      <div key={cfg.id} className={`relative transition-opacity ${localApiKeys.active_llm === cfg.provider ? 'opacity-100' : 'opacity-40'}`}>
+                      <div key={cfg.id} className="relative">
                          <label className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase mb-2 ml-1">
                            <cfg.icon size={14} className={cfg.color} />
                            {cfg.label} {localApiKeys.active_llm === cfg.provider && <span className="text-emerald-500">(Active)</span>}
+                           {(apiKeys as any)[cfg.id] === AI_CONFIGURED && <span className="text-emerald-700">Saved</span>}
                          </label>
                          <input
                             type={visibleKeys[cfg.id] ? 'text' : 'password'}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500"
-                            value={(localApiKeys as any)[cfg.id]}
+                            value={(localApiKeys as any)[cfg.id] === AI_CONFIGURED ? '' : (localApiKeys as any)[cfg.id]}
+                            aria-label={cfg.label}
+                            disabled={isSaving}
+                            autoComplete="new-password"
                             onChange={(e) => setLocalApiKeys({ ...localApiKeys, [cfg.id]: e.target.value })}
-                            placeholder={`Enter your ${cfg.label}...`}
+                            placeholder={(apiKeys as any)[cfg.id] === AI_CONFIGURED ? 'Configured securely — enter a replacement only' : `Enter your ${cfg.label}...`}
                          />
-                         <button onClick={() => setVisibleKeys(prev => ({...prev, [cfg.id]: !prev[cfg.id]}))} className="absolute right-4 top-10 text-slate-400 hover:text-slate-900 transition-colors">
+                         <button aria-label={`${visibleKeys[cfg.id] ? 'Hide' : 'Show'} new ${cfg.label}`} onClick={() => setVisibleKeys(prev => ({...prev, [cfg.id]: !prev[cfg.id]}))} className="absolute right-4 top-10 text-slate-400 hover:text-slate-900 transition-colors">
                            {visibleKeys[cfg.id] ? <EyeOff size={16} /> : <Eye size={16} />}
                          </button>
                       </div>
                     ))}
+                    <div className="relative pt-4 border-t border-slate-100">
+                      <label className="flex items-center gap-2 text-[9px] font-black text-slate-400 uppercase mb-2 ml-1">
+                        <Sparkles size={14} className="text-slate-900" />
+                        xAI API Key <span className="normal-case font-bold text-slate-400">(Motion Posts)</span>
+                      </label>
+                      <input
+                        type={visibleKeys.xai_api_key ? 'text' : 'password'}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-3 text-sm font-mono text-slate-800 outline-none transition focus:border-emerald-500"
+                        value={localApiKeys.xai_api_key || ''}
+                        onChange={(e) => setLocalApiKeys({ ...localApiKeys, xai_api_key: e.target.value })}
+                        placeholder="Enter your xAI API Key..."
+                      />
+                      <button type="button" onClick={() => setVisibleKeys(prev => ({...prev, xai_api_key: !prev.xai_api_key}))} className="absolute right-4 top-[4.55rem] text-slate-400 hover:text-slate-900 transition-colors">
+                        {visibleKeys.xai_api_key ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                      <p className="mt-2 text-[10px] text-slate-400">Stored server-side and used only by the authenticated Motion Posts Edge Function.</p>
+                    </div>
                   </div>
                </div>
 
@@ -633,25 +668,25 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
 
               {/* Meta / Instagram Card */}
-              <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+              <div className="border border-slate-200 overflow-hidden">
                 {/* Card Header */}
-                <div className="p-6 flex items-center justify-between bg-gradient-to-r from-purple-50 to-pink-50 border-b border-slate-100">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                <div className="p-4 sm:p-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50 border-b border-slate-200">
+                  <div className="flex min-w-0 items-center space-x-3 sm:space-x-4">
+                    <div className="w-11 h-11 border border-slate-800 bg-slate-900 flex items-center justify-center">
                       <Instagram size={22} className="text-white" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">Meta / Instagram</h4>
                       <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Instagram Graph API &middot; Pages API</p>
                     </div>
                   </div>
                   {metaIsConnected ? (
-                    <div className="flex items-center space-x-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full">
+                    <div className="flex shrink-0 items-center space-x-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full">
                       <CheckCheck size={14} />
                       <span className="text-[10px] font-black uppercase tracking-widest">Connected</span>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-2 bg-amber-100 text-amber-700 px-4 py-2 rounded-full">
+                    <div className="flex shrink-0 items-center space-x-2 bg-amber-100 text-amber-700 px-4 py-2 rounded-full">
                       <AlertCircle size={14} />
                       <span className="text-[10px] font-black uppercase tracking-widest">Not Connected</span>
                     </div>
@@ -659,7 +694,7 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
 
                 {/* Wizard Body */}
-                <div className="p-8 space-y-8">
+                <div className="p-4 sm:p-8 space-y-8">
 
                   {/* Step Progress */}
                   <div className="flex items-center space-x-2">
@@ -843,22 +878,22 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
               </div>
 
-              {/* X / Twitter Placeholder */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 flex items-center justify-between opacity-50">
+              {/* Shared X tracking is managed independently of branch credentials. */}
+              <div className="border border-slate-200 p-6 flex flex-wrap gap-3 items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center">
                     <span className="text-white font-black text-lg">&#120143;</span>
                   </div>
                   <div>
-                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">X / Twitter</h4>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Twitter API v2</p>
+                    <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">X · @boilermanc</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Manage posts, mentions and project tags in Social Hub → X tracking.</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-full">Coming Soon</span>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-full">Shared account</span>
               </div>
 
               {/* LinkedIn Placeholder */}
-              <div className="border-2 border-slate-100 rounded-3xl p-6 flex items-center justify-between opacity-50">
+              <div className="border border-slate-200 p-6 flex items-center justify-between opacity-50">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 rounded-2xl bg-blue-700 flex items-center justify-center">
                     <span className="text-white font-black text-sm">in</span>
@@ -878,10 +913,12 @@ const Settings: React.FC<SettingsProps> = ({
 
         {activeTab !== 'integrations' && activeTab !== 'spokes' && activeTab !== 'social' && activeTab !== 'team' && (
           <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end items-center space-x-4">
+            {saveError && <p role="alert" className="text-sm text-red-600">Could not save. Your changes are still here; try again.</p>}
+            {saveSuccess && <p role="status" className="text-sm text-emerald-700">Configuration saved.</p>}
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-black text-sm flex items-center space-x-2 shadow-lg hover:bg-emerald-700 transition"
+              className="min-h-11 px-8 py-3 bg-emerald-600 text-white font-bold text-sm flex items-center space-x-2 hover:bg-emerald-700 transition"
             >
               {isSaving ? <RefreshCw className="animate-spin" /> : <Save size={18} />}
               <span>{isSaving ? 'Updating Vault...' : 'Save Configuration'}</span>
