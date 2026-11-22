@@ -2,7 +2,16 @@
 
 This follow-up preserves the batching work split from PR #8. It reduces one
 existence query and write per metric to one bounded RPC call per batch.
-The workflow remains inactive; no production migration or activation occurred.
+The reviewed backend RPC is now applied to the intended Hub project
+`horvjqqifgrzxesuxtfm`. The release connection recorded migration version
+`20261122005820` with name `preserve_youtube_metric_ownership`; the repository
+filename and test/workflow references now match that applied ledger entry. The
+SQL bytes are unchanged. Do not replay the migration under its former timestamp.
+
+The replacement n8n blueprint has not been imported or activated. Its repository
+`active` flag remains false; no live analytics sync was run for this reconciliation.
+The backend migration was applied during the authorized release; this follow-up
+only reconciles repository history/references and records that completed step.
 
 `trellis_upsert_youtube_daily_metrics(p_rows jsonb)` accepts at most 500 input
 rows. It executes as the caller with an empty search path and only grants
@@ -33,10 +42,11 @@ and competing transactions. JavaScript tests execute the blueprint batch code
 for empty/boundary/mixed-source/duplicate cases and verify the RPC request graph.
 These are isolated tests, not a live YouTube sync.
 
-Release separately, backend first:
+Remaining workflow release steps:
 
-1. Review/apply migration 20261122001240_preserve_youtube_metric_ownership.sql
-   to the intended Hub project through the normal release process.
+1. The backend-first migration is complete. Verify applied version
+   `20261122005820` and the service-only RPC in the intended Hub project before
+   workflow import; do not apply a duplicate migration under the old timestamp.
 2. Import the inactive blueprint and select the existing Hub service-role
    Supabase credential on its RPC HTTP node. Anon/authenticated roles cannot call it.
 3. Verify the intended YouTube OAuth channel and a controlled sync, then activate

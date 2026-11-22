@@ -40,7 +40,7 @@ jobs:
           sql() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres "$@"; }
           sql < tests/youtube-metric-rpc-fixture.sql
           for pass in 1 2; do
-            sql < supabase/migrations/20261122001240_preserve_youtube_metric_ownership.sql
+            sql < supabase/migrations/20261122005820_preserve_youtube_metric_ownership.sql
           done
           sql < tests/youtube-metric-rpc.sql
           bash tests/youtube-metric-rpc-concurrency.sh
