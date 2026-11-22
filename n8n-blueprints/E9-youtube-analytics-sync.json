@@ -225,33 +225,6 @@
           "name": "Hub Supabase service role"
         }
       }
-    },
-    {
-      "name": "Fetch Account Analytics",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        1280,
-        360
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/youtube-analytics",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { source_type: $json.source_type, publication_id: $json.publication_id || $json.studio_publication_id, start_date: $json.start_date, end_date: $json.end_date } }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "credentials": {
-        "supabaseApi": {
-          "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL",
-          "name": "Hub Supabase service role"
-        }
-      }
     }
   ],
   "connections": {

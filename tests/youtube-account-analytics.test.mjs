@@ -171,3 +171,22 @@ test('production adapter reloads source-specific tables and branch association w
   assert.match(adapter, /one\('branches', 'slug', account\.branch_id\)/);
   assert.doesNotMatch(adapter + runtime, /console\.|social_credentials|get_social_account_credential|refresh_token/);
 });
+
+test('actual proxy response flows through the real E9 builder and bounded RPC batch without cumulative-count substitution', async () => {
+  const workflow = JSON.parse(await readFile(new URL('../n8n-blueprints/E9-youtube-analytics-sync.json', import.meta.url), 'utf8'));
+  const code = name => workflow.nodes.find(node => node.name === name).parameters.jsCode;
+  const { body } = await fixture().run();
+  const rows = new Function('$input', 'console', code('Build Metric Rows'))({ all: () => [{ json: body }] }, { warn() {} });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].json.publication_id, ID);
+  assert.equal(rows[0].json.views, 10); // Not the public cumulative viewCount of 37.
+  assert.equal(rows[0].json.likes, 3);
+  assert.equal(rows[0].json.comments, 2);
+  assert.equal(rows[0].json.shares, 1);
+  assert.equal(rows[0].json.raw.youtube_account_id, ACCOUNT);
+  assert.equal(rows[0].json.raw.channel_id, 'UC_expected');
+  const batches = new Function('$input', code('Batch Metric Rows'))({ all: () => rows });
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0].json.rows, rows.map(row => row.json));
+  assert.ok(!JSON.stringify(batches).includes(tokenSecret));
+});

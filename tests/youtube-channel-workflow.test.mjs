@@ -36,6 +36,7 @@ test('unverified, malformed or out-of-window reports cannot reach upsert',()=>{
   for(const value of [null,undefined,'',false,'12']) { const invalid=response(); invalid.analytics.rows[0][2]=value; assert.throws(()=>build([invalid])); }
 });
 test('workflow uses service-only analytics proxy and sends publication identity, never a Google token',()=>{
+  assert.equal(new Set(workflow.nodes.map(n=>n.name)).size,workflow.nodes.length);
   const fetch=node('Fetch Account Analytics');
   assert.equal(fetch.parameters.nodeCredentialType,'supabaseApi');
   assert.equal(fetch.parameters.method,'POST');
