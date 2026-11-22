@@ -48,14 +48,31 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$IONOS_HOST" && test -n "$IONOS_PORT" && test -n "$IONOS_USERNAME" && test -n "$SSHPASS"
-          sshpass -e ssh -T \
-            -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" \
-            'python3 -' < scripts/inspect-stitch-worker.py
-          sshpass -e ssh -T \
-            -o StrictHostKeyChecking=accept-new \
-            -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" \
-            '/opt/trellis/workers/.venv/bin/python -' < scripts/smoke-stitch-worker.py
+          readonly_ssh() {
+            local source="$1" interpreter="$2" error_file status attempt
+            error_file="$(mktemp)"
+            for attempt in 1 2; do
+              if sshpass -e ssh -T \
+                -o StrictHostKeyChecking=accept-new \
+                -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+                -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" \
+                "$interpreter -" < "$source" 2>"$error_file"; then
+                rm -f "$error_file"
+                return 0
+              else
+                status=$?
+                cat "$error_file" >&2
+                # Retry only a transient transport reset, never auth/host-key or code failures.
+                if [ "$status" != 255 ] || ! grep -Eq 'Connection reset|Connection timed out|Connection closed' "$error_file"; then
+                  rm -f "$error_file"
+                  return "$status"
+                fi
+                if [ "$attempt" = 1 ]; then sleep 5; fi
+              fi
+            done
+            rm -f "$error_file"
+            return "$status"
+          }
+          readonly_ssh scripts/inspect-stitch-worker.py python3
+          readonly_ssh scripts/smoke-stitch-worker.py /opt/trellis/workers/.venv/bin/python
 
