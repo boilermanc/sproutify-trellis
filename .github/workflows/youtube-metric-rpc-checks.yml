@@ -1,0 +1,58 @@
+name: YouTube metric ownership regressions
+
+on:
+  pull_request:
+    paths:
+      - 'n8n-blueprints/E9-youtube-analytics-sync.json'
+      - 'constants.ts'
+      - 'supabase/migrations/*_preserve_youtube_metric_ownership.sql'
+      - 'tests/youtube-metric-*'
+      - '.github/workflows/youtube-metric-rpc-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  database-and-batches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: node --test --test-concurrency=1 tests/youtube-metric-batches.test.mjs
+      - name: Exercise actual RPC, privileges, replay and concurrent conflicts on disposable PostgreSQL
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          sql() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres "$@"; }
+          sql < tests/youtube-metric-rpc-fixture.sql
+          for pass in 1 2; do
+            sql < supabase/migrations/20261122001240_preserve_youtube_metric_ownership.sql
+          done
+          sql < tests/youtube-metric-rpc.sql
+          bash tests/youtube-metric-rpc-concurrency.sh
+
+  production-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
