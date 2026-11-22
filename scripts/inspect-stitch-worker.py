@@ -20,8 +20,13 @@ def command(args):
 
 report = {"python": sys.version.split()[0], "uid": os.getuid()}
 _, unit = command(["systemctl", "show", "trellis-stitch.service", "--no-pager",
-                   "--property=LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,MainPID,User"])
+                   "--property=LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,MainPID,User,ExecMainStartTimestamp,ActiveEnterTimestamp"])
 report["unit"] = dict(line.split("=", 1) for line in unit.splitlines() if "=" in line)
+_, start = command(["systemctl", "show", "trellis-stitch.service", "--property=ExecStart", "--value"])
+# Emit executable/script path only; never print raw process arguments or env.
+import re
+report["unit_executable"] = next(iter(re.findall(r"path=([^ ;}]+)", start)), None)
+report["unit_script"] = next(iter(re.findall(r"(?:^|\s)([^ ;{}]*stitch_worker\.py)(?:\s|;|$)", start)), None)
 _, units = command(["systemctl", "list-unit-files", "--no-legend", "--no-pager", "*stitch*", "trellis*", "n8n*"])
 report["related_units"] = units.splitlines()
 report["can_sudo_noninteractive"] = command(["sudo", "-n", "true"])[0] == 0
@@ -54,6 +59,7 @@ for name in sorted(paths):
         tree = ast.parse(data)
         stitch = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_stitch"), None)
         files.append({"path": str(path.resolve()), "sha256": hashlib.sha256(data).hexdigest(),
+                      "mtime_ns": path.stat().st_mtime_ns,
                       "writable": os.access(path, os.W_OK),
                       "has_incremental_release": bool(stitch and any(isinstance(n, ast.Delete) for n in ast.walk(stitch))),
                       "has_gc_collection": b"gc.collect()" in data})
