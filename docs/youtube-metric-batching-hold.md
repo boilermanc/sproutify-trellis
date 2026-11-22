@@ -8,10 +8,32 @@ The reviewed backend RPC is now applied to the intended Hub project
 filename and test/workflow references now match that applied ledger entry. The
 SQL bytes are unchanged. Do not replay the migration under its former timestamp.
 
-The replacement n8n blueprint has not been imported or activated. Its repository
-`active` flag remains false; no live analytics sync was run for this reconciliation.
-The backend migration was applied during the authorized release; this follow-up
-only reconciles repository history/references and records that completed step.
+The original live workflow was backed up and paused during the authorized release.
+A bounded one-publication/one-day run failed at its shared n8n Google credential
+before any metric writes. Reconnecting that shared credential is not the right
+multi-channel fix: Trellis publishes to independently selected channel accounts.
+The shared-account OAuth chooser was cancelled without selecting a channel.
+
+The updated inactive blueprint calls the service-only `youtube-analytics` Edge
+Function using the existing Hub Supabase credential. The function reloads each
+live publication, uses its explicit `youtube_account_id`, resolves its existing
+account credential internally, and verifies both the authenticated channel and
+the video's channel before requesting analytics. Google tokens never enter the
+workflow payload or execution logs. Publication/account/date inputs do not let
+callers override ownership or redirect provider requests.
+
+Per-publication `skipped` and `unavailable` results remain visible in the HTTP
+node output, with a count warning from the row builder. Missing account mappings,
+connection failures, scope errors, and delayed empty reports never produce fake
+zero metric rows. Successful responses carry their own verified job identity, so
+partial failures cannot shift metrics between Episode/Studio rows or channels.
+
+Read-only production inspection on November 21, 2026 found two registered active
+accounts (Rekkrd Listening Room and Rekkrd After Dark), three live Studio rows
+explicitly assigned to Listening Room, and eight legacy live rows without an
+account (seven Episode, one Studio). This fix does not guess or backfill those
+eight destinations. Stored token expiry dates alone do not prove refresh grants
+remain valid; the controlled runtime check must establish readiness.
 
 `trellis_upsert_youtube_daily_metrics(p_rows jsonb)` accepts at most 500 input
 rows. It executes as the caller with an empty search path and only grants
@@ -49,8 +71,15 @@ Remaining workflow release steps:
    workflow import; do not apply a duplicate migration under the old timestamp.
 2. Import the inactive blueprint and select the existing Hub service-role
    Supabase credential on its RPC HTTP node. Anon/authenticated roles cannot call it.
-3. Verify the intended YouTube OAuth channel and a controlled sync, then activate
-   only as part of an approved release. No extra access credential is created here.
+3. Deploy the service-only `youtube-analytics` function before importing the
+   updated inactive workflow. Assign the existing Hub service credential to its
+   HTTP node. Do not connect a shared n8n Google credential.
+4. Validate one explicitly mapped publication for one day. Confirm channel/video
+   verification, useful coverage statuses, and ownership-preserving RPC writes
+   when Analytics returns rows. Empty reports are not evidence of write success.
+5. Restore the production Config (200 days, 75 publications per source) and remove
+   the temporary global validation cap before publishing. Inspect coverage for
+   unresolved legacy rows and channel-specific reconnect requirements.
 
 The RPC is additive and does not backfill or reassign existing ownership. If
 frontend/workflow rollout must be rolled back, retain the function and return to

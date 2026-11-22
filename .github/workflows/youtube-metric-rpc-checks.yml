@@ -7,6 +7,9 @@ on:
       - 'constants.ts'
       - 'supabase/migrations/*_preserve_youtube_metric_ownership.sql'
       - 'tests/youtube-metric-*'
+      - 'tests/youtube-account-analytics.test.mjs'
+      - 'tests/youtube-channel-workflow.test.mjs'
+      - 'supabase/functions/youtube-analytics/**'
       - '.github/workflows/youtube-metric-rpc-checks.yml'
 
 permissions:
@@ -31,7 +34,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: node --test --test-concurrency=1 tests/youtube-metric-batches.test.mjs
+      - run: node --test --test-concurrency=1 tests/youtube-metric-batches.test.mjs tests/youtube-channel-workflow.test.mjs tests/youtube-account-analytics.test.mjs tests/youtube-oauth-contract.test.mjs tests/youtube-publication-targeting.test.mjs
       - name: Exercise actual RPC, privileges, replay and concurrent conflicts on disposable PostgreSQL
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}
