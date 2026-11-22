@@ -26,6 +26,7 @@ Responds 202 immediately; the stitch runs in a background thread.
 """
 import os
 import io
+import gc
 import math
 import threading
 import traceback
@@ -174,32 +175,31 @@ def _stitch(render_id: str, session_id: str, tracks: list):
         _patch_render(render_id, {"status": "processing", "updated_at": _now()})
         _heartbeat(render_id, "starting", 0, "Worker accepted the master rebuild")
 
-        ordered = sorted(tracks, key=lambda t: t.get("track_number", 0))
-        segments = []
-        total_tracks = len([t for t in ordered if t.get("audio_url")])
-        for idx, track in enumerate([t for t in ordered if t.get("audio_url")], start=1):
+        ordered = [t for t in sorted(tracks, key=lambda t: t.get("track_number", 0)) if t.get("audio_url")]
+        total_tracks = len(ordered)
+        if not ordered:
+            raise RuntimeError("No playable track URLs to stitch")
+
+        # Download and crossfade one track at a time instead of decoding every
+        # track into memory up front — holding all N decoded tracks plus the
+        # growing master simultaneously is what OOM-kills the worker on long
+        # albums (observed: 4.6GB RSS on a 39-track/110-minute album).
+        master = None
+        for idx, track in enumerate(ordered, start=1):
             _heartbeat(
                 render_id,
                 "downloading-tracks",
-                5 + (idx - 1) / max(1, total_tracks) * 25,
-                f"Downloading track {idx} of {total_tracks}",
-                {"track_number": track.get("track_number"), "downloaded_tracks": idx - 1, "total_tracks": total_tracks},
+                5 + (idx - 1) / max(1, total_tracks) * 60,
+                f"Downloading & merging track {idx} of {total_tracks}",
+                {"track_number": track.get("track_number"), "processed_tracks": idx - 1, "total_tracks": total_tracks},
             )
-            segments.append(_download(track["audio_url"]))
-        if not segments:
-            raise RuntimeError("No playable track URLs to stitch")
-
-        _heartbeat(render_id, "stitching", 35, "Combining approved tracks", {"total_tracks": len(segments)})
-        master = segments[0].fade_in(FADE_IN_MS)
-        for idx, seg in enumerate(segments[1:], start=2):
-            _heartbeat(
-                render_id,
-                "stitching",
-                35 + (idx - 1) / max(1, len(segments) - 1) * 35,
-                f"Stitching track {idx} of {len(segments)}",
-                {"stitched_tracks": idx - 1, "total_tracks": len(segments)},
-            )
-            master = master.append(seg.fade_in(FADE_IN_MS), crossfade=CROSSFADE_MS)
+            seg = _download(track["audio_url"]).fade_in(FADE_IN_MS)
+            if master is None:
+                master = seg
+            else:
+                master = master.append(seg, crossfade=CROSSFADE_MS)
+            del seg
+            gc.collect()
         master = master.fade_out(FADE_OUT_MS)
 
         # Loudness normalize to ~ -14 dBFS (streaming-ish target)
