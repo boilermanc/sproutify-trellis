@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Trellis: YouTube Analytics Sync (ownership-safe batches)\n\nReads live Episode and Studio YouTube publications, retrieves their analytics, and sends at most 500 ordered metric rows per call to the Hub service-only `trellis_upsert_youtube_daily_metrics` RPC. Duplicate keys remain ordered: first insertion keeps its episode/studio provenance, later rows refresh metric values only. Existing associations are never replaced or nulled.\n\n### Backend-first setup\n1. Backend migration `20261122005820_preserve_youtube_metric_ownership.sql` is applied to the intended Hub. Verify the ledger/RPC before import; do not replay it under its former timestamp.\n2. On the `Upsert Metric Rows` HTTP node select a dedicated existing Hub service-role Supabase credential. Browser anon/authenticated credentials cannot execute the RPC.\n3. On the read Supabase nodes select the Hub credential. On the YouTube nodes select the intended channel OAuth credential with youtube.readonly and yt-analytics.readonly scopes.\n4. Import inactive, verify configured host/credentials and a controlled sync, then activate only as part of an approved release.\n\nThe Hub URL is `horvjqqifgrzxesuxtfm.supabase.co`; update it if the workflow is intentionally moved. The replacement blueprint has not been imported or activated; its repository active flag remains false. The reviewed backend RPC was applied during the authorized release; this follow-up only reconciles its recorded migration filename/references. See docs/youtube-metric-batching-hold.md for verification and release sequencing.",
+        "content": "## Channel-aware YouTube analytics\n\nEach publication is reloaded by the service-only youtube-analytics Edge Function, which uses its recorded youtube_account_id and existing Trellis account connection. It verifies the authenticated channel and the video's owner before retrieving reports. Google tokens stay on the backend; no shared n8n Google credential is used.\n\nLegacy publications without an explicit channel return skipped/missing_youtube_account. Reconnect or scope errors return unavailable; neither creates fake zero metrics. Empty delayed reports also write no rows. Inspect Fetch Account Analytics results and coverage warnings for incomplete collection.\n\nDeploy youtube-analytics first. Select the existing Hub Supabase service credential on Fetch Account Analytics and Upsert Metric Rows. Keep the applied migration 20261122005820_preserve_youtube_metric_ownership.sql. Import inactive, validate one mapped publication/day, restore normal Config limits, then publish. Never guess a channel for a legacy publication. See docs/youtube-metric-batching-hold.md.",
         "width": 640,
         "height": 700
       },
@@ -147,98 +147,8 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://www.googleapis.com/youtube/v3/videos",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleOAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "part",
-              "value": "statistics"
-            },
-            {
-              "name": "id",
-              "value": "={{ $('Build Video Jobs').item.json.youtube_video_id }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "name": "YouTube Video Stats",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        1060,
-        260
-      ],
-      "credentials": {
-        "googleOAuth2Api": {
-          "id": "REPLACE_WITH_GOOGLE_ANALYTICS_CREDENTIAL",
-          "name": "Trellis YouTube Analytics"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://youtubeanalytics.googleapis.com/v2/reports",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleOAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "ids",
-              "value": "channel==MINE"
-            },
-            {
-              "name": "startDate",
-              "value": "={{ $('Build Video Jobs').item.json.start_date }}"
-            },
-            {
-              "name": "endDate",
-              "value": "={{ $('Build Video Jobs').item.json.end_date }}"
-            },
-            {
-              "name": "metrics",
-              "value": "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,subscribersLost"
-            },
-            {
-              "name": "dimensions",
-              "value": "day"
-            },
-            {
-              "name": "filters",
-              "value": "={{ 'video==' + $('Build Video Jobs').item.json.youtube_video_id }}"
-            },
-            {
-              "name": "sort",
-              "value": "day"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "name": "YouTube Daily Analytics",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        1280,
-        260
-      ],
-      "credentials": {
-        "googleOAuth2Api": {
-          "id": "REPLACE_WITH_GOOGLE_ANALYTICS_CREDENTIAL",
-          "name": "Trellis YouTube Analytics"
-        }
-      }
-    },
-    {
-      "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const analyticsItems = $input.all();\nconst jobItems = $('Build Video Jobs').all();\nconst statsItems = $('YouTube Video Stats').all();\nconst output = [];\n\nfunction numberValue(value) {\n  const n = Number(value || 0);\n  return Number.isFinite(n) ? n : 0;\n}\n\nfunction buildRow(job, stats, values) {\n  const date = String(values.day || job.end_date).slice(0, 10);\n  return {\n    episode_id: job.episode_id,\n    publication_id: job.publication_id,\n    studio_album_id: job.studio_album_id,\n    studio_publication_id: job.studio_publication_id,\n    youtube_video_id: job.youtube_video_id,\n    metric_date: date,\n    views: Math.round(numberValue(values.views)),\n    engaged_views: 0,\n    estimated_minutes_watched: numberValue(values.estimatedMinutesWatched),\n    average_view_duration: numberValue(values.averageViewDuration),\n    average_view_percentage: numberValue(values.averageViewPercentage),\n    likes: Math.round(numberValue(stats.likeCount)),\n    comments: Math.round(numberValue(stats.commentCount)),\n    shares: 0,\n    subscribers_gained: Math.round(numberValue(values.subscribersGained)),\n    subscribers_lost: Math.round(numberValue(values.subscribersLost)),\n    traffic_sources: {},\n    countries: {},\n    raw: {\n      analytics_row: values,\n      public_statistics: stats,\n      external_url: job.external_url,\n      sync_window: { start_date: job.start_date, end_date: job.end_date }\n    },\n    synced_at: new Date().toISOString()\n  };\n}\n\nanalyticsItems.forEach((item, index) => {\n  const analytics = item.json || {};\n  const job = jobItems[index]?.json;\n  const stats = statsItems[index]?.json?.items?.[0]?.statistics || {};\n  if (!job) return;\n\n  const headers = Array.isArray(analytics.columnHeaders) ? analytics.columnHeaders.map(h => h.name) : [];\n  const rows = Array.isArray(analytics.rows) ? analytics.rows : [];\n\n  if (!rows.length) {\n    output.push({ json: buildRow(job, stats, { day: job.end_date }) });\n    return;\n  }\n\n  for (const row of rows) {\n    const values = {};\n    headers.forEach((name, headerIndex) => { values[name] = row[headerIndex]; });\n    output.push({ json: buildRow(job, stats, values) });\n  }\n});\n\nreturn output;"
+        "jsCode": "const result = [];\nconst counts = { ok: 0, skipped: 0, unavailable: 0 };\nconst finite = value => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error('Invalid metric value'); return value; };\nconst required = ['day','views','estimatedMinutesWatched','averageViewDuration','averageViewPercentage','subscribersGained','subscribersLost','likes','comments','shares'];\nfor (const item of $input.all()) {\n  const response = item.json;\n  if (response.status === 'skipped' || response.status === 'unavailable') { counts[response.status]++; continue; }\n  if (response.status !== 'ok') throw new Error('Unexpected account analytics response');\n  counts.ok++;\n  const job = response.job;\n  if (!job?.youtube_account_id || !job.channel_id || !job.youtube_video_id) throw new Error('Missing verified account identity');\n  const headers = response.analytics?.columnHeaders?.map(h => h.name);\n  const rows = response.analytics?.rows;\n  if (!Array.isArray(headers) || !Array.isArray(rows) || headers.length !== required.length || new Set(headers).size !== required.length || !required.every(name => headers.includes(name))) throw new Error('Malformed analytics report');\n  for (const row of rows) {\n    if (!Array.isArray(row) || row.length !== headers.length) throw new Error('Malformed analytics row');\n    const values = Object.fromEntries(headers.map((name, index) => [name, row[index]]));\n    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(values.day) || values.day < job.start_date || values.day > job.end_date) throw new Error('Analytics date outside requested window');\n    result.push({ json: {\n      episode_id: job.episode_id, publication_id: job.publication_id,\n      studio_album_id: job.studio_album_id, studio_publication_id: job.studio_publication_id,\n      youtube_video_id: job.youtube_video_id, metric_date: values.day,\n      views: finite(values.views), engaged_views: 0,\n      estimated_minutes_watched: finite(values.estimatedMinutesWatched),\n      average_view_duration: finite(values.averageViewDuration),\n      average_view_percentage: finite(values.averageViewPercentage),\n      likes: finite(values.likes), comments: finite(values.comments), shares: finite(values.shares),\n      subscribers_gained: finite(values.subscribersGained), subscribers_lost: finite(values.subscribersLost),\n      traffic_sources: {}, countries: {},\n      raw: { analytics_row: row, public_statistics: response.statistics,\n        youtube_account_id: job.youtube_account_id, channel_id: job.channel_id,\n        external_url: job.external_url, sync_window: {start_date:job.start_date,end_date:job.end_date} },\n      synced_at: new Date().toISOString()\n    } });\n  }\n}\nif (counts.skipped || counts.unavailable) console.warn('YouTube analytics coverage: ' + JSON.stringify(counts));\nreturn result;"
       },
       "name": "Build Metric Rows",
       "type": "n8n-nodes-base.code",
@@ -288,6 +198,33 @@
         }
       },
       "disabled": false
+    },
+    {
+      "name": "Fetch Account Analytics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://horvjqqifgrzxesuxtfm.supabase.co/functions/v1/youtube-analytics",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { source_type: $json.source_type, publication_id: $json.publication_id || $json.studio_publication_id, start_date: $json.start_date, end_date: $json.end_date } }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_WITH_YOUR_HUB_SUPABASE_CREDENTIAL",
+          "name": "Hub Supabase service role"
+        }
+      }
     }
   ],
   "connections": {
@@ -355,29 +292,7 @@
       "main": [
         [
           {
-            "node": "YouTube Video Stats",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "YouTube Video Stats": {
-      "main": [
-        [
-          {
-            "node": "YouTube Daily Analytics",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "YouTube Daily Analytics": {
-      "main": [
-        [
-          {
-            "node": "Build Metric Rows",
+            "node": "Fetch Account Analytics",
             "type": "main",
             "index": 0
           }
@@ -400,6 +315,17 @@
         [
           {
             "node": "Upsert Metric Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Account Analytics": {
+      "main": [
+        [
+          {
+            "node": "Build Metric Rows",
             "type": "main",
             "index": 0
           }
