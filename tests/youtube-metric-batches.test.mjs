@@ -70,6 +70,6 @@ test('workflow remains inactive and contains no direct table write node', () => 
 });
 
 test('master schema contains the exact versioned RPC and service-only grants', () => {
-  const migration = readFileSync(new URL('../supabase/migrations/20261122001240_preserve_youtube_metric_ownership.sql', import.meta.url), 'utf8').trim();
+  const migration = readFileSync(new URL('../supabase/migrations/20261122005820_preserve_youtube_metric_ownership.sql', import.meta.url), 'utf8').trim();
   assert.ok(readFileSync(new URL('../constants.ts', import.meta.url), 'utf8').includes(migration));
 });
