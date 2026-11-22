@@ -1,35 +1,50 @@
-# YouTube metric batching — draft, not ready to merge
+# Ownership-preserving YouTube metric batching
 
-This preserves the batching proposal removed from PR #8. It reduces per-row
-existence checks and writes to bounded batches and deduplicates video/date keys
-before writing. **The HTTP upsert node is disabled and the workflow is inactive.**
+This follow-up preserves the batching work split from PR #8. It reduces one
+existence query and write per metric to one bounded RPC call per batch.
+The workflow remains inactive; no production migration or activation occurred.
 
-Independent review found that a direct full-row upsert changes ownership
-semantics. The original update node refreshed metric fields while leaving the
-existing episode/publication and studio-album/publication associations intact.
-The proposed full-row operation can replace or null those associations when a
-video is shared between pipelines, including when only one source appears in the
-current sync. Deduplicating current inputs does not protect existing database
-associations; reading before writing alone also leaves a concurrency race.
+`trellis_upsert_youtube_daily_metrics(p_rows jsonb)` accepts at most 500 input
+rows. It executes as the caller with an empty search path and only grants
+EXECUTE to service_role. Every input requires a video/date and one complete
+Episode or Studio publication association. Invalid input rolls back the call.
 
-Before enabling writes or marking this PR ready:
+For existing rows, conflict updates change metric fields, raw statistics, and
+sync time only. All four existing provenance foreign keys and the original row
+identity/creation time remain unchanged, including when the incoming source is
+from the opposite pipeline. For new rows, first insertion chooses provenance;
+later duplicate inputs update only metric values. Real unique-key locking
+protects the same invariant when transactions compete.
 
-- Implement an atomic ownership-preserving batch operation, likely a narrowly
-  permissioned database RPC whose conflict update changes metric fields only.
-- Define deterministic behavior for a new video/date appearing in multiple
-  publication sources; fail safely on ambiguous ownership if necessary.
-- Add isolated database tests for existing episode-to-studio and studio-to-episode
-  updates, absent sources, duplicate mixed-source inputs, retries, and concurrent
-  insert/update attempts. All existing non-null source associations must survive.
-- Verify required permissions and deploy the database operation before importing
-  and enabling the updated n8n write node.
+The blueprint coalesces each video/date globally before chunking, retaining the
+first source association and last metric payload. This prevents one key from
+spanning independently scheduled HTTP batches. The RPC independently supports
+ordered duplicate input, so correctness does not depend on this optimization.
+The HTTP node sends `{p_rows: $json.rows}` to the RPC, never a full-row table upsert.
 
-The conflict key is not missing: `constants.ts` SQL_SCHEMA declares
-`UNIQUE (youtube_video_id, metric_date)`, and a read-only catalog query against
-the exact Hub project `horvjqqifgrzxesuxtfm` confirmed constraint
-`trellis_youtube_daily_metrics_youtube_video_id_metric_date_key` on November21,
-2026. No metric rows or production schema were changed.
+The conflict key is versioned in constants.ts SQL_SCHEMA, and a read-only
+catalog query against the exact Hub project horvjqqifgrzxesuxtfm confirmed
+UNIQUE(youtube_video_id, metric_date) on November 21, 2026. No metric rows were read.
+The master schema includes the same RPC/grants as the additive migration.
 
-The offline JavaScript tests cover only batching, key validation and the disabled
-write gate. They do not establish the missing database ownership guarantees.
-Do not merge or activate this draft based on those tests alone.
+Verification uses the actual versioned function on disposable PostgreSQL 17:
+fixture, migration replay, ownership/permissions/bounds/rollback SQL regressions,
+and competing transactions. JavaScript tests execute the blueprint batch code
+for empty/boundary/mixed-source/duplicate cases and verify the RPC request graph.
+These are isolated tests, not a live YouTube sync.
+
+Release separately, backend first:
+
+1. Review/apply migration 20261122001240_preserve_youtube_metric_ownership.sql
+   to the intended Hub project through the normal release process.
+2. Import the inactive blueprint and select the existing Hub service-role
+   Supabase credential on its RPC HTTP node. Anon/authenticated roles cannot call it.
+3. Verify the intended YouTube OAuth channel and a controlled sync, then activate
+   only as part of an approved release. No extra access credential is created here.
+
+The RPC is additive and does not backfill or reassign existing ownership. If
+frontend/workflow rollout must be rolled back, retain the function and return to
+the old inactive blueprint; do not delete customer metric rows or associations.
+
+Lesson: bulk metric refreshes must preserve the old operation's foreign-key
+semantics and be tested against existing records and concurrent conflicts.
