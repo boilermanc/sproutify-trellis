@@ -1,161 +1,55 @@
-name: Build and Deploy Sproutify Trellis
+name: Inspect Trellis audio worker
 
 on:
-  push:
-    branches: [main]          # auto-deploy on push to main
-  workflow_dispatch: {}       # manual trigger also available
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - '.github/workflows/deploy.yml'
+      - 'scripts/inspect-stitch-worker.py'
 
 permissions:
   contents: read
 
 concurrency:
   group: trellis-production-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  validate:
     runs-on: ubuntu-latest
-    env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      LIVE_URL: https://trellis.sproutify.app
-
+    timeout-minutes: 5
     steps:
-      # checkout@v6 / setup-node@v6 run on the Node 24 runtime (default
-      # since 2026-06-16), so they satisfy the Node 20 deprecation.
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Environment info
+          python-version: '3.13'
+      - name: Check inspector syntax and worker regressions
         run: |
-          echo "::group::Runner / toolchain"
-          echo "Node:      $(node --version)"
-          echo "npm:       $(npm --version)"
-          echo "Runner OS: ${RUNNER_OS} (${RUNNER_ARCH})"
-          echo "Commit:    ${GITHUB_SHA}"
-          echo "Ref:       ${GITHUB_REF}"
-          echo "Actor:     ${GITHUB_ACTOR}"
-          echo "::endgroup::"
+          python -m py_compile scripts/inspect-stitch-worker.py workers/stitch_worker.py
+          python -m unittest discover -s tests -p test_stitch_memory.py -v
 
-      - name: Verify required secrets
+  inspect:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ops/trellis-stitch-release'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install SSH transport
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+      - name: Read-only inspection using existing deployment credentials
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           IONOS_HOST: ${{ secrets.IONOS_HOST }}
           IONOS_PORT: ${{ secrets.IONOS_PORT }}
           IONOS_USERNAME: ${{ secrets.IONOS_USERNAME }}
-          IONOS_PASSWORD: ${{ secrets.IONOS_PASSWORD }}
-          IONOS_TRELLIS_PATH: ${{ secrets.IONOS_TRELLIS_PATH }}
-        run: |
-          echo "::group::Secret presence (values never printed)"
-          missing=0
-          # Required: build + deploy cannot succeed without these.
-          req()  { if [ -z "${2:-}" ]; then echo "❌ $1 is MISSING (required)"; missing=1; else echo "✅ $1 is set"; fi; }
-          # Optional: referenced but not needed at build time (Gemini key is
-          # read at runtime from tenant_secrets on the Hub, not from the bundle).
-          opt()  { if [ -z "${2:-}" ]; then echo "➖ $1 not set (optional — ok)"; else echo "✅ $1 is set"; fi; }
-          req VITE_SUPABASE_URL       "$VITE_SUPABASE_URL"
-          req VITE_SUPABASE_ANON_KEY  "$VITE_SUPABASE_ANON_KEY"
-          req IONOS_HOST              "$IONOS_HOST"
-          req IONOS_PORT              "$IONOS_PORT"
-          req IONOS_USERNAME          "$IONOS_USERNAME"
-          req IONOS_PASSWORD          "$IONOS_PASSWORD"
-          req IONOS_TRELLIS_PATH      "$IONOS_TRELLIS_PATH"
-          opt GEMINI_API_KEY          "$GEMINI_API_KEY"
-          echo "::endgroup::"
-          if [ "$missing" = "1" ]; then
-            echo "::error::One or more REQUIRED secrets are missing — aborting before build."
-            exit 1
-          fi
-
-      - name: Install
-        run: npm ci
-
-      - name: Build
+          SSHPASS: ${{ secrets.IONOS_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          npm run build
-          echo "commit=${GITHUB_SHA}" > dist/build-info.txt
-          date -u +"built_utc=%Y-%m-%dT%H:%M:%SZ" >> dist/build-info.txt
-          printf '%s\n' \
-            '# Never cache the SPA entry so new bundles get picked up immediately' \
-            '<IfModule mod_headers.c>' \
-            '  <Files "index.html">' \
-            '    Header set Cache-Control "no-cache, no-store, must-revalidate"' \
-            '    Header set Pragma "no-cache"' \
-            '    Header set Expires 0' \
-            '  </Files>' \
-            '</IfModule>' \
-            '' \
-            '# SPA routing that still serves real files directly' \
-            '<IfModule mod_rewrite.c>' \
-            '  RewriteEngine On' \
-            '  RewriteBase /' \
-            '  RewriteCond %{REQUEST_FILENAME} -f [OR]' \
-            '  RewriteCond %{REQUEST_FILENAME} -d' \
-            '  RewriteRule ^ - [L]' \
-            '  RewriteRule . /index.html [L]' \
-            '</IfModule>' \
-            > dist/.htaccess
-          echo "::group::Built dist/ contents"
-          ls -laR dist | head -80
-          echo "::endgroup::"
-          echo "Built commit ${GITHUB_SHA} — $(du -sh dist | cut -f1) total"
+          test -n "$IONOS_HOST" && test -n "$IONOS_PORT" && test -n "$IONOS_USERNAME" && test -n "$SSHPASS"
+          sshpass -e ssh -T \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" \
+            'python3 -' < scripts/inspect-stitch-worker.py
 
-      - name: Upload built site via SFTP
-        env:
-          IONOS_HOST: ${{ secrets.IONOS_HOST }}
-          IONOS_PORT: ${{ secrets.IONOS_PORT }}
-          IONOS_USERNAME: ${{ secrets.IONOS_USERNAME }}
-          IONOS_PASSWORD: ${{ secrets.IONOS_PASSWORD }}
-          IONOS_TRELLIS_PATH: ${{ secrets.IONOS_TRELLIS_PATH }}
-        run: |
-          set -euo pipefail
-          # GitHub-hosted runners already ship with a current apt index. A full
-          # `apt-get update` can hang on an unhealthy Azure mirror and prevent
-          # the deployment from ever reaching SFTP.
-          sudo apt-get install -y lftp
-          # The IONOS_TRELLIS_PATH secret has carried stray whitespace before, which made
-          # lftp upload into a phantom "/.../<space>trellis.sproutify.app" dir Apache never
-          # served — freezing the live site. Strip all whitespace defensively (server paths
-          # never legitimately contain spaces).
-          IONOS_TRELLIS_PATH="$(printf '%s' "$IONOS_TRELLIS_PATH" | tr -d '[:space:]')"
-          echo "Uploading ./dist/ -> [${IONOS_TRELLIS_PATH}/] on ${IONOS_HOST}:${IONOS_PORT}"
-          # cmd:fail-exit + xfer:clobber ensure a failed transfer fails the job loudly.
-          # mirror -R uploads the CONTENTS of ./dist/ into the remote path (no remote deletion).
-          echo "::group::lftp mirror upload"
-          lftp -c "set sftp:auto-confirm yes; \
-            set cmd:fail-exit yes; \
-            set xfer:clobber yes; \
-            open -u \"$IONOS_USERNAME\",\"$IONOS_PASSWORD\" -p \"$IONOS_PORT\" sftp://$IONOS_HOST; \
-            mirror -R --verbose --parallel=4 ./dist/ \"$IONOS_TRELLIS_PATH/\"; \
-            echo '--- Remote listing after upload ---'; \
-            cls -l \"$IONOS_TRELLIS_PATH/\""
-          echo "::endgroup::"
-          echo "✅ Upload complete to ${IONOS_TRELLIS_PATH}"
-
-      - name: Verify live deployment
-        run: |
-          echo "::group::Live-site verification"
-          echo "Fetching ${LIVE_URL}/build-info.txt ..."
-          # Non-fatal: build-info.txt may be edge-cached briefly. This is a signal, not a gate.
-          if remote="$(curl -fsS --max-time 20 "${LIVE_URL}/build-info.txt" 2>/dev/null)"; then
-            echo "$remote"
-            if echo "$remote" | grep -q "commit=${GITHUB_SHA}"; then
-              echo "✅ Live site is serving THIS commit (${GITHUB_SHA})."
-            else
-              echo "⚠️  Live build-info commit does not match ${GITHUB_SHA} yet (edge cache or path). Recheck in a minute."
-            fi
-          else
-            echo "⚠️  Could not fetch build-info.txt (cache/WAF/path). Site may still be fine — verify manually."
-          fi
-          echo "::endgroup::"
