@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/deploy.yml'
       - 'scripts/inspect-stitch-worker.py'
+      - 'scripts/smoke-stitch-worker.py'
 
 permissions:
   contents: read
@@ -25,7 +26,7 @@ jobs:
           python-version: '3.13'
       - name: Check inspector syntax and worker regressions
         run: |
-          python -m py_compile scripts/inspect-stitch-worker.py workers/stitch_worker.py
+          python -m py_compile scripts/inspect-stitch-worker.py scripts/smoke-stitch-worker.py workers/stitch_worker.py
           python -m unittest discover -s tests -p test_stitch_memory.py -v
 
   inspect:
@@ -52,4 +53,9 @@ jobs:
             -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" \
             'python3 -' < scripts/inspect-stitch-worker.py
+          sshpass -e ssh -T \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -p "$IONOS_PORT" "$IONOS_USERNAME@$IONOS_HOST" \
+            '/opt/trellis/workers/.venv/bin/python -' < scripts/smoke-stitch-worker.py
 
